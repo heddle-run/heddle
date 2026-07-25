@@ -15,58 +15,73 @@ export const showcaseItems = [
     title: "Research Assistant",
     category: "Flow",
     description: "Agent with web search and calculator tools",
-    code: `nodes:
-  - name: researcher
-    type: AgentNode
-    agent:
-      tools:
-        - web_search
-        - calculator
-    llm:
-      type: OpenAiConfig
-      model: gpt-4o`,
+    code: `component_type: AgentNode
+name: researcher
+agent:
+  component_type: Agent
+  name: research-agent
+  system_prompt: Research the user's question.
+  llm_config:
+    component_type: OpenAiConfig
+    name: openai
+    model_id: gpt-4o
+  tools:
+    - { component_type: ServerTool, name: web_search }
+    - { component_type: ServerTool, name: calculator }`,
   },
   {
     title: "Math Homework Agent",
     category: "Agent",
     description: "Multiplication tool powered by vLLM",
-    code: `type: Agent
+    code: `component_type: Agent
 name: math-helper
-llm:
-  type: VllmConfig
-  model: meta-llama/Llama-3.1-8B
+system_prompt: Solve the multiplication problem.
+llm_config:
+  component_type: VllmConfig
+  name: llama
+  model_id: meta-llama/Llama-3.1-8B
+  url: http://localhost:8000/v1
 tools:
-  - name: multiplication_tool
+  - component_type: ServerTool
+    name: multiplication_tool
     inputs:
-      - a: integer
-      - b: integer`,
+      - { title: a, type: integer }
+      - { title: b, type: integer }`,
   },
   {
     title: "RAG Agent",
     category: "Agent",
     description: "Domain expert with retrieval-augmented generation",
-    code: `type: Agent
+    code: `component_type: Agent
 name: rag-expert
-systemPrompt: |
+system_prompt: |
   You are an expert in
   {{domain_of_expertise}}.
+llm_config:
+  component_type: OpenAiConfig
+  name: openai
+  model_id: gpt-4o
 tools:
-  - name: rag_tool
+  - component_type: ServerTool
+    name: rag_tool
     inputs:
-      - query: string`,
+      - title: query
+        type: string`,
   },
   {
     title: "IT Assistant",
     category: "Agent",
     description: "Enterprise IT support with local LLM",
-    code: `type: Agent
+    code: `component_type: Agent
 name: it-assistant
-llm:
-  type: VllmConfig
-  model: meta-llama/Llama-3.1-8B
-systemPrompt: |
+system_prompt: |
   You are an IT assistant.
-  Help users troubleshoot.`,
+  Help users troubleshoot.
+llm_config:
+  component_type: VllmConfig
+  name: llama
+  model_id: meta-llama/Llama-3.1-8B
+  url: http://vllm:8000/v1`,
   },
 ];
 
@@ -77,18 +92,28 @@ export const steps = [
     description:
       "Describe your workflow in YAML or JSON using the Open Agent Specification.",
     code: `# flow.yaml
+component_type: Flow
+name: research-flow
+start_node:
+  $component_ref: start
 nodes:
-  - name: start
-    type: StartNode
-  - name: agent
-    type: AgentNode
-    agent:
-      tools: [web_search]
-    llm:
-      type: OpenAiConfig
-      model: gpt-4o
-  - name: end
-    type: EndNode`,
+  - $component_ref: start
+  - $component_ref: agent
+  - $component_ref: end
+control_flow_connections:
+  - component_type: ControlFlowEdge
+    name: start_to_agent
+    from_node: { $component_ref: start }
+    to_node: { $component_ref: agent }
+  # ... agent -> end
+$referenced_components:
+  start:
+    component_type: StartNode
+    id: start
+    name: start
+    outputs:
+      - { title: query, type: string }
+  # ... agent, end`,
   },
   {
     number: "02",
@@ -116,12 +141,13 @@ json.dump({
     --tools-dir ./tools \\
     --input '{"query": "quantum computing"}'
 
-▸ Starting flow: research-assistant
-▸ Agent calling: web_search
-▸ Agent calling: web_search
-▸ Flow complete
+[researcher] ⚙ Web Search quantum computing
+[researcher] ⚙ Web Search quantum algorithms
 
-{"result": "Quantum computing uses..."}`,
+{
+  "query": "quantum computing",
+  "result": "Quantum computing uses..."
+}`,
   },
 ];
 

@@ -20,8 +20,20 @@ brew install spichen/tap/specrun
 Verify the installation:
 
 ```bash
-specrun --version
+specrun --help
 ```
+
+Specrun requires Node.js 18 or newer.
+
+## Set an API Key
+
+The scaffolded project uses OpenAI, so export a key before running anything:
+
+```bash
+export OPENAI_API_KEY=sk-...
+```
+
+Every provider needs a resolvable key, including local ones — see [LLM Providers](/docs/llm-providers) for how to point a flow at Ollama or vLLM instead.
 
 ## Create Your First Agent
 
@@ -40,31 +52,46 @@ my-agent/
     └── example_tool.sh   # A sample tool
 ```
 
+The generated flow is a single agent wired between a start and an end node. It takes one input, `query`, and its system prompt interpolates that value with `{{query}}`.
+
 ## Run the Workflow
 
 ```bash
-cd my-agent
-specrun run flow.json --tools-dir tools
+specrun run my-agent/flow.json \
+  --tools-dir my-agent/tools \
+  --input '{"query": "What is the Open Agent Specification?"}'
 ```
 
-You should see output showing the flow executing through each node.
+`--input` is a JSON object whose keys match the outputs declared on the flow's start node. The final state is printed to stdout as JSON; progress and errors go to stderr.
+
+Add `--verbose` for per-node logging:
+
+```bash
+specrun --verbose run my-agent/flow.json --tools-dir my-agent/tools --input '{"query": "hello"}'
+```
 
 ## Interactive Chat Mode
 
 For debugging and exploration, use chat mode:
 
 ```bash
-specrun run flow.json --tools-dir tools --chat
+specrun run my-agent/flow.json --tools-dir my-agent/tools --chat
 ```
 
-This starts a persistent multi-turn conversation with your agent.
+This opens a multi-turn session that re-runs the flow for each message, passing the conversation so far to the agent. Transcripts are written to `~/.specrun/conversations/`. Type `/exit` to quit.
+
+Your message is bound to the first output declared on the start node, falling back to `query` if the start node declares none.
 
 ## Validate a Spec
 
-Check your workflow for errors before running:
+Check your workflow before running it:
 
 ```bash
-specrun validate flow.json --tools-dir tools
+specrun validate my-agent/flow.json --tools-dir my-agent/tools
 ```
 
-This validates the spec schema, compiles the graph, and checks that all referenced tools exist.
+This validates the spec against the Agent Spec schema, then compiles and checks the graph.
+
+<Callout type="warn">
+Validation is not yet a reliable gate. If graph compilation fails for any reason — including a missing tool executable — `validate` prints `Graph validation skipped`, still reports the file as valid, and exits 0. Read its output rather than trusting the exit code.
+</Callout>

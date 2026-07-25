@@ -5,95 +5,213 @@ description: Learn how to define multi-step agent workflows using nodes and edge
 
 A flow is a directed graph of nodes connected by edges. It defines the execution order and data passing between steps in your workflow.
 
-## Flow Structure
+Flows are written in JSON or YAML following the [Open Agent Specification](https://oracle.github.io/agent-spec/). Field names in the file are `snake_case`.
 
-Flows are defined in JSON or YAML following the Open Agent Specification:
+## Component References
+
+Agent Spec files are *disaggregated*: components are defined once under `$referenced_components`, keyed by `id`, and referred to everywhere else by `$component_ref`.
 
 ```yaml
-type: Flow
-name: my-flow
 nodes:
-  - name: start
-    type: StartNode
-    inputs:
-      - query: string
-  - name: agent
-    type: AgentNode
-    agent:
-      systemPrompt: "You are a helpful assistant."
-      tools:
-        - web_search
-    llm:
-      type: OpenAiConfig
-      model: gpt-4o
-  - name: end
-    type: EndNode
-controlFlowEdges:
-  - from: start
-    to: agent
-  - from: agent
-    to: end
-dataFlowEdges:
-  - from: start
-    to: agent
-    mapping:
-      query: input
+  - $component_ref: start
+  - $component_ref: end
+
+$referenced_components:
+  start:
+    component_type: StartNode
+    id: start
+    name: start
+  end:
+    component_type: EndNode
+    id: end
+    name: end
 ```
+
+This matters because a flow refers to the same node from several places — `start_node`, `nodes`, and both edge lists. References keep those pointing at one shared component. Writing the same node out twice inline is rejected, because the parser compares component identity rather than names.
+
+## A Complete Flow
+
+This flow takes a `query`, runs it through an agent with one tool, and returns a `result`:
+
+```yaml
+component_type: Flow
+agentspec_version: 26.2.0
+name: research-flow
+start_node:
+  $component_ref: start
+nodes:
+  - $component_ref: start
+  - $component_ref: researcher
+  - $component_ref: end
+control_flow_connections:
+  - component_type: ControlFlowEdge
+    name: start_to_researcher
+    from_node:
+      $component_ref: start
+    to_node:
+      $component_ref: researcher
+  - component_type: ControlFlowEdge
+    name: researcher_to_end
+    from_node:
+      $component_ref: researcher
+    to_node:
+      $component_ref: end
+data_flow_connections:
+  - component_type: DataFlowEdge
+    name: query_to_researcher
+    source_node:
+      $component_ref: start
+    source_output: query
+    destination_node:
+      $component_ref: researcher
+    destination_input: query
+  - component_type: DataFlowEdge
+    name: result_to_end
+    source_node:
+      $component_ref: researcher
+    source_output: result
+    destination_node:
+      $component_ref: end
+    destination_input: result
+$referenced_components:
+  start:
+    component_type: StartNode
+    id: start
+    name: start
+    outputs:
+      - title: query
+        type: string
+  researcher:
+    component_type: AgentNode
+    id: researcher
+    name: researcher
+    inputs:
+      - title: query
+        type: string
+    outputs:
+      - title: result
+        type: string
+    agent:
+      component_type: Agent
+      name: research-agent
+      system_prompt: |
+        You are a research assistant.
+        Answer the user's question: {{query}}
+      llm_config:
+        component_type: OpenAiConfig
+        name: openai
+        model_id: gpt-4o
+      tools:
+        - component_type: ServerTool
+          name: web_search
+          description: Search the web for information
+          inputs:
+            - title: query
+              type: string
+          outputs:
+            - title: results
+              type: string
+  end:
+    component_type: EndNode
+    id: end
+    name: end
+    inputs:
+      - title: result
+        type: string
+```
+
+`id` is optional — a UUID is generated when you omit it — but any component you point at with `$component_ref` needs an explicit `id` to be addressable.
 
 ## Nodes
 
-Nodes are the building blocks of a flow. Each node has a `name` and `type`:
+Nodes are the building blocks of a flow. Every node has a `component_type` and a `name`:
 
-- **StartNode** — Entry point, defines expected inputs
+- **StartNode** — Entry point, defines the flow's inputs
 - **EndNode** — Exit point
 - **AgentNode** — LLM-powered agent with tools
 - **LlmNode** — Runs a prompt template through an LLM
 - **ToolNode** — Executes an external tool directly
-- **BranchingNode** — Routes execution based on conditions
+- **BranchingNode** — Routes execution based on an input value
 
 See [Nodes](/docs/nodes) for detailed documentation on each type.
+
+## Properties
+
+Node `inputs` and `outputs` are JSON Schema fragments carrying a `title`:
+
+```yaml
+inputs:
+  - title: query
+    type: string
+  - title: max_results
+    type: integer
+    default: 10
+```
+
+A title cannot be empty, and cannot contain spaces, quotes, braces, commas, or periods.
 
 ## Edges
 
 ### Control Flow Edges
 
-Define execution order between nodes:
+`control_flow_connections` define execution order. Each edge names a `from_node` and a `to_node`, and optionally a `from_branch`:
 
 ```yaml
-controlFlowEdges:
-  - from: start
-    to: agent
-  - from: agent
-    to: end
+control_flow_connections:
+  - component_type: ControlFlowEdge
+    name: start_to_agent
+    from_node:
+      $component_ref: start
+    from_branch: null
+    to_node:
+      $component_ref: agent
 ```
+
+`from_branch: null` — or leaving it out — makes the edge unconditional. Only branch-producing nodes need named branches; see [BranchingNode](/docs/nodes#branchingnode).
+
+A node with several unconditional outgoing edges does not fan out in parallel. The first edge is taken and the others are ignored, so express alternatives with a `BranchingNode`.
 
 ### Data Flow Edges
 
-Pass data between nodes with field mapping:
+`data_flow_connections` map one node's output onto another node's input. `source_output` and `destination_input` are property titles:
 
 ```yaml
-dataFlowEdges:
-  - from: start
-    to: agent
-    mapping:
-      query: input
+data_flow_connections:
+  - component_type: DataFlowEdge
+    name: query_to_agent
+    source_node:
+      $component_ref: start
+    source_output: query
+    destination_node:
+      $component_ref: agent
+    destination_input: query
 ```
+
+<Callout type="warn">
+Data flow edges currently *add to* the accumulated run state rather than isolating a node's inputs. Every node also sees the merged outputs of all nodes that ran before it, so identically-named outputs from different nodes overwrite one another. Declare your edges as though isolation were enforced, but avoid reusing one property title for two different meanings in the same flow.
+</Callout>
 
 ## Execution
 
 When you run a flow, Specrun:
 
-1. Parses the JSON/YAML file
-2. Validates against the Open Agent Specification schema
-3. Compiles the graph and validates edges
-4. Executes nodes in topological order
-5. Passes data between nodes via data flow edges
+1. Parses the JSON/YAML file and resolves `$component_ref` references
+2. Validates it against the Open Agent Specification schema
+3. Compiles the graph and validates its structure
+4. Walks from the `StartNode`, one node at a time, until an `EndNode` is reached
+5. Prints the final state as JSON on stdout
+
+Graph validation checks that every node is reachable from the start node, that a reachable `EndNode` exists, and that no non-terminal node is a dead end. It does not yet check that branch names on edges line up with a `BranchingNode` mapping, nor that data flow edges reference properties the nodes actually declare.
 
 ### Runner Defaults
 
+These are fixed and not currently configurable from the CLI:
+
 | Setting | Default |
 |---------|---------|
-| Max iterations | 50 |
-| Timeout | 5 minutes |
+| Max nodes executed per run | 50 |
+| Total run timeout | 5 minutes |
 | Max tool rounds per agent | 10 |
 | Tool execution timeout | 30 seconds |
+
+Exceeding the node limit or the run timeout fails the run with an error.

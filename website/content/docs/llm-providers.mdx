@@ -5,38 +5,56 @@ description: Configure OpenAI, vLLM, Ollama, or any compatible endpoint.
 
 Specrun supports multiple LLM providers out of the box. Switch providers by changing a few lines in your spec — no code changes needed.
 
+An LLM config appears as `llm_config` on an `Agent` or an `LlmNode`. All supported providers speak the OpenAI chat completions API.
+
+| `component_type` | `url` | Notes |
+|------------------|-------|-------|
+| `OpenAiConfig` | not accepted | Talks to the OpenAI API |
+| `OpenAiCompatibleConfig` | required | Any OpenAI-compatible endpoint |
+| `VllmConfig` | required | Self-hosted vLLM |
+| `OllamaConfig` | required | Local Ollama |
+
+Every config needs a `name` and a `model_id`. Any other `component_type` is rejected at compile time.
+
 ## OpenAI
 
 ```yaml
-llm:
-  type: OpenAiConfig
-  model: gpt-4o
+llm_config:
+  component_type: OpenAiConfig
+  name: openai
+  model_id: gpt-4o
 ```
 
-Set your API key via environment variable:
+Set your API key in the environment:
 
 ```bash
 export OPENAI_API_KEY=sk-...
 ```
 
-Or reference it in the spec:
+Or reference an environment variable from the spec:
 
 ```yaml
-llm:
-  type: OpenAiConfig
-  model: gpt-4o
+llm_config:
+  component_type: OpenAiConfig
+  name: openai
+  model_id: gpt-4o
   api_key: $OPENAI_API_KEY
 ```
+
+<Callout type="info">
+`OpenAiConfig` has no `url` field. Adding one is silently ignored rather than rejected — use `OpenAiCompatibleConfig` to point at a custom endpoint.
+</Callout>
 
 ## OpenAI-Compatible
 
 For any endpoint that implements the OpenAI API format:
 
 ```yaml
-llm:
-  type: OpenAiCompatibleConfig
-  model: my-model
-  base_url: https://my-endpoint.com/v1
+llm_config:
+  component_type: OpenAiCompatibleConfig
+  name: my-provider
+  model_id: my-model
+  url: https://my-endpoint.com/v1
   api_key: $MY_API_KEY
 ```
 
@@ -45,10 +63,12 @@ llm:
 For self-hosted models via vLLM:
 
 ```yaml
-llm:
-  type: VllmConfig
-  model: meta-llama/Llama-3.1-8B
-  base_url: http://localhost:8000
+llm_config:
+  component_type: VllmConfig
+  name: llama
+  model_id: meta-llama/Llama-3.1-8B
+  url: http://localhost:8000/v1
+  api_key: $VLLM_API_KEY
 ```
 
 ## Ollama
@@ -56,21 +76,17 @@ llm:
 For local models via Ollama:
 
 ```yaml
-llm:
-  type: OllamaConfig
-  model: llama3.1
+llm_config:
+  component_type: OllamaConfig
+  name: ollama
+  model_id: llama3.1
+  url: http://localhost:11434/v1
+  api_key: $OLLAMA_API_KEY
 ```
 
-Ollama defaults to `http://localhost:11434`. To use a different host:
+`url` is required — there is no default host.
 
-```yaml
-llm:
-  type: OllamaConfig
-  model: llama3.1
-  base_url: http://my-server:11434
-```
-
-## Environment Variables
+## API Keys
 
 API keys can reference environment variables using the `$` prefix:
 
@@ -78,4 +94,16 @@ API keys can reference environment variables using the `$` prefix:
 api_key: $MY_API_KEY
 ```
 
-Specrun resolves these at runtime from your shell environment.
+Specrun resolves these from your shell environment when the flow is compiled, and fails with a clear error if the variable is unset. A value without a `$` prefix is used literally.
+
+<Callout type="warn">
+An API key must be resolvable for **every** provider, including local ones. If a config has no `api_key` and `OPENAI_API_KEY` is not set in the environment, the run fails before reaching the model — even for Ollama or vLLM, which do not check the key. For local servers, set any placeholder value:
+
+```bash
+export OLLAMA_API_KEY=local
+```
+</Callout>
+
+<Callout type="warn">
+Tools launched by a flow inherit the full environment of the `specrun` process, API keys included. Only put executables you trust in `--tools-dir`.
+</Callout>
