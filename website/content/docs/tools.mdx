@@ -3,11 +3,11 @@ title: Tools
 description: Build custom tools in any language using stdin/stdout JSON.
 ---
 
-Tools in Specrun are standalone executables that communicate via JSON over stdin/stdout. Write them in any language — no SDK required.
+Tools in Heddle are standalone executables that communicate via JSON over stdin/stdout. Write them in any language — no SDK required.
 
 ## How Tools Work
 
-1. Specrun calls your tool as a subprocess
+1. Heddle calls your tool as a subprocess
 2. Input is sent as JSON via stdin
 3. Your tool processes the input
 4. Output is returned as JSON via stdout
@@ -109,7 +109,7 @@ Each `inputs` entry becomes a parameter in the JSON Schema handed to the model. 
 
 To run a tool directly, without an LLM choosing it, use a [ToolNode](/docs/nodes#toolnode).
 
-Running `specrun validate` with `--tools-dir` checks that every declared `ServerTool` has a matching executable.
+Running `heddle validate` with `--tools-dir` checks that every declared `ServerTool` has a matching executable.
 
 ## Execution Details
 
@@ -122,5 +122,5 @@ Running `specrun validate` with `--tools-dir` checks that every declared `Server
 When an agent calls a tool, a failure is reported back to the model as a tool message so it can retry or recover. A failure in a `ToolNode` fails the whole run.
 
 <Callout type="warn">
-Tools run as subprocesses of `specrun` and inherit its full environment, including any API keys. They are not sandboxed: a tool can read and write anything the invoking user can. Treat a tools directory the way you would treat a directory of shell scripts you are about to run, and be especially careful with tools that execute commands or write files on the model's behalf.
+Tools run as subprocesses of `heddle` and inherit its full environment, including any API keys. They are not sandboxed: a tool can read and write anything the invoking user can. Treat a tools directory the way you would treat a directory of shell scripts you are about to run, and be especially careful with tools that execute commands or write files on the model's behalf.
 </Callout>

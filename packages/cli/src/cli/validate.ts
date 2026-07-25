@@ -6,7 +6,7 @@ import {
   loadComponent,
   collectToolNames,
   FileRegistry,
-} from '@specrun/core';
+} from '@heddle/core';
 
 export const validateCommand = new Command('validate')
   .description('Validate an Agent Spec component (Flow, Agent, Swarm, etc.)')

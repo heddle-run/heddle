@@ -9,7 +9,7 @@ export default function Layout({ children }: { children: ReactNode }) {
       tree={source.pageTree}
       nav={{
         title: (
-          <span className="font-semibold tracking-tight">specrun</span>
+          <span className="font-semibold tracking-tight">heddle</span>
         ),
         url: "/",
       }}

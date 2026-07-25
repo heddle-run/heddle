@@ -39,7 +39,7 @@ export default function Navbar() {
               pastHero ? "text-white" : "text-black"
             }`}
           >
-            specrun
+            heddle
           </span>
           <span
             className={`rounded-full border px-2.5 py-0.5 text-[11px] font-medium tracking-wide transition-colors duration-300 ${

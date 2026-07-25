@@ -1,7 +1,7 @@
 /**
- * Core type definitions for specrun.
+ * Core type definitions for heddle.
  *
- * Uses agentspec SDK types for components, with specrun-specific types
+ * Uses agentspec SDK types for components, with heddle-specific types
  * for the graph representation (string-based edge references).
  */
 import type { ComponentBase, Property } from 'agentspec';

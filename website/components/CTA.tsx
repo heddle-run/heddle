@@ -25,24 +25,24 @@ export default function CTA() {
                 {"\n"}
                 <span className="terminal-prompt">$</span>{" "}
                 <span className="terminal-command">npm install -g</span>{" "}
-                <span className="terminal-string">@specrun/cli</span>
+                <span className="terminal-string">@heddle/cli</span>
                 {"\n\n"}
                 <span className="syntax-comment"># Or via Homebrew</span>
                 {"\n"}
                 <span className="terminal-prompt">$</span>{" "}
                 <span className="terminal-command">brew install</span>{" "}
-                <span className="terminal-string">spichen/tap/specrun</span>
+                <span className="terminal-string">spichen/tap/heddle</span>
                 {"\n\n"}
                 <span className="syntax-comment">
                   # Create and run your first agent
                 </span>
                 {"\n"}
                 <span className="terminal-prompt">$</span>{" "}
-                <span className="terminal-command">specrun init</span>{" "}
+                <span className="terminal-command">heddle init</span>{" "}
                 <span className="terminal-string">my-agent</span>
                 {"\n"}
                 <span className="terminal-prompt">$</span>{" "}
-                <span className="terminal-command">specrun run</span>{" "}
+                <span className="terminal-command">heddle run</span>{" "}
                 <span className="terminal-string">
                   my-agent/flow.json
                 </span>{" "}

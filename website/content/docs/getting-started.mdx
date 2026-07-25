@@ -1,6 +1,6 @@
 ---
 title: Getting Started
-description: Install Specrun and run your first agent workflow in under a minute.
+description: Install Heddle and run your first agent workflow in under a minute.
 ---
 
 ## Installation
@@ -8,22 +8,22 @@ description: Install Specrun and run your first agent workflow in under a minute
 Install the CLI globally via npm:
 
 ```bash
-npm install -g @specrun/cli
+npm install -g @heddle/cli
 ```
 
 Or via Homebrew:
 
 ```bash
-brew install spichen/tap/specrun
+brew install spichen/tap/heddle
 ```
 
 Verify the installation:
 
 ```bash
-specrun --help
+heddle --help
 ```
 
-Specrun requires Node.js 18 or newer.
+Heddle requires Node.js 18 or newer.
 
 ## Set an API Key
 
@@ -40,7 +40,7 @@ Every provider needs a resolvable key, including local ones — see [LLM Provide
 Scaffold a new project:
 
 ```bash
-specrun init my-agent
+heddle init my-agent
 ```
 
 This creates:
@@ -57,7 +57,7 @@ The generated flow is a single agent wired between a start and an end node. It t
 ## Run the Workflow
 
 ```bash
-specrun run my-agent/flow.json \
+heddle run my-agent/flow.json \
   --tools-dir my-agent/tools \
   --input '{"query": "What is the Open Agent Specification?"}'
 ```
@@ -67,7 +67,7 @@ specrun run my-agent/flow.json \
 Add `--verbose` for per-node logging:
 
 ```bash
-specrun --verbose run my-agent/flow.json --tools-dir my-agent/tools --input '{"query": "hello"}'
+heddle --verbose run my-agent/flow.json --tools-dir my-agent/tools --input '{"query": "hello"}'
 ```
 
 ## Interactive Chat Mode
@@ -75,10 +75,10 @@ specrun --verbose run my-agent/flow.json --tools-dir my-agent/tools --input '{"q
 For debugging and exploration, use chat mode:
 
 ```bash
-specrun run my-agent/flow.json --tools-dir my-agent/tools --chat
+heddle run my-agent/flow.json --tools-dir my-agent/tools --chat
 ```
 
-This opens a multi-turn session that re-runs the flow for each message, passing the conversation so far to the agent. Transcripts are written to `~/.specrun/conversations/`. Type `/exit` to quit.
+This opens a multi-turn session that re-runs the flow for each message, passing the conversation so far to the agent. Transcripts are written to `~/.heddle/conversations/`. Type `/exit` to quit.
 
 Your message is bound to the first output declared on the start node, falling back to `query` if the start node declares none.
 
@@ -87,7 +87,7 @@ Your message is bound to the first output declared on the start node, falling ba
 Check your workflow before running it:
 
 ```bash
-specrun validate my-agent/flow.json --tools-dir my-agent/tools
+heddle validate my-agent/flow.json --tools-dir my-agent/tools
 ```
 
 This validates the spec against the Agent Spec schema, then compiles and checks the graph.

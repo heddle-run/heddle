@@ -16,7 +16,7 @@ export interface ChatSession {
 
 const SESSIONS_DIR = join(
   process.env.HOME ?? process.cwd(),
-  '.specrun',
+  '.heddle',
   'conversations',
 );
 

@@ -3,7 +3,7 @@ title: LLM Providers
 description: Configure OpenAI, vLLM, Ollama, or any compatible endpoint.
 ---
 
-Specrun supports multiple LLM providers out of the box. Switch providers by changing a few lines in your spec — no code changes needed.
+Heddle supports multiple LLM providers out of the box. Switch providers by changing a few lines in your spec — no code changes needed.
 
 An LLM config appears as `llm_config` on an `Agent` or an `LlmNode`. All supported providers speak the OpenAI chat completions API.
 
@@ -94,7 +94,7 @@ API keys can reference environment variables using the `$` prefix:
 api_key: $MY_API_KEY
 ```
 
-Specrun resolves these from your shell environment when the flow is compiled, and fails with a clear error if the variable is unset. A value without a `$` prefix is used literally.
+Heddle resolves these from your shell environment when the flow is compiled, and fails with a clear error if the variable is unset. A value without a `$` prefix is used literally.
 
 <Callout type="warn">
 An API key must be resolvable for **every** provider, including local ones. If a config has no `api_key` and `OPENAI_API_KEY` is not set in the environment, the run fails before reaching the model — even for Ollama or vLLM, which do not check the key. For local servers, set any placeholder value:
@@ -105,5 +105,5 @@ export OLLAMA_API_KEY=local
 </Callout>
 
 <Callout type="warn">
-Tools launched by a flow inherit the full environment of the `specrun` process, API keys included. Only put executables you trust in `--tools-dir`.
+Tools launched by a flow inherit the full environment of the `heddle` process, API keys included. Only put executables you trust in `--tools-dir`.
 </Callout>

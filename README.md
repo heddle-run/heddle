@@ -1,4 +1,4 @@
-# specrun
+# heddle
 
 A lightweight CLI framework for building and executing agentic workflows using the [Open Agent Specification](https://oracle.github.io/agent-spec/).
 
@@ -12,16 +12,16 @@ Define multi-step AI workflows as JSON, wire up LLM-powered agents and external 
 - **External tools** - Tools are standalone executables (shell scripts, Python, etc.) that communicate via JSON over stdin/stdout
 - **Branching logic** - Conditional routing with `BranchingNode` for dynamic workflows
 - **Validation** - Spec-level and graph-level validation catches errors before execution
-- **Scaffolding** - `specrun init` generates a project template to get started quickly
+- **Scaffolding** - `heddle init` generates a project template to get started quickly
 
 ## Installation
 
 ```bash
 # npm
-npm install -g @specrun/cli
+npm install -g @heddle/cli
 
 # Homebrew
-brew install spichen/tap/specrun
+brew install spichen/tap/heddle
 ```
 
 ## Quick Start
@@ -29,7 +29,7 @@ brew install spichen/tap/specrun
 ### 1. Scaffold a new project
 
 ```bash
-specrun init my-project
+heddle init my-project
 ```
 
 This creates:
@@ -53,7 +53,7 @@ Every provider needs a resolvable key, local ones included — see [LLM Configur
 ### 3. Run a flow
 
 ```bash
-specrun run my-project/flow.json \
+heddle run my-project/flow.json \
   --tools-dir my-project/tools \
   --input '{"query": "hello"}'
 ```
@@ -63,13 +63,13 @@ The final state is printed to stdout as JSON; progress and errors go to stderr.
 ### 4. Validate a flow
 
 ```bash
-specrun validate my-project/flow.json --tools-dir my-project/tools
+heddle validate my-project/flow.json --tools-dir my-project/tools
 ```
 
 ## CLI Reference
 
 ```
-specrun [options] <command>
+heddle [options] <command>
 
 Options:
   --verbose                Enable verbose logging (may be placed before or
@@ -84,16 +84,16 @@ Commands:
   validate <flow>          Validate a flow definition (JSON or YAML)
     --tools-dir <dir>      Directory containing tool executables
 
-  init <project-name>      Scaffold a new specrun project
+  init <project-name>      Scaffold a new heddle project
 ```
 
-There is no `--version` flag yet; use `specrun --help` to check the install.
+There is no `--version` flag yet; use `heddle --help` to check the install.
 
 ### Chat Mode
 
 `--chat` opens a multi-turn session that re-runs the flow for each message, passing the
 conversation so far to the agent. Transcripts are saved to
-`~/.specrun/conversations/<session-id>.json`. Type `/exit` to quit.
+`~/.heddle/conversations/<session-id>.json`. Type `/exit` to quit.
 
 Your message is bound to the first output declared on the flow's start node, falling back
 to `query` when none is declared.
@@ -101,7 +101,7 @@ to `query` when none is declared.
 > **Note:** an in-flight run cannot be interrupted. `Ctrl+C` and `/exit` close the session,
 > but a flow already executing runs until it finishes or hits the five-minute timeout.
 
-> **Note:** `specrun validate` exits 0 even when graph or tool validation fails. Any error
+> **Note:** `heddle validate` exits 0 even when graph or tool validation fails. Any error
 > after schema validation is reported as `Graph validation skipped`, which also hides real
 > problems such as a missing tool executable. Read its output rather than the exit code.
 
@@ -138,7 +138,7 @@ Tools are declared inline as `ServerTool` components in the flow, and matched at
 executable in `--tools-dir` by name. A tool's name is its filename with the extension stripped,
 so `fetch_api.py` is declared as `fetch_api`.
 
-> **Warning:** tools run as subprocesses of `specrun` and inherit its full environment,
+> **Warning:** tools run as subprocesses of `heddle` and inherit its full environment,
 > API keys included. They are not sandboxed — a tool can read and write anything the invoking
 > user can. Only put executables you trust in a tools directory, and take particular care with
 > tools that execute commands or write files on a model's behalf, such as those in

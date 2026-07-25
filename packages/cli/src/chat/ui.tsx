@@ -6,7 +6,7 @@ import {
   type CompiledGraph,
   type RunnerOptions,
   type Event,
-} from '@specrun/core';
+} from '@heddle/core';
 import type { ChatSession } from './session.js';
 import { addMessage } from './session.js';
 import { getToolIcon, getToolTitle, formatDuration } from './tool-display.js';
@@ -187,7 +187,7 @@ function Chat({ graph, opts, session, inputKey }: ChatProps) {
     <Box flexDirection="column" padding={1}>
       <Box marginBottom={1}>
         <Text bold color="cyan">
-          specrun chat
+          heddle chat
         </Text>
         <Text dimColor> - {graph.name}</Text>
       </Box>

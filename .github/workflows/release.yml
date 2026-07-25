@@ -61,7 +61,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # Publish to npm. `pnpm -r publish` walks the workspace in topological
-      # order, so @specrun/core goes out before the packages that depend on
+      # order, so @heddle/core goes out before the packages that depend on
       # it. Private packages (the workspace root, vendor/agentspec) are
       # skipped automatically.
       - name: Publish to npm
@@ -73,7 +73,7 @@ jobs:
       - name: Update Homebrew formula
         uses: mislav/bump-homebrew-formula-action@v3
         with:
-          formula-name: specrun
+          formula-name: heddle
           homebrew-tap: spichen/homebrew-tap
           tag-name: ${{ github.ref_name }}
           download-url: https://github.com/spichen/specrun/archive/refs/tags/${{ github.ref_name }}.tar.gz

@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 
 export const GITHUB_URL = "https://github.com/spichen/specrun";
-export const NPM_URL = "https://www.npmjs.com/package/@specrun/cli";
+export const NPM_URL = "https://www.npmjs.com/package/@heddle/cli";
 
 export const showcaseItems = [
   {
@@ -137,7 +137,7 @@ json.dump({
     title: "Run",
     description:
       "Compile, validate, and execute — all from one command.",
-    code: `$ specrun run flow.yaml \\
+    code: `$ heddle run flow.yaml \\
     --tools-dir ./tools \\
     --input '{"query": "quantum computing"}'
 
@@ -192,19 +192,19 @@ export const features = [
 
 export const faqItems = [
   {
-    question: "What is Specrun?",
+    question: "What is Heddle?",
     answer:
-      "Specrun is a lightweight CLI framework for building and executing agentic AI workflows. It lets you define multi-step agent workflows in YAML or JSON using the Open Agent Specification, then compiles and runs them locally with a single command.",
+      "Heddle is a lightweight CLI framework for building and executing agentic AI workflows. It lets you define multi-step agent workflows in YAML or JSON using the Open Agent Specification, then compiles and runs them locally with a single command.",
   },
   {
     question: "What is the Open Agent Specification?",
     answer:
-      "The Open Agent Specification is a portable, standardized format created by Oracle for defining agent workflows. Specrun implements this spec, meaning your workflow definitions are portable across any compliant runtime.",
+      "The Open Agent Specification is a portable, standardized format created by Oracle for defining agent workflows. Heddle implements this spec, meaning your workflow definitions are portable across any compliant runtime.",
   },
   {
     question: "What LLM providers are supported?",
     answer:
-      "Specrun supports OpenAI, vLLM, Ollama, and any OpenAI-compatible endpoint out of the box. You can swap providers by changing a few lines in your spec — no code changes needed.",
+      "Heddle supports OpenAI, vLLM, Ollama, and any OpenAI-compatible endpoint out of the box. You can swap providers by changing a few lines in your spec — no code changes needed.",
   },
   {
     question: "How do I create custom tools?",
@@ -212,13 +212,13 @@ export const faqItems = [
       "Tools are standalone executables that read JSON from stdin and write JSON to stdout. Write them in any language — Bash, Python, Go, Node.js — no SDK required. Just make them executable and place them in your tools directory.",
   },
   {
-    question: "Is Specrun free?",
+    question: "Is Heddle free?",
     answer:
-      "Yes. Specrun is fully open source under the MIT license. You can use it freely in personal and commercial projects.",
+      "Yes. Heddle is fully open source under the MIT license. You can use it freely in personal and commercial projects.",
   },
   {
     question: "Does it work offline?",
     answer:
-      "Specrun itself runs entirely locally with no backend or cloud service required. However, if your workflow uses a cloud LLM provider like OpenAI, you'll need internet access for those API calls. With a local provider like Ollama or vLLM, everything runs offline.",
+      "Heddle itself runs entirely locally with no backend or cloud service required. However, if your workflow uses a cloud LLM provider like OpenAI, you'll need internet access for those API calls. With a local provider like Ollama or vLLM, everything runs offline.",
   },
 ];

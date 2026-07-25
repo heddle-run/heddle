@@ -1,24 +1,24 @@
 ---
 title: CLI Reference
-description: Complete reference for all Specrun CLI commands and options.
+description: Complete reference for all Heddle CLI commands and options.
 ---
 
 ## Global Options
 
-These are declared on `specrun` itself and may appear before or after the subcommand:
+These are declared on `heddle` itself and may appear before or after the subcommand:
 
 | Option | Description |
 |--------|-------------|
 | `--verbose` | Log every node as it starts and completes, plus tool arguments and results |
 
-There is currently no `--version` flag. Use `specrun --help` to confirm the CLI is installed.
+There is currently no `--version` flag. Use `heddle --help` to confirm the CLI is installed.
 
-## specrun run
+## heddle run
 
 Execute an Agent Spec flow.
 
 ```bash
-specrun run <flow> [options]
+heddle run <flow> [options]
 ```
 
 ### Arguments
@@ -39,16 +39,16 @@ specrun run <flow> [options]
 
 ```bash
 # Basic run
-specrun run flow.yaml --tools-dir ./tools
+heddle run flow.yaml --tools-dir ./tools
 
 # With input data
-specrun run flow.json --tools-dir ./tools --input '{"query": "quantum computing"}'
+heddle run flow.json --tools-dir ./tools --input '{"query": "quantum computing"}'
 
 # Interactive chat mode
-specrun run flow.yaml --tools-dir ./tools --chat
+heddle run flow.yaml --tools-dir ./tools --chat
 
 # Verbose logging
-specrun --verbose run flow.yaml --tools-dir ./tools
+heddle --verbose run flow.yaml --tools-dir ./tools
 ```
 
 ### Output
@@ -56,14 +56,14 @@ specrun --verbose run flow.yaml --tools-dir ./tools
 The final state is printed to stdout as formatted JSON. Progress, tool activity, and errors go to stderr, so stdout stays pipeable:
 
 ```bash
-specrun run flow.json --input '{"query": "hello"}' | jq .result
+heddle run flow.json --input '{"query": "hello"}' | jq .result
 ```
 
 The keys of `--input` should match the outputs declared on the flow's start node. Malformed JSON fails immediately; keys the flow does not declare are carried in the state but never read.
 
 ### Chat Mode
 
-`--chat` opens a multi-turn session that re-runs the whole flow for each message, passing the prior conversation to the agent. Transcripts are written to `~/.specrun/conversations/<session-id>.json` after every message.
+`--chat` opens a multi-turn session that re-runs the whole flow for each message, passing the prior conversation to the agent. Transcripts are written to `~/.heddle/conversations/<session-id>.json` after every message.
 
 Your message is bound to the first output declared on the flow's start node, falling back to `query` if it declares none. Type `/exit` or `/quit` to leave.
 
@@ -71,12 +71,12 @@ Your message is bound to the first output declared on the flow's start node, fal
 An in-flight run cannot be interrupted. `Ctrl+C` and `/exit` close the session, but a flow already executing keeps running until it finishes or hits the five-minute timeout.
 </Callout>
 
-## specrun validate
+## heddle validate
 
 Validate an Agent Spec component.
 
 ```bash
-specrun validate <spec> [options]
+heddle validate <spec> [options]
 ```
 
 ### Arguments
@@ -103,12 +103,12 @@ Steps 2 and 3 need the same runtime configuration a real run does — notably a 
 `validate` currently exits 0 even when steps 2 and 3 fail. Any error after schema validation is caught and reported as `Graph validation skipped (unsupported node types or missing runtime config)`, which also hides genuine problems such as a missing tool executable or an unreachable node. Until this is tightened, read the printed output rather than relying on the exit code, and treat `Graph validation passed` as the signal you actually want to see.
 </Callout>
 
-## specrun init
+## heddle init
 
 Scaffold a new project.
 
 ```bash
-specrun init <project-name>
+heddle init <project-name>
 ```
 
 Creates a project directory containing a template `flow.json` and a sample tool in `tools/`. Existing files at those paths are overwritten.

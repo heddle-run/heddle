@@ -1,8 +1,8 @@
 {
-  "name": "specrun-workspace",
-  "version": "0.1.0-beta6",
+  "name": "heddle-workspace",
+  "version": "0.2.0-beta.1",
   "private": true,
-  "description": "Workspace root for specrun",
+  "description": "Workspace root for heddle",
   "type": "module",
   "license": "MIT",
   "repository": {
@@ -26,7 +26,7 @@
     "build": "pnpm -r --if-present build",
     "test": "pnpm -r --if-present test",
     "typecheck": "pnpm -r --if-present typecheck",
-    "dev": "pnpm --filter @specrun/cli dev"
+    "dev": "pnpm --filter @heddle/cli dev"
   },
   "devDependencies": {
     "typescript": "^5.7.0",

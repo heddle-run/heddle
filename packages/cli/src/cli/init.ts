@@ -2,7 +2,7 @@ import { Command } from 'commander';
 import { generate } from '../scaffold/templates.js';
 
 export const initCommand = new Command('init')
-  .description('Scaffold a new specrun project')
+  .description('Scaffold a new heddle project')
   .argument('<project-name>', 'Name of the project directory')
   .action((dir: string) => {
     generate(dir);
@@ -15,6 +15,6 @@ export const initCommand = new Command('init')
     console.log(`  1. Edit ${dir}/flow.json to define your workflow`);
     console.log(`  2. Add tool scripts to ${dir}/tools/`);
     console.log(
-      `  3. Run: specrun run ${dir}/flow.json --tools-dir ${dir}/tools --input '{"query": "hello"}'`,
+      `  3. Run: heddle run ${dir}/flow.json --tools-dir ${dir}/tools --input '{"query": "hello"}'`,
     );
   });

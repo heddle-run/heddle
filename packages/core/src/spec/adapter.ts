@@ -1,6 +1,6 @@
 /**
  * Adapter module that bridges the agentspec SDK's object-graph types
- * to specrun's internal representation with string-based edge references.
+ * to heddle's internal representation with string-based edge references.
  */
 import type { ComponentBase } from 'agentspec';
 import type { ParsedFlow, SpecNode, ControlFlowEdge, DataFlowEdge } from './types.js';
@@ -64,7 +64,7 @@ const SUPPORTED_NODE_TYPES = new Set([
 ]);
 
 /**
- * Converts an SDK Flow (with object-based edges) to specrun's ParsedFlow
+ * Converts an SDK Flow (with object-based edges) to heddle's ParsedFlow
  * (with string-name edges and a flat parsedNodes array).
  */
 export function toSpecFlow(sdkComponent: ComponentBase): ParsedFlow {
@@ -106,15 +106,15 @@ export function toSpecFlow(sdkComponent: ComponentBase): ParsedFlow {
   };
 }
 
-/** Converts an SDK node to specrun's SpecNode type. */
+/** Converts an SDK node to heddle's SpecNode type. */
 function toSpecNode(node: SdkNode): SpecNode {
   if (!SUPPORTED_NODE_TYPES.has(node.componentType)) {
     throw new SpecError(
-      `specrun does not yet support ${node.componentType} execution. ` +
+      `heddle does not yet support ${node.componentType} execution. ` +
         `Supported: ${[...SUPPORTED_NODE_TYPES].join(', ')}`,
     );
   }
-  // The SDK node objects are already the right shape for specrun's SpecNode union
+  // The SDK node objects are already the right shape for heddle's SpecNode union
   // since we're using structural typing. We just need to cast appropriately.
   return node as unknown as SpecNode;
 }

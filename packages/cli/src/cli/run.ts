@@ -12,7 +12,7 @@ import {
   type RunnerOptions,
   type Event,
   type ParsedFlow,
-} from '@specrun/core';
+} from '@heddle/core';
 import { getToolIcon, getToolTitle, formatDuration } from '../chat/tool-display.js';
 
 function buildRunnerOpts(verbose: boolean, chat: boolean): RunnerOptions {
@@ -106,7 +106,7 @@ export const runCommand = new Command('run')
         const session = createSession(flowPath);
         const inputKey = detectInputKey(pf);
 
-        console.error(`Conversation saved to: ~/.specrun/conversations/${session.id}.json`);
+        console.error(`Conversation saved to: ~/.heddle/conversations/${session.id}.json`);
         startChat({ graph: cg, opts, session, inputKey });
         return;
       }

@@ -3,7 +3,7 @@ import { runCommand } from './run.js';
 import { validateCommand } from './validate.js';
 import { initCommand } from './init.js';
 
-export const program = new Command('specrun')
+export const program = new Command('heddle')
   .description('Lightweight CLI agentic workflow framework')
   .option('--verbose', 'Enable verbose output', false)
   .option('--trace', 'Enable trace-level output', false);

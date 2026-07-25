@@ -7,7 +7,7 @@ import { SubprocessExecutor } from '../executor.js';
 function makeTempDir(): string {
   const dir = join(
     tmpdir(),
-    `specrun-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    `heddle-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
   );
   mkdirSync(dir, { recursive: true });
   return dir;
