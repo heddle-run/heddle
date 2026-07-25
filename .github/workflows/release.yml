@@ -17,15 +17,15 @@ jobs:
           # Need full history + write access to push version bump commit
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Clone agentspec SDK
-        run: |
-          git clone --depth 1 --branch typescript-sdk https://github.com/spichen/agent-spec.git ../agent-spec
-          cd ../agent-spec/tsagentspec && npm ci && npm run build
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
 
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           registry-url: https://registry.npmjs.org
+          cache: pnpm
 
       - name: Extract version from tag
         id: version
@@ -34,16 +34,16 @@ jobs:
       # Bump package.json version and commit back to main
       - name: Bump package.json version
         run: |
-          npm version "${{ steps.version.outputs.version }}" --no-git-tag-version
+          pnpm version "${{ steps.version.outputs.version }}" --no-git-tag-version
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add package.json package-lock.json
+          git add package.json pnpm-lock.yaml
           git commit -m "Bump version to ${{ steps.version.outputs.version }}"
           git push origin HEAD:main
 
-      - run: npm ci
-      - run: npm test
-      - run: npm run build
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+      - run: pnpm build
 
       # Create GitHub Release
       - name: Create GitHub Release
@@ -56,7 +56,7 @@ jobs:
 
       # Publish to npm
       - name: Publish to npm
-        run: npm publish --provenance --access public
+        run: pnpm publish --provenance --access public --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
