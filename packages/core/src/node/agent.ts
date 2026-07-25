@@ -12,8 +12,8 @@ const MAX_TOOL_ROUNDS = 10;
 export class AgentExecutor implements NodeExecutor {
   private node: AgentNode;
   private deps: Dependencies;
-  private provider: Provider;
   private model: string;
+  private provider?: Provider;
 
   constructor(node: AgentNode, deps: Dependencies) {
     this.node = node;
@@ -25,8 +25,20 @@ export class AgentExecutor implements NodeExecutor {
         `AgentNode "${node.name}": agent or llmConfig is missing`,
       );
     }
-    this.provider = createProvider(agent.llmConfig);
     this.model = agent.llmConfig.modelId;
+  }
+
+  /**
+   * Providers are built on first use, not in the constructor.
+   *
+   * Constructing an OpenAI client throws when no API key is configured, and
+   * executors are constructed by `compile()`. Doing it eagerly would make
+   * compiling — and therefore validating — any flow containing an agent node
+   * impossible without credentials.
+   */
+  private getProvider(): Provider {
+    this.provider ??= createProvider(this.node.agent!.llmConfig!);
+    return this.provider;
   }
 
   branch(): string {
@@ -70,7 +82,7 @@ export class AgentExecutor implements NodeExecutor {
     ];
 
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-      const resp = await this.provider.chatCompletion(signal, {
+      const resp = await this.getProvider().chatCompletion(signal, {
         model: this.model,
         messages,
         tools: toolDefs.length > 0 ? toolDefs : undefined,

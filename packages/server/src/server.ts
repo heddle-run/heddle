@@ -1,0 +1,118 @@
+import {
+  createServer as createHttpServer,
+  type IncomingMessage,
+  type Server,
+  type ServerResponse,
+} from 'node:http';
+import { resolveConfig, isPubliclyBound, type ServerConfig, type ServerOptions } from './config.js';
+import { toErrorResponse, HttpError } from './errors.js';
+import { sendJson } from './http.js';
+import { handleRun } from './runs.js';
+import { handleValidate } from './validate.js';
+
+export const VERSION = '0.2.0-beta.1';
+
+/**
+ * Build the HTTP server. Does not listen — see {@link startServer}.
+ *
+ * Routing is hand-rolled on node:http rather than delegated to a framework.
+ * The surface is four routes, and this package is a remote-code-execution
+ * surface: keeping its production dependency list at exactly one entry
+ * (@heddle/core) is worth more here than the ergonomics of a router.
+ */
+export function createServer(options: ServerOptions = {}): Server {
+  const config = resolveConfig(options);
+
+  return createHttpServer((req, res) => {
+    void route(req, res, config).catch((err) => {
+      if (res.headersSent) {
+        res.end();
+        return;
+      }
+      const { status, body } = toErrorResponse(err);
+      sendJson(res, status, body);
+    });
+  });
+}
+
+async function route(
+  req: IncomingMessage,
+  res: ServerResponse,
+  config: ServerConfig,
+): Promise<void> {
+  const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
+  const method = req.method ?? 'GET';
+  const path = url.pathname.replace(/\/+$/, '') || '/';
+
+  if (method === 'GET' && (path === '/healthz' || path === '/')) {
+    sendJson(res, 200, { status: 'ok', version: VERSION });
+    return;
+  }
+
+  if (path === '/v1/runs') {
+    requireMethod(method, 'POST');
+    const stream = url.searchParams.get('stream') === 'true';
+    await handleRun(req, res, config, stream);
+    return;
+  }
+
+  if (path === '/v1/validate') {
+    requireMethod(method, 'POST');
+    await handleValidate(req, res, config);
+    return;
+  }
+
+  throw new HttpError(404, `no route for ${method} ${path}`, 'NotFound');
+}
+
+function requireMethod(actual: string, expected: string): void {
+  if (actual !== expected) {
+    throw new HttpError(405, `method ${actual} not allowed; use ${expected}`, 'MethodNotAllowed');
+  }
+}
+
+export interface StartedServer {
+  server: Server;
+  host: string;
+  port: number;
+  close: () => Promise<void>;
+}
+
+/** Build the server and bind it, warning if it is reachable off-host. */
+export function startServer(options: ServerOptions = {}): Promise<StartedServer> {
+  const config = resolveConfig(options);
+  const server = createServer(config);
+
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(config.port, config.host, () => {
+      server.removeListener('error', reject);
+      const address = server.address();
+      const port = typeof address === 'object' && address ? address.port : config.port;
+
+      if (isPubliclyBound(config.host)) {
+        config.log(
+          `WARNING: heddle-server is bound to ${config.host}:${port}, which may be reachable from ` +
+            `other hosts. There is NO AUTHENTICATION, and every request can execute the ` +
+            `executables in the configured tools directory. Do not expose this to a network ` +
+            `you do not fully control.`,
+        );
+      }
+
+      config.log(`heddle-server listening on http://${config.host}:${port}`);
+      config.log(`  tools dir: ${config.toolsDir ?? '(none — tool nodes will fail)'}`);
+      config.log(`  flows root: ${config.flowsRoot ?? '(none — inline flows only)'}`);
+
+      resolve({
+        server,
+        host: config.host,
+        port,
+        close: () =>
+          new Promise<void>((done, fail) => {
+            server.close((err) => (err ? fail(err) : done()));
+            server.closeAllConnections?.();
+          }),
+      });
+    });
+  });
+}

@@ -14,6 +14,19 @@ Define multi-step AI workflows as JSON, wire up LLM-powered agents and external 
 - **Validation** - Spec-level and graph-level validation catches errors before execution
 - **Scaffolding** - `heddle init` generates a project template to get started quickly
 
+## Packages
+
+This repository is a pnpm workspace:
+
+| Package | Description |
+|---|---|
+| [`@heddle/core`](packages/core) | The engine: spec parsing, graph compilation, node executors, runner, tools, LLM providers. No CLI dependencies — use it as a library. |
+| [`@heddle/cli`](packages/cli) | The `heddle` command: run, validate, init, and interactive chat. |
+| [`@heddle/server`](packages/server) | HTTP API over the same engine, with SSE streaming of execution events. **Unauthenticated — read its [README](packages/server/README.md) before binding it anywhere but localhost.** |
+
+`vendor/agentspec` holds the Oracle Agent Spec TypeScript SDK, vendored because
+it is not published to npm. See [vendor/agentspec/VENDOR.md](vendor/agentspec/VENDOR.md).
+
 ## Installation
 
 ```bash
