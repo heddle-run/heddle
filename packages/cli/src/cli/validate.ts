@@ -1,9 +1,12 @@
 import { Command } from 'commander';
-import { compile } from '../graph/compile.js';
-import { validate } from '../graph/validate.js';
-import { FileRegistry } from '../tool/registry.js';
-import { collectToolNames } from '../spec/types.js';
-import { loadFlow, loadComponent } from './util.js';
+import {
+  compile,
+  validate,
+  loadFlow,
+  loadComponent,
+  collectToolNames,
+  FileRegistry,
+} from '@specrun/core';
 
 export const validateCommand = new Command('validate')
   .description('Validate an Agent Spec component (Flow, Agent, Swarm, etc.)')

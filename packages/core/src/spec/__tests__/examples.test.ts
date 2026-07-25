@@ -1,9 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { readdirSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import { loadComponent } from '../../cli/util.js';
+import { loadComponent } from '../load.js';
 
-const examplesDir = join(import.meta.dirname, '../../../examples');
+// The example specs live at the repository root, not inside this package:
+// packages/core/src/spec/__tests__ -> spec -> src -> core -> packages -> root.
+const examplesDir = join(import.meta.dirname, '../../../../../examples');
 
 /** Recursively collect all YAML/JSON spec files from the examples directory. */
 function collectSpecFiles(dir: string): string[] {

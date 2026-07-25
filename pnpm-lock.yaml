@@ -7,10 +7,19 @@ settings:
 importers:
 
   .:
+    devDependencies:
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.4(@types/node@22.19.17)(tsx@4.21.0)(yaml@2.8.3)
+
+  packages/cli:
     dependencies:
-      agentspec:
+      '@specrun/core':
         specifier: workspace:*
-        version: link:vendor/agentspec
+        version: link:../core
       commander:
         specifier: ^13.1.0
         version: 13.1.0
@@ -23,9 +32,6 @@ importers:
       ink-text-input:
         specifier: ^6.0.0
         version: 6.0.0(ink@6.8.0(@types/react@19.2.14)(react@19.2.5))(react@19.2.5)
-      openai:
-        specifier: ^4.85.0
-        version: 4.104.0(ws@8.20.0)(zod@3.25.76)
       react:
         specifier: ^19.2.4
         version: 19.2.5
@@ -36,12 +42,34 @@ importers:
       '@types/react':
         specifier: ^19.2.14
         version: 19.2.14
+      agentspec:
+        specifier: workspace:*
+        version: link:../../vendor/agentspec
       tsup:
         specifier: ^8.4.0
         version: 8.5.1(postcss@8.5.10)(tsx@4.21.0)(typescript@5.9.3)(yaml@2.8.3)
       tsx:
         specifier: ^4.19.0
         version: 4.21.0
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+
+  packages/core:
+    dependencies:
+      openai:
+        specifier: ^4.85.0
+        version: 4.104.0(ws@8.20.0)(zod@3.25.76)
+    devDependencies:
+      '@types/node':
+        specifier: ^22.13.0
+        version: 22.19.17
+      agentspec:
+        specifier: workspace:*
+        version: link:../../vendor/agentspec
+      tsup:
+        specifier: ^8.4.0
+        version: 8.5.1(postcss@8.5.10)(tsx@4.21.0)(typescript@5.9.3)(yaml@2.8.3)
       typescript:
         specifier: ^5.7.0
         version: 5.9.3

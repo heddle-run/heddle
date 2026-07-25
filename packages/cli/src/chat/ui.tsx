@@ -1,10 +1,12 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { render, Box, Text, useInput, useApp } from 'ink';
 import TextInput from 'ink-text-input';
-import type { CompiledGraph } from '../graph/types.js';
-import type { RunnerOptions } from '../runner/options.js';
-import type { Event } from '../runner/events.js';
-import { Runner } from '../runner/runner.js';
+import {
+  Runner,
+  type CompiledGraph,
+  type RunnerOptions,
+  type Event,
+} from '@specrun/core';
 import type { ChatSession } from './session.js';
 import { addMessage } from './session.js';
 import { getToolIcon, getToolTitle, formatDuration } from './tool-display.js';

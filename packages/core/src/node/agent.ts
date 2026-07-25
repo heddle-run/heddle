@@ -125,9 +125,6 @@ export class AgentExecutor implements NodeExecutor {
             duration: Date.now() - startedAt,
           });
 
-          if (this.deps.verbose) {
-            console.error(`  Tool "${tc.name}" result: ${resultJSON}`);
-          }
           messages.push({
             role: 'tool',
             tool_call_id: tc.id,
@@ -145,9 +142,6 @@ export class AgentExecutor implements NodeExecutor {
             error: toolErr,
           });
 
-          if (this.deps.verbose) {
-            console.error(`  Tool "${tc.name}" error: ${err}`);
-          }
           messages.push({
             role: 'tool',
             tool_call_id: tc.id,
@@ -180,12 +174,6 @@ export class AgentExecutor implements NodeExecutor {
     const toolDef = this.deps.toolRegistry.lookup(tc.name);
     if (!toolDef) {
       throw new ToolError(`"${tc.name}" not found in registry`);
-    }
-
-    if (this.deps.verbose) {
-      console.error(
-        `  Executing tool "${tc.name}" with args: ${JSON.stringify(args)}`,
-      );
     }
 
     const result = await this.deps.toolExecutor.execute(

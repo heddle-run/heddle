@@ -4,6 +4,11 @@ import type { EventHandler } from './events.js';
 export interface RunnerOptions {
   maxIterations: number;
   timeout: number;
+  /**
+   * Advisory only: the engine never writes to stdout or stderr. Consumers may
+   * consult this when deciding how much detail to render from the events they
+   * receive via {@link eventHandler}.
+   */
   verbose: boolean;
   eventHandler?: EventHandler;
 }

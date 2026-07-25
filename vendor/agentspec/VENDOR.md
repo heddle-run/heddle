@@ -36,6 +36,21 @@ Source is vendored rather than a prebuilt `dist/`: the source tree is ~400 KB,
 while a built `dist/` is ~8.5 MB, dominated by two 3.85 MB rolled-up `.d.ts`
 files.
 
+## How it is built and consumed
+
+The workspace root's `prepare` script (`build:vendor`) builds this package after
+every `pnpm install`, so a freshly cloned tree can be typechecked and tested
+without a separate build step. It invokes this package's own `tsup` binary by
+path rather than `pnpm --filter agentspec build`: a nested `pnpm` inside an
+install lifecycle script deadlocks against the workspace lock the parent install
+holds.
+
+Consumers (`@heddle/core`, `@heddle/cli`) list `agentspec` as a **devDependency**
+and bundle it into their own `dist/` via tsup's `noExternal`. It must never be a
+runtime dependency of a published package: it is not on npm, and the `agentspec`
+name there belongs to an unrelated project, so a published `dependencies` entry
+would resolve to the wrong code.
+
 ## Local modifications
 
 None. `src/`, `tsconfig.json`, and `tsup.config.ts` are unmodified from the

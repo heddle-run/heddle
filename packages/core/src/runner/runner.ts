@@ -44,12 +44,6 @@ export class Runner {
         throw new RunError('operation was aborted');
       }
 
-      if (this.opts.verbose) {
-        console.error(
-          `Executing node: ${current.name} (${current.type})`,
-        );
-      }
-
       this.emit({
         type: 'node_start',
         nodeName: current.name,

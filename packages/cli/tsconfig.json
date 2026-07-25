@@ -1,0 +1,18 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    // No `rootDir`: the `paths` mapping below pulls @specrun/core's sources
+    // into the program, which sit outside this package. Emit is tsup's job;
+    // `typecheck` runs with --noEmit, so rootDir buys nothing here.
+    "jsx": "react-jsx",
+    // Resolve the workspace dependency to its sources so `typecheck` does not
+    // require a prior `build` of @specrun/core. Publishing and runtime both go
+    // through the package's `exports` map, which points at dist.
+    "paths": {
+      "@specrun/core": ["../core/src/index.ts"]
+    }
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "exclude": ["node_modules", "dist", "**/__tests__/**"]
+}

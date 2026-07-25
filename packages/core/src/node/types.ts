@@ -1,5 +1,6 @@
 import type { State } from '../state/state.js';
 import type { Executor, Registry } from '../tool/types.js';
+import type { EventHandler } from '../runner/events.js';
 
 /** NodeExecutor executes a node and returns the output state. */
 export interface NodeExecutor {
@@ -11,6 +12,5 @@ export interface NodeExecutor {
 export interface Dependencies {
   toolExecutor?: Executor;
   toolRegistry?: Registry;
-  verbose?: boolean;
-  eventHandler?: (event: import('../runner/events.js').Event) => void;
+  eventHandler?: EventHandler;
 }

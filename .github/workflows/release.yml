@@ -31,13 +31,19 @@ jobs:
         id: version
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
-      # Bump package.json version and commit back to main
-      - name: Bump package.json version
+      # Bump every publishable package in lockstep and commit back to main.
+      # Cross-package deps use `workspace:*`, which pnpm rewrites to the
+      # concrete version at publish time, so only the versions need bumping.
+      - name: Bump package versions
         run: |
-          pnpm version "${{ steps.version.outputs.version }}" --no-git-tag-version
+          pnpm -r --filter './packages/*' exec \
+            npm version "${{ steps.version.outputs.version }}" \
+            --no-git-tag-version --allow-same-version
+          npm version "${{ steps.version.outputs.version }}" \
+            --no-git-tag-version --allow-same-version
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add package.json pnpm-lock.yaml
+          git add package.json packages/*/package.json pnpm-lock.yaml
           git commit -m "Bump version to ${{ steps.version.outputs.version }}"
           git push origin HEAD:main
 
@@ -54,9 +60,12 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # Publish to npm
+      # Publish to npm. `pnpm -r publish` walks the workspace in topological
+      # order, so @specrun/core goes out before the packages that depend on
+      # it. Private packages (the workspace root, vendor/agentspec) are
+      # skipped automatically.
       - name: Publish to npm
-        run: pnpm publish --provenance --access public --no-git-checks
+        run: pnpm -r publish --provenance --access public --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 

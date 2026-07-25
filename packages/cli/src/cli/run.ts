@@ -1,15 +1,18 @@
 import { Command } from 'commander';
-import { compile } from '../graph/compile.js';
-import { validate } from '../graph/validate.js';
-import { FileRegistry } from '../tool/registry.js';
-import { SubprocessExecutor } from '../tool/executor.js';
-import { Runner } from '../runner/runner.js';
-import { DEFAULT_RUNNER_OPTIONS } from '../runner/options.js';
-import type { RunnerOptions } from '../runner/options.js';
-import type { Event } from '../runner/events.js';
-import { collectToolNames, propertyTitle } from '../spec/types.js';
-import { loadFlow } from './util.js';
-import type { ParsedFlow } from '../spec/types.js';
+import {
+  compile,
+  validate,
+  loadFlow,
+  collectToolNames,
+  propertyTitle,
+  FileRegistry,
+  SubprocessExecutor,
+  Runner,
+  DEFAULT_RUNNER_OPTIONS,
+  type RunnerOptions,
+  type Event,
+  type ParsedFlow,
+} from '@specrun/core';
 import { getToolIcon, getToolTitle, formatDuration } from '../chat/tool-display.js';
 
 function buildRunnerOpts(verbose: boolean, chat: boolean): RunnerOptions {
@@ -19,12 +22,16 @@ function buildRunnerOpts(verbose: boolean, chat: boolean): RunnerOptions {
       switch (e.type) {
         case 'tool_call':
           console.error(`[${e.nodeName}] ${getToolIcon(e.toolName!)} ${getToolTitle(e.toolName!, e.toolArgs ?? {})}`);
+          if (verbose) {
+            console.error(`[${e.nodeName}]   args: ${JSON.stringify(e.toolArgs ?? {})}`);
+          }
           break;
         case 'tool_result':
           if (e.error) {
             console.error(`[${e.nodeName}] Error: ${e.toolName} (${formatDuration(e.duration ?? 0)}): ${e.error.message}`);
           } else if (verbose) {
             console.error(`[${e.nodeName}] Done: ${e.toolName} (${formatDuration(e.duration ?? 0)})`);
+            console.error(`[${e.nodeName}]   result: ${JSON.stringify(e.toolResult)}`);
           }
           break;
         case 'node_start':
@@ -87,7 +94,6 @@ export const runCommand = new Command('run')
       const deps = {
         toolExecutor: new SubprocessExecutor(),
         toolRegistry: reg,
-        verbose,
         eventHandler: (e: Event) => opts.eventHandler?.(e),
       };
 
