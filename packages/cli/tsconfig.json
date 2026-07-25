@@ -1,0 +1,18 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    // No `rootDir`: the `paths` mapping below pulls @heddle/core's sources
+    // into the program, which sit outside this package. Emit is tsup's job;
+    // `typecheck` runs with --noEmit, so rootDir buys nothing here.
+    "jsx": "react-jsx",
+    // Resolve the workspace dependency to its sources so `typecheck` does not
+    // require a prior `build` of @heddle/core. Publishing and runtime both go
+    // through the package's `exports` map, which points at dist.
+    "paths": {
+      "@heddle/core": ["../core/src/index.ts"]
+    }
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "exclude": ["node_modules", "dist", "**/__tests__/**"]
+}

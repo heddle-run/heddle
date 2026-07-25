@@ -36,5 +36,9 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # NOTE: "specrun" here is the existing Cloudflare Pages project name,
+          # not the product name. Renaming it requires creating the project on
+          # the Cloudflare side first, so it is deliberately left alone by the
+          # heddle rename -- same as the git remote.
           command: pages deploy out --project-name specrun
           workingDirectory: website

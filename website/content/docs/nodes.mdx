@@ -1,94 +1,172 @@
 ---
 title: Nodes
-description: Reference for all node types available in Specrun workflows.
+description: Reference for all node types available in Heddle workflows.
 ---
 
-Nodes are the building blocks of a flow. Each node performs a specific function in your workflow.
+Nodes are the building blocks of a flow. Each node performs one step of your workflow.
+
+The examples below are single components, as they appear under a flow's `$referenced_components`. See [Flows](/docs/flows) for how they are wired together.
 
 ## StartNode
 
-The entry point of a flow. Defines the expected inputs.
+The entry point of a flow. Its `outputs` are the values the flow expects to be given at run time — they are what `--input` populates.
 
 ```yaml
-- name: start
-  type: StartNode
-  inputs:
-    - query: string
-    - max_results: integer
+component_type: StartNode
+name: start
+outputs:
+  - title: query
+    type: string
+  - title: max_results
+    type: integer
+    default: 10
 ```
+
+A flow must have exactly one `StartNode`.
 
 ## EndNode
 
-The exit point of a flow. Can define named branches for multi-branch flows.
+The exit point of a flow. Its `inputs` are the values that end up in the run's final output. `branch_name` labels which branch this node terminates, for flows that end in more than one place.
 
 ```yaml
-- name: end
-  type: EndNode
+component_type: EndNode
+name: end
+inputs:
+  - title: result
+    type: string
+branch_name: next
 ```
+
+Reaching any `EndNode` ends the run, and the state at that point is printed as JSON.
 
 ## AgentNode
 
-An LLM-powered agent that can call tools autonomously. The agent runs a tool-calling loop — it sends a prompt to the LLM, the LLM decides which tools to call, the tools execute, and the results feed back to the LLM until the task is complete.
+An LLM-powered agent that can call tools autonomously. The node sends the prompt to the LLM, the LLM decides which tools to call, the tools execute, and their results feed back to the LLM until it answers without requesting more tools.
 
 ```yaml
-- name: researcher
-  type: AgentNode
-  agent:
-    systemPrompt: |
-      You are a research assistant.
-      Search the web and summarize findings.
-    tools:
-      - web_search
-      - calculator
-  llm:
-    type: OpenAiConfig
-    model: gpt-4o
+component_type: AgentNode
+name: researcher
+inputs:
+  - title: query
+    type: string
+outputs:
+  - title: result
+    type: string
+agent:
+  component_type: Agent
+  name: research-agent
+  system_prompt: |
+    You are a research assistant.
+    Answer the user's question: {{query}}
+  llm_config:
+    component_type: OpenAiConfig
+    name: openai
+    model_id: gpt-4o
+  tools:
+    - component_type: ServerTool
+      name: web_search
+      description: Search the web for information
+      inputs:
+        - title: query
+          type: string
+      outputs:
+        - title: results
+          type: string
 ```
 
-The agent runs up to 10 rounds of tool calling by default.
+The nested `agent` carries the prompt, the LLM config, and the tool declarations. `system_prompt` supports `{{variable}}` substitution from the node's input state.
+
+The agent runs at most 10 rounds of tool calling; exceeding that fails the run. Every declared tool input is treated as required — optional tool parameters are not yet expressible.
+
+The node's output is the model's final message under the key `result`. If that message is itself a JSON object, its keys are merged into the output as well.
 
 ## LlmNode
 
-Runs a prompt template through an LLM. Supports `{{variable}}` substitution from input data.
+Runs a prompt template through an LLM, with no tool-calling loop. `prompt_template` supports `{{variable}}` substitution from the node's input state.
 
 ```yaml
-- name: summarizer
-  type: LlmNode
-  prompt: |
-    Summarize the following text in 3 bullet points:
-    {{text}}
-  llm:
-    type: OpenAiConfig
-    model: gpt-4o
+component_type: LlmNode
+name: summarizer
+prompt_template: |
+  Summarize the following text in three bullet points:
+  {{text}}
+llm_config:
+  component_type: OpenAiConfig
+  name: openai
+  model_id: gpt-4o
+inputs:
+  - title: text
+    type: string
+outputs:
+  - title: generated_text
+    type: string
 ```
+
+The response is written to the output key `generated_text`.
+
+<Callout type="warn">
+Substitution only fills in string values. A placeholder bound to a number, object, or array is replaced with an empty string, and a placeholder with no matching key is left in the prompt verbatim.
+</Callout>
 
 ## ToolNode
 
-Executes an external tool directly without an LLM.
+Executes an external tool directly, with no LLM involved. The node's input state is passed to the tool as JSON, and the tool's JSON output becomes the node's output.
 
 ```yaml
-- name: fetch_data
-  type: ToolNode
-  tool:
-    name: fetch_api
-    inputs:
-      - url: string
+component_type: ToolNode
+name: fetch_data
+inputs:
+  - title: url
+    type: string
+outputs:
+  - title: body
+    type: string
+tool:
+  component_type: ServerTool
+  name: fetch_api
+  description: Fetch a URL and return the response body
+  inputs:
+    - title: url
+      type: string
+  outputs:
+    - title: body
+      type: string
 ```
+
+The tool's `name` must match an executable in `--tools-dir`. See [Tools](/docs/tools).
 
 ## BranchingNode
 
-Routes execution to different branches based on input values.
+Routes execution to a named branch by looking up an input value in `mapping`. Mapping keys are input values; mapping values are branch names, which must match the `from_branch` of an outgoing control flow edge.
 
 ```yaml
-- name: router
-  type: BranchingNode
-  branches:
-    - name: positive
-      condition:
-        field: sentiment
-        value: positive
-    - name: negative
-      condition:
-        field: sentiment
-        value: negative
+component_type: BranchingNode
+name: router
+inputs:
+  - title: branching_mapping_key
+    type: string
+mapping:
+  tech: tech_branch
+  science: science_branch
+  DEFAULT_BRANCH: default_branch
 ```
+
+The value is read from the input named `branching_mapping_key`. Wire it with a data flow edge:
+
+```yaml
+data_flow_connections:
+  - component_type: DataFlowEdge
+    name: category_to_router
+    source_node:
+      $component_ref: classifier
+    source_output: category
+    destination_node:
+      $component_ref: router
+    destination_input: branching_mapping_key
+```
+
+Unmatched values fall back in two steps: to the branch named by the special `DEFAULT_BRANCH` mapping key if you define one, and otherwise to the branch literally named `default`. If neither exists as an outgoing edge, the run fails with a "no next node" error — so give every branching node a default path.
+
+<Callout type="warn">
+If `branching_mapping_key` is missing from the input state entirely, the node falls back to the first string value it finds in that state, which makes routing depend on key ordering. Always wire `branching_mapping_key` explicitly.
+</Callout>

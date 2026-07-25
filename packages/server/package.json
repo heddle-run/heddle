@@ -1,0 +1,64 @@
+{
+  "name": "@heddle/server",
+  "version": "0.2.0-beta.1",
+  "description": "HTTP API for the heddle Agent Spec execution engine",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/spichen/specrun.git",
+    "directory": "packages/server"
+  },
+  "homepage": "https://github.com/spichen/specrun",
+  "bugs": {
+    "url": "https://github.com/spichen/specrun/issues"
+  },
+  "keywords": [
+    "agent",
+    "workflow",
+    "llm",
+    "ai",
+    "agentic",
+    "agent-spec",
+    "http",
+    "sse"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "heddle-server": "./dist/heddle-server.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsx src/heddle-server.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@heddle/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.0",
+    "tsup": "^8.4.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}

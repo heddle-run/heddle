@@ -1,14 +1,14 @@
-# Landing Page Design Prompt for Specrun
+# Landing Page Design Prompt for Heddle
 
 Use this prompt with a design generation tool (e.g., v0, Figma AI, or similar):
 
 ---
 
-Design a modern, developer-focused landing page for **Specrun** — a lightweight CLI framework for building and running agentic AI workflows using the Open Agent Specification.
+Design a modern, developer-focused landing page for **Heddle** — a lightweight CLI framework for building and running agentic AI workflows using the Open Agent Specification.
 
 ## Brand Identity
 
-- **Name:** Specrun
+- **Name:** Heddle
 - **Tagline:** "Define agents in YAML. Run them from the CLI."
 - **Tone:** Technical but approachable. Clean, minimal, confident. Think Vercel/Stripe-level polish for a developer tool.
 - **Color palette:** Dark background (near-black or deep navy) with a vibrant accent color (electric blue or green). Monospace typography for code elements, clean sans-serif for copy.
@@ -17,12 +17,12 @@ Design a modern, developer-focused landing page for **Specrun** — a lightweigh
 
 ### 1. Hero Section
 - Large headline: "Build Agentic AI Workflows Without Writing Orchestration Code"
-- Subtitle: "Specrun is a lightweight CLI that compiles declarative agent specs into executable graphs — with LLM tool-calling, branching logic, and external tool support built in."
+- Subtitle: "Heddle is a lightweight CLI that compiles declarative agent specs into executable graphs — with LLM tool-calling, branching logic, and external tool support built in."
 - Two CTAs: "Get Started" (primary) and "View on GitHub" (secondary/outlined)
 - Animated or static terminal mockup showing:
   ```
-  $ specrun init my-agent
-  $ specrun run flow.yaml --input '{"query": "What is quantum computing?"}'
+  $ heddle init my-agent
+  $ heddle run flow.yaml --input '{"query": "What is quantum computing?"}'
   ```
 - Small badge: "Open Agent Specification compliant" and "v0.1.0-beta"
 
@@ -68,28 +68,28 @@ Side-by-side layout:
 Everything executes on your machine. Tools run as child processes. State flows immutably through the graph. No cloud service, no API gateway, no infrastructure to manage.
 
 **Highlight 2: "Built on the Open Agent Specification"**
-Specrun implements Oracle's Open Agent Specification — a portable, standardized format for defining agent workflows. Your specs work across any compliant runtime.
+Heddle implements Oracle's Open Agent Specification — a portable, standardized format for defining agent workflows. Your specs work across any compliant runtime.
 
 **Highlight 3: "From Zero to Agent in 30 Seconds"**
-`specrun init` scaffolds a complete project with a sample flow, tools directory, and ready-to-run configuration.
+`heddle init` scaffolds a complete project with a sample flow, tools directory, and ready-to-run configuration.
 
 ### 7. Install / Quick Start
 Dark terminal-style card:
 ```bash
 # Install via npm
-npm install -g @specrun/cli
+npm install -g @heddle/cli
 
 # Or via Homebrew
-brew install spichen/tap/specrun
+brew install spichen/tap/heddle
 
 # Create your first agent
-specrun init my-agent
+heddle init my-agent
 cd my-agent
-specrun run flow.yaml --input '{"query": "Hello, world"}'
+heddle run flow.yaml --input '{"query": "Hello, world"}'
 ```
 
 ### 8. Open Source CTA / Footer
-- "Specrun is open source and MIT licensed."
+- "Heddle is open source and MIT licensed."
 - GitHub stars badge, npm version badge
 - Links: GitHub, Documentation, Examples, npm
 - "Built by spichen"

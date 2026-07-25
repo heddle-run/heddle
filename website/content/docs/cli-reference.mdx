@@ -1,50 +1,82 @@
 ---
 title: CLI Reference
-description: Complete reference for all Specrun CLI commands and options.
+description: Complete reference for all Heddle CLI commands and options.
 ---
 
-## specrun run
+## Global Options
+
+These are declared on `heddle` itself and may appear before or after the subcommand:
+
+| Option | Description |
+|--------|-------------|
+| `--verbose` | Log every node as it starts and completes, plus tool arguments and results |
+
+There is currently no `--version` flag. Use `heddle --help` to confirm the CLI is installed.
+
+## heddle run
 
 Execute an Agent Spec flow.
 
 ```bash
-specrun run <flow> [options]
+heddle run <flow> [options]
 ```
 
 ### Arguments
 
 | Argument | Description |
 |----------|-------------|
-| `flow` | Path to the flow file (JSON or YAML) |
+| `flow` | Path to the flow file (JSON or YAML, detected by extension) |
 
 ### Options
 
 | Option | Description |
 |--------|-------------|
 | `--tools-dir <path>` | Directory containing tool executables |
-| `--input <json>` | Input data as a JSON string |
-| `--chat` | Start an interactive chat session |
-| `--verbose` | Enable verbose logging |
+| `--input <json>` | Input data as a JSON object |
+| `--chat` | Start an interactive chat session instead of a single run |
 
 ### Examples
 
 ```bash
 # Basic run
-specrun run flow.yaml --tools-dir ./tools
+heddle run flow.yaml --tools-dir ./tools
 
 # With input data
-specrun run flow.json --tools-dir ./tools --input '{"query": "quantum computing"}'
+heddle run flow.json --tools-dir ./tools --input '{"query": "quantum computing"}'
 
 # Interactive chat mode
-specrun run flow.yaml --tools-dir ./tools --chat
+heddle run flow.yaml --tools-dir ./tools --chat
+
+# Verbose logging
+heddle --verbose run flow.yaml --tools-dir ./tools
 ```
 
-## specrun validate
+### Output
+
+The final state is printed to stdout as formatted JSON. Progress, tool activity, and errors go to stderr, so stdout stays pipeable:
+
+```bash
+heddle run flow.json --input '{"query": "hello"}' | jq .result
+```
+
+The keys of `--input` should match the outputs declared on the flow's start node. Malformed JSON fails immediately; keys the flow does not declare are carried in the state but never read.
+
+### Chat Mode
+
+`--chat` opens a multi-turn session that re-runs the whole flow for each message, passing the prior conversation to the agent. Transcripts are written to `~/.heddle/conversations/<session-id>.json` after every message.
+
+Your message is bound to the first output declared on the flow's start node, falling back to `query` if it declares none. Type `/exit` or `/quit` to leave.
+
+<Callout type="warn">
+An in-flight run cannot be interrupted. `Ctrl+C` and `/exit` close the session, but a flow already executing keeps running until it finishes or hits the five-minute timeout.
+</Callout>
+
+## heddle validate
 
 Validate an Agent Spec component.
 
 ```bash
-specrun validate <spec> [options]
+heddle validate <spec> [options]
 ```
 
 ### Arguments
@@ -62,16 +94,21 @@ specrun validate <spec> [options]
 ### What It Checks
 
 1. Schema validation against the Open Agent Specification
-2. Graph compilation (for flows)
-3. Edge validation (control flow and data flow)
-4. Tool existence (when `--tools-dir` is provided)
+2. Graph compilation and structural validation, for flows
+3. Existence of an executable for each declared `ServerTool`, when `--tools-dir` is given
 
-## specrun init
+Steps 2 and 3 need the same runtime configuration a real run does — notably a resolvable API key for every LLM config in the spec.
+
+<Callout type="warn">
+`validate` currently exits 0 even when steps 2 and 3 fail. Any error after schema validation is caught and reported as `Graph validation skipped (unsupported node types or missing runtime config)`, which also hides genuine problems such as a missing tool executable or an unreachable node. Until this is tightened, read the printed output rather than relying on the exit code, and treat `Graph validation passed` as the signal you actually want to see.
+</Callout>
+
+## heddle init
 
 Scaffold a new project.
 
 ```bash
-specrun init <project-name>
+heddle init <project-name>
 ```
 
-Creates a project directory with a template `flow.json` and a sample tool in `tools/`.
+Creates a project directory containing a template `flow.json` and a sample tool in `tools/`. Existing files at those paths are overwritten.

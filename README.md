@@ -1,4 +1,4 @@
-# specrun
+# heddle
 
 A lightweight CLI framework for building and executing agentic workflows using the [Open Agent Specification](https://oracle.github.io/agent-spec/).
 
@@ -12,16 +12,29 @@ Define multi-step AI workflows as JSON, wire up LLM-powered agents and external 
 - **External tools** - Tools are standalone executables (shell scripts, Python, etc.) that communicate via JSON over stdin/stdout
 - **Branching logic** - Conditional routing with `BranchingNode` for dynamic workflows
 - **Validation** - Spec-level and graph-level validation catches errors before execution
-- **Scaffolding** - `specrun init` generates a project template to get started quickly
+- **Scaffolding** - `heddle init` generates a project template to get started quickly
+
+## Packages
+
+This repository is a pnpm workspace:
+
+| Package | Description |
+|---|---|
+| [`@heddle/core`](packages/core) | The engine: spec parsing, graph compilation, node executors, runner, tools, LLM providers. No CLI dependencies — use it as a library. |
+| [`@heddle/cli`](packages/cli) | The `heddle` command: run, validate, init, and interactive chat. |
+| [`@heddle/server`](packages/server) | HTTP API over the same engine, with SSE streaming of execution events. **Unauthenticated — read its [README](packages/server/README.md) before binding it anywhere but localhost.** |
+
+`vendor/agentspec` holds the Oracle Agent Spec TypeScript SDK, vendored because
+it is not published to npm. See [vendor/agentspec/VENDOR.md](vendor/agentspec/VENDOR.md).
 
 ## Installation
 
 ```bash
 # npm
-npm install -g @specrun/cli
+npm install -g @heddle/cli
 
 # Homebrew
-brew install spichen/tap/specrun
+brew install spichen/tap/heddle
 ```
 
 ## Quick Start
@@ -29,7 +42,7 @@ brew install spichen/tap/specrun
 ### 1. Scaffold a new project
 
 ```bash
-specrun init my-project
+heddle init my-project
 ```
 
 This creates:
@@ -40,38 +53,70 @@ my-project/
   tools/example_tool.sh  - Example tool script
 ```
 
-### 2. Run a flow
+### 2. Set an API key
+
+The generated flow uses OpenAI, so export a key before running it:
 
 ```bash
-specrun run my-project/flow.json \
+export OPENAI_API_KEY=sk-...
+```
+
+Every provider needs a resolvable key, local ones included — see [LLM Configuration](#llm-configuration).
+
+### 3. Run a flow
+
+```bash
+heddle run my-project/flow.json \
   --tools-dir my-project/tools \
   --input '{"query": "hello"}'
 ```
 
-### 3. Validate a flow
+The final state is printed to stdout as JSON; progress and errors go to stderr.
+
+### 4. Validate a flow
 
 ```bash
-specrun validate my-project/flow.json --tools-dir my-project/tools
+heddle validate my-project/flow.json --tools-dir my-project/tools
 ```
 
 ## CLI Reference
 
 ```
-specrun [options] <command>
+heddle [options] <command>
 
 Options:
-  -v, --verbose   Enable verbose logging
+  --verbose                Enable verbose logging (may be placed before or
+                           after the subcommand)
 
 Commands:
   run <flow>               Run an Agent Spec flow (JSON or YAML)
     --tools-dir <dir>      Directory containing tool executables
     --input <json>         Input JSON object
+    --chat                 Open an interactive chat session
 
   validate <flow>          Validate a flow definition (JSON or YAML)
     --tools-dir <dir>      Directory containing tool executables
 
-  init <project-name>      Scaffold a new specrun project
+  init <project-name>      Scaffold a new heddle project
 ```
+
+There is no `--version` flag yet; use `heddle --help` to check the install.
+
+### Chat Mode
+
+`--chat` opens a multi-turn session that re-runs the flow for each message, passing the
+conversation so far to the agent. Transcripts are saved to
+`~/.heddle/conversations/<session-id>.json`. Type `/exit` to quit.
+
+Your message is bound to the first output declared on the flow's start node, falling back
+to `query` when none is declared.
+
+> **Note:** an in-flight run cannot be interrupted. `Ctrl+C` and `/exit` close the session,
+> but a flow already executing runs until it finishes or hits the five-minute timeout.
+
+> **Note:** `heddle validate` exits 0 even when graph or tool validation fails. Any error
+> after schema validation is reported as `Graph validation skipped`, which also hides real
+> problems such as a missing tool executable. Read its output rather than the exit code.
 
 ## How It Works
 
@@ -102,7 +147,15 @@ MESSAGE=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin
 echo "{\"response\": \"Echo: $MESSAGE\"}"
 ```
 
-Tools are referenced by name in flow definitions and resolved from the `--tools-dir` at runtime.
+Tools are declared inline as `ServerTool` components in the flow, and matched at runtime to an
+executable in `--tools-dir` by name. A tool's name is its filename with the extension stripped,
+so `fetch_api.py` is declared as `fetch_api`.
+
+> **Warning:** tools run as subprocesses of `heddle` and inherit its full environment,
+> API keys included. They are not sandboxed — a tool can read and write anything the invoking
+> user can. Only put executables you trust in a tools directory, and take particular care with
+> tools that execute commands or write files on a model's behalf, such as those in
+> `examples/coding-agent/`.
 
 ### Execution Pipeline
 
@@ -118,10 +171,12 @@ JSON file → Parse → Validate spec → Compile graph → Validate graph → R
 
 ### Runner Defaults
 
+These are fixed and not currently configurable from the CLI:
+
 | Setting | Default |
 |---------|---------|
-| Max iterations | 50 |
-| Timeout | 5 minutes |
+| Max nodes executed per run | 50 |
+| Total run timeout | 5 minutes |
 | Max tool rounds (per agent) | 10 |
 | Tool execution timeout | 30 seconds |
 
@@ -145,29 +200,42 @@ testdata/               Test flow definitions and tool scripts
 
 ## LLM Configuration
 
-LLM providers are configured in the flow's `llm_config` field. Supported types:
+LLM providers are configured in the `llm_config` field of an `Agent` or an `LlmNode`.
+Every config needs a `name` and a `model_id`. Supported types:
 
-| Config Type | Description |
-|-------------|-------------|
-| `OpenAiConfig` | OpenAI API (uses `OPENAI_API_KEY` env var or `api_key` in spec) |
-| `OpenAiCompatibleConfig` | Any OpenAI-compatible endpoint with a custom `url` |
-| `VllmConfig` | vLLM self-hosted endpoint |
-| `OllamaConfig` | Ollama local endpoint |
+| Config Type | `url` | Description |
+|-------------|-------|-------------|
+| `OpenAiConfig` | not accepted | OpenAI API (uses `OPENAI_API_KEY` env var or `api_key` in spec) |
+| `OpenAiCompatibleConfig` | required | Any OpenAI-compatible endpoint |
+| `VllmConfig` | required | vLLM self-hosted endpoint |
+| `OllamaConfig` | required | Ollama local endpoint |
+
+An `api_key` value beginning with `$` is resolved from the environment, so `api_key: $MY_KEY`
+reads `MY_KEY` and fails with a clear error when it is unset.
+
+> **Note:** an API key must be resolvable for every provider, including local ones. A config
+> with no `api_key` fails at startup unless `OPENAI_API_KEY` is set — even for Ollama and vLLM,
+> which ignore the key. Export any placeholder value for local servers.
 
 ## Development
 
+This repo uses [pnpm](https://pnpm.io/).
+
 ```bash
+# Install dependencies
+pnpm install
+
 # Run in development mode
-npm run dev -- run flow.json
+pnpm dev run flow.json
 
 # Run tests
-npm test
+pnpm test
 
 # Type check
-npm run typecheck
+pnpm typecheck
 
 # Build
-npm run build
+pnpm build
 ```
 
 ## License

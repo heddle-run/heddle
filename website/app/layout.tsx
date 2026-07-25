@@ -26,11 +26,11 @@ const instrumentSerif = Instrument_Serif({
 });
 
 export const metadata: Metadata = {
-  title: "Specrun - Build Agentic AI Workflows from the CLI",
+  title: "Heddle - Build Agentic AI Workflows from the CLI",
   description:
     "A lightweight CLI framework for building and running agentic AI workflows using the Open Agent Specification. Define in YAML, wire tools in any language, run from one command.",
   keywords: [
-    "specrun",
+    "heddle",
     "ai agents",
     "agentic workflows",
     "cli",

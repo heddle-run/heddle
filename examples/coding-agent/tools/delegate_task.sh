@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Delegate task tool: runs a sub-agent flow via specrun run.
+# Delegate task tool: runs a sub-agent flow via heddle run.
 set -euo pipefail
 INPUT=$(cat)
 
@@ -33,10 +33,12 @@ fi
 # Build the input JSON with the task
 INPUT_JSON=$(python3 -c "import json,sys; json.dump({'task': sys.argv[1]}, sys.stdout)" "$TASK")
 
-# Run the sub-agent flow via specrun
-OUTPUT=$(npx specrun run "$AGENT_SPEC" --input "$INPUT_JSON" 2>&1) || { echo "Error: sub-agent execution failed"; exit 1; }
+# Run the sub-agent flow via heddle. The `heddle` bin ships inside @heddle/cli,
+# so npx needs --package to find it; a bare `npx heddle` looks for a package
+# named "heddle" instead.
+OUTPUT=$(npx --package=@heddle/cli heddle run "$AGENT_SPEC" --input "$INPUT_JSON" 2>&1) || { echo "Error: sub-agent execution failed"; exit 1; }
 
-# Extract the result from the specrun output
+# Extract the result from the heddle output
 python3 -c "
 import json, sys
 

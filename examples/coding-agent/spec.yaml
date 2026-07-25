@@ -231,7 +231,7 @@ $referenced_components:
         - component_type: ServerTool
           id: tool-delegate-task
           name: delegate_task
-          description: "Delegate a task to a specialized sub-agent. Available agents: code_reviewer (reviews code for bugs, security, style), test_writer (generates test cases). The sub-agent runs as an independent specrun flow."
+          description: "Delegate a task to a specialized sub-agent. Available agents: code_reviewer (reviews code for bugs, security, style), test_writer (generates test cases). The sub-agent runs as an independent heddle flow."
           metadata: {}
           inputs:
             - title: agent_name

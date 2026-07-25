@@ -1,0 +1,67 @@
+{
+  "name": "@heddle/cli",
+  "version": "0.2.0-beta.1",
+  "description": "Lightweight CLI agentic workflow framework",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/spichen/specrun.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/spichen/specrun",
+  "bugs": {
+    "url": "https://github.com/spichen/specrun/issues"
+  },
+  "keywords": [
+    "cli",
+    "agent",
+    "workflow",
+    "llm",
+    "ai",
+    "openai",
+    "agentic"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "heddle": "./dist/heddle.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsx src/heddle.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@heddle/core": "workspace:*",
+    "commander": "^13.1.0",
+    "ink": "^6.8.0",
+    "ink-spinner": "^5.0.0",
+    "ink-text-input": "^6.0.0",
+    "react": "^19.2.4"
+  },
+  "devDependencies": {
+    "agentspec": "workspace:*",
+    "@types/node": "^22.13.0",
+    "@types/react": "^19.2.14",
+    "tsup": "^8.4.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}

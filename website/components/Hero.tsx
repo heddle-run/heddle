@@ -13,8 +13,8 @@ export default function Hero() {
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
 
   const commands = [
-    { label: "npm", cmd: "npm install -g @specrun/cli" },
-    { label: "brew", cmd: "brew install spichen/tap/specrun" },
+    { label: "npm", cmd: "npm install -g @heddle/cli" },
+    { label: "brew", cmd: "brew install spichen/tap/heddle" },
   ];
 
   const handleCopy = (cmd: string, idx: number) => {

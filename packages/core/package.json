@@ -1,0 +1,59 @@
+{
+  "name": "@heddle/core",
+  "version": "0.2.0-beta.1",
+  "description": "Execution engine for Oracle Open Agent Specification flows",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/spichen/specrun.git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://github.com/spichen/specrun",
+  "bugs": {
+    "url": "https://github.com/spichen/specrun/issues"
+  },
+  "keywords": [
+    "agent",
+    "workflow",
+    "llm",
+    "ai",
+    "openai",
+    "agentic",
+    "agent-spec"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "openai": "^4.85.0"
+  },
+  "devDependencies": {
+    "agentspec": "workspace:*",
+    "@types/node": "^22.13.0",
+    "tsup": "^8.4.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}

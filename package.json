@@ -1,7 +1,8 @@
 {
-  "name": "@specrun/cli",
-  "version": "0.1.0-beta6",
-  "description": "Lightweight CLI agentic workflow framework",
+  "name": "heddle-workspace",
+  "version": "0.2.0-beta.1",
+  "private": true,
+  "description": "Workspace root for heddle",
   "type": "module",
   "license": "MIT",
   "repository": {
@@ -12,49 +13,22 @@
   "bugs": {
     "url": "https://github.com/spichen/specrun/issues"
   },
-  "keywords": [
-    "cli",
-    "agent",
-    "workflow",
-    "llm",
-    "ai",
-    "openai",
-    "agentic"
-  ],
   "engines": {
     "node": ">=18"
   },
-  "main": "dist/index.js",
-  "bin": {
-    "specrun": "dist/index.js"
+  "packageManager": "pnpm@10.33.0",
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild"]
   },
-  "files": [
-    "dist",
-    "README.md",
-    "LICENSE"
-  ],
   "scripts": {
-    "build": "tsup",
-    "prepublishOnly": "npm run build",
-    "dev": "tsx src/index.ts",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "typecheck": "tsc --noEmit"
-  },
-  "dependencies": {
-    "agentspec": "file:../agent-spec/tsagentspec",
-    "commander": "^13.1.0",
-    "ink": "^6.8.0",
-    "ink-spinner": "^5.0.0",
-    "ink-text-input": "^6.0.0",
-    "openai": "^4.85.0",
-    "react": "^19.2.4"
+    "build:vendor": "cd vendor/agentspec && ./node_modules/.bin/tsup",
+    "prepare": "pnpm run build:vendor",
+    "build": "pnpm -r --if-present build",
+    "test": "pnpm -r --if-present test",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "dev": "pnpm --filter @heddle/cli dev"
   },
   "devDependencies": {
-    "@types/node": "^22.13.0",
-    "@types/react": "^19.2.14",
-    "tsup": "^8.4.0",
-    "tsx": "^4.19.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
   }

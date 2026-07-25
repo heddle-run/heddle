@@ -8,7 +8,7 @@ export default function Home() {
       className="landing-page"
       nav={{
         title: (
-          <span className="font-semibold tracking-tight">specrun</span>
+          <span className="font-semibold tracking-tight">heddle</span>
         ),
         url: "/",
       }}
