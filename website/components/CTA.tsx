@@ -1,69 +1,46 @@
-"use client";
-
-import GradientBlobs from "./GradientBlobs";
-import SectionReveal from "./SectionReveal";
+import { ArrowRight } from "lucide-react";
+import Container from "./ui/Container";
+import Texture from "./ui/Texture";
+import Button from "./ui/Button";
+import CopyCommand from "./CopyCommand";
+import { GITHUB_URL, installCommands } from "@/lib/constants";
 
 export default function CTA() {
   return (
-    <section id="get-started" className="relative overflow-hidden py-32">
-      <GradientBlobs className="opacity-60" />
+    <section id="start" className="relative overflow-hidden bg-ink text-paper">
+      <Texture variant="radial-inverted" />
+      <Texture variant="warp-inverted" />
 
-      <div className="relative z-10 mx-auto max-w-3xl px-6 text-center">
-        <SectionReveal>
-          <h2 className="text-4xl font-bold tracking-tight sm:text-5xl md:text-6xl">
-            Get started in seconds
-          </h2>
-        </SectionReveal>
+      <Container className="relative py-24 text-center md:py-36">
+        <p className="font-mono text-[0.625rem] uppercase tracking-[0.3em] text-paper/50">
+          Thread the loom
+        </p>
 
-        <SectionReveal delay={0.1}>
-          <div className="mt-12 overflow-hidden rounded-2xl border border-card-border bg-card p-6 text-left">
-            <pre className="overflow-x-auto font-mono text-sm leading-relaxed">
-              <code>
-                <span className="terminal-comment syntax-comment">
-                  # Install via npm
-                </span>
-                {"\n"}
-                <span className="terminal-prompt">$</span>{" "}
-                <span className="terminal-command">npm install -g</span>{" "}
-                <span className="terminal-string">@heddle/cli</span>
-                {"\n\n"}
-                <span className="syntax-comment"># Or via Homebrew</span>
-                {"\n"}
-                <span className="terminal-prompt">$</span>{" "}
-                <span className="terminal-command">brew install</span>{" "}
-                <span className="terminal-string">spichen/tap/heddle</span>
-                {"\n\n"}
-                <span className="syntax-comment">
-                  # Create and run your first agent
-                </span>
-                {"\n"}
-                <span className="terminal-prompt">$</span>{" "}
-                <span className="terminal-command">heddle init</span>{" "}
-                <span className="terminal-string">my-agent</span>
-                {"\n"}
-                <span className="terminal-prompt">$</span>{" "}
-                <span className="terminal-command">heddle run</span>{" "}
-                <span className="terminal-string">
-                  my-agent/flow.json
-                </span>{" "}
-                <span className="terminal-flag">--tools-dir</span>{" "}
-                <span className="terminal-string">my-agent/tools</span>
-              </code>
-            </pre>
-          </div>
-        </SectionReveal>
+        <h2 className="mx-auto mt-8 max-w-[14ch] font-display text-5xl leading-[0.95] tracking-tighter sm:text-7xl md:text-8xl">
+          Zero to agent in one command.
+        </h2>
 
-        <SectionReveal delay={0.2}>
+        <div className="mx-auto mt-14 flex max-w-xl flex-col gap-3">
+          {installCommands.map((c) => (
+            <CopyCommand key={c.label} label={c.label} command={c.cmd} inverted />
+          ))}
+        </div>
+
+        <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
+          <Button href="/docs" variant="inverted">
+            Get started
+            <ArrowRight size={16} strokeWidth={1.5} />
+          </Button>
           <a
-            href={`https://github.com/spichen/specrun#readme`}
+            href={GITHUB_URL}
             target="_blank"
             rel="noopener noreferrer"
-            className="mt-10 inline-block rounded-full bg-white px-10 py-4 text-lg font-medium text-black transition-opacity hover:opacity-90"
+            className="border-b border-transparent py-2 font-mono text-xs uppercase tracking-[0.2em] text-paper/70 transition-colors duration-100 hover:border-paper hover:text-paper focus-visible:outline focus-visible:outline-[3px] focus-visible:outline-offset-2 focus-visible:outline-paper"
           >
-            Get Started
+            Read the source
           </a>
-        </SectionReveal>
-      </div>
+        </div>
+      </Container>
     </section>
   );
 }
