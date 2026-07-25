@@ -9,13 +9,16 @@ export default function Layout({ children }: { children: ReactNode }) {
       tree={source.pageTree}
       nav={{
         title: (
-          <span className="font-semibold tracking-tight">heddle</span>
+          <span className="font-display text-xl leading-none tracking-tight">
+            heddle
+            <span className="font-mono text-[0.625rem] tracking-normal text-muted-ink">
+              .run
+            </span>
+          </span>
         ),
         url: "/",
       }}
-      links={[
-        { text: "Docs", url: "/docs" },
-      ]}
+      links={[{ text: "Documentation", url: "/docs" }]}
       githubUrl={GITHUB_URL}
     >
       {children}

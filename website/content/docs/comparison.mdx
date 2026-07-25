@@ -1,6 +1,6 @@
 ---
 title: Framework Comparison
-description: How Heddle compares to LangChain, CrewAI, AutoGen, and other popular AI agent frameworks.
+description: How heddle compares to LangChain, CrewAI, AutoGen, and other popular AI agent frameworks.
 ---
 
 There are many excellent frameworks for building AI agents. This page compares their design philosophies and trade-offs to help you decide which fits your use case.
@@ -11,7 +11,7 @@ _Last updated March 2026._
 
 | Framework | Language | Definition Style | License |
 |-----------|----------|-----------------|---------|
-| [Heddle](https://github.com/spichen/specrun) | Any (tools are executables) | Declarative (YAML/JSON) | MIT |
+| [heddle](https://github.com/spichen/heddle) | Any (tools are executables) | Declarative (YAML/JSON) | MIT |
 | [LangChain](https://github.com/langchain-ai/langchain) / [LangGraph](https://github.com/langchain-ai/langgraph) | Python, JS/TS | Imperative (code) | MIT |
 | [CrewAI](https://github.com/crewAIInc/crewAI) | Python | Imperative (code + YAML config) | MIT |
 | [AutoGen](https://github.com/microsoft/autogen) | Python, .NET | Imperative (code) | MIT |
@@ -26,7 +26,7 @@ _Last updated March 2026._
 
 | Framework | LLM Provider Support | Tool Integration |
 |-----------|---------------------|------------------|
-| Heddle | Any OpenAI-compatible, vLLM, Ollama | Standalone executables (stdin/stdout), any language |
+| heddle | Any OpenAI-compatible, vLLM, Ollama | Standalone executables (stdin/stdout), any language |
 | LangChain / LangGraph | 50+ providers via integrations | Python/JS functions or integration classes |
 | CrewAI | OpenAI, Ollama, Azure, others via LiteLLM | Python functions with decorator |
 | AutoGen | OpenAI, Azure, local models | Python functions |
@@ -41,7 +41,7 @@ _Last updated March 2026._
 
 | Framework | Multi-Agent | Execution Model |
 |-----------|-------------|-----------------|
-| Heddle | Yes (multi-node flows) | Local CLI |
+| heddle | Yes (multi-node flows) | Local CLI |
 | LangChain / LangGraph | Yes (graph-based) | Library (embed in your app) |
 | CrewAI | Yes (role-based crews) | Library / CLI |
 | AutoGen | Yes (conversation-based) | Library |
@@ -56,7 +56,7 @@ _Last updated March 2026._
 
 | Framework | Learning Curve | Key Strength |
 |-----------|---------------|--------------|
-| Heddle | Low | Declarative specs, language-agnostic tools, no backend needed |
+| heddle | Low | Declarative specs, language-agnostic tools, no backend needed |
 | LangChain / LangGraph | Moderate to High | Massive ecosystem with extensive integrations |
 | CrewAI | Low to Moderate | Intuitive role-based multi-agent design |
 | AutoGen | Moderate | Flexible multi-agent conversation patterns |
@@ -67,9 +67,9 @@ _Last updated March 2026._
 | Mastra | Moderate | TypeScript-native with built-in eval and observability |
 | AG2 | Moderate | Community-driven with flexible agent patterns |
 
-## When to Choose Heddle
+## When to Choose heddle
 
-- **You want to define workflows as data, not code** — Heddle workflows are YAML/JSON files, not Python scripts.
+- **You want to define workflows as data, not code** — heddle workflows are YAML/JSON files, not Python scripts.
 - **Your team uses multiple languages** — Tools are standalone executables. Write them in Python, Go, Rust, or anything else. No SDK dependency.
 - **You want to run agents locally** — A single `heddle run` command compiles, validates, and executes your workflow. No backend or service required.
 - **You want to swap LLM providers without changing your workflow** — Provider configuration is separate from workflow logic.

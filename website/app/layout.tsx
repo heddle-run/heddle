@@ -1,11 +1,18 @@
 import type { Metadata } from "next";
-import { Inter, JetBrains_Mono, Geist, Instrument_Serif } from "next/font/google";
+import { Playfair_Display, Source_Serif_4, JetBrains_Mono } from "next/font/google";
 import { RootProvider } from "fumadocs-ui/provider";
 import "./globals.css";
 
-const inter = Inter({
+const playfair = Playfair_Display({
   subsets: ["latin"],
-  variable: "--font-inter",
+  style: ["normal", "italic"],
+  variable: "--font-playfair",
+});
+
+const sourceSerif = Source_Serif_4({
+  subsets: ["latin"],
+  style: ["normal", "italic"],
+  variable: "--font-source-serif",
 });
 
 const jetbrainsMono = JetBrains_Mono({
@@ -13,30 +20,31 @@ const jetbrainsMono = JetBrains_Mono({
   variable: "--font-jetbrains",
 });
 
-const geist = Geist({
-  subsets: ["latin"],
-  variable: "--font-geist",
-});
-
-const instrumentSerif = Instrument_Serif({
-  subsets: ["latin"],
-  weight: "400",
-  style: ["normal", "italic"],
-  variable: "--font-instrument-serif",
-});
-
 export const metadata: Metadata = {
-  title: "Heddle - Build Agentic AI Workflows from the CLI",
+  metadataBase: new URL("https://heddle.run"),
+  title: {
+    default: "heddle — Weave agents from spec",
+    template: "%s — heddle",
+  },
   description:
-    "A lightweight CLI framework for building and running agentic AI workflows using the Open Agent Specification. Define in YAML, wire tools in any language, run from one command.",
+    "heddle is a lightweight CLI runtime for the Open Agent Specification. Declare a flow in YAML, wire tools in any language, and run the whole thing from one command.",
   keywords: [
     "heddle",
+    "agent spec",
+    "open agent specification",
     "ai agents",
     "agentic workflows",
     "cli",
     "llm",
-    "open agent specification",
   ],
+  openGraph: {
+    title: "heddle — Weave agents from spec",
+    description:
+      "A lightweight CLI runtime for the Open Agent Specification. Declare the flow, wire the tools, run one command.",
+    url: "https://heddle.run",
+    siteName: "heddle",
+    type: "website",
+  },
 };
 
 export default function RootLayout({
@@ -45,9 +53,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable} ${geist.variable} ${instrumentSerif.variable}`}>
-      <body className="font-sans">
-        <RootProvider>{children}</RootProvider>
+    <html
+      lang="en"
+      className={`${playfair.variable} ${sourceSerif.variable} ${jetbrainsMono.variable}`}
+    >
+      <body className="bg-paper font-body text-ink antialiased">
+        <RootProvider theme={{ enabled: false }}>{children}</RootProvider>
       </body>
     </html>
   );

@@ -3,7 +3,7 @@ title: LLM Providers
 description: Configure OpenAI, vLLM, Ollama, or any compatible endpoint.
 ---
 
-Heddle supports multiple LLM providers out of the box. Switch providers by changing a few lines in your spec — no code changes needed.
+heddle supports multiple LLM providers out of the box. Switch providers by changing a few lines in your spec — no code changes needed.
 
 An LLM config appears as `llm_config` on an `Agent` or an `LlmNode`. All supported providers speak the OpenAI chat completions API.
 
@@ -94,7 +94,7 @@ API keys can reference environment variables using the `$` prefix:
 api_key: $MY_API_KEY
 ```
 
-Heddle resolves these from your shell environment when the flow is compiled, and fails with a clear error if the variable is unset. A value without a `$` prefix is used literally.
+heddle resolves these from your shell environment when the flow is compiled, and fails with a clear error if the variable is unset. A value without a `$` prefix is used literally.
 
 <Callout type="warn">
 An API key must be resolvable for **every** provider, including local ones. If a config has no `api_key` and `OPENAI_API_KEY` is not set in the environment, the run fails before reaching the model — even for Ollama or vLLM, which do not check the key. For local servers, set any placeholder value:
