@@ -1,0 +1,110 @@
+{
+  "component_type": "Flow",
+  "agentspec_version": "26.2.0",
+  "id": "b1000000-0000-4000-8000-000000000001",
+  "name": "bench-agent",
+  "metadata": {},
+  "inputs": [],
+  "outputs": [],
+  "start_node": { "$component_ref": "b1000000-0000-4000-8000-000000000002" },
+  "nodes": [
+    { "$component_ref": "b1000000-0000-4000-8000-000000000002" },
+    { "$component_ref": "b1000000-0000-4000-8000-000000000003" },
+    { "$component_ref": "b1000000-0000-4000-8000-000000000004" }
+  ],
+  "control_flow_connections": [
+    {
+      "component_type": "ControlFlowEdge",
+      "id": "b1000000-0000-4000-8000-000000000005",
+      "name": "start_to_agent",
+      "metadata": {},
+      "from_node": { "$component_ref": "b1000000-0000-4000-8000-000000000002" },
+      "from_branch": null,
+      "to_node": { "$component_ref": "b1000000-0000-4000-8000-000000000003" }
+    },
+    {
+      "component_type": "ControlFlowEdge",
+      "id": "b1000000-0000-4000-8000-000000000006",
+      "name": "agent_to_end",
+      "metadata": {},
+      "from_node": { "$component_ref": "b1000000-0000-4000-8000-000000000003" },
+      "from_branch": null,
+      "to_node": { "$component_ref": "b1000000-0000-4000-8000-000000000004" }
+    }
+  ],
+  "data_flow_connections": [
+    {
+      "component_type": "DataFlowEdge",
+      "id": "b1000000-0000-4000-8000-000000000007",
+      "name": "query_edge",
+      "metadata": {},
+      "source_node": { "$component_ref": "b1000000-0000-4000-8000-000000000002" },
+      "source_output": "query",
+      "destination_node": { "$component_ref": "b1000000-0000-4000-8000-000000000003" },
+      "destination_input": "query"
+    },
+    {
+      "component_type": "DataFlowEdge",
+      "id": "b1000000-0000-4000-8000-000000000008",
+      "name": "result_edge",
+      "metadata": {},
+      "source_node": { "$component_ref": "b1000000-0000-4000-8000-000000000003" },
+      "source_output": "result",
+      "destination_node": { "$component_ref": "b1000000-0000-4000-8000-000000000004" },
+      "destination_input": "result"
+    }
+  ],
+  "$referenced_components": {
+    "b1000000-0000-4000-8000-000000000002": {
+      "component_type": "StartNode",
+      "id": "b1000000-0000-4000-8000-000000000002",
+      "name": "start",
+      "metadata": {},
+      "inputs": [],
+      "outputs": [{ "title": "query", "type": "string" }],
+      "branches": ["next"]
+    },
+    "b1000000-0000-4000-8000-000000000003": {
+      "component_type": "AgentNode",
+      "id": "b1000000-0000-4000-8000-000000000003",
+      "name": "responder",
+      "metadata": {},
+      "inputs": [{ "title": "query", "type": "string" }],
+      "outputs": [{ "title": "result", "type": "string" }],
+      "branches": ["next"],
+      "agent": {
+        "component_type": "Agent",
+        "id": "b1000000-0000-4000-8000-000000000009",
+        "name": "bench-agent",
+        "metadata": {},
+        "inputs": [{ "title": "query", "type": "string" }],
+        "outputs": [],
+        "llm_config": {
+          "component_type": "OpenAiCompatibleConfig",
+          "id": "b1000000-0000-4000-8000-00000000000a",
+          "name": "fake-llm",
+          "metadata": {},
+          "model_id": "bench-model",
+          "api_type": "chat_completions",
+          "url": "http://127.0.0.1:4400/v1",
+          "api_key": "bench-key"
+        },
+        "system_prompt": "Answer the query: {{query}}",
+        "tools": [],
+        "toolboxes": [],
+        "human_in_the_loop": false,
+        "transforms": []
+      }
+    },
+    "b1000000-0000-4000-8000-000000000004": {
+      "component_type": "EndNode",
+      "id": "b1000000-0000-4000-8000-000000000004",
+      "name": "end",
+      "metadata": {},
+      "inputs": [{ "title": "result", "type": "string" }],
+      "outputs": [],
+      "branches": [],
+      "branch_name": "next"
+    }
+  }
+}
