@@ -1,0 +1,86 @@
+# heddle-server for Cloudflare Containers.
+#
+# Differs from ./Dockerfile in one way that matters: no bubblewrap, and no
+# --safe. That backend needs unprivileged user namespaces (CLONE_NEWUSER),
+# which this platform does not grant, so asking for it would fail every tool
+# call rather than confine anything.
+#
+# Losing it costs less than it appears. The tool sandbox was always defence in
+# depth *inside* a container that is itself the boundary, and here the boundary
+# is stronger than a Docker host: one container instance per run, started for
+# that run and destroyed after it.
+#
+# The thing this image must never have is a model API key. heddle reads both
+# the base URL and the credential from the submitted spec, so a flow can name
+# any endpoint and reference any environment variable — no plugin needed. The
+# broker gives the container a short-lived token and an OPENAI_BASE_URL pointing
+# at its proxy; the real key stays in the Worker.
+#
+# Built by wrangler from packages/broker/wrangler.jsonc. To build by hand, from
+# the repository root:
+#   docker build -f packages/server/Dockerfile.cloudflare -t heddle-engine .
+
+# ---------------------------------------------------------------------------
+# Build
+# ---------------------------------------------------------------------------
+FROM node:22-bookworm-slim AS build
+
+WORKDIR /build
+
+RUN corepack enable
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
+COPY vendor/agentspec/package.json ./vendor/agentspec/
+COPY packages/core/package.json ./packages/core/
+COPY packages/cli/package.json ./packages/cli/
+COPY packages/server/package.json ./packages/server/
+
+# --ignore-scripts: the root `prepare` builds the vendored SDK from sources that
+# have not been copied yet. Run explicitly below.
+RUN pnpm install --frozen-lockfile --ignore-scripts
+
+COPY vendor/agentspec ./vendor/agentspec
+COPY packages/core ./packages/core
+COPY packages/server ./packages/server
+
+RUN pnpm run build:vendor \
+ && pnpm --filter @heddle/core build \
+ && pnpm --filter @heddle/server build
+
+RUN pnpm --filter @heddle/server --prod deploy --legacy /runtime
+
+# ---------------------------------------------------------------------------
+# Runtime
+# ---------------------------------------------------------------------------
+FROM node:22-bookworm-slim AS runtime
+
+# Per-run scratch for submitted tool scripts. Kept off /tmp out of habit rather
+# than necessity here — nothing remounts it without bubblewrap — but a
+# dedicated, mode-0700 directory owned by the service account is still the
+# clearer arrangement.
+RUN install -d -o node -g node -m 0700 /var/heddle/runs
+
+COPY --from=build --chown=root:root /runtime /app
+
+USER node
+WORKDIR /app
+
+ENV NODE_ENV=production
+
+EXPOSE 4319
+
+ENTRYPOINT ["node", "/app/dist/heddle-server.js"]
+
+# No --tools-dir: on this deployment every tool arrives with the request, so
+# there is nothing server-side to expose. No --safe, per the note above.
+#
+# --max-concurrent 1 is the point of the design rather than a tuning choice:
+# this instance exists for one run. The broker provides parallelism by starting
+# more instances, each isolated from the others.
+CMD ["--host", "0.0.0.0", \
+     "--port", "4319", \
+     "--allow-request-code", \
+     "--work-dir", "/var/heddle/runs", \
+     "--max-concurrent", "1", \
+     "--max-iterations", "25", \
+     "--timeout", "60000"]
