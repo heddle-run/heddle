@@ -264,10 +264,20 @@ export function materializeRequestCode(
         // .mjs so node treats it as ESM regardless of any package.json that
         // happens to sit above the temp directory.
         const path = join(pluginsDir, `${plugin.name}.mjs`);
-        // The runtime is prepended rather than imported: the plugin runs from
-        // a temp directory with no node_modules beside it, so `serve()` has to
+        // Written as a self-contained executable, exactly like a tool, and for
+        // the same reason: a sandbox binds the program it is handed and nothing
+        // else. Started as `node plugin.mjs` the script would be an argument
+        // rather than the program, so it would not exist inside the sandbox.
+        //
+        // The runtime is prepended rather than imported: the plugin runs from a
+        // temp directory with no node_modules beside it, so `serve()` has to
         // arrive in the same file.
-        writeFileSync(path, withRuntime(plugin.source), { mode: 0o400 });
+        // An absolute interpreter, not `/usr/bin/env node`: a plugin process is
+        // given an empty environment, so there is no PATH for `env` to search.
+        writeFileSync(path, `#!${process.execPath}\n${withRuntime(plugin.source)}`, {
+          mode: 0o500,
+        });
+        chmodSync(path, 0o500);
         materializedPlugins.push({ name: plugin.name, manifest: plugin.manifest, path });
       }
     }

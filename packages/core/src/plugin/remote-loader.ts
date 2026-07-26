@@ -41,29 +41,36 @@ export interface RemotePlugin {
 /**
  * How to start a plugin whose manifest does not say.
  *
- * A `.mjs` or `.js` entry runs under the same node that is running heddle,
- * which is the common case and saves every plugin author a `command`. Anything
- * else must be executable and carry its own shebang — the same contract a tool
- * has.
+ * An executable entry is invoked by path, and that is the preferred form for a
+ * reason that only shows up under `--safe`: a sandbox binds the *program* it is
+ * given into the confined filesystem, and nothing else. Launch a plugin as
+ * `node /path/plugin.mjs` and the script is an argument rather than the
+ * program, so it is never bound and the confined node cannot find it —
+ * `Cannot find module`. Invoked by path, the plugin is bound exactly as a tool
+ * is, and needs no policy change.
+ *
+ * A non-executable `.mjs`/`.js` still works, for plugins on disk that nobody
+ * chmod'd. Under a sandbox those need their directory in the policy's
+ * `readPaths`.
  */
 function defaultCommand(entry: string): string[] {
-  if (entry.endsWith('.mjs') || entry.endsWith('.js')) {
-    return [process.execPath, entry];
-  }
-
   let mode: number;
   try {
     mode = statSync(entry).mode;
   } catch (err) {
     throw new PluginError(`plugin entry point "${entry}" is not accessible`, { cause: err });
   }
-  if ((mode & 0o111) === 0) {
-    throw new PluginError(
-      `plugin entry point "${entry}" is not executable and is not a .mjs/.js file. ` +
-        `Either make it executable with a shebang, or set "command" in the manifest.`,
-    );
+
+  if ((mode & 0o111) !== 0) return [entry];
+
+  if (entry.endsWith('.mjs') || entry.endsWith('.js')) {
+    return [process.execPath, entry];
   }
-  return [entry];
+
+  throw new PluginError(
+    `plugin entry point "${entry}" is not executable and is not a .mjs/.js file. ` +
+      `Either make it executable with a shebang, or set "command" in the manifest.`,
+  );
 }
 
 /**
