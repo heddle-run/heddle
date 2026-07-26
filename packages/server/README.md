@@ -64,19 +64,28 @@ Off by default. With it on, `POST /v1/runs` and `POST /v1/validate` accept
 `tools` and `plugins` alongside the flow, written to a per-run directory that is
 removed when the run ends.
 
-The two are not equally contained, and the difference decides where you can run
-this:
+Both kinds run outside this process:
 
 - **Tool scripts** become subprocesses. `--safe` confines them — no `$HOME`, no
   writes outside the run workspace, only the environment `--allow-env` names.
-- **Plugin modules** are `import()`ed into this Node process, and compiling a
-  flow calls their `createExecutor`. They run as heddle, with its filesystem
-  access and its environment, including every API key it was started with.
-  `--safe` does nothing about this and nothing in this package can.
+- **Plugins** are `{ name, manifest, source }`. The manifest declares the
+  component types as data, so parsing a flow that uses one executes nothing;
+  the source runs in its own process with an **empty** environment and is
+  killed when the run ends.
 
-So the confinement boundary is the process, not the sandbox. Run this
-configuration as one disposable container per run, and nowhere else.
-[DEPLOYMENT.md](./DEPLOYMENT.md) covers the runtime flags that make that hold.
+A plugin written against the in-process API — a module default-exporting a
+plugin object — is refused here, because loading one would run the caller's
+code inside the server.
+
+While this is on, a submitted spec also cannot dereference the environment:
+`api_key: $VAR` is refused, since the reference is not restricted to model
+credentials and the same spec chooses the URL it would be sent to. Callers put
+their own key in the spec.
+
+Together those mean one server can serve many concurrent untrusted runs. It
+does not mean the server is safe to expose: it has no authentication, no rate
+limiting, and it makes outbound requests to hosts its callers name. See
+[DEPLOYMENT.md](./DEPLOYMENT.md).
 
 ### CORS
 

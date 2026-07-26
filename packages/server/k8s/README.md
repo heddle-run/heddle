@@ -9,19 +9,24 @@ and the difference is not a setting — it is who the callers are.
 |  | Playground (`DEPLOYMENT.md`) | This directory |
 |---|---|---|
 | Callers | Anyone on the internet | Authenticated, trusted |
-| `--allow-request-code` | On | **Off** |
-| Runs per process | Exactly 1, then destroyed | Many, concurrent |
-| Lifetime | One run | Long-lived |
-| Scaling | One container per run | HPA over a Deployment |
+| `--allow-request-code` | On | Off |
+| Runs per process | Many, concurrent | Many, concurrent |
+| Scaling | HPA over a Deployment | HPA over a Deployment |
 
-The playground's one-container-per-run rule exists because submitted plugin
-modules are imported into the server's Node process, so the process is the only
-real boundary. Turn `--allow-request-code` off and that constraint lifts — a
-pod can serve many runs, which is what makes ordinary autoscaling possible.
+These manifests leave `--allow-request-code` off because the callers are
+trusted and there is no reason to accept code from them. It is no longer the
+case that turning it on would be unsafe here.
 
-**Do not set `--allow-request-code` on these manifests.** With runs sharing one
-process, a submitted plugin would read every co-tenant's memory and the
-environment of the pod.
+**This used to say the opposite.** Plugins were imported into the server's Node
+process, so a submitted one could read every co-tenant's memory and the pod's
+environment, and the only safe topology for untrusted callers was one container
+per run. Plugins now execute in their own process with an empty environment,
+and a submitted spec can no longer dereference the pod's environment either.
+`packages/core/src/plugin/__tests__/remote.test.ts` runs the cross-tenant
+attack and asserts it fails.
+
+If you do turn it on, read `../DEPLOYMENT.md` first — the remaining exposure is
+egress, not memory.
 
 ## The residual trade
 
@@ -54,6 +59,34 @@ add pods rather than raising it.
 `/metrics` exposes `heddle_active_runs`, `heddle_max_concurrent_runs`,
 `heddle_run_saturation`, `heddle_runs_accepted_total`,
 `heddle_runs_rejected_total`, plus process CPU and RSS.
+
+## `--safe` needs gVisor here
+
+The Deployment sets `--safe --sandbox=bubblewrap` **and** a hardened security
+context — `capabilities.drop: [ALL]`, `allowPrivilegeEscalation: false`,
+`seccompProfile: RuntimeDefault`. Those two are incompatible under runc:
+bubblewrap has to create a user namespace and mount `/proc` in it, which that
+context denies. Every tool call fails with `bwrap: Can't mount proc`, and no
+test catches it because none exercises a sandboxed tool.
+
+Measured, with the security context above:
+
+| Runtime | bubblewrap |
+|---|---|
+| rootless podman | fails |
+| rootful runc | fails |
+| gVisor (runsc) | works, and confines |
+
+So either give the pod a gVisor RuntimeClass:
+
+```yaml
+spec:
+  runtimeClassName: gvisor
+```
+
+or remove `--safe` and `--sandbox=bubblewrap` from the container args. With
+trusted callers the second is perfectly reasonable — tool sandboxing is defence
+in depth there, not the boundary.
 
 ## Two things that are easy to get wrong
 

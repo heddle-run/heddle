@@ -1,10 +1,15 @@
-# heddle-server, built for the playground: one container per run.
+# heddle-server, built for the playground.
 #
-# The image exists to be the sandbox. When --allow-request-code is on, the
-# process inside runs code the caller wrote — plugin modules are imported into
-# it directly — so nothing inside the container is trusted, including
-# heddle-server itself. What keeps that contained is the container boundary and
-# the runtime flags in packages/server/DEPLOYMENT.md, not anything in here.
+# This image serves many concurrent runs. It did not always: plugins used to be
+# imported into the server process, which made the process the only boundary
+# and forced one container per run. They now execute in their own process with
+# an empty environment, tool scripts are subprocesses confined by --safe, and a
+# submitted spec cannot dereference this process's environment. Nothing a
+# caller sends runs inside the server, and nothing outlives their request.
+#
+# The container is still a boundary worth having — see the runtime flags in
+# packages/server/DEPLOYMENT.md, which are what bound a busy caller's effect on
+# the host.
 #
 # Build from the repository root:
 #   docker build -f packages/server/Dockerfile -t heddle-server .
@@ -76,6 +81,13 @@ ENV NODE_ENV=production
 EXPOSE 4319
 
 ENTRYPOINT ["node", "/app/dist/heddle-server.js"]
+
+# --safe here assumes a runtime that permits nested user namespaces. Under runc
+# with a hardened security context bubblewrap cannot mount /proc and every tool
+# call fails; gVisor permits it and confines properly. Drop --safe and
+# --sandbox if you are running under plain runc. See DEPLOYMENT.md.
+#
+# --max-concurrent is 8, not 1: runs no longer need a container each.
 CMD ["--host", "0.0.0.0", \
      "--port", "4319", \
      "--allow-request-code", \
@@ -83,6 +95,7 @@ CMD ["--host", "0.0.0.0", \
      "--tools-dir", "/srv/tools", \
      "--safe", \
      "--sandbox", "bubblewrap", \
-     "--max-concurrent", "1", \
+     "--max-concurrent", "8", \
      "--max-iterations", "25", \
-     "--timeout", "60000"]
+     "--timeout", "60000", \
+     "--drain-timeout", "90000"]

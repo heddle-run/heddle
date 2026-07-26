@@ -46,16 +46,19 @@ export interface ServerConfig {
   /**
    * Whether a request may supply its own tool scripts and plugin modules.
    *
-   * This is off by default, and turning it on is a decision about the whole
-   * host, not about this process. Tool scripts become subprocesses, which
-   * {@link sandbox} can confine. Plugin modules cannot be confined at all:
-   * heddle loads them with a dynamic `import()`, so they execute inside this
-   * Node process with its filesystem access and its environment — including
-   * every API key the server was started with.
+   * Off by default. Turning it on is safe for a long-lived process serving
+   * many concurrent runs, which was not always true:
    *
-   * The only sound deployment is therefore one disposable container per run,
-   * where the whole process is the untrusted thing and is destroyed after the
-   * run. See the deployment section of the README.
+   * - Tool scripts run as subprocesses, confined by {@link sandbox}.
+   * - Plugin modules run in their own process with an empty environment, and
+   *   are killed when the run ends. They used to be `import()`ed into this
+   *   process, which is why this option once implied one container per run.
+   * - Submitted specs cannot dereference this process's environment: `$VAR`
+   *   in an `llm_config` is refused while this is on.
+   *
+   * What it does still imply: the engine executes arbitrary computation and
+   * makes outbound requests to hosts its callers choose. Bound the compute,
+   * restrict egress, and put authentication in front. See DEPLOYMENT.md.
    */
   allowRequestCode: boolean;
 
