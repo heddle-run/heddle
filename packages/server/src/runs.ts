@@ -3,21 +3,34 @@ import {
   compile,
   validate,
   collectToolNames,
+  loadPlugins,
   FileRegistry,
+  PluginRegistry,
   SubprocessExecutor,
   Runner,
+  type CompiledGraph,
   type Dependencies,
   type Event,
   type ParsedFlow,
+  type Registry,
   type RunnerOptions,
 } from '@heddle/core';
 import type { ServerConfig } from './config.js';
 import { HttpError, toErrorResponse } from './errors.js';
 import { resolveFlow, type FlowRequest } from './flow-source.js';
 import { readJsonBody, sendJson } from './http.js';
+import type { ConcurrencyGate } from './limits.js';
+import {
+  materializeRequestCode,
+  rejectRequestCode,
+  NO_CODE,
+  type MaterializedCode,
+  type RequestCode,
+} from './request-code.js';
 import { SseStream, serializeEvent } from './sse.js';
+import { assertToolsAvailable, mergeRegistries } from './tools.js';
 
-interface RunRequest extends FlowRequest {
+interface RunRequest extends FlowRequest, RequestCode {
   inputs?: Record<string, unknown>;
 }
 
@@ -39,28 +52,31 @@ function rejectServerSideFields(body: Record<string, unknown>): void {
   }
 }
 
+/** The tools this run can reach: the server's, plus any the request submitted. */
+function buildRegistry(config: ServerConfig, code: MaterializedCode): Registry {
+  const registries: Registry[] = [FileRegistry.create(config.toolsDir ?? '')];
+  if (code.toolsDir) registries.push(FileRegistry.create(code.toolsDir));
+  return mergeRegistries(...registries);
+}
+
 function buildDependencies(
   pf: ParsedFlow,
   config: ServerConfig,
+  code: MaterializedCode,
+  plugins: PluginRegistry,
   eventHandler: (e: Event) => void,
 ): Dependencies {
-  const registry = FileRegistry.create(config.toolsDir ?? '');
+  const registry = buildRegistry(config, code);
+
   const toolNames = collectToolNames(pf);
-  if (toolNames.length > 0) {
-    try {
-      registry.validateTools(toolNames);
-    } catch (err) {
-      // The submitted flow names tools this server cannot provide. That is a
-      // mismatch between the request and the server's configuration, and the
-      // caller is the one who can act on it.
-      const message = err instanceof Error ? err.message : String(err);
-      throw new HttpError(400, message, 'ToolError');
-    }
-  }
+  if (toolNames.length > 0) assertToolsAvailable(registry, toolNames);
 
   return {
-    toolExecutor: new SubprocessExecutor(),
+    // Confinement is fixed at startup: a request can neither ask for a sandbox
+    // nor opt out of one.
+    toolExecutor: new SubprocessExecutor({ sandbox: config.sandbox }),
     toolRegistry: registry,
+    plugins,
     eventHandler,
   };
 }
@@ -77,21 +93,54 @@ function runnerOptions(
   };
 }
 
+/**
+ * Everything that can fail on the caller's behalf: loading their plugins,
+ * parsing their flow, resolving their tools, compiling and validating.
+ *
+ * Kept together and ahead of execution because the streaming path has to run
+ * all of it before SSE headers go out — once the status is 200 it can no longer
+ * report a bad request as one.
+ */
+async function prepare(
+  body: RunRequest,
+  config: ServerConfig,
+  code: MaterializedCode,
+  eventHandler: (e: Event) => void,
+): Promise<CompiledGraph> {
+  const plugins =
+    code.pluginPaths.length > 0
+      ? await loadPlugins(code.pluginPaths)
+      : PluginRegistry.empty();
+
+  const pf = resolveFlow(body, config, plugins);
+  const deps = buildDependencies(pf, config, code, plugins, eventHandler);
+  const graph = compile(pf, deps);
+  validate(graph);
+  return graph;
+}
+
 /** POST /v1/runs — execute a flow and return the final state. */
 export async function handleRun(
   req: IncomingMessage,
   res: ServerResponse,
   config: ServerConfig,
+  gate: ConcurrencyGate,
   stream: boolean,
+  headers: Record<string, string> = {},
 ): Promise<void> {
   const body = await readJsonBody(req, config.maxBodyBytes);
   rejectServerSideFields(body);
+  if (!config.allowRequestCode) rejectRequestCode(body);
 
   const runBody = body as RunRequest;
   const inputs = runBody.inputs ?? {};
   if (typeof inputs !== 'object' || inputs === null || Array.isArray(inputs)) {
     throw new HttpError(400, '"inputs" must be a JSON object');
   }
+
+  // Taken before any work: a caller that cannot have a slot should learn so
+  // without the server first writing their code to disk.
+  const release = gate.acquire();
 
   // Wire cancellation to the client: if the caller hangs up, stop the run
   // rather than leaving tool subprocesses and LLM calls in flight.
@@ -101,23 +150,42 @@ export async function handleRun(
     if (!finished) ac.abort();
   });
 
-  if (stream) {
-    await runStreaming(res, config, runBody, inputs, ac, () => {
-      finished = true;
-    });
-    return;
+  let code: MaterializedCode = NO_CODE;
+  try {
+    if (config.allowRequestCode) {
+      code = materializeRequestCode(runBody, config);
+    }
+
+    if (stream) {
+      await runStreaming(res, config, runBody, inputs, code, ac, headers);
+    } else {
+      await runBuffered(res, config, runBody, inputs, code, ac, headers);
+    }
+  } finally {
+    finished = true;
+    // Submitted source leaves no trace on disk past the run that sent it. The
+    // modules it defined do outlive it — node's ESM registry has no unload —
+    // which is one more reason a process should not serve untrusted code for
+    // longer than a single run.
+    code.dispose();
+    release();
   }
+}
 
-  const pf = resolveFlow(runBody, config);
-  const deps = buildDependencies(pf, config, () => {});
-  const graph = compile(pf, deps);
-  validate(graph);
-
+async function runBuffered(
+  res: ServerResponse,
+  config: ServerConfig,
+  runBody: RunRequest,
+  inputs: Record<string, unknown>,
+  code: MaterializedCode,
+  ac: AbortController,
+  headers: Record<string, string>,
+): Promise<void> {
+  const graph = await prepare(runBody, config, code, () => {});
   const runner = new Runner(graph, runnerOptions(config, () => {}));
   const state = await runner.run(ac.signal, inputs);
-  finished = true;
 
-  sendJson(res, 200, { flow: graph.name, state: state.toData() });
+  sendJson(res, 200, { flow: graph.name, state: state.toData() }, headers);
 }
 
 async function runStreaming(
@@ -125,23 +193,22 @@ async function runStreaming(
   config: ServerConfig,
   runBody: RunRequest,
   inputs: Record<string, unknown>,
+  code: MaterializedCode,
   ac: AbortController,
-  markFinished: () => void,
+  headers: Record<string, string>,
 ): Promise<void> {
-  const sse = new SseStream(res);
+  const sse = new SseStream(res, headers);
 
   // Compile before opening the stream: a bad flow is a request error and
   // deserves a real 4xx status, which is impossible once 200 headers are out.
-  let graph;
+  let graph: CompiledGraph;
   try {
-    const pf = resolveFlow(runBody, config);
-    const deps = buildDependencies(pf, config, (e) => sse.send(e.type, serializeEvent(e)));
-    graph = compile(pf, deps);
-    validate(graph);
+    graph = await prepare(runBody, config, code, (e) =>
+      sse.send(e.type, serializeEvent(e)),
+    );
   } catch (err) {
-    markFinished();
     const { status, body } = toErrorResponse(err);
-    sendJson(res, status, body);
+    sendJson(res, status, body, headers);
     return;
   }
 
@@ -159,7 +226,6 @@ async function runStreaming(
     const { body } = toErrorResponse(err);
     sse.send('error', body.error);
   } finally {
-    markFinished();
     sse.close();
   }
 }

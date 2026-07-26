@@ -1,7 +1,9 @@
 import {
   CompileError,
   LLMError,
+  PluginError,
   RunError,
+  SandboxError,
   SpecError,
   ToolError,
 } from '@heddle/core';
@@ -41,9 +43,26 @@ export function toErrorResponse(err: unknown): {
     return { status: err.status, body: { error: { type: err.type, message: err.message } } };
   }
 
-  if (err instanceof SpecError || err instanceof CompileError) {
+  // PluginError joins these because this server only ever loads plugins that
+  // arrived with the request: a module that fails to import, or declares no
+  // components, is the caller's broken submission.
+  if (
+    err instanceof SpecError ||
+    err instanceof CompileError ||
+    err instanceof PluginError
+  ) {
     return {
       status: 400,
+      body: { error: { type: err.name, message: err.message } },
+    };
+  }
+
+  // A sandbox that cannot be built is a fault in how the server was started —
+  // a missing bwrap, an unsupported platform — and never something the caller
+  // chose, since confinement is not request-configurable.
+  if (err instanceof SandboxError) {
+    return {
+      status: 500,
       body: { error: { type: err.name, message: err.message } },
     };
   }

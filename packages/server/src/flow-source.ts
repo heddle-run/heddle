@@ -6,6 +6,7 @@ import {
   parseFlowYaml,
   validateFlow,
   type ParsedFlow,
+  type PluginRegistry,
 } from '@heddle/core';
 import type { ServerConfig } from './config.js';
 import { HttpError } from './errors.js';
@@ -50,8 +51,20 @@ export function resolveFlowPath(flowsRoot: string, requested: string): string {
   return real;
 }
 
-/** Parse the flow named by a request body, honouring the server's confinement rules. */
-export function resolveFlow(body: FlowRequest, config: ServerConfig): ParsedFlow {
+/**
+ * Parse the flow named by a request body, honouring the server's confinement
+ * rules.
+ *
+ * `plugins` carries the component types contributed by any plugin modules the
+ * request submitted. It has to reach the parser, not just the compiler: a
+ * custom `component_type` is unknown to the deserializer without it, so a flow
+ * using one would be rejected before the compiler ever saw it.
+ */
+export function resolveFlow(
+  body: FlowRequest,
+  config: ServerConfig,
+  plugins?: PluginRegistry,
+): ParsedFlow {
   const hasInline = body.flow !== undefined && body.flow !== null;
   const hasPath = typeof body.flowPath === 'string' && body.flowPath.length > 0;
 
@@ -70,15 +83,15 @@ export function resolveFlow(body: FlowRequest, config: ServerConfig): ParsedFlow
       );
     }
     const path = resolveFlowPath(config.flowsRoot, body.flowPath!);
-    return asBadRequest(() => loadFlow(path));
+    return asBadRequest(() => loadFlow(path, plugins));
   }
 
   return asBadRequest(() => {
     const pf =
       typeof body.flow === 'string'
         ? // YAML 1.2 is a superset of JSON, so this accepts either syntax.
-          parseFlowYaml(body.flow)
-        : parseFlow(JSON.stringify(body.flow));
+          parseFlowYaml(body.flow, plugins)
+        : parseFlow(JSON.stringify(body.flow), plugins);
 
     validateFlow(pf);
     return pf;
@@ -100,6 +113,22 @@ function asBadRequest(parse: () => ParsedFlow): ParsedFlow {
     if (err instanceof HttpError) throw err;
     const message = err instanceof Error ? err.message : String(err);
     const type = err instanceof Error && err.name !== 'Error' ? err.name : 'SpecError';
+
+    // A spec missing a section the deserializer assumes is present crashes it
+    // rather than being reported, and "Cannot read properties of undefined"
+    // tells the author nothing about the document they wrote. The original
+    // message is kept — it is the only clue to which section was missing — but
+    // it stops being the whole answer.
+    if (err instanceof TypeError) {
+      throw new HttpError(
+        400,
+        'this does not parse as an Agent Spec flow. Check that it declares ' +
+          'component_type, name, start_node, nodes and control_flow_connections. ' +
+          `(the parser failed with: ${message})`,
+        'SpecError',
+      );
+    }
+
     throw new HttpError(400, message, type);
   }
 }

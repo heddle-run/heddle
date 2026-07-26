@@ -65,9 +65,11 @@ export function sendJson(
   res: ServerResponse,
   status: number,
   body: unknown,
+  headers: Record<string, string> = {},
 ): void {
   const payload = JSON.stringify(body);
   res.writeHead(status, {
+    ...headers,
     'content-type': 'application/json; charset=utf-8',
     'content-length': Buffer.byteLength(payload),
   });

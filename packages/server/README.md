@@ -42,10 +42,47 @@ heddle-server --tools-dir ./tools
 | `--flows-root <dir>` | none | Root that `flowPath` requests are confined to. |
 | `--max-iterations <n>` | `50` | Maximum node executions per run. |
 | `--timeout <ms>` | `300000` | Wall-clock budget for a single run. |
+| `--max-concurrent <n>` | `4` | Runs at once. Beyond this, requests get a 429. |
+| `--cors-origin <origin>` | none | Browser origin allowed to call this server. Repeatable. |
+| `--allow-request-code` | off | Accept tool scripts and plugin modules in the request. |
+| `--work-dir <dir>` | `$TMPDIR` | Where per-run directories are created. |
+| `--safe` | off | Run tool subprocesses inside an OS sandbox. |
+| `--sandbox <backend>` | `auto` | `auto`, `bubblewrap` or `seatbelt`. Requires `--safe`. |
+| `--allow-read <path>` | none | Read access for sandboxed tools. Repeatable. |
+| `--allow-write <path>` | none | Write access for sandboxed tools. Repeatable. |
+| `--allow-env <name>` | none | Environment variable to forward into the sandbox. Repeatable. |
+| `--deny-net` | off | Block network access for sandboxed tools. |
 
 `--tools-dir` and `--flows-root` are **server-side configuration only**. A
 request that tries to set either is rejected with a 400 rather than silently
 ignored, so a caller is never misled about what the server will execute.
+
+### `--allow-request-code`
+
+Off by default. With it on, `POST /v1/runs` and `POST /v1/validate` accept
+`tools` and `plugins` alongside the flow, written to a per-run directory that is
+removed when the run ends.
+
+The two are not equally contained, and the difference decides where you can run
+this:
+
+- **Tool scripts** become subprocesses. `--safe` confines them — no `$HOME`, no
+  writes outside the run workspace, only the environment `--allow-env` names.
+- **Plugin modules** are `import()`ed into this Node process, and compiling a
+  flow calls their `createExecutor`. They run as heddle, with its filesystem
+  access and its environment, including every API key it was started with.
+  `--safe` does nothing about this and nothing in this package can.
+
+So the confinement boundary is the process, not the sandbox. Run this
+configuration as one disposable container per run, and nowhere else.
+[DEPLOYMENT.md](./DEPLOYMENT.md) covers the runtime flags that make that hold.
+
+### CORS
+
+`--cors-origin` is what lets a browser page on another origin read responses.
+It constrains browsers and nothing else — curl ignores it — so it widens who can
+use the server from a web page and is not what keeps anyone out. Origins are
+matched exactly; pass it once per origin, or `*` to allow any.
 
 Without `--flows-root`, the server accepts inline flows only, and rejects every
 `flowPath` request. With it, paths are resolved against the root and confined to
@@ -59,6 +96,27 @@ all refused with a 404 that does not reveal whether the target exists.
 ```json
 { "status": "ok", "version": "0.2.0-beta.1" }
 ```
+
+### `GET /v1/capabilities`
+
+What this server permits, so a client can adapt rather than discover the limits
+through 400s.
+
+```json
+{
+  "version": "0.2.0-beta.1",
+  "allowRequestCode": true,
+  "acceptsFlowPath": false,
+  "sandbox": "bubblewrap",
+  "tools": ["web_search"],
+  "limits": { "maxIterations": 25, "timeout": 60000, "maxRequestTools": 10 },
+  "runsInFlight": 0
+}
+```
+
+Tool *names* are listed because a caller writing a flow needs them. Filesystem
+paths are not: where the server keeps its executables is of no use to a caller
+and of some use to an attacker.
 
 ### `POST /v1/validate`
 
@@ -150,6 +208,29 @@ Both endpoints take the same flow selector. Provide exactly one of:
 `POST /v1/runs` additionally accepts `inputs`, a JSON object passed to the
 flow's start node.
 
+With `--allow-request-code`, both endpoints additionally accept:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `tools` | array | `{ name, source, interpreter? }`. `interpreter` is one of `sh`, `bash`, `python3`, `node`, and generates a shebang when `source` has none. |
+| `plugins` | array | `{ name, source }`. ESM, default-exporting a heddle plugin. |
+
+Names must match `[A-Za-z0-9_-]{1,64}` — they become filenames, and nothing that
+navigates a path is allowed through. Without the flag, a request carrying either
+field is rejected with a 400 rather than having it ignored: a caller whose
+plugin was silently dropped would see an unknown-component-type failure with no
+way to learn why.
+
+```bash
+curl -sX POST localhost:4319/v1/runs \
+  -H 'content-type: application/json' \
+  -d '{
+    "flow": {"...": "..."},
+    "inputs": {"text": "hello"},
+    "tools": [{"name": "shout", "interpreter": "sh", "source": "read -r i\nprintf \"{}\""}]
+  }'
+```
+
 ### Cancellation
 
 If the client disconnects, the run is aborted: the `AbortSignal` is wired to the
@@ -168,7 +249,12 @@ node executors, tool subprocesses, and in-flight LLM calls.
 | `404` | Unknown route, or a `flowPath` that does not resolve inside the flows root. |
 | `405` | Wrong method for a known route. |
 | `413` | Request body over 1 MiB. |
+| `429` | Already running `--max-concurrent` runs. |
 | `500` | Failure while running: a tool exited non-zero, an LLM call failed. |
+
+Excess runs are refused rather than queued: a caller learns now that the server
+is busy instead of holding a connection open for the length of someone else's
+run to find out.
 
 ## Library use
 

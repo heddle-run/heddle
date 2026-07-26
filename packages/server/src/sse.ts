@@ -30,10 +30,14 @@ export function serializeEvent(e: Event): Record<string, unknown> {
 export class SseStream {
   private closed = false;
 
-  constructor(private readonly res: ServerResponse) {}
+  constructor(
+    private readonly res: ServerResponse,
+    private readonly headers: Record<string, string> = {},
+  ) {}
 
   open(): void {
     this.res.writeHead(200, {
+      ...this.headers,
       'content-type': 'text/event-stream; charset=utf-8',
       'cache-control': 'no-cache, no-transform',
       connection: 'keep-alive',
