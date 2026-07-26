@@ -1,0 +1,83 @@
+# Autoscaling on a composite of session count, CPU and memory.
+#
+# Worth knowing before tuning this: the HPA does NOT blend metrics. It computes
+# a desired replica count for each one independently and takes the MAX. So this
+# reads "scale up when any of the three is hot", which is what you want — but it
+# is not a weighted sum. If a single blended score is genuinely wanted, compute
+# one saturation figure in PromQL and drive the HPA from that alone; see
+# prometheus-adapter.yaml.
+#
+# The three are not equals:
+#
+#   heddle_active_runs  LEADING. Rises the instant a session opens, before that
+#                       session has consumed the CPU and memory it is going to.
+#                       This is the one to scale on.
+#   cpu                 LAGGING backstop. Catches runs heavier than the session
+#                       count implies.
+#   memory              LAGGING, and sticky — see the note on its target below.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: heddle-server
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: heddle-server
+
+  minReplicas: 2
+  maxReplicas: 20
+
+  metrics:
+    # Primary. Target ~70% of the pod's --max-concurrent=8, so there is headroom
+    # to absorb a burst while the new replica starts rather than 429ing it.
+    - type: Pods
+      pods:
+        metric:
+          name: heddle_active_runs
+        target:
+          type: AverageValue
+          averageValue: "6"
+
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+
+    # High threshold on purpose. A Node process does not readily return heap to
+    # the OS, so RSS ratchets up and stays there; a 70% memory target would
+    # scale out and then never scale back in. Treat this as a safety valve for
+    # genuine memory pressure, not as a load signal.
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 85
+
+  behavior:
+    scaleUp:
+      # Sessions are bursty and a cold pod is not free, but refusing users is
+      # worse: react fast, in reasonably large steps.
+      stabilizationWindowSeconds: 30
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 30
+        - type: Pods
+          value: 4
+          periodSeconds: 30
+      selectPolicy: Max
+
+    scaleDown:
+      # Deliberately slow. Every scale-in drains a pod, and a drain can hold a
+      # run for up to --drain-timeout. Thrashing here means repeatedly waiting
+      # out that window for no gain.
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 120
+      selectPolicy: Min

@@ -56,6 +56,11 @@ export function handleCapabilities(
         maxConcurrentRuns: config.maxConcurrentRuns,
       },
       runsInFlight: gate.inFlight,
+      // The same number Prometheus scrapes from /metrics. Kept here so a client
+      // can back off before it is refused, without a metrics endpoint.
+      runSaturation: config.maxConcurrentRuns > 0
+        ? gate.inFlight / config.maxConcurrentRuns
+        : 0,
     },
     headers,
   );

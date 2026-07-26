@@ -1,0 +1,76 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: heddle-server
+  labels:
+    app.kubernetes.io/name: heddle-server
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: heddle-server
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+
+  # EventSource reconnects on its own, and a reconnect that lands on a different
+  # pod finds no memory of the session. Affinity is the cheap fix; making the
+  # stream resumable via Last-Event-ID is the durable one, and would let this be
+  # dropped.
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 3600
+---
+# A drain can hold a pod for up to --drain-timeout, so an eviction that takes
+# several at once (a node drain, a cluster upgrade) would put a large share of
+# live sessions on the clock simultaneously. This bounds that.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: heddle-server
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: heddle-server
+---
+# The engine serves Server-Sent Events, which every default in an ingress is
+# wrong for. Untuned, nginx buffers the whole response and the client sees
+# nothing until the run ends — the stream is technically working and looks
+# completely broken.
+#
+# The server already sends `x-accel-buffering: no` and `cache-control:
+# no-transform` itself (see src/sse.ts), which nginx honours; these annotations
+# make it explicit and cover the timeouts, which the server cannot influence.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: heddle-server
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
+    # Must exceed the longest run (--timeout). A read timeout below it cuts the
+    # stream at the proxy while the run is still going.
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
+    # Second line of defence for reconnects, in case traffic reaches pods
+    # without passing the Service's ClientIP affinity.
+    nginx.ingress.kubernetes.io/affinity: "cookie"
+    nginx.ingress.kubernetes.io/session-cookie-name: "heddle-pod"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: api.heddle.run
+      http:
+        paths:
+          # Only the run surface is published. /metrics is deliberately absent:
+          # it is unauthenticated and belongs to in-cluster collection.
+          - path: /v1
+            pathType: Prefix
+            backend:
+              service:
+                name: heddle-server
+                port:
+                  name: http
