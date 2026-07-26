@@ -35,7 +35,7 @@ class BubblewrapSession implements SandboxSession {
     this.workspace = workspace;
   }
 
-  wrap(toolPath: string): SandboxCommand {
+  wrap(toolPath: string, extraArgs: string[] = []): SandboxCommand {
     const policy = this.policy;
     const cwd = resolve(policy.cwd ?? process.cwd());
     const tool = resolve(toolPath);
@@ -81,7 +81,7 @@ class BubblewrapSession implements SandboxSession {
       args.push('--setenv', key, value);
     }
 
-    args.push('--', tool);
+    args.push('--', tool, ...extraArgs);
 
     return { command: this.bwrapPath, args, env, cwd };
   }
