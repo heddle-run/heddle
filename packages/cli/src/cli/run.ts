@@ -8,12 +8,18 @@ import {
   FileRegistry,
   SubprocessExecutor,
   Runner,
+  loadPlugins,
   DEFAULT_RUNNER_OPTIONS,
   type RunnerOptions,
   type Event,
   type ParsedFlow,
 } from '@heddle/core';
 import { getToolIcon, getToolTitle, formatDuration } from '../chat/tool-display.js';
+
+/** Accumulates a repeatable commander flag into an array. */
+function collect(value: string, previous: string[]): string[] {
+  return [...previous, value];
+}
 
 function buildRunnerOpts(verbose: boolean, chat: boolean): RunnerOptions {
   const opts = { ...DEFAULT_RUNNER_OPTIONS, verbose };
@@ -39,6 +45,9 @@ function buildRunnerOpts(verbose: boolean, chat: boolean): RunnerOptions {
           break;
         case 'node_complete':
           if (verbose) console.error(`[${e.nodeName}] Completed`);
+          break;
+        case 'warning':
+          console.error(`Warning: ${e.message}`);
           break;
         case 'node_error':
           console.error(`[${e.nodeName}] Error: ${e.error}`);
@@ -72,15 +81,27 @@ export const runCommand = new Command('run')
   .option('--tools-dir <dir>', 'Directory containing tool executables')
   .option('--input <json>', 'Input JSON object')
   .option('--chat', 'Open an interactive chat session')
+  .option(
+    '--plugin <module>',
+    'Plugin module providing custom component types (repeatable)',
+    collect,
+    [] as string[],
+  )
   .action(
     async (
       flowPath: string,
-      options: { toolsDir?: string; input?: string; chat?: boolean },
+      options: {
+        toolsDir?: string;
+        input?: string;
+        chat?: boolean;
+        plugin?: string[];
+      },
       command: Command,
     ) => {
       const verbose = command.parent?.opts().verbose ?? false;
 
-      const pf = loadFlow(flowPath);
+      const plugins = await loadPlugins(options.plugin);
+      const pf = loadFlow(flowPath, plugins);
 
       const reg = FileRegistry.create(options.toolsDir ?? '');
       const toolNames = collectToolNames(pf);
@@ -94,6 +115,7 @@ export const runCommand = new Command('run')
       const deps = {
         toolExecutor: new SubprocessExecutor(),
         toolRegistry: reg,
+        plugins,
         eventHandler: (e: Event) => opts.eventHandler?.(e),
       };
 

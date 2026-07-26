@@ -47,7 +47,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "openai": "^4.85.0"
+    "openai": "^4.85.0",
+    "yaml": "^2.8.0"
   },
   "devDependencies": {
     "agentspec": "workspace:*",

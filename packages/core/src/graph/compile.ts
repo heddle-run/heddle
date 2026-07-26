@@ -1,5 +1,7 @@
-import type { ParsedFlow, SpecNode } from '../spec/types.js';
+import type { AgentNode, AnyNode, BranchingNode, LLMNode, ParsedFlow, ToolNode } from '../spec/types.js';
 import type { Dependencies, NodeExecutor } from '../node/types.js';
+import { PluginNodeAdapter } from '../plugin/executor.js';
+import type { PluginNode } from '../plugin/types.js';
 import { PassthroughExecutor, BranchingExecutor } from '../node/branching.js';
 import { AgentExecutor } from '../node/agent.js';
 import { LLMExecutor } from '../node/llm.js';
@@ -68,22 +70,28 @@ export function compile(
   return new CompiledGraph(pf.name, nodes, start, dataEdges);
 }
 
-function buildExecutor(n: SpecNode, deps: Dependencies): NodeExecutor {
+function buildExecutor(n: AnyNode, deps: Dependencies): NodeExecutor {
   switch (n.componentType) {
     case 'StartNode':
     case 'EndNode':
       return new PassthroughExecutor();
     case 'AgentNode':
-      return new AgentExecutor(n, deps);
+      return new AgentExecutor(n as AgentNode, deps);
     case 'LlmNode':
-      return new LLMExecutor(n, deps);
+      return new LLMExecutor(n as LLMNode, deps);
     case 'ToolNode':
-      return new ToolNodeExecutor(n, deps);
+      return new ToolNodeExecutor(n as ToolNode, deps);
     case 'BranchingNode':
-      return new BranchingExecutor(n, deps);
-    default:
+      return new BranchingExecutor(n as BranchingNode, deps);
+    default: {
+      const def = deps.plugins?.nodeDef(n.componentType);
+      if (def) {
+        return new PluginNodeAdapter(n as unknown as PluginNode, def, deps);
+      }
       throw new CompileError(
-        `unknown node type: ${(n as SpecNode).componentType}`,
+        `node "${n.name}" has type "${n.componentType}", which no builtin or ` +
+          `plugin provides. Loaded plugins: ${deps.plugins?.describe() ?? 'none'}`,
       );
+    }
   }
 }

@@ -36,9 +36,12 @@ export type {
   Flow,
   LLMConfig,
   LLMNode,
+  AnyNode,
+  CustomNode,
   ParsedFlow,
   Property,
   SpecNode,
+  TransformSpec,
   StartNode,
   ToolNode,
   ToolSpec,
@@ -65,6 +68,30 @@ export type { Event, EventType, EventHandler } from './runner/events.js';
 export { State } from './state/state.js';
 
 export type { Dependencies, NodeExecutor } from './node/types.js';
+
+// ---------------------------------------------------------------------------
+// Plugins: custom Agent Spec component types
+// ---------------------------------------------------------------------------
+
+export { definePlugin } from './plugin/types.js';
+export { PluginRegistry } from './plugin/registry.js';
+export { loadPlugin, loadPlugins } from './plugin/loader.js';
+export type {
+  HeddlePlugin,
+  PluginComponent,
+  PluginComponentDef,
+  PluginContext,
+  PluginIO,
+  PluginNode,
+  PluginNodeDef,
+  PluginNodeExecutor,
+  PluginResult,
+  PluginTransformDef,
+  PluginTransformExecutor,
+  TransformMessage,
+  TransformPhase,
+  TransformResult,
+} from './plugin/types.js';
 
 // ---------------------------------------------------------------------------
 // Tools
@@ -97,6 +124,7 @@ export type {
 export {
   CompileError,
   LLMError,
+  PluginError,
   RunError,
   SpecError,
   ToolError,

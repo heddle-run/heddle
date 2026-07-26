@@ -1,4 +1,4 @@
-import type { ControlFlowEdge, DataFlowEdge, SpecNode } from '../spec/types.js';
+import type { AnyNode, ControlFlowEdge, DataFlowEdge } from '../spec/types.js';
 import type { NodeExecutor } from '../node/types.js';
 
 /** DataSource identifies where a node input value comes from. */
@@ -11,7 +11,7 @@ export interface DataSource {
 export interface CompiledNode {
   name: string;
   type: string;
-  specNode: SpecNode;
+  specNode: AnyNode;
   executor: NodeExecutor;
   edges: ControlFlowEdge[];
   inputMappings: Map<string, DataSource>;

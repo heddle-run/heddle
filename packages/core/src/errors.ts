@@ -28,6 +28,13 @@ export class ToolError extends Error {
   }
 }
 
+export class PluginError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = 'PluginError';
+  }
+}
+
 export class LLMError extends Error {
   constructor(message: string, options?: ErrorOptions) {
     super(message, options);
