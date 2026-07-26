@@ -1,0 +1,101 @@
+name: Deploy Playground Engine
+
+# The broker and the container image behind heddle.run/playground.
+#
+# What this deploys executes code that its callers wrote. The tests below are
+# not a formality on the way to the deploy step — they are what checks that
+# submitted tools and plugins are still confined to a per-run directory, that
+# names cannot traverse out of it, and that a server without
+# --allow-request-code still refuses both. A deploy that skipped them could
+# quietly widen an unauthenticated remote-code-execution surface.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/broker/**"
+      - "packages/server/**"
+      - "packages/core/**"
+      - "vendor/agentspec/**"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/deploy-playground.yml"
+  workflow_dispatch:
+
+# One deploy at a time. Overlapping runs would race on the same worker and the
+# same container image tag; in-progress runs are left to finish rather than
+# cancelled, so a half-applied deploy is not a possible outcome.
+concurrency:
+  group: deploy-playground
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    # Declared so branch protection can require a manual approval before this
+    # runs. Nothing here depends on the environment existing — if it is not
+    # configured, the job proceeds as normal.
+    environment: playground
+
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # No `version:` — package.json's `packageManager` field is the single
+      # source of truth. Setting both makes action-setup v4 fail.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      # wrangler shells out to `docker build --load`, which needs BuildKit.
+      # ubuntu-latest ships the buildx plugin, but the default builder is not
+      # always a BuildKit one, so make it explicit rather than depend on the
+      # image's defaults.
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Deploy broker and engine image
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: packages/broker
+          # Secrets are set once with `wrangler secret put`, not on every
+          # deploy: they outlive the worker version and putting them here would
+          # copy the model credential into this workflow's environment for no
+          # gain.
+          command: deploy
+
+      - name: Verify the deployment answers
+        env:
+          BROKER_URL: ${{ vars.HEDDLE_API_URL }}
+        run: |
+          if [ -z "$BROKER_URL" ]; then
+            echo "HEDDLE_API_URL is not set; skipping the post-deploy check."
+            echo "Set it to the deployed worker's URL so this step can run."
+            exit 0
+          fi
+
+          # Only /healthz, which touches no container. A capabilities or run
+          # probe would start one on every deploy, and a smoke test should not
+          # be the thing that decides whether the engine is warm.
+          echo "checking $BROKER_URL/healthz"
+          status=$(curl -sS -o /tmp/health -w '%{http_code}' --max-time 30 "$BROKER_URL/healthz" || echo 000)
+          cat /tmp/health || true
+          echo
+          if [ "$status" != "200" ]; then
+            echo "::error::broker returned $status from /healthz"
+            exit 1
+          fi

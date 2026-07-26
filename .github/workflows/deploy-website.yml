@@ -30,6 +30,13 @@ jobs:
       - name: Build
         run: npm run build
         working-directory: website
+        env:
+          # The playground's engine endpoint. NEXT_PUBLIC_* is inlined into the
+          # client bundle at build time, so this has to be set here rather than
+          # at deploy time — and being public, it belongs in a repository
+          # variable rather than a secret. Left unset, the playground builds and
+          # renders but reports that no engine is configured.
+          NEXT_PUBLIC_HEDDLE_API: ${{ vars.HEDDLE_API_URL }}
 
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
