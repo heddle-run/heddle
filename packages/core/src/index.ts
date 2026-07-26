@@ -91,6 +91,7 @@ export { loadRemotePlugin, readManifest } from './plugin/remote-loader.js';
 export type { RemotePlugin, RemotePluginOptions } from './plugin/remote-loader.js';
 export { PluginHost } from './plugin/host.js';
 export type { PluginHostOptions, ToolRunner } from './plugin/host.js';
+export { PLUGIN_RUNTIME_JS, withRuntime } from './plugin/runtime-source.js';
 export { validateManifest } from './plugin/manifest.js';
 export type {
   PluginManifest,

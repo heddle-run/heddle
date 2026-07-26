@@ -15,6 +15,7 @@
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { validateManifest, withRuntime } from '@heddle/core';
 import type { ServerConfig } from './config.js';
 import { HttpError } from './errors.js';
 
@@ -27,10 +28,33 @@ export interface RequestTool {
   interpreter?: string;
 }
 
-/** A plugin module submitted with the request. ESM, default-exporting a plugin. */
+/**
+ * A plugin submitted with the request.
+ *
+ * Two halves, and the split is the reason a submitted plugin is safe to accept
+ * at all. The `manifest` declares what the plugin provides — component types,
+ * inputs, outputs, branches, a schema — as data, so parsing a flow that uses it
+ * executes nothing. The `source` is only ever run in a separate process.
+ *
+ * A submitted plugin is *never* loaded in-process. The old shape, a bare module
+ * default-exporting a plugin object, is refused: importing it would run the
+ * caller's code inside the server, which is the thing this design exists to
+ * prevent.
+ */
 export interface RequestPlugin {
   name: string;
+  /** The plugin's declarative half. Validated before anything is written. */
+  manifest: unknown;
+  /** Handler source. The runtime is prepended, so it can call `serve()`. */
   source: string;
+}
+
+/** A submitted plugin, materialized and ready to load. */
+export interface MaterializedPlugin {
+  name: string;
+  manifest: unknown;
+  /** Absolute path of the written module. */
+  path: string;
 }
 
 export interface RequestCode {
@@ -122,7 +146,35 @@ function parsePlugins(value: unknown, config: ServerConfig): RequestPlugin[] {
     }
     const entry = raw as Record<string, unknown>;
     const name = checkName('plugin', entry.name, seen);
-    return { name, source: checkSource('plugin', name, entry.source) };
+    const source = checkSource('plugin', name, entry.source);
+
+    if (entry.manifest === undefined) {
+      // The likeliest cause is a plugin written against the in-process API,
+      // which this endpoint deliberately cannot accept: loading one means
+      // importing it into the server. Say so, rather than reporting a missing
+      // field and leaving the author to guess why it is required.
+      throw new HttpError(
+        400,
+        `plugin "${name}" has no "manifest". Submitted plugins run out of process, ` +
+          `so they must declare their component types as data. A module that ` +
+          `default-exports a plugin object cannot be accepted here — it would run ` +
+          `inside the server.`,
+      );
+    }
+
+    // Validated now, before a byte is written: a bad manifest is a bad request,
+    // and there is no reason to create a run directory to discover it.
+    try {
+      validateManifest(entry.manifest);
+    } catch (err) {
+      throw new HttpError(
+        400,
+        err instanceof Error ? err.message : String(err),
+        'PluginError',
+      );
+    }
+
+    return { name, manifest: entry.manifest, source };
   });
 }
 
@@ -130,13 +182,13 @@ function parsePlugins(value: unknown, config: ServerConfig): RequestPlugin[] {
 export interface MaterializedCode {
   /** Directory of tool executables, or undefined when none were submitted. */
   toolsDir?: string;
-  /** Absolute paths of plugin modules, in submission order. */
-  pluginPaths: string[];
+  /** Submitted plugins, in submission order. */
+  plugins: MaterializedPlugin[];
   dispose(): void;
 }
 
 export const NO_CODE: MaterializedCode = {
-  pluginPaths: [],
+  plugins: [],
   dispose: () => {},
 };
 
@@ -204,7 +256,7 @@ export function materializeRequestCode(
       }
     }
 
-    const pluginPaths: string[] = [];
+    const materializedPlugins: MaterializedPlugin[] = [];
     if (plugins.length > 0) {
       const pluginsDir = join(root, 'plugins');
       mkdirSync(pluginsDir);
@@ -212,12 +264,15 @@ export function materializeRequestCode(
         // .mjs so node treats it as ESM regardless of any package.json that
         // happens to sit above the temp directory.
         const path = join(pluginsDir, `${plugin.name}.mjs`);
-        writeFileSync(path, plugin.source, { mode: 0o400 });
-        pluginPaths.push(path);
+        // The runtime is prepended rather than imported: the plugin runs from
+        // a temp directory with no node_modules beside it, so `serve()` has to
+        // arrive in the same file.
+        writeFileSync(path, withRuntime(plugin.source), { mode: 0o400 });
+        materializedPlugins.push({ name: plugin.name, manifest: plugin.manifest, path });
       }
     }
 
-    return { toolsDir, pluginPaths, dispose };
+    return { toolsDir, plugins: materializedPlugins, dispose };
   } catch (err) {
     dispose();
     throw err;
