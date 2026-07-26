@@ -8,6 +8,7 @@
  * deserialization plugin, plus the runtime executor that makes the node do something.
  */
 import type { Property } from 'agentspec';
+import type { Message } from '../llm/types.js';
 import type { Dependencies } from '../node/types.js';
 
 /**
@@ -81,12 +82,6 @@ export interface PluginComponentDef {
   validate?(component: PluginComponent): void;
 }
 
-/** A message in the conversation handed to a transform. */
-export interface TransformMessage {
-  role: string;
-  content: string;
-}
-
 /**
  * Where in an agent's turn a transform runs: `pre` sees the messages on their
  * way to the model, `post` sees the model's answer on its way back.
@@ -102,7 +97,7 @@ export type TransformPhase = 'pre' | 'post';
 export interface TransformResult {
   action: 'pass' | 'modify' | 'reject';
   /** Replacement messages for `modify`, or the refusal to return for `reject`. */
-  messages?: TransformMessage[];
+  messages?: Message[];
   reason?: string;
 }
 
@@ -115,7 +110,7 @@ export interface TransformContext {
 /** The runtime half of a custom transform. */
 export interface PluginTransformExecutor {
   apply(
-    messages: TransformMessage[],
+    messages: Message[],
     ctx: TransformContext,
   ): TransformResult | Promise<TransformResult>;
 }

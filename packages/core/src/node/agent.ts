@@ -5,7 +5,6 @@ import type { Message, ToolCall, ToolDefinition, Provider, JsonSchema } from '..
 import type { NodeExecutor, Dependencies } from './types.js';
 import { createProvider } from '../llm/provider.js';
 import { TransformChain } from '../plugin/transform.js';
-import type { TransformMessage } from '../plugin/types.js';
 import { RunError, ToolError } from '../errors.js';
 
 const MAX_TOOL_ROUNDS = 10;
@@ -92,17 +91,11 @@ export class AgentExecutor implements NodeExecutor {
 
     // Pre-transforms run before the model is called at all, so a rejected
     // prompt costs nothing.
-    if (!this.transforms.isEmptyFor('pre')) {
-      const outcome = await this.transforms.apply(
-        'pre',
-        toTransformMessages(messages),
-        signal,
-      );
-      if (outcome.rejected) {
-        return rejectionState(outcome.rejected);
-      }
-      messages = fromTransformMessages(outcome.messages);
+    const pre = await this.transforms.apply('pre', messages, signal);
+    if (pre.rejected) {
+      return rejectionState(pre.rejected);
     }
+    messages = pre.messages;
 
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
       const resp = await this.getProvider().chatCompletion(signal, {
@@ -112,20 +105,17 @@ export class AgentExecutor implements NodeExecutor {
       });
 
       if (!resp.tool_calls || resp.tool_calls.length === 0) {
-        let content = resp.content;
-
-        // Post-transforms see the answer on its way back out.
-        if (!this.transforms.isEmptyFor('post')) {
-          const outcome = await this.transforms.apply(
-            'post',
-            [{ role: 'assistant', content: content ?? '' }],
-            signal,
-          );
-          if (outcome.rejected) {
-            return rejectionState(outcome.rejected);
-          }
-          content = outcome.messages.at(-1)?.content ?? content;
+        // Post-transforms see the answer in the context of the conversation
+        // that produced it, with the reply as the last message.
+        const post = await this.transforms.apply(
+          'post',
+          [...messages, { role: 'assistant', content: resp.content }],
+          signal,
+        );
+        if (post.rejected) {
+          return rejectionState(post.rejected);
         }
+        const content = post.messages.at(-1)?.content ?? resp.content;
 
         const outputData: Record<string, unknown> = { result: content };
         if (content) {
@@ -135,10 +125,10 @@ export class AgentExecutor implements NodeExecutor {
             // Not JSON, that's fine
           }
         }
-        // Only when the agent is guarded, so an unguarded agent's output shape
-        // is unchanged. Set last: a model returning JSON cannot forge it.
+        // Only when the agent has transforms, so an untransformed agent's output
+        // shape is unchanged. Set last: a model returning JSON cannot forge it.
         if (!this.transforms.isEmpty()) {
-          outputData.guard_status = 'ok';
+          outputData.transform_status = 'ok';
         }
         return new State(outputData);
       }
@@ -250,26 +240,10 @@ export function substituteTemplate(template: string, s: State): string {
   return result;
 }
 
-/** Narrows LLM messages to the {role, content} pairs a transform works with. */
-function toTransformMessages(messages: Message[]): TransformMessage[] {
-  return messages.map((m) => ({ role: m.role, content: m.content ?? '' }));
-}
-
 /**
- * Rebuilds LLM messages from a transform's output. Lossless in practice: pre
- * transforms run before any tool call, so no message carries tool_calls yet.
- */
-function fromTransformMessages(messages: TransformMessage[]): Message[] {
-  return messages.map((m) => ({
-    role: m.role as Message['role'],
-    content: m.content,
-  }));
-}
-
-/**
- * The agent's output when a transform refused. `guard_status` is a plain state
- * key, so a downstream BranchingNode can route on it without heddle inventing
- * any branching of its own.
+ * The agent's output when a transform refused. `transform_status` is a plain
+ * state key, so a downstream BranchingNode can route on it without heddle
+ * inventing any branching of its own.
  */
 function rejectionState(rejected: {
   reason: string;
@@ -279,10 +253,10 @@ function rejectionState(rejected: {
 }): State {
   return new State({
     result: rejected.replacement ?? rejected.reason,
-    guard_status: 'rejected',
-    guard_reason: rejected.reason,
-    guard_transform: rejected.transform,
-    guard_phase: rejected.phase,
+    transform_status: 'rejected',
+    transform_reason: rejected.reason,
+    transform_name: rejected.transform,
+    transform_phase: rejected.phase,
   });
 }
 

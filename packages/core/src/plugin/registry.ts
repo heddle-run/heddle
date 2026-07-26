@@ -1,27 +1,33 @@
 /**
  * PluginRegistry — the lookup table that makes heddle's closed sets open.
  *
- * The parser asks it which component types are known, the compiler asks it for an
- * executor, and the deserializer asks it for the agentspec SDK plugins to install.
+ * The parser asks it what a component type is, the compiler asks it for an
+ * executor, and it owns the agentspec deserializer configured with its plugins.
  */
+import { AgentSpecDeserializer, isBuiltinComponentType } from 'agentspec';
+import type { ComponentDeserializationPlugin } from 'agentspec';
 import type {
   HeddlePlugin,
   PluginComponentDef,
   PluginNodeDef,
   PluginTransformDef,
 } from './types.js';
-import {
-  HeddleDeserializationPlugin,
-  type SdkDeserializationPlugin,
-} from './deserializer.js';
+import { HeddleDeserializationPlugin } from './deserializer.js';
 import { PluginError } from '../errors.js';
 
+/** What a custom component type is, which decides how heddle handles it. */
+export type ComponentKind = 'node' | 'transform' | 'component';
+
+interface Registered {
+  kind: ComponentKind;
+  def: PluginComponentDef;
+}
+
 export class PluginRegistry {
-  private nodeDefs = new Map<string, PluginNodeDef>();
-  private transformDefs = new Map<string, PluginTransformDef>();
-  private componentDefs = new Map<string, PluginComponentDef>();
-  private sdkPlugins: SdkDeserializationPlugin[] = [];
+  private defs = new Map<string, Registered>();
+  private sdkPlugins: ComponentDeserializationPlugin[] = [];
   private pluginNames: string[] = [];
+  private deserializerInstance: AgentSpecDeserializer | undefined;
 
   /** An empty registry — the default when no plugins are configured. */
   static empty(): PluginRegistry {
@@ -44,31 +50,36 @@ export class PluginRegistry {
       throw new PluginError(`plugin "${plugin.name}" is missing a "version"`);
     }
 
-    for (const def of plugin.nodes ?? []) {
-      this.claim(def.componentType, plugin.name);
-      this.nodeDefs.set(def.componentType, def);
-      this.componentDefs.set(def.componentType, def);
-    }
-    for (const def of plugin.transforms ?? []) {
-      this.claim(def.componentType, plugin.name);
-      this.transformDefs.set(def.componentType, def);
-      this.componentDefs.set(def.componentType, def);
-    }
-    for (const def of plugin.components ?? []) {
-      this.claim(def.componentType, plugin.name);
-      this.componentDefs.set(def.componentType, def);
+    const groups: Array<[ComponentKind, PluginComponentDef[]]> = [
+      ['node', plugin.nodes ?? []],
+      ['transform', plugin.transforms ?? []],
+      ['component', plugin.components ?? []],
+    ];
+    for (const [kind, defs] of groups) {
+      for (const def of defs) {
+        this.claim(def.componentType, plugin.name);
+        this.defs.set(def.componentType, { kind, def });
+      }
     }
 
     this.sdkPlugins.push(new HeddleDeserializationPlugin(plugin));
     this.pluginNames.push(`${plugin.name}@${plugin.version}`);
+    this.deserializerInstance = undefined;
   }
 
   /**
-   * Rejects two plugins claiming one component type. The SDK raises on this too,
-   * but the message it produces does not say which plugins collided.
+   * Rejects a component type that is already spoken for. Shadowing a builtin
+   * would otherwise surface as the SDK's opaque "multiple plugins" error, and a
+   * plugin node named after a builtin would never be reached by the compiler.
    */
   private claim(componentType: string, pluginName: string): void {
-    if (this.componentDefs.has(componentType)) {
+    if (isBuiltinComponentType(componentType)) {
+      throw new PluginError(
+        `plugin "${pluginName}" declares component type "${componentType}", ` +
+          `which is a builtin Agent Spec type. Choose a different name.`,
+      );
+    }
+    if (this.defs.has(componentType)) {
       throw new PluginError(
         `component type "${componentType}" is provided by more than one plugin ` +
           `(re-registered by "${pluginName}"). Remove the duplicate plugin.`,
@@ -77,35 +88,28 @@ export class PluginRegistry {
   }
 
   isEmpty(): boolean {
-    return this.componentDefs.size === 0;
+    return this.defs.size === 0;
   }
 
-  hasNodeType(componentType: string): boolean {
-    return this.nodeDefs.has(componentType);
+  /** What kind of component this type is, or undefined if no plugin provides it. */
+  kindOf(componentType: string): ComponentKind | undefined {
+    return this.defs.get(componentType)?.kind;
   }
 
   nodeDef(componentType: string): PluginNodeDef | undefined {
-    return this.nodeDefs.get(componentType);
-  }
-
-  nodeTypeNames(): string[] {
-    return [...this.nodeDefs.keys()];
-  }
-
-  hasTransformType(componentType: string): boolean {
-    return this.transformDefs.has(componentType);
+    const entry = this.defs.get(componentType);
+    return entry?.kind === 'node' ? (entry.def as PluginNodeDef) : undefined;
   }
 
   transformDef(componentType: string): PluginTransformDef | undefined {
-    return this.transformDefs.get(componentType);
-  }
-
-  transformTypeNames(): string[] {
-    return [...this.transformDefs.keys()];
+    const entry = this.defs.get(componentType);
+    return entry?.kind === 'transform'
+      ? (entry.def as PluginTransformDef)
+      : undefined;
   }
 
   componentTypeNames(): string[] {
-    return [...this.componentDefs.keys()];
+    return [...this.defs.keys()];
   }
 
   /** Human-readable list of loaded plugins, for error messages. */
@@ -113,8 +117,9 @@ export class PluginRegistry {
     return this.pluginNames.length > 0 ? this.pluginNames.join(', ') : 'none';
   }
 
-  /** The plugins to hand to the agentspec SDK's AgentSpecDeserializer. */
-  deserializationPlugins(): SdkDeserializationPlugin[] {
-    return [...this.sdkPlugins];
+  /** The agentspec deserializer configured with this registry's plugins. */
+  deserializer(): AgentSpecDeserializer {
+    this.deserializerInstance ??= new AgentSpecDeserializer(this.sdkPlugins);
+    return this.deserializerInstance;
   }
 }

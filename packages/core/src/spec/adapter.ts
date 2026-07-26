@@ -5,7 +5,7 @@
 import type { ComponentBase } from 'agentspec';
 import type { AnyNode, ParsedFlow, ControlFlowEdge, DataFlowEdge } from './types.js';
 import type { PluginRegistry } from '../plugin/registry.js';
-import type { PluginComponent, PluginNode } from '../plugin/types.js';
+import type { PluginComponent } from '../plugin/types.js';
 import { SpecError } from '../errors.js';
 
 /** SDK Flow type (we use structural typing to avoid tight coupling). */
@@ -69,7 +69,7 @@ const SUPPORTED_NODE_TYPES = new Set([
 export interface AdapterOptions {
   registry?: PluginRegistry;
   /** Real plugin nodes keyed by id, to swap in for their stand-ins. */
-  pluginNodes?: Map<string, PluginNode>;
+  pluginNodes?: Map<string, PluginComponent>;
   /** Real plugin transforms keyed by id, to swap in for their stand-ins. */
   pluginTransforms?: Map<string, PluginComponent>;
 }
@@ -176,7 +176,7 @@ function toSpecNode(node: SdkNode, options: AdapterOptions): AnyNode {
   if (!SUPPORTED_NODE_TYPES.has(node.componentType)) {
     const known = [
       ...SUPPORTED_NODE_TYPES,
-      ...(options.registry?.nodeTypeNames() ?? []),
+      ...(options.registry?.componentTypeNames() ?? []),
     ];
     throw new SpecError(
       `node "${node.name}" has type "${node.componentType}", which no builtin or ` +

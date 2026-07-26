@@ -1,4 +1,4 @@
-import type { AgentNode, AnyNode, BranchingNode, LLMNode, ParsedFlow, ToolNode } from '../spec/types.js';
+import type { AnyNode, ParsedFlow, SpecNode } from '../spec/types.js';
 import type { Dependencies, NodeExecutor } from '../node/types.js';
 import { PluginNodeAdapter } from '../plugin/executor.js';
 import type { PluginNode } from '../plugin/types.js';
@@ -71,27 +71,31 @@ export function compile(
 }
 
 function buildExecutor(n: AnyNode, deps: Dependencies): NodeExecutor {
-  switch (n.componentType) {
+  // Plugin types are checked first so the builtin switch below keeps its
+  // discriminated-union narrowing. A plugin cannot shadow a builtin: the
+  // registry rejects builtin component type names at registration.
+  const pluginDef = deps.plugins?.nodeDef(n.componentType);
+  if (pluginDef) {
+    return new PluginNodeAdapter(n as unknown as PluginNode, pluginDef, deps);
+  }
+
+  const builtin = n as SpecNode;
+  switch (builtin.componentType) {
     case 'StartNode':
     case 'EndNode':
       return new PassthroughExecutor();
     case 'AgentNode':
-      return new AgentExecutor(n as AgentNode, deps);
+      return new AgentExecutor(builtin, deps);
     case 'LlmNode':
-      return new LLMExecutor(n as LLMNode, deps);
+      return new LLMExecutor(builtin, deps);
     case 'ToolNode':
-      return new ToolNodeExecutor(n as ToolNode, deps);
+      return new ToolNodeExecutor(builtin, deps);
     case 'BranchingNode':
-      return new BranchingExecutor(n as BranchingNode, deps);
-    default: {
-      const def = deps.plugins?.nodeDef(n.componentType);
-      if (def) {
-        return new PluginNodeAdapter(n as unknown as PluginNode, def, deps);
-      }
+      return new BranchingExecutor(builtin, deps);
+    default:
       throw new CompileError(
         `node "${n.name}" has type "${n.componentType}", which no builtin or ` +
           `plugin provides. Loaded plugins: ${deps.plugins?.describe() ?? 'none'}`,
       );
-    }
   }
 }

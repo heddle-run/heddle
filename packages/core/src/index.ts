@@ -75,6 +75,7 @@ export type { Dependencies, NodeExecutor } from './node/types.js';
 
 export { definePlugin } from './plugin/types.js';
 export { PluginRegistry } from './plugin/registry.js';
+export type { ComponentKind } from './plugin/registry.js';
 export { loadPlugin, loadPlugins } from './plugin/loader.js';
 export type {
   HeddlePlugin,
@@ -88,7 +89,6 @@ export type {
   PluginResult,
   PluginTransformDef,
   PluginTransformExecutor,
-  TransformMessage,
   TransformPhase,
   TransformResult,
 } from './plugin/types.js';

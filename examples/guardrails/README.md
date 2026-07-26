@@ -30,10 +30,10 @@ node packages/cli/dist/heddle.js run examples/guardrails/flow.json --plugin ./ex
 ```json
 {
   "result": "I can't help with that request.",
-  "guard_status": "rejected",
-  "guard_reason": "the request looks like a prompt-injection attempt",
-  "guard_transform": "prompt_guard",
-  "guard_phase": "pre"
+  "transform_status": "rejected",
+  "transform_reason": "the request looks like a prompt-injection attempt",
+  "transform_name": "prompt_guard",
+  "transform_phase": "pre"
 }
 ```
 
@@ -61,15 +61,15 @@ OPENAI_API_KEY=sk-... node packages/cli/dist/heddle.js run examples/guardrails/f
 - In the **`post`** phase the model has already answered, and the rejection
   replaces that answer.
 
-Either way the agent returns `guard_status: "rejected"` alongside `guard_reason`,
-`guard_transform` and `guard_phase`.
+Either way the agent returns `transform_status: "rejected"` alongside `transform_reason`,
+`transform_name` and `transform_phase`.
 
 Adding your own guardrail means adding a function to the `handlers` object in
 `plugin.js` and naming it from the spec. Nothing else changes.
 
 ## Routing on a rejection
 
-`guard_status` is an ordinary state key, so a **builtin** `BranchingNode` routes on
+`transform_status` is an ordinary state key, so a **builtin** `BranchingNode` routes on
 it — guardrails need no custom node type:
 
 ```
@@ -77,7 +77,7 @@ start ──▶ assistant ──▶ route ──ok_branch───────�
                           └────blocked_branch───▶ end_blocked
 ```
 
-The flow wires `assistant.guard_status` into the router's `branching_mapping_key`
+The flow wires `assistant.transform_status` into the router's `branching_mapping_key`
 with a data flow edge, and the router maps `rejected` to `blocked_branch` with
 everything else falling through to `ok_branch`.
 

@@ -10,9 +10,9 @@ import type { TransformSpec } from '../spec/types.js';
 import type {
   PluginComponent,
   PluginTransformExecutor,
-  TransformMessage,
   TransformPhase,
 } from './types.js';
+import type { Message } from '../llm/types.js';
 import { PluginError } from '../errors.js';
 
 /** Transforms the SDK defines but heddle does not execute yet. */
@@ -24,7 +24,7 @@ const BUILTIN_TRANSFORMS = new Set([
 const VALID_ACTIONS = new Set(['pass', 'modify', 'reject']);
 
 export interface TransformOutcome {
-  messages: TransformMessage[];
+  messages: Message[];
   /** Set when a transform refused. The caller decides what to do about it. */
   rejected?: {
     reason: string;
@@ -113,18 +113,13 @@ export class TransformChain {
     return this.entries.length === 0;
   }
 
-  /** True when no transform runs in this phase, so the caller can skip the work. */
-  isEmptyFor(phase: TransformPhase): boolean {
-    return !this.entries.some((e) => e.phases.has(phase));
-  }
-
   /**
    * Applies every transform for this phase in order, stopping at the first
    * rejection.
    */
   async apply(
     phase: TransformPhase,
-    messages: TransformMessage[],
+    messages: Message[],
     signal: AbortSignal | undefined,
   ): Promise<TransformOutcome> {
     let current = messages;

@@ -19,8 +19,9 @@
  * If the SDK ever exports a way to extend those unions, this whole module
  * collapses into registering the plugin's schemas and deleting the swap.
  */
+import { isBuiltinComponentType } from 'agentspec';
 import type { PluginRegistry } from './registry.js';
-import type { PluginComponent, PluginNode } from './types.js';
+import type { PluginComponent } from './types.js';
 import { PluginError } from '../errors.js';
 
 /**
@@ -28,7 +29,7 @@ import { PluginError } from '../errors.js';
  * through caller-supplied `inputs` and `outputs` untouched and imposes no other
  * structural requirements — it is the most inert builtin node available.
  */
-const PLACEHOLDER_TYPE = 'InputMessageNode';
+const PLACEHOLDER_NODE_TYPE = 'InputMessageNode';
 
 /**
  * The stand-in transform type. Both builtin transforms require an `llm`, so one
@@ -51,7 +52,7 @@ export interface Substitution {
   /** The document to hand to the SDK deserializer. */
   doc: Record<string, unknown>;
   /** Real plugin nodes, keyed by the id shared with their stand-in. */
-  pluginNodes: Map<string, PluginNode>;
+  pluginNodes: Map<string, PluginComponent>;
   /** Real plugin transforms, keyed by the id shared with their stand-in. */
   pluginTransforms: Map<string, PluginComponent>;
 }
@@ -71,29 +72,25 @@ function componentTypeOf(value: Record<string, unknown>): string | undefined {
 }
 
 /**
- * Replaces every plugin-typed node in the document with a stand-in the SDK
- * accepts, returning the rewritten document plus the real nodes.
+ * Replaces every plugin-provided component in the document with a stand-in the
+ * SDK accepts, returning the rewritten document plus the real components.
  *
- * Returns the original document untouched when the flow uses no plugin nodes, so
- * specs that do not use plugins take exactly the path they did before.
+ * This walk visits every component in the document, so it is also where an
+ * unrecognised `component_type` is caught: doing it here names the offending
+ * component, which the SDK's own error cannot.
  */
 export function substitutePluginNodes(
   doc: Record<string, unknown>,
   registry: PluginRegistry,
   load: ComponentLoader,
 ): Substitution {
-  const pluginNodes = new Map<string, PluginNode>();
+  const pluginNodes = new Map<string, PluginComponent>();
   const pluginTransforms = new Map<string, PluginComponent>();
 
-  if (registry.isEmpty()) {
-    return { doc, pluginNodes, pluginTransforms };
-  }
-
-  // Referenced components live beside the nodes that point at them, so they are
-  // collected up front and re-attached to each standalone deserialization.
+  // Referenced components live beside the components that point at them, so they
+  // are collected up front and re-attached to each standalone deserialization.
   const referenced = collectReferencedComponents(doc);
   const idsByKey = new Map<string, string>();
-  let substituted = false;
 
   const walk = (value: unknown): unknown => {
     if (Array.isArray(value)) {
@@ -104,36 +101,40 @@ export function substitutePluginNodes(
     }
 
     const componentType = componentTypeOf(value);
-    if (componentType && registry.hasNodeType(componentType)) {
-      substituted = true;
-      return placeholderFor(value, componentType, {
-        referenced,
-        idsByKey,
-        components: pluginNodes as Map<string, PluginComponent>,
-        load,
-        build: (id, name, node) => ({
-          component_type: PLACEHOLDER_TYPE,
-          id,
-          name,
-          inputs: propertySchemas((node as PluginNode).inputs),
-          outputs: propertySchemas((node as PluginNode).outputs),
-        }),
-      });
-    }
-    if (componentType && registry.hasTransformType(componentType)) {
-      substituted = true;
-      return placeholderFor(value, componentType, {
-        referenced,
-        idsByKey,
-        components: pluginTransforms,
-        load,
-        build: (id, name) => ({
+    if (componentType) {
+      const kind = registry.kindOf(componentType);
+
+      if (kind === 'node') {
+        const component = resolve(value, componentType, pluginNodes);
+        return {
+          component_type: PLACEHOLDER_NODE_TYPE,
+          id: component.id,
+          name: component.name,
+          inputs: propertySchemas(component.inputs),
+          outputs: propertySchemas(component.outputs),
+        };
+      }
+
+      if (kind === 'transform') {
+        const component = resolve(value, componentType, pluginTransforms);
+        return {
           component_type: PLACEHOLDER_TRANSFORM_TYPE,
-          id,
-          name,
+          id: component.id,
+          name: component.name,
           llm: PLACEHOLDER_LLM,
-        }),
-      });
+        };
+      }
+
+      // `component` kinds are nested inside a plugin node or transform and are
+      // deserialized with their parent, so they need no stand-in of their own.
+      if (!kind && !isBuiltinComponentType(componentType)) {
+        throw new PluginError(
+          `component "${value.name ?? '(unnamed)'}" has type "${componentType}", ` +
+            `which is not a builtin and no loaded plugin provides.\n` +
+            `  Loaded plugins: ${registry.describe()}\n` +
+            `  If it comes from a plugin, load it with: --plugin <module>`,
+        );
+      }
     }
 
     const out: Record<string, unknown> = {};
@@ -143,55 +144,48 @@ export function substitutePluginNodes(
     return out;
   };
 
-  const rewritten = walk(doc) as Record<string, unknown>;
+  /**
+   * Deserializes one plugin component and remembers it under a stable id, so the
+   * stand-in and the real component agree on identity.
+   */
+  const resolve = (
+    raw: Record<string, unknown>,
+    componentType: string,
+    into: Map<string, PluginComponent>,
+  ): PluginComponent => {
+    const name = raw.name;
+    if (typeof name !== 'string' || name.length === 0) {
+      throw new PluginError(
+        `${componentType}: "name" is required and must be a non-empty string`,
+      );
+    }
+
+    // Keyed by name so a component inlined in several places (the nodes list and
+    // an edge, say) resolves to one identity, which the SDK's invariants require.
+    const key = `${componentType}:${name}`;
+    let id = idsByKey.get(key);
+    if (!id) {
+      id = typeof raw.id === 'string' && raw.id ? raw.id : crypto.randomUUID();
+      idsByKey.set(key, id);
+    }
+
+    let component = into.get(id);
+    if (!component) {
+      const withRefs: Record<string, unknown> = { ...raw, id };
+      if (Object.keys(referenced).length > 0) {
+        withRefs.$referenced_components = referenced;
+      }
+      component = load(withRefs) as unknown as PluginComponent;
+      into.set(id, component);
+    }
+    return component;
+  };
+
   return {
-    doc: substituted ? rewritten : doc,
+    doc: walk(doc) as Record<string, unknown>,
     pluginNodes,
     pluginTransforms,
   };
-}
-
-function placeholderFor(
-  raw: Record<string, unknown>,
-  componentType: string,
-  ctx: {
-    referenced: Record<string, unknown>;
-    idsByKey: Map<string, string>;
-    components: Map<string, PluginComponent>;
-    load: ComponentLoader;
-    build: (
-      id: string,
-      name: string,
-      component: PluginComponent,
-    ) => Record<string, unknown>;
-  },
-): Record<string, unknown> {
-  const name = raw.name;
-  if (typeof name !== 'string' || name.length === 0) {
-    throw new PluginError(
-      `${componentType}: "name" is required and must be a non-empty string`,
-    );
-  }
-
-  // Keyed by name so a node inlined in several places (the nodes list and an
-  // edge, say) resolves to one identity, which the SDK's invariants require.
-  const key = `${componentType}:${name}`;
-  let id = ctx.idsByKey.get(key);
-  if (!id) {
-    id = typeof raw.id === 'string' && raw.id ? raw.id : crypto.randomUUID();
-    ctx.idsByKey.set(key, id);
-  }
-
-  if (!ctx.components.has(id)) {
-    const withRefs: Record<string, unknown> = { ...raw, id };
-    if (Object.keys(ctx.referenced).length > 0) {
-      withRefs.$referenced_components = ctx.referenced;
-    }
-    const component = ctx.load(withRefs) as unknown as PluginComponent;
-    ctx.components.set(id, component);
-  }
-
-  return ctx.build(id, name, ctx.components.get(id)!);
 }
 
 /** Unwraps Property objects back to the json schema dicts the SDK reparses. */

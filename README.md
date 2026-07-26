@@ -199,7 +199,7 @@ because the graph is validated for reachability before anything runs.
 
 A transform returning `reject` is what makes guardrails work. In the `pre` phase
 heddle skips the model call entirely, so a blocked prompt costs nothing; the agent
-returns `guard_status: "rejected"`, which a builtin `BranchingNode` can route on.
+returns `transform_status: "rejected"`, which a builtin `BranchingNode` can route on.
 
 See [examples/guardrails](examples/guardrails) for a worked example: a `Processor`
 transform used as both a pre- and post-processor on an agent.

@@ -18,7 +18,7 @@
  *
  * `reject` is what makes this a guardrail. In the `pre` phase heddle skips the
  * model call entirely, so a blocked prompt costs nothing; the agent returns
- * `guard_status: "rejected"`, which a downstream BranchingNode can route on.
+ * `transform_status: "rejected"`, which a downstream BranchingNode can route on.
  *
  * Plain ESM with no imports, so it loads under both the built CLI and
  * `npm run dev`. TypeScript authors can import `definePlugin` from heddle for
@@ -140,16 +140,7 @@ export default {
         const config = processor.config ?? {};
 
         return {
-          apply(messages, ctx) {
-            const result = handler(messages, { config, ...ctx });
-            if (ctx.verbose && result.action !== 'pass') {
-              console.error(
-                `[${ctx.phase}] ${processor.name}: ${result.action}` +
-                  (result.reason ? ` — ${result.reason}` : ''),
-              );
-            }
-            return result;
-          },
+          apply: (messages, ctx) => handler(messages, { config, ...ctx }),
         };
       },
     },

@@ -53,11 +53,11 @@
   "data_flow_connections": [
     {
       "component_type": "DataFlowEdge",
-      "id": "e_guard_status",
-      "name": "guard_status_to_router",
+      "id": "e_transform_status",
+      "name": "transform_status_to_router",
       "metadata": {},
       "source_node": { "$component_ref": "n_assistant" },
-      "source_output": "guard_status",
+      "source_output": "transform_status",
       "destination_node": { "$component_ref": "n_route" },
       "destination_input": "branching_mapping_key"
     }
@@ -81,7 +81,7 @@
       "inputs": [{ "title": "query", "type": "string" }],
       "outputs": [
         { "title": "result", "type": "string" },
-        { "title": "guard_status", "type": "string" }
+        { "title": "transform_status", "type": "string" }
       ],
       "branches": ["next"],
       "agent": {

@@ -7,8 +7,17 @@
  * component, so this module turns each PluginComponentDef into the
  * ComponentDeserializationPlugin the SDK expects.
  */
-import { propertyFromJsonSchema } from 'agentspec';
-import type { Property } from 'agentspec';
+import { propertyFromJsonSchema, snakeToCamel } from 'agentspec';
+import type {
+  ComponentDeserializationPlugin,
+  DeserializationContext,
+  Property,
+} from 'agentspec';
+
+/** The SDK's serialized-dict type, which it does not re-export by name. */
+type SerializedDict = Parameters<
+  ComponentDeserializationPlugin['deserialize']
+>[0];
 import type {
   HeddlePlugin,
   PluginComponent,
@@ -18,22 +27,6 @@ import type {
   PluginNodeDef,
 } from './types.js';
 import { PluginError } from '../errors.js';
-
-/** Minimal structural view of the SDK's deserialization context. */
-interface SdkDeserializationContext {
-  loadField(value: unknown): unknown;
-}
-
-/** Minimal structural view of the SDK's deserialization plugin interface. */
-export interface SdkDeserializationPlugin {
-  readonly pluginName: string;
-  readonly pluginVersion: string;
-  supportedComponentTypes(): string[];
-  deserialize(
-    data: Record<string, unknown>,
-    context: SdkDeserializationContext,
-  ): unknown;
-}
 
 /**
  * Protocol fields the SDK owns. They carry the envelope, not the component's
@@ -65,10 +58,6 @@ const OPAQUE_FIELDS = new Set(['metadata', 'config']);
 /** Fields holding Property arrays, deserialized from json schema dicts. */
 const PROPERTY_ARRAY_FIELDS = new Set(['inputs', 'outputs']);
 
-function snakeToCamel(key: string): string {
-  return key.replace(/_([a-z0-9])/g, (_, c: string) => c.toUpperCase());
-}
-
 /** Converts a plugin's lightweight IO declaration into an SDK Property. */
 export function toProperty(io: PluginIO): Property {
   const schema: Record<string, unknown> = { title: io.title, type: io.type };
@@ -88,7 +77,9 @@ function isNodeDef(def: PluginComponentDef): def is PluginNodeDef {
  * `component_plugin_name` and `component_plugin_version` on export, so a spec
  * produced by heddle round-trips through other Agent Spec tooling.
  */
-export class HeddleDeserializationPlugin implements SdkDeserializationPlugin {
+export class HeddleDeserializationPlugin
+  implements ComponentDeserializationPlugin
+{
   readonly pluginName: string;
   readonly pluginVersion: string;
   private defs: Map<string, PluginComponentDef>;
@@ -116,13 +107,11 @@ export class HeddleDeserializationPlugin implements SdkDeserializationPlugin {
   }
 
   deserialize(
-    data: Record<string, unknown>,
-    context: SdkDeserializationContext,
-  ): unknown {
-    const componentType =
-      (data.component_type as string | undefined) ??
-      (data.componentType as string | undefined) ??
-      '';
+    data: SerializedDict,
+    context: DeserializationContext,
+  ): PluginComponent {
+    // The context knows which naming convention this document uses.
+    const componentType = context.getComponentType(data);
     const def = this.defs.get(componentType);
     if (!def) {
       throw new PluginError(
