@@ -248,6 +248,7 @@ start_node: { $component_ref: start }
 nodes:
   - $component_ref: start
   - $component_ref: shout
+  - $component_ref: reverse
   - $component_ref: end
 
 control_flow_connections:
@@ -256,8 +257,12 @@ control_flow_connections:
     from_node: { $component_ref: start }
     to_node: { $component_ref: shout }
   - component_type: ControlFlowEdge
-    name: shout_to_end
+    name: shout_to_reverse
     from_node: { $component_ref: shout }
+    to_node: { $component_ref: reverse }
+  - component_type: ControlFlowEdge
+    name: reverse_to_end
+    from_node: { $component_ref: reverse }
     to_node: { $component_ref: end }
 
 $referenced_components:
@@ -269,6 +274,7 @@ $referenced_components:
       - title: text
         type: string
 
+  # A tool: an executable the engine runs as a subprocess.
   shout:
     component_type: ToolNode
     id: shout
@@ -278,6 +284,14 @@ $referenced_components:
       id: shout_tool
       name: shout
       description: Uppercases the text it is given
+
+  # A plugin node. ReverseNode is not a heddle type — the plugin below adds it,
+  # and the engine learns its shape from that plugin's manifest while parsing
+  # this file, without running any of its code.
+  reverse:
+    component_type: ReverseNode
+    id: reverse
+    name: reverse
 
   end:
     component_type: EndNode
