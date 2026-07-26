@@ -34,6 +34,12 @@ heddle run <flow> [options]
 | `--tools-dir <path>` | Directory containing tool executables |
 | `--input <json>` | Input data as a JSON object |
 | `--chat` | Start an interactive chat session instead of a single run |
+| `--safe` | Run tools inside an OS sandbox |
+| `--sandbox <backend>` | Sandbox backend: `auto` (default), `bubblewrap`, or `seatbelt` |
+| `--allow-read <path>` | Grant sandboxed tools read access to a path (repeatable) |
+| `--allow-write <path>` | Grant sandboxed tools write access to a path (repeatable) |
+| `--allow-env <name>` | Forward an environment variable into the sandbox (repeatable) |
+| `--deny-net` | Block network access for sandboxed tools |
 
 ### Examples
 
@@ -49,6 +55,12 @@ heddle run flow.yaml --tools-dir ./tools --chat
 
 # Verbose logging
 heddle --verbose run flow.yaml --tools-dir ./tools
+
+# Confine tools to an OS sandbox
+heddle run flow.yaml --tools-dir ./tools --safe
+
+# Sandboxed, offline, with one writable output directory
+heddle run flow.yaml --tools-dir ./tools --safe --deny-net --allow-write ./out
 ```
 
 ### Output

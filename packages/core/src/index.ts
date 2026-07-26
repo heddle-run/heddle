@@ -99,7 +99,27 @@ export type {
 
 export { FileRegistry } from './tool/registry.js';
 export { SubprocessExecutor } from './tool/executor.js';
-export type { Executor, ExecResult, Registry, ToolDef } from './tool/types.js';
+export type { SubprocessExecutorOptions } from './tool/executor.js';
+export type {
+  Executor,
+  ExecResult,
+  ExecutorScope,
+  Registry,
+  ToolDef,
+} from './tool/types.js';
+
+// ---------------------------------------------------------------------------
+// Sandboxing: confining tool subprocesses
+// ---------------------------------------------------------------------------
+
+export { createSandbox, DEFAULT_SANDBOX_POLICY } from './sandbox/index.js';
+export type {
+  Sandbox,
+  SandboxBackend,
+  SandboxCommand,
+  SandboxPolicy,
+  SandboxSession,
+} from './sandbox/index.js';
 
 // ---------------------------------------------------------------------------
 // LLM providers
@@ -126,6 +146,7 @@ export {
   LLMError,
   PluginError,
   RunError,
+  SandboxError,
   SpecError,
   ToolError,
 } from './errors.js';

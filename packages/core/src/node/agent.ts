@@ -3,6 +3,7 @@ import { propertyTitle } from '../spec/types.js';
 import { State } from '../state/state.js';
 import type { Message, ToolCall, ToolDefinition, Provider, JsonSchema } from '../llm/types.js';
 import type { NodeExecutor, Dependencies } from './types.js';
+import type { Executor } from '../tool/types.js';
 import { createProvider } from '../llm/provider.js';
 import { TransformChain } from '../plugin/transform.js';
 import { RunError, ToolError } from '../errors.js';
@@ -56,6 +57,22 @@ export class AgentExecutor implements NodeExecutor {
   async execute(
     signal: AbortSignal | undefined,
     input: State,
+  ): Promise<State> {
+    // One sandbox session per agent execution: this agent's tools share a
+    // workspace with each other and with nothing else. Torn down on the way
+    // out, however the run ends.
+    const scope = this.deps.toolExecutor?.beginScope?.(this.node.name);
+    try {
+      return await this.runAgent(signal, input, scope?.executor);
+    } finally {
+      scope?.dispose();
+    }
+  }
+
+  private async runAgent(
+    signal: AbortSignal | undefined,
+    input: State,
+    executor: Executor | undefined,
   ): Promise<State> {
     const agent = this.node.agent!;
 
@@ -158,7 +175,7 @@ export class AgentExecutor implements NodeExecutor {
         });
 
         try {
-          const toolResult = await this.executeTool(signal, tc);
+          const toolResult = await this.executeTool(signal, tc, executor);
           const resultJSON = JSON.stringify(toolResult);
 
           this.deps.eventHandler?.({
@@ -204,6 +221,7 @@ export class AgentExecutor implements NodeExecutor {
   private async executeTool(
     signal: AbortSignal | undefined,
     tc: ToolCall,
+    scoped: Executor | undefined,
   ): Promise<Record<string, unknown>> {
     let args: Record<string, unknown>;
     try {
@@ -212,7 +230,8 @@ export class AgentExecutor implements NodeExecutor {
       throw new ToolError(`failed to parse arguments for "${tc.name}"`, { cause: err });
     }
 
-    if (!this.deps.toolRegistry || !this.deps.toolExecutor) {
+    const executor = scoped ?? this.deps.toolExecutor;
+    if (!this.deps.toolRegistry || !executor) {
       throw new ToolError(`"${tc.name}": registry or executor not configured`);
     }
 
@@ -221,11 +240,7 @@ export class AgentExecutor implements NodeExecutor {
       throw new ToolError(`"${tc.name}" not found in registry`);
     }
 
-    const result = await this.deps.toolExecutor.execute(
-      signal,
-      toolDef.path,
-      args,
-    );
+    const result = await executor.execute(signal, toolDef.path, args);
 
     return result.output;
   }

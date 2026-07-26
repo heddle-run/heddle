@@ -7,6 +7,7 @@
  */
 import { State } from '../state/state.js';
 import type { Dependencies, NodeExecutor } from '../node/types.js';
+import type { Executor } from '../tool/types.js';
 import type { PluginContext, PluginNode, PluginNodeDef } from './types.js';
 import { PluginError, RunError, ToolError } from '../errors.js';
 
@@ -32,10 +33,25 @@ export class PluginNodeAdapter implements NodeExecutor {
     signal: AbortSignal | undefined,
     input: State,
   ): Promise<State> {
+    // One sandbox session per node execution, matching AgentExecutor: the
+    // tools a plugin node runs share a workspace with each other only.
+    const scope = this.deps.toolExecutor?.beginScope?.(this.node.name);
+    try {
+      return await this.runNode(signal, input, scope?.executor);
+    } finally {
+      scope?.dispose();
+    }
+  }
+
+  private async runNode(
+    signal: AbortSignal | undefined,
+    input: State,
+    scoped: Executor | undefined,
+  ): Promise<State> {
     const ctx: PluginContext = {
       signal,
       node: this.node,
-      runTool: (name, toolInput) => this.runTool(signal, name, toolInput),
+      runTool: (name, toolInput) => this.runTool(signal, name, toolInput, scoped),
     };
 
     const result = await this.impl.execute(input.toData(), ctx);
@@ -71,8 +87,10 @@ export class PluginNodeAdapter implements NodeExecutor {
     signal: AbortSignal | undefined,
     name: string,
     input: Record<string, unknown>,
+    scoped?: Executor,
   ): Promise<Record<string, unknown>> {
-    const { toolRegistry, toolExecutor } = this.deps;
+    const { toolRegistry } = this.deps;
+    const toolExecutor = scoped ?? this.deps.toolExecutor;
     if (!toolRegistry || !toolExecutor) {
       throw new RunError(
         `${this.node.componentType} "${this.node.name}": no tool registry configured`,

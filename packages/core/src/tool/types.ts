@@ -15,6 +15,13 @@ export interface ExecResult {
   stderr: string;
 }
 
+/** ExecutorScope is a group of tool calls that share one sandbox workspace. */
+export interface ExecutorScope {
+  executor: Executor;
+  /** Tears the scope down. Safe to call more than once. */
+  dispose(): void;
+}
+
 /** Executor runs external tools. */
 export interface Executor {
   execute(
@@ -22,6 +29,15 @@ export interface Executor {
     toolPath: string,
     input: Record<string, unknown>,
   ): Promise<ExecResult>;
+
+  /**
+   * Opens a scope whose tool calls share one sandbox workspace, isolated from
+   * every other scope. Node executors call this once per node execution so an
+   * agent's tools can pass files to each other without any other agent seeing
+   * them. Optional: executors without sandboxing need not implement it, and
+   * callers fall back to using the executor directly.
+   */
+  beginScope?(label: string): ExecutorScope;
 }
 
 /** Registry holds discovered tools and provides lookup. */

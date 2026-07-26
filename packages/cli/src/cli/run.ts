@@ -9,16 +9,72 @@ import {
   SubprocessExecutor,
   Runner,
   loadPlugins,
+  createSandbox,
+  SandboxError,
   DEFAULT_RUNNER_OPTIONS,
   type RunnerOptions,
   type Event,
   type ParsedFlow,
+  type Sandbox,
+  type SandboxBackend,
 } from '@heddle/core';
 import { getToolIcon, getToolTitle, formatDuration } from '../chat/tool-display.js';
 
 /** Accumulates a repeatable commander flag into an array. */
 function collect(value: string, previous: string[]): string[] {
   return [...previous, value];
+}
+
+interface SafeOptions {
+  safe?: boolean;
+  sandbox?: string;
+  allowRead: string[];
+  allowWrite: string[];
+  allowEnv: string[];
+  denyNet?: boolean;
+}
+
+const SANDBOX_BACKENDS = new Set(['auto', 'bubblewrap', 'seatbelt']);
+
+/**
+ * Builds the sandbox for this run, or undefined when --safe was not given.
+ * The --allow-* and --deny-net flags only shape a sandbox, so using one
+ * without --safe is a mistake worth reporting rather than ignoring.
+ */
+function buildSandbox(
+  options: SafeOptions,
+  toolsDir: string | undefined,
+): Sandbox | undefined {
+  const tuning = [
+    options.sandbox !== undefined && '--sandbox',
+    options.allowRead.length > 0 && '--allow-read',
+    options.allowWrite.length > 0 && '--allow-write',
+    options.allowEnv.length > 0 && '--allow-env',
+    options.denyNet && '--deny-net',
+  ].filter((f): f is string => typeof f === 'string');
+
+  if (!options.safe) {
+    if (tuning.length > 0) {
+      throw new SandboxError(`${tuning.join(', ')} requires --safe`);
+    }
+    return undefined;
+  }
+
+  const backend = options.sandbox ?? 'auto';
+  if (!SANDBOX_BACKENDS.has(backend)) {
+    throw new SandboxError(
+      `unknown sandbox backend "${backend}" (expected ${[...SANDBOX_BACKENDS].join(', ')})`,
+    );
+  }
+
+  return createSandbox(backend as SandboxBackend, {
+    // The tools directory is read-only inside the sandbox: a tool can be run,
+    // but cannot rewrite itself or its siblings.
+    readPaths: [...(toolsDir ? [toolsDir] : []), ...options.allowRead],
+    writePaths: options.allowWrite,
+    network: !options.denyNet,
+    passEnv: options.allowEnv,
+  });
 }
 
 function buildRunnerOpts(verbose: boolean, chat: boolean): RunnerOptions {
@@ -87,6 +143,12 @@ export const runCommand = new Command('run')
     collect,
     [] as string[],
   )
+  .option('--safe', 'Run tools inside an OS sandbox')
+  .option('--sandbox <backend>', 'Sandbox backend: auto, bubblewrap, seatbelt (requires --safe)')
+  .option('--allow-read <path>', 'Grant sandboxed tools read access to a path (repeatable)', collect, [] as string[])
+  .option('--allow-write <path>', 'Grant sandboxed tools write access to a path (repeatable)', collect, [] as string[])
+  .option('--allow-env <name>', 'Forward an environment variable into the sandbox (repeatable)', collect, [] as string[])
+  .option('--deny-net', 'Block network access for sandboxed tools')
   .action(
     async (
       flowPath: string,
@@ -95,10 +157,19 @@ export const runCommand = new Command('run')
         input?: string;
         chat?: boolean;
         plugin?: string[];
-      },
+      } & SafeOptions,
       command: Command,
     ) => {
       const verbose = command.parent?.opts().verbose ?? false;
+
+      // Built before anything else so a bad sandbox setup fails before the
+      // run has a chance to execute an unconfined tool.
+      const sandbox = buildSandbox(options, options.toolsDir);
+      if (sandbox && verbose) {
+        console.error(
+          `Sandbox: ${sandbox.name}, network ${options.denyNet ? 'denied' : 'allowed'}`,
+        );
+      }
 
       const plugins = await loadPlugins(options.plugin);
       const pf = loadFlow(flowPath, plugins);
@@ -113,7 +184,7 @@ export const runCommand = new Command('run')
       const opts = buildRunnerOpts(verbose, isChat);
 
       const deps = {
-        toolExecutor: new SubprocessExecutor(),
+        toolExecutor: new SubprocessExecutor({ sandbox }),
         toolRegistry: reg,
         plugins,
         eventHandler: (e: Event) => opts.eventHandler?.(e),
