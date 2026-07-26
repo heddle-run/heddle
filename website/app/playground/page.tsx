@@ -42,9 +42,10 @@ export default function PlaygroundPage() {
             </p>
 
             <p className="mt-6 max-w-[54ch] font-mono text-xs leading-loose text-muted-ink">
-              Everything you submit runs on a throwaway machine that is destroyed
-              afterwards. Nothing is stored, and nothing you write here is
-              private. Do not paste credentials.
+              Tools and plugins you submit run in their own sandboxed processes
+              and are deleted when the run ends. Nothing is stored. An API key
+              in your flow does travel to the engine to reach the model — use a
+              key you are willing to spend, and revoke it when you are done.
             </p>
           </Container>
         </section>

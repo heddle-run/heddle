@@ -21,7 +21,27 @@ export interface RequestTool {
 
 export interface RequestPlugin {
   name: string;
+  /**
+   * What the plugin provides, as data. The engine reads this while parsing, so
+   * a flow's shape is known without executing anyone's code — which is what
+   * makes accepting a submitted plugin reasonable at all.
+   */
+  manifest: PluginManifest;
+  /** Handler source. Calls `serve()`, which the engine prepends. */
   source: string;
+}
+
+/** The declarative half of a submitted plugin. */
+export interface PluginManifest {
+  name: string;
+  version: string;
+  components: Array<{
+    componentType: string;
+    kind?: "node" | "transform" | "component";
+    inputs?: Array<{ title: string; type: string }>;
+    outputs?: Array<{ title: string; type: string }>;
+    branches?: string[];
+  }>;
 }
 
 /** A runner event, as it arrives over the wire. */
@@ -289,28 +309,35 @@ printf '{"shouted":"%s"}' "$(printf '%s' "$text" | tr '[:lower:]' '[:upper:]')"
 `,
 };
 
-/** A plugin adds a component type the engine does not ship. */
+/**
+ * A plugin adds a component type the engine does not ship.
+ *
+ * Two halves. The manifest declares what the plugin provides, as data, so the
+ * engine can parse a flow that uses `ReverseNode` without running anything.
+ * The source only has to say what the node *does* — `serve()` is supplied by
+ * the engine, so there is nothing to import and no build step.
+ */
 export const DEFAULT_PLUGIN: RequestPlugin = {
   name: "reverse",
-  source: `export default {
-  name: "playground-reverse",
-  version: "1.0.0",
-
-  nodes: [
-    {
-      componentType: "ReverseNode",
-
-      createExecutor() {
-        return {
-          execute(input) {
-            const text = String(input.text ?? "");
-            return { output: { reversed: [...text].reverse().join("") } };
-          },
-        };
+  manifest: {
+    name: "playground-reverse",
+    version: "1.0.0",
+    components: [
+      {
+        componentType: "ReverseNode",
+        inputs: [{ title: "shouted", type: "string" }],
+        outputs: [{ title: "reversed", type: "string" }],
       },
+    ],
+  },
+  source: `serve({
+  ReverseNode: {
+    execute(input) {
+      const text = String(input.shouted ?? input.text ?? "");
+      return { output: { reversed: [...text].reverse().join("") } };
     },
-  ],
-};
+  },
+});
 `,
 };
 

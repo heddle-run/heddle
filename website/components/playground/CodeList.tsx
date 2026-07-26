@@ -25,6 +25,7 @@ export default function CodeList({
   limit,
   note,
   emptySource,
+  emptyManifest,
 }: {
   entries: Entry[];
   onChange: (entries: Entry[]) => void;
@@ -32,6 +33,12 @@ export default function CodeList({
   limit: number;
   note: string;
   emptySource: string;
+  /**
+   * Starting manifest for a new plugin. Required for plugins: the engine
+   * refuses one without a manifest, since a plugin's component types have to be
+   * known while a flow is parsed rather than by running its code.
+   */
+  emptyManifest?: unknown;
 }) {
   const update = (index: number, patch: Partial<Entry>) => {
     onChange(entries.map((e, i) => (i === index ? { ...e, ...patch } : e)));
@@ -43,7 +50,11 @@ export default function CodeList({
       {
         name: `${kind}_${entries.length + 1}`,
         source: emptySource,
-        ...(kind === "tool" ? { interpreter: "sh" } : {}),
+        ...(kind === "tool"
+          ? { interpreter: "sh" }
+          : emptyManifest
+            ? { manifest: emptyManifest }
+            : {}),
       },
     ]);
   };

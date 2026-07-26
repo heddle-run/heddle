@@ -29,24 +29,21 @@ const TOOL_STUB = `read -r input
 printf '{"result": "ok"}'
 `;
 
-const PLUGIN_STUB = `export default {
+const PLUGIN_STUB = `serve({
+  MyNode: {
+    execute(input) {
+      return { output: { ...input } };
+    },
+  },
+});
+`;
+
+/** The manifest a newly added plugin starts from, matching PLUGIN_STUB. */
+const PLUGIN_MANIFEST_STUB = {
   name: "my-plugin",
   version: "1.0.0",
-
-  nodes: [
-    {
-      componentType: "MyNode",
-      createExecutor() {
-        return {
-          execute(input) {
-            return { output: { ...input } };
-          },
-        };
-      },
-    },
-  ],
+  components: [{ componentType: "MyNode" }],
 };
-`;
 
 export default function Playground() {
   const [flow, setFlow] = useState(DEFAULT_FLOW);
@@ -267,7 +264,8 @@ export default function Playground() {
                 onChange={(next) => setPlugins(next as RequestPlugin[])}
                 limit={limits?.maxRequestPlugins ?? 5}
                 emptySource={PLUGIN_STUB}
-                note="A plugin is an ES module whose default export adds component types. It is imported into the engine process, not sandboxed — which is why it only runs on a throwaway one."
+                emptyManifest={PLUGIN_MANIFEST_STUB}
+                note="A plugin adds component types the engine does not ship. The manifest declares them as data; the source runs in its own process, so it never sees the engine's memory or environment. Call serve({ ComponentType: { execute } }) — it is supplied for you."
               />
             )}
           </div>
