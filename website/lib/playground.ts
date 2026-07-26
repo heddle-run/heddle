@@ -392,7 +392,7 @@ const GUARDRAIL: Example = {
   id: "guardrail",
   title: "A guardrail that refuses",
   blurb:
-    "A transform inspects the agent's messages before the model call. Rejecting skips the call entirely, so this runs without a key.",
+    "A transform inspects the agent's messages before the model call. Blocked here — change the input and the model answers.",
   flow: `component_type: Flow
 name: guarded
 start_node: { $component_ref: start }
@@ -431,14 +431,14 @@ $referenced_components:
       name: assistant
       system_prompt: You are a concise, helpful assistant.
 
-      # Never reached while the guardrail rejects. Put your own key here and
-      # ask something allowed to see the model actually answer.
+      # Never reached while the guardrail rejects — that is the point: a
+      # blocked prompt costs nothing. Change the input to something allowed
+      # and the model answers for real.
       llm_config:
         component_type: OpenAiConfig
         id: llm
-        name: gpt
-        model_id: gpt-4o-mini
-        api_key: sk-put-your-own-key-here
+        name: model
+        model_id: openrouter/free
 
       tools: []
 
@@ -638,22 +638,21 @@ printf '{"action":"filed a ticket for the morning"}'
 };
 
 /**
- * The real thing: an agent calling a model with the caller's own key.
+ * A real model call, with no signup.
  *
- * Pointed at OpenRouter's free router rather than OpenAI, because the barrier
- * matters more than the model here — an OpenRouter account is free and takes
- * no card, where a useful OpenAI key does not. `openrouter/free` picks among
- * the free models on its own.
+ * The llm_config names no credential, so the engine supplies its own — a free
+ * OpenRouter key the operator configured. That fallback is deliberately narrow:
+ * it only applies when the spec names neither a `url` nor an `api_key`. A spec
+ * that chooses its own endpoint has to bring its own key, because filling one
+ * in for a caller-chosen URL would post the operator's credential to it.
  *
- * A key is still needed: OpenRouter answers 401 without one, free model or
- * not. heddle holds none, so it has to come from the spec.
+ * To use your own provider instead, add both — see the comment in the flow.
  */
 const AGENT: Example = {
   id: "agent",
-  title: "An agent, with your key",
+  title: "An agent",
   blurb:
-    "A single agent calling a model through OpenRouter's free router. Needs a free OpenRouter key, pasted into the spec.",
-  needsKey: true,
+    "A single agent calling a real model. Runs as-is: the engine supplies a free model when the spec names no credential.",
   flow: `component_type: Flow
 name: ask
 start_node: { $component_ref: start }
@@ -692,19 +691,20 @@ $referenced_components:
       name: assistant
       system_prompt: Answer in one sentence.
 
-      # Any OpenAI-compatible endpoint works. OpenRouter's free router is used
-      # here because an account costs nothing and needs no card.
+      # No api_key and no url, so the engine uses the free model it was
+      # configured with. To call your own provider instead, supply both:
+      #
+      #   component_type: OpenAiCompatibleConfig
+      #   url: https://api.openai.com/v1
+      #   api_key: sk-your-own-key
+      #
+      # Both together, always. A spec that names a url without a key is
+      # refused rather than being handed the engine's own.
       llm_config:
-        component_type: OpenAiCompatibleConfig
+        component_type: OpenAiConfig
         id: llm
-        name: openrouter
-        url: https://openrouter.ai/api/v1
+        name: model
         model_id: openrouter/free
-
-        # Replace this. Get one at openrouter.ai/keys — free models still need
-        # a key. It is sent to the engine to reach the model and is not stored,
-        # but it does leave your browser, so use one you can revoke.
-        api_key: sk-or-v1-REPLACE-WITH-YOUR-OPENROUTER-KEY
 
       tools: []
 
