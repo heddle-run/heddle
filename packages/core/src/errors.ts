@@ -35,6 +35,13 @@ export class PluginError extends Error {
   }
 }
 
+export class SandboxError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = 'SandboxError';
+  }
+}
+
 export class LLMError extends Error {
   constructor(message: string, options?: ErrorOptions) {
     super(message, options);

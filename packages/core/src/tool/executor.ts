@@ -1,15 +1,54 @@
 import { spawn } from 'node:child_process';
-import type { ExecResult, Executor } from './types.js';
+import type { ExecResult, Executor, ExecutorScope } from './types.js';
+import type { Sandbox, SandboxSession } from '../sandbox/index.js';
 import { ToolError } from '../errors.js';
 
 const DEFAULT_TIMEOUT = 30_000;
 
+export interface SubprocessExecutorOptions {
+  timeout?: number;
+  /** When set, every tool is launched through this sandbox instead of directly. */
+  sandbox?: Sandbox;
+  /**
+   * Session shared by this executor's tool calls. Set by beginScope; callers
+   * configuring an executor pass `sandbox` and let scopes manage sessions.
+   */
+  session?: SandboxSession;
+}
+
 /** SubprocessExecutor runs tools as external processes. */
 export class SubprocessExecutor implements Executor {
   private timeout: number;
+  private sandbox?: Sandbox;
+  private session?: SandboxSession;
 
-  constructor(timeout?: number) {
-    this.timeout = timeout ?? DEFAULT_TIMEOUT;
+  constructor(options?: SubprocessExecutorOptions) {
+    this.timeout = options?.timeout ?? DEFAULT_TIMEOUT;
+    this.sandbox = options?.sandbox;
+    this.session = options?.session;
+  }
+
+  beginScope(label: string): ExecutorScope {
+    if (!this.sandbox) {
+      // Nothing to isolate: hand back this executor and make disposal a no-op.
+      return { executor: this, dispose: () => {} };
+    }
+
+    const session = this.sandbox.session(label);
+    let disposed = false;
+
+    return {
+      executor: new SubprocessExecutor({
+        timeout: this.timeout,
+        sandbox: this.sandbox,
+        session,
+      }),
+      dispose: () => {
+        if (disposed) return;
+        disposed = true;
+        session.dispose();
+      },
+    };
   }
 
   async execute(
@@ -19,8 +58,25 @@ export class SubprocessExecutor implements Executor {
   ): Promise<ExecResult> {
     const inputJSON = JSON.stringify(input);
 
+    // A call outside any scope still gets confined; it just gets a throwaway
+    // session of its own, which is disposed as soon as the tool exits.
+    const session = this.session ?? this.sandbox?.session('tool');
+    const ownsSession = session !== undefined && session !== this.session;
+    const wrapped = session?.wrap(toolPath);
+
     return new Promise<ExecResult>((resolve, reject) => {
       const ac = new AbortController();
+
+      // Idempotent: per-invocation sandbox state is released once, on
+      // whichever of the terminal paths below runs first.
+      let released = false;
+      const release = () => {
+        if (released) return;
+        released = true;
+        wrapped?.cleanup?.();
+        if (ownsSession) session?.dispose();
+      };
+
       const timer = setTimeout(() => {
         ac.abort();
         reject(
@@ -33,6 +89,7 @@ export class SubprocessExecutor implements Executor {
       // If external signal is already aborted, reject immediately
       if (signal?.aborted) {
         clearTimeout(timer);
+        release();
         reject(new ToolError('execution aborted'));
         return;
       }
@@ -44,9 +101,13 @@ export class SubprocessExecutor implements Executor {
       };
       signal?.addEventListener('abort', onExternalAbort, { once: true });
 
-      const proc = spawn(toolPath, [], {
+      const proc = spawn(wrapped?.command ?? toolPath, wrapped?.args ?? [], {
         stdio: ['pipe', 'pipe', 'pipe'],
         signal: ac.signal,
+        // Outside a sandbox the tool inherits heddle's environment, as before.
+        // Inside one it gets only what the policy allows through, so secrets
+        // in heddle's own environment are not handed to tool code.
+        ...(wrapped ? { env: wrapped.env, cwd: wrapped.cwd } : {}),
       });
 
       const stdoutChunks: Buffer[] = [];
@@ -58,6 +119,7 @@ export class SubprocessExecutor implements Executor {
       proc.on('error', (err) => {
         clearTimeout(timer);
         signal?.removeEventListener('abort', onExternalAbort);
+        release();
         if (ac.signal.aborted) return; // already handled by timeout
         const stderrStr = Buffer.concat(stderrChunks).toString();
         reject(
@@ -68,6 +130,7 @@ export class SubprocessExecutor implements Executor {
       proc.on('close', (code) => {
         clearTimeout(timer);
         signal?.removeEventListener('abort', onExternalAbort);
+        release();
 
         const stderrStr = Buffer.concat(stderrChunks).toString();
 
@@ -101,6 +164,10 @@ export class SubprocessExecutor implements Executor {
 
         resolve({ output, stderr: stderrStr });
       });
+
+      // A tool that exits before reading stdin breaks the pipe; the real
+      // failure is reported by the 'error'/'close' handlers above.
+      proc.stdin.on('error', () => {});
 
       // Write input to stdin
       proc.stdin.write(inputJSON);

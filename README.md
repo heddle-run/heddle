@@ -94,6 +94,12 @@ Commands:
     --input <json>         Input JSON object
     --chat                 Open an interactive chat session
     --plugin <module>      Plugin providing custom component types (repeatable)
+    --safe                 Run tools inside an OS sandbox
+    --sandbox <backend>    auto (default), bubblewrap, or seatbelt
+    --allow-read <path>    Grant sandboxed tools read access (repeatable)
+    --allow-write <path>   Grant sandboxed tools write access (repeatable)
+    --allow-env <name>     Forward an env var into the sandbox (repeatable)
+    --deny-net             Block network access for sandboxed tools
 
   validate <flow>          Validate a flow definition (JSON or YAML)
     --tools-dir <dir>      Directory containing tool executables
@@ -153,11 +159,61 @@ Tools are declared inline as `ServerTool` components in the flow, and matched at
 executable in `--tools-dir` by name. A tool's name is its filename with the extension stripped,
 so `fetch_api.py` is declared as `fetch_api`.
 
-> **Warning:** tools run as subprocesses of `heddle` and inherit its full environment,
-> API keys included. They are not sandboxed — a tool can read and write anything the invoking
-> user can. Only put executables you trust in a tools directory, and take particular care with
-> tools that execute commands or write files on a model's behalf, such as those in
-> `examples/coding-agent/`.
+> **Warning:** by default tools run as subprocesses of `heddle` and inherit its full
+> environment, API keys included — a tool can read and write anything the invoking user can.
+> Only put executables you trust in a tools directory, and take particular care with tools
+> that execute commands or write files on a model's behalf, such as those in
+> `examples/coding-agent/`. Pass [`--safe`](#safe-mode) to confine them instead.
+
+### Safe Mode
+
+`--safe` runs every tool inside an OS sandbox:
+
+```bash
+heddle run flow.json --tools-dir ./tools --safe
+```
+
+Backends are picked automatically: **bubblewrap** on Linux, **Seatbelt**
+(`sandbox-exec`) on macOS. Naming one explicitly with `--sandbox` fails rather
+than falling back, so `--safe` never silently degrades into an unconfined run.
+
+Inside the sandbox a tool gets:
+
+| | |
+|---|---|
+| System directories | read-only |
+| Working directory | read-only (opt in with `--allow-write`) |
+| Tools directory | read-only — a tool cannot rewrite itself or its siblings |
+| `$HOME` | a throwaway directory; the real one is unreachable, so `~/.ssh`, `~/.aws` and `~/.config` are not exposed |
+| `$TMPDIR` | private scratch, discarded when the tool exits |
+| `$HEDDLE_WORKSPACE` | writable, shared with the other tools in the same agent execution |
+| Environment | only `PATH`, `HOME`, `TMPDIR`, locale, and anything named with `--allow-env` — so `OPENAI_API_KEY` and other secrets in heddle's own environment are not handed to tool code |
+| Network | allowed by default; `--deny-net` turns it off |
+
+Tools also get `HEDDLE_SANDBOX=1`, so one can detect confinement and adapt
+rather than fail.
+
+#### Per-agent sessions
+
+Every `AgentNode` execution opens its own sandbox session. Each tool call is
+still its own container, but all calls within one agent execution share a
+single `$HEDDLE_WORKSPACE` directory — so an agent's tools can pass files to
+each other, while a different agent's tools see a different, empty workspace.
+The workspace is destroyed when the agent finishes. Tool calls made outside any
+agent (a bare `ToolNode`) get a throwaway session of their own.
+
+#### Limits
+
+- Sandboxing applies to **tools**, not to plugins. Plugin modules are imported
+  into the heddle process itself and run with full Node privileges; only the
+  tools they invoke via `ctx.runTool` are confined.
+- LLM calls are made by heddle, not by sandboxed code, so `--deny-net` does not
+  affect them.
+- On macOS the shared `/tmp` and `/var/tmp` stay writable, because `/bin/sh`
+  writes here-documents to a hardcoded path there. Linux gets a private tmpfs
+  and has no such hole.
+- `--safe` requires Linux or macOS. On Linux, `bwrap` must be installed
+  (`apt install bubblewrap`).
 
 ### Plugins
 
