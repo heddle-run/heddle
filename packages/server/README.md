@@ -70,8 +70,8 @@ Both kinds run outside this process:
   writes outside the run workspace, only the environment `--allow-env` names.
 - **Plugins** are `{ name, manifest, source }`. The manifest declares the
   component types as data, so parsing a flow that uses one executes nothing;
-  the source runs in its own process with an **empty** environment and is
-  killed when the run ends.
+  the source runs in its own process holding **none** of the server's
+  environment, and is killed when the run ends.
 
 A plugin written against the in-process API — a module default-exporting a
 plugin object — is refused here, because loading one would run the caller's

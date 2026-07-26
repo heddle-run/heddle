@@ -16,7 +16,7 @@ plugins ran inside the server process. They no longer do.
 | | Mechanism | Confined by |
 |---|---|---|
 | **Tool scripts** | executed as subprocesses | `--safe`: no `$HOME`, no writes outside the run workspace, environment cut to what `--allow-env` names |
-| **Plugin modules** | executed in their own process | own process, **empty** environment, killed when the run ends |
+| **Plugin modules** | executed in their own process | own process, none of the server's environment, killed when the run ends |
 | **The spec itself** | parsed as data | `$VAR` refused, so it cannot read this process's environment |
 
 The consequence is the thing to design around, and it is the opposite of what

@@ -40,9 +40,10 @@ SECURITY: there is no authentication. Every caller can execute the tools in
 unauthenticated remote-code-execution surface.
 
 --allow-request-code lets callers submit their own tool scripts and plugin
-modules. Both run in their own processes, plugins with an empty environment, and
-both stop when the run ends; a submitted spec cannot dereference this process's
-environment. One server can therefore serve many concurrent untrusted runs.
+modules. Both run in their own processes, neither receives any of this process's
+environment, and both stop when the run ends. A submitted spec cannot
+dereference this process's environment either. One server can therefore serve
+many concurrent untrusted runs.
 
 What that option does not change: this server still executes computation its
 callers choose and makes outbound requests to hosts they name. Restrict egress

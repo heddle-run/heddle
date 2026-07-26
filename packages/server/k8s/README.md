@@ -20,8 +20,8 @@ case that turning it on would be unsafe here.
 **This used to say the opposite.** Plugins were imported into the server's Node
 process, so a submitted one could read every co-tenant's memory and the pod's
 environment, and the only safe topology for untrusted callers was one container
-per run. Plugins now execute in their own process with an empty environment,
-and a submitted spec can no longer dereference the pod's environment either.
+per run. Plugins now execute in their own process, holding none of the pod's
+environment, and a submitted spec can no longer dereference it either.
 `packages/core/src/plugin/__tests__/remote.test.ts` runs the cross-tenant
 attack and asserts it fails.
 

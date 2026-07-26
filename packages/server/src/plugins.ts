@@ -32,6 +32,11 @@ export function buildPlugins(
           // Nothing. Not a filtered subset of the server's environment — none
           // of it. A plugin that needs configuration takes it from its own
           // spec fields, which the caller wrote and can see.
+          //
+          // Under --safe the plugin is not left with a literally empty
+          // environment: the sandbox supplies its own base — PATH, HOME,
+          // TMPDIR, PWD, HEDDLE_WORKSPACE, HEDDLE_SANDBOX — all synthesized,
+          // and none of them the server's.
           env: {},
           session: config.sandbox?.session(`plugin-${plugin.name}`),
         }),

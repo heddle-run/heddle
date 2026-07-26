@@ -50,9 +50,10 @@ export interface ServerConfig {
    * many concurrent runs, which was not always true:
    *
    * - Tool scripts run as subprocesses, confined by {@link sandbox}.
-   * - Plugin modules run in their own process with an empty environment, and
-   *   are killed when the run ends. They used to be `import()`ed into this
-   *   process, which is why this option once implied one container per run.
+   * - Plugin modules run in their own process, holding none of this process's
+   *   environment, and are killed when the run ends. They used to be
+   *   `import()`ed into this process, which is why this option once implied
+   *   one container per run.
    * - Submitted specs cannot dereference this process's environment: `$VAR`
    *   in an `llm_config` is refused while this is on.
    *
