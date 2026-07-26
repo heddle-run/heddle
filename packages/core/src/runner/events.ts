@@ -8,11 +8,14 @@ export type EventType =
   | 'flow_start'
   | 'flow_complete'
   | 'tool_call'
-  | 'tool_result';
+  | 'tool_result'
+  | 'warning';
 
 /** Event holds information about a runner event. */
 export interface Event {
   type: EventType;
+  /** Human-readable detail, currently only set on `warning`. */
+  message?: string;
   nodeName?: string;
   nodeType?: string;
   state?: State;

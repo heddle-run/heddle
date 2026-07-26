@@ -5,6 +5,7 @@ import {
   loadFlow,
   loadComponent,
   collectToolNames,
+  loadPlugins,
   FileRegistry,
 } from '@heddle/core';
 
@@ -12,9 +13,20 @@ export const validateCommand = new Command('validate')
   .description('Validate an Agent Spec component (Flow, Agent, Swarm, etc.)')
   .argument('<spec>', 'Path to spec JSON or YAML file')
   .option('--tools-dir <dir>', 'Directory containing tool executables')
-  .action((specPath: string, options: { toolsDir?: string }) => {
+  .option(
+    '--plugin <module>',
+    'Plugin module providing custom component types (repeatable)',
+    (value: string, previous: string[]) => [...previous, value],
+    [] as string[],
+  )
+  .action(async (
+    specPath: string,
+    options: { toolsDir?: string; plugin?: string[] },
+  ) => {
+    const plugins = await loadPlugins(options.plugin);
+
     // First, validate via SDK deserialization (Zod schemas)
-    const component = loadComponent(specPath);
+    const component = loadComponent(specPath, plugins);
     const ct = (component as unknown as { componentType: string }).componentType;
     const name = (component as unknown as { name: string }).name;
     console.log(`  Parsed ${ct}: ${name}`);
@@ -22,9 +34,9 @@ export const validateCommand = new Command('validate')
     // For Flows, also run graph compilation + validation if possible
     if (ct === 'Flow') {
       try {
-        const pf = loadFlow(specPath);
+        const pf = loadFlow(specPath, plugins);
 
-        const cg = compile(pf, {});
+        const cg = compile(pf, { plugins });
         validate(cg);
         console.log('  Graph validation passed');
 
@@ -40,11 +52,13 @@ export const validateCommand = new Command('validate')
             console.log('  No tools to validate');
           }
         }
-      } catch {
+      } catch (err) {
         // Flow parsed via SDK but graph compilation failed (unsupported node
-        // types, missing API keys for eager provider init, etc.).  SDK-level
-        // validation already passed, so this is not a spec error.
-        console.log('  Graph validation skipped (unsupported node types or missing runtime config)');
+        // types, missing API keys, a plugin that was not loaded).  SDK-level
+        // validation already passed, so this is not a spec error — but the
+        // reason is reported, because a forgotten --plugin lands here too.
+        const reason = err instanceof Error ? err.message : String(err);
+        console.log(`  Graph validation skipped: ${reason}`);
       }
     }
 

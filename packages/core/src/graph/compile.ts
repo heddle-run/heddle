@@ -1,5 +1,7 @@
-import type { ParsedFlow, SpecNode } from '../spec/types.js';
+import type { AnyNode, ParsedFlow, SpecNode } from '../spec/types.js';
 import type { Dependencies, NodeExecutor } from '../node/types.js';
+import { PluginNodeAdapter } from '../plugin/executor.js';
+import type { PluginNode } from '../plugin/types.js';
 import { PassthroughExecutor, BranchingExecutor } from '../node/branching.js';
 import { AgentExecutor } from '../node/agent.js';
 import { LLMExecutor } from '../node/llm.js';
@@ -68,22 +70,32 @@ export function compile(
   return new CompiledGraph(pf.name, nodes, start, dataEdges);
 }
 
-function buildExecutor(n: SpecNode, deps: Dependencies): NodeExecutor {
-  switch (n.componentType) {
+function buildExecutor(n: AnyNode, deps: Dependencies): NodeExecutor {
+  // Plugin types are checked first so the builtin switch below keeps its
+  // discriminated-union narrowing. A plugin cannot shadow a builtin: the
+  // registry rejects builtin component type names at registration.
+  const pluginDef = deps.plugins?.nodeDef(n.componentType);
+  if (pluginDef) {
+    return new PluginNodeAdapter(n as unknown as PluginNode, pluginDef, deps);
+  }
+
+  const builtin = n as SpecNode;
+  switch (builtin.componentType) {
     case 'StartNode':
     case 'EndNode':
       return new PassthroughExecutor();
     case 'AgentNode':
-      return new AgentExecutor(n, deps);
+      return new AgentExecutor(builtin, deps);
     case 'LlmNode':
-      return new LLMExecutor(n, deps);
+      return new LLMExecutor(builtin, deps);
     case 'ToolNode':
-      return new ToolNodeExecutor(n, deps);
+      return new ToolNodeExecutor(builtin, deps);
     case 'BranchingNode':
-      return new BranchingExecutor(n, deps);
+      return new BranchingExecutor(builtin, deps);
     default:
       throw new CompileError(
-        `unknown node type: ${(n as SpecNode).componentType}`,
+        `node "${n.name}" has type "${n.componentType}", which no builtin or ` +
+          `plugin provides. Loaded plugins: ${deps.plugins?.describe() ?? 'none'}`,
       );
   }
 }

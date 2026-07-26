@@ -4,6 +4,7 @@ import { State } from '../state/state.js';
 import type { Message, ToolCall, ToolDefinition, Provider, JsonSchema } from '../llm/types.js';
 import type { NodeExecutor, Dependencies } from './types.js';
 import { createProvider } from '../llm/provider.js';
+import { TransformChain } from '../plugin/transform.js';
 import { RunError, ToolError } from '../errors.js';
 
 const MAX_TOOL_ROUNDS = 10;
@@ -14,6 +15,7 @@ export class AgentExecutor implements NodeExecutor {
   private deps: Dependencies;
   private model: string;
   private provider?: Provider;
+  private transforms: TransformChain;
 
   constructor(node: AgentNode, deps: Dependencies) {
     this.node = node;
@@ -26,6 +28,12 @@ export class AgentExecutor implements NodeExecutor {
       );
     }
     this.model = agent.llmConfig.modelId;
+    // Built here so a misconfigured transform fails at compile time.
+    this.transforms = TransformChain.build(
+      agent.transforms,
+      deps,
+      agent.name ?? node.name,
+    );
   }
 
   /**
@@ -72,7 +80,7 @@ export class AgentExecutor implements NodeExecutor {
     const inputData = input.toData();
     delete inputData._chat_history;
 
-    const messages: Message[] = [
+    let messages: Message[] = [
       { role: 'system', content: systemPrompt },
       ...chatHistory.map((m) => ({
         role: m.role as Message['role'],
@@ -80,6 +88,14 @@ export class AgentExecutor implements NodeExecutor {
       })),
       { role: 'user', content: JSON.stringify(inputData) },
     ];
+
+    // Pre-transforms run before the model is called at all, so a rejected
+    // prompt costs nothing.
+    const pre = await this.transforms.apply('pre', messages, signal);
+    if (pre.rejected) {
+      return rejectionState(pre.rejected);
+    }
+    messages = pre.messages;
 
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
       const resp = await this.getProvider().chatCompletion(signal, {
@@ -89,13 +105,30 @@ export class AgentExecutor implements NodeExecutor {
       });
 
       if (!resp.tool_calls || resp.tool_calls.length === 0) {
-        const outputData: Record<string, unknown> = { result: resp.content };
-        if (resp.content) {
+        // Post-transforms see the answer in the context of the conversation
+        // that produced it, with the reply as the last message.
+        const post = await this.transforms.apply(
+          'post',
+          [...messages, { role: 'assistant', content: resp.content }],
+          signal,
+        );
+        if (post.rejected) {
+          return rejectionState(post.rejected);
+        }
+        const content = post.messages.at(-1)?.content ?? resp.content;
+
+        const outputData: Record<string, unknown> = { result: content };
+        if (content) {
           try {
-            Object.assign(outputData, JSON.parse(resp.content));
+            Object.assign(outputData, JSON.parse(content));
           } catch {
             // Not JSON, that's fine
           }
+        }
+        // Only when the agent has transforms, so an untransformed agent's output
+        // shape is unchanged. Set last: a model returning JSON cannot forge it.
+        if (!this.transforms.isEmpty()) {
+          outputData.transform_status = 'ok';
         }
         return new State(outputData);
       }
@@ -205,6 +238,26 @@ export function substituteTemplate(template: string, s: State): string {
     result = result.replaceAll(`{{${key}}}`, s.getString(key) ?? '');
   }
   return result;
+}
+
+/**
+ * The agent's output when a transform refused. `transform_status` is a plain
+ * state key, so a downstream BranchingNode can route on it without heddle
+ * inventing any branching of its own.
+ */
+function rejectionState(rejected: {
+  reason: string;
+  transform: string;
+  phase: string;
+  replacement?: string;
+}): State {
+  return new State({
+    result: rejected.replacement ?? rejected.reason,
+    transform_status: 'rejected',
+    transform_reason: rejected.reason,
+    transform_name: rejected.transform,
+    transform_phase: rejected.phase,
+  });
 }
 
 /** Build a JSON Schema object from a ToolSpec's inputs. */

@@ -44,6 +44,18 @@ export interface Agent {
   inputs?: Property[];
   outputs?: Property[];
   humanInTheLoop?: boolean;
+  /**
+   * Message transforms attached to the agent. Agent Spec ships two
+   * summarization transforms; plugins contribute the rest.
+   */
+  transforms?: TransformSpec[];
+}
+
+/** A MessageTransform attached to an Agent. */
+export interface TransformSpec {
+  componentType: string;
+  name: string;
+  id?: string;
 }
 
 /** ControlFlowEdge uses string node names for graph traversal. */
@@ -114,7 +126,7 @@ export interface BranchingNode {
   inputs?: Property[];
 }
 
-/** SpecNode is a discriminated union of all node types. */
+/** SpecNode is a discriminated union of all builtin node types. */
 export type SpecNode =
   | StartNode
   | EndNode
@@ -122,6 +134,21 @@ export type SpecNode =
   | ToolNode
   | LLMNode
   | BranchingNode;
+
+/**
+ * CustomNode is a node contributed by a plugin. Its own fields are not known
+ * statically, so plugin code reads them from the node it is handed.
+ */
+export interface CustomNode {
+  componentType: string;
+  name: string;
+  inputs?: Property[];
+  outputs?: Property[];
+  branches?: string[];
+}
+
+/** AnyNode is any node a compiled flow may contain, builtin or plugin-provided. */
+export type AnyNode = SpecNode | CustomNode;
 
 /** Flow represents the raw flow structure. */
 export interface Flow {
@@ -135,7 +162,7 @@ export interface Flow {
 
 /** ParsedFlow holds the fully parsed flow with resolved nodes. */
 export interface ParsedFlow extends Flow {
-  parsedNodes: SpecNode[];
+  parsedNodes: AnyNode[];
 }
 
 /** Collect all ServerTool names from a parsed flow. */
@@ -143,12 +170,13 @@ export function collectToolNames(pf: ParsedFlow): string[] {
   const seen = new Set<string>();
 
   for (const n of pf.parsedNodes) {
-    const tools =
-      n.componentType === 'AgentNode'
-        ? n.agent?.tools
-        : n.componentType === 'ToolNode' && n.tool?.componentType === 'ServerTool'
-          ? [n.tool]
-          : undefined;
+    let tools: ToolSpec[] | undefined;
+    if (n.componentType === 'AgentNode') {
+      tools = (n as AgentNode).agent?.tools;
+    } else if (n.componentType === 'ToolNode') {
+      const tool = (n as ToolNode).tool;
+      if (tool?.componentType === 'ServerTool') tools = [tool];
+    }
 
     if (tools) {
       for (const t of tools) {

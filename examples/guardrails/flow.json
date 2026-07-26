@@ -1,0 +1,196 @@
+{
+  "component_type": "Flow",
+  "agentspec_version": "26.2.0",
+  "id": "flow_guardrails",
+  "name": "guarded-assistant",
+  "metadata": {},
+  "start_node": { "$component_ref": "n_start" },
+  "nodes": [
+    { "$component_ref": "n_start" },
+    { "$component_ref": "n_assistant" },
+    { "$component_ref": "n_route" },
+    { "$component_ref": "n_end_ok" },
+    { "$component_ref": "n_end_blocked" }
+  ],
+  "control_flow_connections": [
+    {
+      "component_type": "ControlFlowEdge",
+      "id": "e_start_assistant",
+      "name": "start_to_assistant",
+      "metadata": {},
+      "from_node": { "$component_ref": "n_start" },
+      "from_branch": null,
+      "to_node": { "$component_ref": "n_assistant" }
+    },
+    {
+      "component_type": "ControlFlowEdge",
+      "id": "e_assistant_route",
+      "name": "assistant_to_route",
+      "metadata": {},
+      "from_node": { "$component_ref": "n_assistant" },
+      "from_branch": null,
+      "to_node": { "$component_ref": "n_route" }
+    },
+    {
+      "component_type": "ControlFlowEdge",
+      "id": "e_route_ok",
+      "name": "route_to_end_ok",
+      "metadata": {},
+      "from_node": { "$component_ref": "n_route" },
+      "from_branch": "ok_branch",
+      "to_node": { "$component_ref": "n_end_ok" }
+    },
+    {
+      "component_type": "ControlFlowEdge",
+      "id": "e_route_blocked",
+      "name": "route_to_end_blocked",
+      "metadata": {},
+      "from_node": { "$component_ref": "n_route" },
+      "from_branch": "blocked_branch",
+      "to_node": { "$component_ref": "n_end_blocked" }
+    }
+  ],
+  "data_flow_connections": [
+    {
+      "component_type": "DataFlowEdge",
+      "id": "e_transform_status",
+      "name": "transform_status_to_router",
+      "metadata": {},
+      "source_node": { "$component_ref": "n_assistant" },
+      "source_output": "transform_status",
+      "destination_node": { "$component_ref": "n_route" },
+      "destination_input": "branching_mapping_key"
+    }
+  ],
+  "$referenced_components": {
+    "n_start": {
+      "component_type": "StartNode",
+      "id": "n_start",
+      "name": "start",
+      "metadata": {},
+      "inputs": [],
+      "outputs": [{ "title": "query", "type": "string" }],
+      "branches": ["next"]
+    },
+
+    "n_assistant": {
+      "component_type": "AgentNode",
+      "id": "n_assistant",
+      "name": "assistant",
+      "metadata": {},
+      "inputs": [{ "title": "query", "type": "string" }],
+      "outputs": [
+        { "title": "result", "type": "string" },
+        { "title": "transform_status", "type": "string" }
+      ],
+      "branches": ["next"],
+      "agent": {
+        "component_type": "Agent",
+        "id": "a_assistant",
+        "name": "assistant",
+        "metadata": {},
+        "system_prompt": "You are a concise, helpful assistant. Answer the user's question directly.",
+        "llm_config": {
+          "component_type": "OpenAiConfig",
+          "id": "llm_openai",
+          "name": "gpt",
+          "metadata": {},
+          "model_id": "gpt-4o-mini",
+          "api_key": "$OPENAI_API_KEY"
+        },
+        "tools": [],
+        "transforms": [
+          {
+            "component_type": "Processor",
+            "id": "p_pii_redact",
+            "name": "pii_redact",
+            "metadata": {},
+            "handler": "redact",
+            "phase": "pre",
+            "config": {
+              "patterns": [
+                "\\b\\d{3}-\\d{2}-\\d{4}\\b",
+                "\\b[\\w.%+-]+@[\\w.-]+\\.[A-Za-z]{2,}\\b"
+              ],
+              "replacement": "[REDACTED]"
+            }
+          },
+          {
+            "component_type": "Processor",
+            "id": "p_prompt_guard",
+            "name": "prompt_guard",
+            "metadata": {},
+            "handler": "blocklist",
+            "phase": "pre",
+            "config": {
+              "patterns": [
+                "ignore (all |your )?(previous |prior )?instructions",
+                "reveal your (system )?prompt",
+                "disregard the above"
+              ],
+              "reason": "the request looks like a prompt-injection attempt",
+              "refusal": "I can't help with that request."
+            }
+          },
+          {
+            "component_type": "Processor",
+            "id": "p_secret_scrub",
+            "name": "secret_scrub",
+            "metadata": {},
+            "handler": "redact",
+            "phase": "post",
+            "config": {
+              "patterns": ["sk-[A-Za-z0-9]{16,}", "\\bAKIA[0-9A-Z]{16}\\b"],
+              "replacement": "[REDACTED SECRET]"
+            }
+          },
+          {
+            "component_type": "Processor",
+            "id": "p_substance",
+            "name": "require_substance",
+            "metadata": {},
+            "handler": "require_substance",
+            "phase": "post",
+            "config": { "min_words": 3 }
+          }
+        ]
+      }
+    },
+
+    "n_route": {
+      "component_type": "BranchingNode",
+      "id": "n_route",
+      "name": "route",
+      "metadata": {},
+      "inputs": [{ "title": "branching_mapping_key", "type": "string" }],
+      "outputs": [],
+      "branches": ["ok_branch", "blocked_branch"],
+      "mapping": {
+        "rejected": "blocked_branch",
+        "DEFAULT_BRANCH": "ok_branch"
+      }
+    },
+
+    "n_end_ok": {
+      "component_type": "EndNode",
+      "id": "n_end_ok",
+      "name": "end_ok",
+      "metadata": {},
+      "inputs": [{ "title": "result", "type": "string" }],
+      "outputs": [],
+      "branches": [],
+      "branch_name": "ok_branch"
+    },
+
+    "n_end_blocked": {
+      "component_type": "EndNode",
+      "id": "n_end_blocked",
+      "name": "end_blocked",
+      "metadata": {},
+      "inputs": [{ "title": "result", "type": "string" }],
+      "outputs": [],
+      "branches": [],
+      "branch_name": "blocked_branch"
+    }
+  }
+}

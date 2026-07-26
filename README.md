@@ -93,9 +93,11 @@ Commands:
     --tools-dir <dir>      Directory containing tool executables
     --input <json>         Input JSON object
     --chat                 Open an interactive chat session
+    --plugin <module>      Plugin providing custom component types (repeatable)
 
   validate <flow>          Validate a flow definition (JSON or YAML)
     --tools-dir <dir>      Directory containing tool executables
+    --plugin <module>      Plugin providing custom component types (repeatable)
 
   init <project-name>      Scaffold a new heddle project
 ```
@@ -157,6 +159,51 @@ so `fetch_api.py` is declared as `fetch_api`.
 > tools that execute commands or write files on a model's behalf, such as those in
 > `examples/coding-agent/`.
 
+### Plugins
+
+Custom component types beyond the builtin list come from plugins. A plugin is an
+ES module that default-exports its component declarations. It can contribute
+**transforms** (attached to `Agent.transforms`, running before or after the model
+call), **nodes** (placed in a flow's graph), or plain **components** nested inside
+either:
+
+```js
+export default {
+  name: 'heddle-plugin-guardrails',
+  version: '1.0.0',
+  transforms: [{
+    componentType: 'Processor',
+    phase: (c) => c.phase ?? 'pre',        // 'pre' | 'post' | 'both'
+    createTransform: (c) => ({
+      apply: (messages) => ({ action: 'pass' }),
+      //   | { action: 'modify', messages }
+      //   | { action: 'reject', reason }
+    }),
+  }],
+};
+```
+
+```bash
+heddle run flow.json --plugin ./plugin.js
+```
+
+One declaration drives both halves: it becomes an [Agent Spec deserialization
+plugin](https://oracle.github.io/agent-spec/26.1.2/howtoguides/howto_plugin.html)
+so the custom `component_type` parses and round-trips, and it registers the
+executor that makes the component run. Agent Spec's own plugin system covers only
+the serialization half.
+
+Plugins are named on the command line, never inside a flow file — sharing a spec
+can never cause code to be executed. A plugin node's branch names must be static,
+because the graph is validated for reachability before anything runs.
+
+A transform returning `reject` is what makes guardrails work. In the `pre` phase
+heddle skips the model call entirely, so a blocked prompt costs nothing; the agent
+returns `transform_status: "rejected"`, which a builtin `BranchingNode` can route on.
+
+See [examples/guardrails](examples/guardrails) for a worked example: a `Processor`
+transform used as both a pre- and post-processor on an agent.
+
 ### Execution Pipeline
 
 ```
@@ -195,6 +242,7 @@ src/
   scaffold/      Project template generation
 examples/
   research-assistant/   Example flow with web_search and calculator tools
+  guardrails/           Custom Processor transform used as a pre/post guardrail
 testdata/               Test flow definitions and tool scripts
 ```
 

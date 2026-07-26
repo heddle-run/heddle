@@ -12,5 +12,7 @@ export interface NodeExecutor {
 export interface Dependencies {
   toolExecutor?: Executor;
   toolRegistry?: Registry;
+  /** Custom component types contributed by plugins. */
+  plugins?: import('../plugin/registry.js').PluginRegistry;
   eventHandler?: EventHandler;
 }
