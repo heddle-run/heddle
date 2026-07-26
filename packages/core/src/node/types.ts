@@ -15,4 +15,11 @@ export interface Dependencies {
   /** Custom component types contributed by plugins. */
   plugins?: import('../plugin/registry.js').PluginRegistry;
   eventHandler?: EventHandler;
+  /**
+   * Whether `$VAR` in a spec's llm_config may read the host environment.
+   * Defaults to true. Set false wherever specs arrive from callers: the
+   * reference is not restricted to model credentials, so it is a read of the
+   * process environment that the spec's author chooses.
+   */
+  allowEnvRefs?: boolean;
 }

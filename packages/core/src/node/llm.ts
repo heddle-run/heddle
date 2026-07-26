@@ -30,7 +30,9 @@ export class LLMExecutor implements NodeExecutor {
     }
 
     // Resolve LLM provider from the spec's llmConfig
-    const provider = createProvider(this.node.llmConfig);
+    const provider = createProvider(this.node.llmConfig, {
+      allowEnvRefs: this.deps.allowEnvRefs,
+    });
     const model = this.node.llmConfig.modelId;
 
     const prompt = substituteTemplate(this.node.promptTemplate, input);

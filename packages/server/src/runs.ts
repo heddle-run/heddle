@@ -78,6 +78,11 @@ function buildDependencies(
     toolRegistry: registry,
     plugins,
     eventHandler,
+    // A server accepting submitted code is accepting submitted specs, and a
+    // spec that resolves `$VAR` reads this process's environment — any
+    // variable, not only a model key — and can send it wherever its own
+    // llm_config points. Credentials belong in the spec, from the caller.
+    allowEnvRefs: !config.allowRequestCode,
   };
 }
 

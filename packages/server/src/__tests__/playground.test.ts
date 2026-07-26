@@ -703,3 +703,128 @@ describe('streaming with submitted code', () => {
     expect(res.headers.get('content-type')).toContain('application/json');
   });
 });
+
+describe('specs cannot read the server environment', () => {
+  /** A flow whose agent's llm_config is chosen by the caller. */
+  function agentFlowWith(llmConfig: Record<string, unknown>): Record<string, unknown> {
+    return {
+      component_type: 'Flow',
+      name: 'env-probe',
+      start_node: { $component_ref: 's' },
+      nodes: [{ $component_ref: 's' }, { $component_ref: 'a' }, { $component_ref: 'e' }],
+      control_flow_connections: [
+        {
+          component_type: 'ControlFlowEdge',
+          name: 'x',
+          from_node: { $component_ref: 's' },
+          to_node: { $component_ref: 'a' },
+        },
+        {
+          component_type: 'ControlFlowEdge',
+          name: 'y',
+          from_node: { $component_ref: 'a' },
+          to_node: { $component_ref: 'e' },
+        },
+      ],
+      $referenced_components: {
+        s: { component_type: 'StartNode', id: 's', name: 's' },
+        a: {
+          component_type: 'AgentNode',
+          id: 'a',
+          name: 'a',
+          agent: {
+            component_type: 'Agent',
+            id: 'ia',
+            name: 'ia',
+            system_prompt: 'x',
+            llm_config: llmConfig,
+          },
+        },
+        e: { component_type: 'EndNode', id: 'e', name: 'e' },
+      },
+    };
+  }
+
+  // The reference is not restricted to model keys: any variable the process
+  // holds can be named, and the flow chooses the URL it is sent to.
+  it('refuses to dereference an environment variable', async () => {
+    process.env.HEDDLE_UNRELATED_SECRET = 'aws-style-credential';
+    try {
+      const res = await post('/v1/runs', {
+        flow: agentFlowWith({
+          component_type: 'OpenAiConfig',
+          id: 'l',
+          name: 'l',
+          model_id: 'gpt-4o',
+          url: 'http://127.0.0.1:9/never-reached',
+          api_key: '$HEDDLE_UNRELATED_SECRET',
+        }),
+        inputs: { query: 'hi' },
+      });
+
+      expect(res.status).toBe(500);
+      const body = (await res.json()) as { error: { message: string } };
+      expect(body.error.message).toContain('does not resolve');
+      // The value must not appear in the reply, even in an error.
+      expect(JSON.stringify(body)).not.toContain('aws-style-credential');
+    } finally {
+      delete process.env.HEDDLE_UNRELATED_SECRET;
+    }
+  });
+
+  it('does not reveal whether a variable exists', async () => {
+    const forAbsent = await post('/v1/runs', {
+      flow: agentFlowWith({
+        component_type: 'OpenAiConfig',
+        id: 'l',
+        name: 'l',
+        model_id: 'gpt-4o',
+        api_key: '$DEFINITELY_NOT_SET_ANYWHERE',
+      }),
+      inputs: { query: 'hi' },
+    });
+    const absent = (await forAbsent.json()) as { error: { message: string } };
+
+    process.env.HEDDLE_PRESENT = 'value';
+    try {
+      const forPresent = await post('/v1/runs', {
+        flow: agentFlowWith({
+          component_type: 'OpenAiConfig',
+          id: 'l',
+          name: 'l',
+          model_id: 'gpt-4o',
+          api_key: '$HEDDLE_PRESENT',
+        }),
+        inputs: { query: 'hi' },
+      });
+      const present = (await forPresent.json()) as { error: { message: string } };
+
+      // Same shape either way, so the environment cannot be enumerated by
+      // comparing responses.
+      expect(present.error.message.replace('HEDDLE_PRESENT', 'X')).toBe(
+        absent.error.message.replace('DEFINITELY_NOT_SET_ANYWHERE', 'X'),
+      );
+    } finally {
+      delete process.env.HEDDLE_PRESENT;
+    }
+  });
+
+  it('still accepts a credential written into the spec', async () => {
+    // Reaches the provider and fails on connection, not on the credential —
+    // which is the point: the caller supplies their own key.
+    const res = await post('/v1/runs', {
+      flow: agentFlowWith({
+        component_type: 'OpenAiConfig',
+        id: 'l',
+        name: 'l',
+        model_id: 'gpt-4o',
+        url: 'http://127.0.0.1:9/unreachable',
+        api_key: 'sk-callers-own-key',
+      }),
+      inputs: { query: 'hi' },
+    });
+    expect(res.status).toBe(500);
+    const body = (await res.json()) as { error: { message: string } };
+    expect(body.error.message).not.toContain('does not resolve');
+  });
+});
