@@ -66,17 +66,22 @@ jobs:
       # image's defaults.
       - uses: docker/setup-buildx-action@v3
 
+      # Invoked directly rather than through cloudflare/wrangler-action, which
+      # installs a wrangler of its own choosing — 3.90.0 at time of writing.
+      # That version predates both jsonc config and Containers, so it never
+      # reads wrangler.jsonc and fails with "Missing entry-point" before it
+      # gets anywhere near the image. This runs the version pinned in the
+      # lockfile, which is the one the config was written against.
+      #
+      # Worker secrets are set once with `wrangler secret put`, not here: they
+      # outlive a deploy, and routing the model credential through this
+      # workflow's environment would gain nothing.
       - name: Deploy broker and engine image
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          workingDirectory: packages/broker
-          # Secrets are set once with `wrangler secret put`, not on every
-          # deploy: they outlive the worker version and putting them here would
-          # copy the model credential into this workflow's environment for no
-          # gain.
-          command: deploy
+        working-directory: packages/broker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: pnpm exec wrangler deploy
 
       - name: Verify the deployment answers
         env:
