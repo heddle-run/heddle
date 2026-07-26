@@ -47,9 +47,11 @@ jobs:
       # source of truth. Setting both makes action-setup v4 fail.
       - uses: pnpm/action-setup@v4
 
+      # 22, not the 20 the test workflow uses: wrangler declares
+      # engines.node >=22 and refuses to start on anything older.
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
