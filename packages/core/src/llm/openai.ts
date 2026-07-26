@@ -105,7 +105,13 @@ export class OpenAIProvider implements Provider {
       return resp;
     } catch (err) {
       if (err instanceof LLMError) throw err;
-      throw new LLMError('OpenAI API error', { cause: err });
+      // Carry the provider's own words. "OpenAI API error" on its own is the
+      // least useful thing to tell someone whose key is wrong, whose model id
+      // does not exist, or who has run out of credit — three failures that
+      // need three different fixes. The credential in the message is the
+      // caller's own, and providers redact it in their errors regardless.
+      const detail = err instanceof Error ? err.message : String(err);
+      throw new LLMError(`OpenAI API error: ${detail}`, { cause: err });
     }
   }
 }

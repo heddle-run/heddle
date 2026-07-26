@@ -8,15 +8,14 @@ import CodeList from "./CodeList";
 import RunLog from "./RunLog";
 import {
   API_BASE,
-  DEFAULT_FLOW,
-  DEFAULT_INPUTS,
-  DEFAULT_PLUGIN,
-  DEFAULT_TOOL,
+  DEFAULT_EXAMPLE,
+  EXAMPLES,
   EngineError,
   fetchCapabilities,
   streamRun,
   validateFlow,
   type Capabilities,
+  type Example,
   type RequestPlugin,
   type RequestTool,
   type RunEvent,
@@ -46,10 +45,11 @@ const PLUGIN_MANIFEST_STUB = {
 };
 
 export default function Playground() {
-  const [flow, setFlow] = useState(DEFAULT_FLOW);
-  const [inputs, setInputs] = useState(DEFAULT_INPUTS);
-  const [tools, setTools] = useState<RequestTool[]>([DEFAULT_TOOL]);
-  const [plugins, setPlugins] = useState<RequestPlugin[]>([DEFAULT_PLUGIN]);
+  const [example, setExample] = useState<Example>(DEFAULT_EXAMPLE);
+  const [flow, setFlow] = useState(DEFAULT_EXAMPLE.flow);
+  const [inputs, setInputs] = useState(DEFAULT_EXAMPLE.inputs);
+  const [tools, setTools] = useState<RequestTool[]>(DEFAULT_EXAMPLE.tools);
+  const [plugins, setPlugins] = useState<RequestPlugin[]>(DEFAULT_EXAMPLE.plugins);
 
   const [tab, setTab] = useState("flow");
   const [events, setEvents] = useState<RunEvent[]>([]);
@@ -176,14 +176,19 @@ export default function Playground() {
     }
   };
 
-  const restore = () => {
-    setFlow(DEFAULT_FLOW);
-    setInputs(DEFAULT_INPUTS);
-    setTools([DEFAULT_TOOL]);
-    setPlugins([DEFAULT_PLUGIN]);
+  /** Load an example, discarding whatever is in the editors. */
+  const load = (next: Example) => {
+    setExample(next);
+    setFlow(next.flow);
+    setInputs(next.inputs);
+    setTools(next.tools);
+    setPlugins(next.plugins);
+    setTab("flow");
     reset();
     setStatus("idle");
   };
+
+  const restore = () => load(example);
 
   const busy = status === "running";
   const codeAllowed = capabilities?.allowRequestCode ?? true;
@@ -196,6 +201,8 @@ export default function Playground() {
         reachable={reachable}
         codeAllowed={codeAllowed}
       />
+
+      <ExamplePicker current={example} onSelect={load} disabled={busy} />
 
       <div className="grid border-t border-ink lg:grid-cols-2">
         {/* --- Editors ------------------------------------------------- */}
@@ -217,7 +224,7 @@ export default function Playground() {
             <button
               type="button"
               onClick={restore}
-              title="Restore the starting example"
+              title={`Restore the "${example.title}" example`}
               className="flex min-h-[44px] w-11 shrink-0 items-center justify-center border-l border-hairline text-muted-ink transition-colors duration-100 hover:bg-ink hover:text-paper focus-visible:outline focus-visible:outline-[3px] focus-visible:-outline-offset-[3px] focus-visible:outline-ink"
             >
               <RotateCcw size={14} strokeWidth={1.5} />
@@ -399,5 +406,77 @@ function Notice({ children }: { children: React.ReactNode }) {
     <p className="bg-ink px-6 py-4 font-mono text-[0.6875rem] leading-relaxed text-paper md:px-8 lg:px-12">
       {children}
     </p>
+  );
+}
+
+/**
+ * Switches between the worked examples.
+ *
+ * A row of inverting cells rather than a <select>: the choice is the first
+ * thing on the page that does anything, and a native dropdown hides three of
+ * four options behind a click. Each cell carries its own one-line description,
+ * so what an example demonstrates is readable without loading it.
+ */
+function ExamplePicker({
+  current,
+  onSelect,
+  disabled,
+}: {
+  current: Example;
+  onSelect: (example: Example) => void;
+  disabled: boolean;
+}) {
+  return (
+    <div
+      role="group"
+      aria-label="Examples"
+      className="grid border-t border-ink sm:grid-cols-2 lg:grid-cols-4"
+    >
+      {EXAMPLES.map((example) => {
+        const active = example.id === current.id;
+        return (
+          <button
+            key={example.id}
+            type="button"
+            onClick={() => onSelect(example)}
+            disabled={disabled}
+            aria-pressed={active}
+            className={cn(
+              "group flex min-h-[44px] flex-col items-start gap-2 border-b border-r border-ink px-5 py-4 text-left transition-colors duration-100",
+              "focus-visible:outline focus-visible:outline-[3px] focus-visible:-outline-offset-[3px] focus-visible:outline-ink",
+              "disabled:cursor-not-allowed disabled:opacity-40",
+              active
+                ? "bg-ink text-paper"
+                : "bg-paper text-ink hover:bg-ink hover:text-paper",
+            )}
+          >
+            <span className="flex w-full items-baseline justify-between gap-3">
+              <span className="font-mono text-[0.6875rem] uppercase tracking-[0.2em]">
+                {example.title}
+              </span>
+              {example.needsKey && (
+                <span
+                  title="Needs your own model credential"
+                  className={cn(
+                    "shrink-0 font-mono text-[0.5625rem] uppercase tracking-[0.15em]",
+                    active ? "text-paper/60" : "text-muted-ink group-hover:text-paper/60",
+                  )}
+                >
+                  key
+                </span>
+              )}
+            </span>
+            <span
+              className={cn(
+                "text-xs leading-relaxed",
+                active ? "text-paper/70" : "text-muted-ink group-hover:text-paper/70",
+              )}
+            >
+              {example.blurb}
+            </span>
+          </button>
+        );
+      })}
+    </div>
   );
 }
