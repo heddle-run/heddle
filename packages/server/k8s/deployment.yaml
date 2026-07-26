@@ -1,0 +1,141 @@
+# heddle-server as a long-lived, multi-run service.
+#
+# This is NOT the playground topology. The image's default CMD carries
+# --allow-request-code and --max-concurrent 1, because submitted plugin modules
+# are imported into the server process and the only sound boundary for those is
+# one disposable container per run (see DEPLOYMENT.md). The args below
+# deliberately override that: no request code, many runs per process.
+#
+# That trade is only available because the callers here are trusted. Runs share
+# one Node process, so one run's plugin can see another's memory and one run's
+# OOM takes the whole pod — every session on it. --max-concurrent and the
+# memory limit are what bound that blast radius, not tuning knobs.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: heddle-server
+  labels:
+    app.kubernetes.io/name: heddle-server
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: heddle-server
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # Bring the replacement up before retiring the old pod: the old one needs
+      # to keep streaming its runs for the whole drain.
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: heddle-server
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "4319"
+        prometheus.io/path: "/metrics"
+    spec:
+      # Must exceed preStop (5s) + --drain-timeout (90s), or the kubelet
+      # SIGKILLs the process mid-drain and the streams die anyway.
+      terminationGracePeriodSeconds: 120
+
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+
+      containers:
+        - name: heddle-server
+          image: heddle-server:latest
+          imagePullPolicy: IfNotPresent
+
+          args:
+            - --host=0.0.0.0
+            - --port=4319
+            - --tools-dir=/srv/tools
+            # Runs per process. This is the primary autoscaling signal's
+            # denominator: keep it in step with the HPA target below.
+            - --max-concurrent=8
+            # At or above --timeout, so a run near its wall-clock budget can
+            # still finish during a drain.
+            - --drain-timeout=90000
+            - --timeout=60000
+            - --max-iterations=25
+            - --cors-origin=https://heddle.run
+            - --safe
+            - --sandbox=bubblewrap
+
+          ports:
+            - name: http
+              containerPort: 4319
+
+          # Liveness: only restart a wedged event loop. It must not fail during
+          # a drain — a draining pod is healthy, and restarting it would kill
+          # the very streams the drain exists to protect.
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+
+          # Readiness: the endpoint that flips to 503 the moment draining
+          # starts, pulling the pod out of the Service. Note it stays 200 at
+          # the concurrency ceiling — a saturated pod is doing its job and
+          # answers overflow with 429; marking it unready would evict a healthy
+          # pod under exactly the load that needs it.
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+
+          startupProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 3
+            failureThreshold: 20
+
+          lifecycle:
+            preStop:
+              exec:
+                # Endpoint removal and SIGTERM are dispatched concurrently, and
+                # endpoint propagation is not instant. Without this pause the
+                # server begins refusing with 503 while some proxies still list
+                # it, turning a clean drain into a handful of failed requests.
+                # Sleeping here delays SIGTERM, not the drain.
+                command: ["/bin/sh", "-c", "sleep 5"]
+
+          # requests == limits puts the pod in Guaranteed QoS: predictable
+          # bin-packing, no noisy-neighbour eviction, and CPU utilization in the
+          # HPA (which is computed against requests) means what it appears to.
+          resources:
+            requests:
+              cpu: "2"
+              memory: 2Gi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+
+          volumeMounts:
+            - name: run-scratch
+              mountPath: /var/heddle/runs
+            - name: tmp
+              mountPath: /tmp
+
+      volumes:
+        # Per-run scratch. emptyDir rather than a PVC: nothing here outlives the
+        # run that wrote it.
+        - name: run-scratch
+          emptyDir:
+            sizeLimit: 1Gi
+        - name: tmp
+          emptyDir:
+            sizeLimit: 256Mi

@@ -75,3 +75,20 @@ export function sendJson(
   });
   res.end(payload);
 }
+
+/** Send a plain-text body — used for the Prometheus metrics exposition. */
+export function sendText(
+  res: ServerResponse,
+  status: number,
+  body: string,
+  headers: Record<string, string> = {},
+): void {
+  res.writeHead(status, {
+    ...headers,
+    // The version token is the Prometheus text exposition content type; a
+    // scraper keys off it to parse the body.
+    'content-type': 'text/plain; version=0.0.4; charset=utf-8',
+    'content-length': Buffer.byteLength(body),
+  });
+  res.end(body);
+}

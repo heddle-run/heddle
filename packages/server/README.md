@@ -43,6 +43,7 @@ heddle-server --tools-dir ./tools
 | `--max-iterations <n>` | `50` | Maximum node executions per run. |
 | `--timeout <ms>` | `300000` | Wall-clock budget for a single run. |
 | `--max-concurrent <n>` | `4` | Runs at once. Beyond this, requests get a 429. |
+| `--drain-timeout <ms>` | `30000` | On SIGTERM, how long in-flight runs get to finish. |
 | `--cors-origin <origin>` | none | Browser origin allowed to call this server. Repeatable. |
 | `--allow-request-code` | off | Accept tool scripts and plugin modules in the request. |
 | `--work-dir <dir>` | `$TMPDIR` | Where per-run directories are created. |
@@ -89,13 +90,62 @@ Without `--flows-root`, the server accepts inline flows only, and rejects every
 it: traversal (`../`), absolute paths, and symlinks pointing outside the root are
 all refused with a 404 that does not reveal whether the target exists.
 
+### Shutdown
+
+A run is a long-lived HTTP response, so exiting promptly on SIGTERM cuts it off
+mid-flight. Under an orchestrator that is not an edge case — it is every rolling
+deploy and every scale-in. So the first SIGTERM or SIGINT starts a *drain*:
+
+1. `/readyz` answers 503 and new runs are refused with 503, while the listener
+   stays open so both remain observable to a health check.
+2. Runs already streaming keep going.
+3. When the last one finishes, the process closes and exits 0.
+4. If `--drain-timeout` expires first, what remains is closed anyway.
+
+A second signal skips the wait. Set `--drain-timeout` at or above `--timeout` so
+a run near its budget can still finish, and give any supervisor a grace period
+longer than `--drain-timeout` so the drain is not itself cut short.
+
 ## Endpoints
 
 ### `GET /healthz`
 
+Liveness. Stays `200` while draining — a draining process is healthy, and
+restarting it would kill the streams the drain exists to protect.
+
 ```json
 { "status": "ok", "version": "0.2.0-beta.1" }
 ```
+
+### `GET /readyz`
+
+Readiness: whether new runs should be routed here. `200` normally, `503` with
+`{"status":"draining"}` once shutting down.
+
+It stays `200` at the concurrency ceiling. A server refusing overflow with a 429
+is doing exactly what it was configured to do, and reporting it unready would
+pull a healthy instance out of rotation under precisely the load that needs it.
+
+### `GET /metrics`
+
+Prometheus text exposition, for scaling on load.
+
+```
+heddle_active_runs 3
+heddle_max_concurrent_runs 8
+heddle_run_saturation 0.375
+heddle_runs_accepted_total 128
+heddle_runs_rejected_total 4
+process_resident_memory_bytes 95485952
+process_cpu_seconds_total 41.7
+```
+
+`heddle_active_runs` is one per open streaming session, and is the *leading*
+signal for autoscaling — it rises the moment a session opens, ahead of the CPU
+and memory that session goes on to use.
+
+Unauthenticated, like the rest of the surface. Keep it on an internal listener
+or unrouted at the proxy.
 
 ### `GET /v1/capabilities`
 
@@ -110,9 +160,14 @@ through 400s.
   "sandbox": "bubblewrap",
   "tools": ["web_search"],
   "limits": { "maxIterations": 25, "timeout": 60000, "maxRequestTools": 10 },
-  "runsInFlight": 0
+  "runsInFlight": 0,
+  "runSaturation": 0
 }
 ```
+
+`runSaturation` is `runsInFlight` over `maxConcurrentRuns`, so a client can back
+off before it is refused. It is the same number `/metrics` exposes as
+`heddle_run_saturation`, for callers that have no metrics scraper.
 
 Tool *names* are listed because a caller writing a flow needs them. Filesystem
 paths are not: where the server keeps its executables is of no use to a caller

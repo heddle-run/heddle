@@ -6,6 +6,7 @@ import {
   DEFAULT_HOST,
   DEFAULT_PORT,
   DEFAULT_MAX_CONCURRENT_RUNS,
+  DEFAULT_DRAIN_TIMEOUT,
 } from './config.js';
 
 const USAGE = `Usage: heddle-server [options]
@@ -20,6 +21,8 @@ Options:
   --max-iterations <n>   Maximum node executions per run
   --timeout <ms>         Wall-clock budget for a single run
   --max-concurrent <n>   Runs allowed at once (default: ${DEFAULT_MAX_CONCURRENT_RUNS})
+  --drain-timeout <ms>   On SIGTERM, how long to let in-flight runs finish
+                         (default: ${DEFAULT_DRAIN_TIMEOUT})
   --cors-origin <origin> Browser origin allowed to call this server (repeatable,
                          or "*" for any)
   --allow-request-code   Accept tool scripts and plugin modules in the request
@@ -112,6 +115,7 @@ async function main(): Promise<void> {
       'max-iterations': { type: 'string' },
       timeout: { type: 'string' },
       'max-concurrent': { type: 'string' },
+      'drain-timeout': { type: 'string' },
       'cors-origin': { type: 'string', multiple: true },
       'allow-request-code': { type: 'boolean' },
       'work-dir': { type: 'string' },
@@ -140,6 +144,7 @@ async function main(): Promise<void> {
     maxIterations: toInt(values['max-iterations'], '--max-iterations'),
     timeout: toInt(values.timeout, '--timeout'),
     maxConcurrentRuns: toInt(values['max-concurrent'], '--max-concurrent'),
+    drainTimeout: toInt(values['drain-timeout'], '--drain-timeout'),
     corsOrigins: values['cors-origin'],
     allowRequestCode: values['allow-request-code'],
     workDir: values['work-dir'],
@@ -148,14 +153,29 @@ async function main(): Promise<void> {
     sandbox: buildSandbox(values, toolsDir),
   });
 
-  const shutdown = (): void => {
-    void started.close().then(
+  // SIGTERM is how an orchestrator retires a pod, and runs stream over
+  // long-lived connections: exiting promptly would cut every one of them. So
+  // the first signal starts a drain — stop accepting, let the open streams
+  // finish — and a second one is the operator saying they would rather not
+  // wait.
+  let shuttingDown = false;
+  const shutdown = (signal: string): void => {
+    if (shuttingDown) {
+      process.stderr.write(`\nsecond ${signal}; closing open runs immediately\n`);
+      void started.close().then(
+        () => process.exit(1),
+        () => process.exit(1),
+      );
+      return;
+    }
+    shuttingDown = true;
+    void started.drain().then(
       () => process.exit(0),
       () => process.exit(1),
     );
   };
-  process.on('SIGINT', shutdown);
-  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', () => shutdown('SIGINT'));
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
 }
 
 main().catch((err) => {

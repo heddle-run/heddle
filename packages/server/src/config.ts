@@ -81,6 +81,17 @@ export interface ServerConfig {
   maxRequestCodeBytes: number;
   /** Runs allowed to execute at once. Further requests are refused with a 429. */
   maxConcurrentRuns: number;
+
+  /**
+   * How long SIGTERM waits for in-flight runs before closing what remains.
+   *
+   * Runs stream over long-lived connections, so a process that exits promptly
+   * on SIGTERM cuts them off. Under an orchestrator this is not an edge case —
+   * it is every rolling deploy and every scale-in. Set it at or above
+   * {@link timeout}, and give the pod a `terminationGracePeriodSeconds` above
+   * this, so the drain is not itself cut short by a SIGKILL.
+   */
+  drainTimeout: number;
 }
 
 export const DEFAULT_HOST = '127.0.0.1';
@@ -90,6 +101,14 @@ export const DEFAULT_MAX_REQUEST_TOOLS = 10;
 export const DEFAULT_MAX_REQUEST_PLUGINS = 5;
 export const DEFAULT_MAX_REQUEST_CODE_BYTES = 256 * 1024; // 256 KiB
 export const DEFAULT_MAX_CONCURRENT_RUNS = 4;
+/**
+ * How long a draining process waits for in-flight runs to finish before it
+ * force-closes what remains and exits. Should be set at least as high as
+ * `--timeout` so a run near its wall-clock budget can still complete, and the
+ * pod's `terminationGracePeriodSeconds` should exceed it so Kubernetes does not
+ * SIGKILL mid-drain.
+ */
+export const DEFAULT_DRAIN_TIMEOUT = 30_000;
 
 export type ServerOptions = Partial<ServerConfig>;
 
@@ -112,6 +131,7 @@ export function resolveConfig(options: ServerOptions = {}): ServerConfig {
     maxRequestCodeBytes:
       options.maxRequestCodeBytes ?? DEFAULT_MAX_REQUEST_CODE_BYTES,
     maxConcurrentRuns: options.maxConcurrentRuns ?? DEFAULT_MAX_CONCURRENT_RUNS,
+    drainTimeout: options.drainTimeout ?? DEFAULT_DRAIN_TIMEOUT,
   };
 }
 

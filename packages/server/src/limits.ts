@@ -11,6 +11,8 @@ import { HttpError } from './errors.js';
  */
 export class ConcurrencyGate {
   private active = 0;
+  private accepted = 0;
+  private rejected = 0;
 
   constructor(private readonly max: number) {}
 
@@ -18,9 +20,25 @@ export class ConcurrencyGate {
     return this.active;
   }
 
+  /** The configured ceiling — the denominator for saturation. */
+  get limit(): number {
+    return this.max;
+  }
+
+  /** Runs admitted since start. Monotonic; surfaced as a Prometheus counter. */
+  get acceptedTotal(): number {
+    return this.accepted;
+  }
+
+  /** Runs refused for want of a slot since start. Monotonic. */
+  get rejectedTotal(): number {
+    return this.rejected;
+  }
+
   /** Take a slot, or throw 429. The returned function returns the slot. */
   acquire(): () => void {
     if (this.active >= this.max) {
+      this.rejected++;
       throw new HttpError(
         429,
         `server is at its limit of ${this.max} concurrent runs; retry shortly`,
@@ -28,6 +46,7 @@ export class ConcurrencyGate {
       );
     }
     this.active++;
+    this.accepted++;
 
     let released = false;
     return () => {

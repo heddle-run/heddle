@@ -4,6 +4,12 @@ This describes how to run `heddle-server --allow-request-code` where anyone can
 reach it. It is a different problem from running the server for yourself, and
 most of it is about what surrounds the process rather than the process itself.
 
+> **Running a trusted, multi-run service instead?** With
+> `--allow-request-code` *off*, none of the one-container-per-run architecture
+> below applies: a pod can serve many concurrent runs and scale normally. See
+> [`k8s/`](./k8s/) for that topology. Everything here is specifically about
+> accepting code from callers you do not trust.
+
 ## What you are actually deploying
 
 With `--allow-request-code`, a request carries two kinds of code.

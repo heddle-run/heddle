@@ -1,0 +1,63 @@
+# Making heddle_active_runs visible to the HorizontalPodAutoscaler.
+#
+# The HPA cannot read Prometheus. It reads the custom.metrics.k8s.io API, and
+# something has to serve that — prometheus-adapter here. Without this rule the
+# `Pods` metric in hpa.yaml silently never resolves, and the HPA quietly falls
+# back to scaling on CPU and memory alone: it will look like it is working.
+#
+# Merge into the prometheus-adapter Helm values under `rules.custom`.
+rules:
+  custom:
+    - seriesQuery: 'heddle_active_runs{namespace!="",pod!=""}'
+      resources:
+        overrides:
+          namespace: { resource: namespace }
+          pod: { resource: pod }
+      name:
+        as: heddle_active_runs
+      # A gauge, so read it as-is. No rate(), no counter handling.
+      metricsQuery: 'avg_over_time(heddle_active_runs{<<.LabelMatchers>>}[1m])'
+
+    - seriesQuery: 'heddle_run_saturation{namespace!="",pod!=""}'
+      resources:
+        overrides:
+          namespace: { resource: namespace }
+          pod: { resource: pod }
+      name:
+        as: heddle_run_saturation
+      metricsQuery: 'avg_over_time(heddle_run_saturation{<<.LabelMatchers>>}[1m])'
+---
+# For Prometheus Operator installs, in place of the pod's scrape annotations.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: heddle-server
+  labels:
+    app.kubernetes.io/name: heddle-server
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: heddle-server
+  endpoints:
+    - port: http
+      path: /metrics
+      # Well under the HPA's 15s sync so it is not acting on stale numbers.
+      interval: 10s
+---
+# ONE blended score, if the max-of-three in hpa.yaml is not what is wanted.
+#
+# Adding a session count to a byte count and a CPU-second count is meaningless,
+# so normalise each to "how full is this pod" in [0,1] first, then take the
+# worst. Drive the HPA from this single External metric with a target of ~0.7,
+# and drop the three metrics from hpa.yaml.
+#
+#   max(
+#     avg_over_time(heddle_run_saturation{app="heddle-server"}[1m]),
+#     sum(rate(container_cpu_usage_seconds_total{pod=~"heddle-server-.*"}[2m])) by (pod)
+#       / on(pod) kube_pod_container_resource_limits{resource="cpu",pod=~"heddle-server-.*"},
+#     container_memory_working_set_bytes{pod=~"heddle-server-.*"}
+#       / on(pod) kube_pod_container_resource_limits{resource="memory",pod=~"heddle-server-.*"}
+#   )
+#
+# Start with the max-of-three. It needs no custom PromQL, and it fails in a way
+# that is legible — you can see which of the three moved the replica count.

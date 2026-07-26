@@ -18,6 +18,7 @@ export {
   DEFAULT_MAX_REQUEST_PLUGINS,
   DEFAULT_MAX_REQUEST_CODE_BYTES,
   DEFAULT_MAX_CONCURRENT_RUNS,
+  DEFAULT_DRAIN_TIMEOUT,
 } from './config.js';
 export type { ServerConfig, ServerOptions } from './config.js';
 
