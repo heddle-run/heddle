@@ -9,6 +9,7 @@ const columns = [
       { label: "Documentation", href: "/docs" },
       { label: "Getting started", href: "/docs/getting-started" },
       { label: "CLI reference", href: "/docs/cli-reference" },
+      { label: "Playground", href: "/playground" },
     ],
   },
   {

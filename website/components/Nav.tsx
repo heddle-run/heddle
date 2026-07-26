@@ -6,6 +6,7 @@ import { GITHUB_URL, VERSION } from "@/lib/constants";
 const links = [
   { label: "Method", href: "/#method" },
   { label: "Specimens", href: "/#specimens" },
+  { label: "Playground", href: "/playground" },
   { label: "Docs", href: "/docs" },
 ];
 
