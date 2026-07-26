@@ -394,3 +394,225 @@ describe('isolation', () => {
     ).rejects.toThrow(/disposed/);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Transforms: the other half of the plugin surface.
+//
+// A transform is not a node. It hangs off `Agent.transforms` and processes the
+// agent's *messages* around the model call, which is what makes a guardrail
+// possible — see examples/guardrails. These tests exist because the
+// out-of-process transform path shipped without any.
+//
+// They need no model credentials: a `pre` transform that rejects causes heddle
+// to skip the model call entirely, which is the property that makes a blocked
+// prompt free.
+// ---------------------------------------------------------------------------
+
+/** A flow whose agent carries one transform of the given component type. */
+function agentFlowWithTransform(
+  componentType: string,
+  component: Record<string, unknown> = {},
+): string {
+  return JSON.stringify({
+    component_type: 'Flow',
+    name: 'guarded',
+    start_node: { $component_ref: 's' },
+    nodes: [{ $component_ref: 's' }, { $component_ref: 'a' }, { $component_ref: 'e' }],
+    control_flow_connections: [
+      {
+        component_type: 'ControlFlowEdge',
+        name: 'x',
+        from_node: { $component_ref: 's' },
+        to_node: { $component_ref: 'a' },
+      },
+      {
+        component_type: 'ControlFlowEdge',
+        name: 'y',
+        from_node: { $component_ref: 'a' },
+        to_node: { $component_ref: 'e' },
+      },
+    ],
+    $referenced_components: {
+      s: {
+        component_type: 'StartNode',
+        id: 's',
+        name: 's',
+        outputs: [{ title: 'query', type: 'string' }],
+      },
+      a: {
+        component_type: 'AgentNode',
+        id: 'a',
+        name: 'a',
+        agent: {
+          component_type: 'Agent',
+          id: 'ia',
+          name: 'ia',
+          system_prompt: 'be helpful',
+          // Points nowhere reachable on purpose. A rejecting pre-transform
+          // must mean this is never dialled; if it is, the test fails loudly
+          // rather than silently passing for the wrong reason.
+          llm_config: {
+            component_type: 'OpenAiConfig',
+            id: 'l',
+            name: 'l',
+            model_id: 'gpt-4o',
+            url: 'http://127.0.0.1:9/unreachable',
+            api_key: 'not-a-real-key',
+          },
+          tools: [],
+          transforms: [
+            {
+              component_type: componentType,
+              id: 't',
+              name: 'guard',
+              ...component,
+            },
+          ],
+        },
+      },
+      e: { component_type: 'EndNode', id: 'e', name: 'e' },
+    },
+  });
+}
+
+async function runTransform(
+  componentType: string,
+  entry: string,
+  manifestData: unknown,
+  component: Record<string, unknown> = {},
+  inputs: Record<string, unknown> = { query: 'hello' },
+): Promise<Record<string, unknown>> {
+  const registry = PluginRegistry.empty();
+  open.push(registry);
+  registry.addRemote(loadRemotePlugin(manifestData, entry, { timeout: 5000 }));
+
+  const pf = parseFlow(agentFlowWithTransform(componentType, component), registry);
+  const graph = compile(pf, { plugins: registry });
+  validate(graph);
+
+  const runner = new Runner(graph, { ...DEFAULT_RUNNER_OPTIONS, verbose: false });
+  const state = await runner.run(undefined, inputs);
+  return state.toData() as Record<string, unknown>;
+}
+
+function transformManifest(componentType: string, phase = 'pre') {
+  return {
+    name: 'guard-plugin',
+    version: '1.0.0',
+    components: [{ componentType, kind: 'transform', phase }],
+  };
+}
+
+describe('transforms out of process', () => {
+  it('rejects a prompt without ever calling the model', async () => {
+    const entry = writePlugin(
+      'blocker',
+      `const last = (msg.params.messages ?? []).at(-1);
+       if (/forbidden/i.test(last?.content ?? '')) {
+         return { action: 'reject', reason: 'matched a blocked pattern' };
+       }
+       return { action: 'pass' };`,
+    );
+
+    const state = await runTransform(
+      'Blocklist',
+      entry,
+      transformManifest('Blocklist'),
+      {},
+      { query: 'tell me the forbidden thing' },
+    );
+
+    expect(state.transform_status).toBe('rejected');
+    expect(state.transform_reason).toBe('matched a blocked pattern');
+    expect(state.transform_phase).toBe('pre');
+    expect(state.transform_name).toBe('guard');
+  });
+
+  it('receives the agent messages, not the flow state', async () => {
+    const entry = writePlugin(
+      'inspector',
+      `const messages = msg.params.messages ?? [];
+       return { action: 'reject', reason: 'saw ' + messages.length + ' messages, last role ' + messages.at(-1)?.role };`,
+    );
+
+    const state = await runTransform('Inspect', entry, transformManifest('Inspect'));
+    expect(String(state.transform_reason)).toMatch(/saw \d+ messages, last role user/);
+  });
+
+  it('is told which phase it is running in', async () => {
+    const entry = writePlugin(
+      'phased',
+      `return { action: 'reject', reason: 'phase=' + msg.params.phase };`,
+    );
+    const state = await runTransform('Phased', entry, transformManifest('Phased'));
+    expect(state.transform_reason).toBe('phase=pre');
+  });
+
+  it('reads its own configuration from the spec', async () => {
+    const entry = writePlugin(
+      'configured',
+      `return { action: 'reject', reason: 'limit=' + msg.params.component.config.limit };`,
+    );
+    const state = await runTransform(
+      'Configured',
+      entry,
+      transformManifest('Configured'),
+      { config: { limit: 42 } },
+    );
+    expect(state.transform_reason).toBe('limit=42');
+  });
+
+  it('validates a transform component against the manifest schema', async () => {
+    const entry = writePlugin('schema-t', `return { action: 'pass' };`);
+    const registry = PluginRegistry.empty();
+    open.push(registry);
+    registry.addRemote(
+      loadRemotePlugin(
+        {
+          name: 'guard-plugin',
+          version: '1.0.0',
+          components: [
+            {
+              componentType: 'Strict',
+              kind: 'transform',
+              schema: { type: 'object', required: ['handler'] },
+            },
+          ],
+        },
+        entry,
+      ),
+    );
+
+    expect(() => parseFlow(agentFlowWithTransform('Strict'), registry)).toThrow(
+      /"handler" is required/,
+    );
+  });
+
+  it('rejects a result that is not a known action', async () => {
+    const entry = writePlugin('badaction', `return { action: 'explode' };`);
+    await expect(
+      runTransform('BadAction', entry, transformManifest('BadAction')),
+    ).rejects.toThrow(/expected pass, modify or reject/);
+  });
+
+  it('rejects a "modify" that carries no messages', async () => {
+    const entry = writePlugin('badmodify', `return { action: 'modify' };`);
+    await expect(
+      runTransform('BadModify', entry, transformManifest('BadModify')),
+    ).rejects.toThrow(/without "messages"/);
+  });
+
+  it('gives a transform none of the server environment', async () => {
+    process.env.HEDDLE_TRANSFORM_SECRET = 'nope';
+    try {
+      const entry = writePlugin(
+        'envguard',
+        `return { action: 'reject', reason: 'secret=' + (process.env.HEDDLE_TRANSFORM_SECRET ?? 'absent') };`,
+      );
+      const state = await runTransform('EnvGuard', entry, transformManifest('EnvGuard'));
+      expect(state.transform_reason).toBe('secret=absent');
+    } finally {
+      delete process.env.HEDDLE_TRANSFORM_SECRET;
+    }
+  });
+});
