@@ -698,8 +698,19 @@ $referenced_components:
       #   url: https://api.openai.com/v1
       #   api_key: sk-your-own-key
       #
-      # Both together, always. A spec that names a url without a key is
-      # refused rather than being handed the engine's own.
+      # Both together, always. A spec naming a url without a key is refused
+      # rather than handed the engine's own, which would post it there.
+      #
+      # Running this file locally, you would instead write
+      #
+      #   api_key: $OPENAI_API_KEY
+      #
+      # which reads your environment. The playground refuses that form: there,
+      # the spec is yours and the environment is yours, so a reference resolves
+      # to your own secret. Here the spec arrives from a stranger and the
+      # environment belongs to the engine, and the reference is not limited to
+      # model keys -- $ANYTHING would be read and sent wherever the same spec
+      # pointed.
       llm_config:
         component_type: OpenAiConfig
         id: llm

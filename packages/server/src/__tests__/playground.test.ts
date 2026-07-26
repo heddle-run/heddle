@@ -800,9 +800,11 @@ describe('specs cannot read the server environment', () => {
       const present = (await forPresent.json()) as { error: { message: string } };
 
       // Same shape either way, so the environment cannot be enumerated by
-      // comparing responses.
-      expect(present.error.message.replace('HEDDLE_PRESENT', 'X')).toBe(
-        absent.error.message.replace('DEFINITELY_NOT_SET_ANYWHERE', 'X'),
+      // comparing responses. replaceAll, not replace: the message names the
+      // variable more than once, and normalizing only the first occurrence
+      // would compare two strings that still differ by name.
+      expect(present.error.message.replaceAll('HEDDLE_PRESENT', 'X')).toBe(
+        absent.error.message.replaceAll('DEFINITELY_NOT_SET_ANYWHERE', 'X'),
       );
     } finally {
       delete process.env.HEDDLE_PRESENT;

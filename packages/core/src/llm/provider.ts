@@ -34,8 +34,11 @@ function resolveEnvVar(value: string, allowEnvRefs: boolean): string {
     const key = value.slice(1);
     if (!allowEnvRefs) {
       throw new LLMError(
-        `"${value}" refers to an environment variable, which this server does not ` +
-          `resolve for submitted specs. Put the credential in the spec itself.`,
+        `"${value}" refers to an environment variable. This server does not resolve ` +
+          `those for specs it did not write — the reference is not limited to model ` +
+          `keys, and the same spec chooses where the value would be sent. Put the ` +
+          `credential in the spec, or omit it and use whatever this server provides. ` +
+          `Running the spec yourself, ${value} resolves normally.`,
       );
     }
     const envValue = process.env[key];
