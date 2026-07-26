@@ -3,7 +3,6 @@ import {
   compile,
   validate,
   collectToolNames,
-  loadPlugins,
   FileRegistry,
   PluginRegistry,
   SubprocessExecutor,
@@ -20,6 +19,7 @@ import { HttpError, toErrorResponse } from './errors.js';
 import { resolveFlow, type FlowRequest } from './flow-source.js';
 import { readJsonBody, sendJson } from './http.js';
 import type { ConcurrencyGate } from './limits.js';
+import { buildPlugins } from './plugins.js';
 import {
   materializeRequestCode,
   rejectRequestCode,
@@ -78,6 +78,11 @@ function buildDependencies(
     toolRegistry: registry,
     plugins,
     eventHandler,
+    // A server accepting submitted code is accepting submitted specs, and a
+    // spec that resolves `$VAR` reads this process's environment — any
+    // variable, not only a model key — and can send it wherever its own
+    // llm_config points. Credentials belong in the spec, from the caller.
+    allowEnvRefs: !config.allowRequestCode,
   };
 }
 
@@ -105,13 +110,9 @@ async function prepare(
   body: RunRequest,
   config: ServerConfig,
   code: MaterializedCode,
+  plugins: PluginRegistry,
   eventHandler: (e: Event) => void,
 ): Promise<CompiledGraph> {
-  const plugins =
-    code.pluginPaths.length > 0
-      ? await loadPlugins(code.pluginPaths)
-      : PluginRegistry.empty();
-
   const pf = resolveFlow(body, config, plugins);
   const deps = buildDependencies(pf, config, code, plugins, eventHandler);
   const graph = compile(pf, deps);
@@ -151,22 +152,25 @@ export async function handleRun(
   });
 
   let code: MaterializedCode = NO_CODE;
+  let plugins = PluginRegistry.empty();
   try {
     if (config.allowRequestCode) {
       code = materializeRequestCode(runBody, config);
+      plugins = buildPlugins(config, code);
     }
 
     if (stream) {
-      await runStreaming(res, config, runBody, inputs, code, ac, headers);
+      await runStreaming(res, config, runBody, inputs, code, plugins, ac, headers);
     } else {
-      await runBuffered(res, config, runBody, inputs, code, ac, headers);
+      await runBuffered(res, config, runBody, inputs, code, plugins, ac, headers);
     }
   } finally {
     finished = true;
-    // Submitted source leaves no trace on disk past the run that sent it. The
-    // modules it defined do outlive it — node's ESM registry has no unload —
-    // which is one more reason a process should not serve untrusted code for
-    // longer than a single run.
+    // Both halves of the caller's code stop here: the plugin processes are
+    // killed, and the directory their source came from is removed. Nothing the
+    // caller sent survives their request, which is what lets this process
+    // serve the next one.
+    plugins.dispose();
     code.dispose();
     release();
   }
@@ -178,10 +182,11 @@ async function runBuffered(
   runBody: RunRequest,
   inputs: Record<string, unknown>,
   code: MaterializedCode,
+  plugins: PluginRegistry,
   ac: AbortController,
   headers: Record<string, string>,
 ): Promise<void> {
-  const graph = await prepare(runBody, config, code, () => {});
+  const graph = await prepare(runBody, config, code, plugins, () => {});
   const runner = new Runner(graph, runnerOptions(config, () => {}));
   const state = await runner.run(ac.signal, inputs);
 
@@ -194,6 +199,7 @@ async function runStreaming(
   runBody: RunRequest,
   inputs: Record<string, unknown>,
   code: MaterializedCode,
+  plugins: PluginRegistry,
   ac: AbortController,
   headers: Record<string, string>,
 ): Promise<void> {
@@ -203,7 +209,7 @@ async function runStreaming(
   // deserves a real 4xx status, which is impossible once 200 headers are out.
   let graph: CompiledGraph;
   try {
-    graph = await prepare(runBody, config, code, (e) =>
+    graph = await prepare(runBody, config, code, plugins, (e) =>
       sse.send(e.type, serializeEvent(e)),
     );
   } catch (err) {

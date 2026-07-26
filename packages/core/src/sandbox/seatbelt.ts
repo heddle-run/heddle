@@ -94,7 +94,7 @@ class SeatbeltSession implements SandboxSession {
     this.workspace = realPath(workspace);
   }
 
-  wrap(toolPath: string): SandboxCommand {
+  wrap(toolPath: string, extraArgs: string[] = []): SandboxCommand {
     const policy = this.policy;
     const cwd = realPath(policy.cwd ?? process.cwd());
     const tool = realPath(toolPath);
@@ -134,7 +134,7 @@ class SeatbeltSession implements SandboxSession {
 
     return {
       command: '/usr/bin/sandbox-exec',
-      args: ['-p', profile, tool],
+      args: ['-p', profile, tool, ...extraArgs],
       env,
       cwd,
       cleanup: () => removeDir(scratch),

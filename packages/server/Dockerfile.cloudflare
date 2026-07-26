@@ -74,13 +74,15 @@ ENTRYPOINT ["node", "/app/dist/heddle-server.js"]
 # No --tools-dir: on this deployment every tool arrives with the request, so
 # there is nothing server-side to expose. No --safe, per the note above.
 #
-# --max-concurrent 1 is the point of the design rather than a tuning choice:
-# this instance exists for one run. The broker provides parallelism by starting
-# more instances, each isolated from the others.
+# Many runs per instance. Plugins execute in their own process and specs cannot
+# read this one's environment, so a run is not isolated by having a container to
+# itself — which is just as well, since a container per run meant a cold start
+# per run.
 CMD ["--host", "0.0.0.0", \
      "--port", "4319", \
      "--allow-request-code", \
      "--work-dir", "/var/heddle/runs", \
-     "--max-concurrent", "1", \
+     "--max-concurrent", "8", \
      "--max-iterations", "25", \
-     "--timeout", "60000"]
+     "--timeout", "60000", \
+     "--drain-timeout", "90000"]

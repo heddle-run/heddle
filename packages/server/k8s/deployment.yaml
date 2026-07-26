@@ -1,15 +1,15 @@
 # heddle-server as a long-lived, multi-run service.
 #
-# This is NOT the playground topology. The image's default CMD carries
-# --allow-request-code and --max-concurrent 1, because submitted plugin modules
-# are imported into the server process and the only sound boundary for those is
-# one disposable container per run (see DEPLOYMENT.md). The args below
-# deliberately override that: no request code, many runs per process.
+# The args below drop --allow-request-code from the image's default CMD:
+# callers here are trusted, so there is no reason to accept code from them.
+# That is a smaller decision than it used to be. Submitted plugins now run in
+# their own process and submitted specs cannot read this pod's environment, so
+# accepting request code no longer implies one container per run — see
+# ../DEPLOYMENT.md if you want to turn it on.
 #
-# That trade is only available because the callers here are trusted. Runs share
-# one Node process, so one run's plugin can see another's memory and one run's
-# OOM takes the whole pod — every session on it. --max-concurrent and the
-# memory limit are what bound that blast radius, not tuning knobs.
+# What remains true, and is not a plugin problem: runs share one Node process,
+# so one run that exhausts memory OOM-kills the pod and every session on it.
+# --max-concurrent and the memory limit are what bound that, not tuning knobs.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -65,8 +65,15 @@ spec:
             - --timeout=60000
             - --max-iterations=25
             - --cors-origin=https://heddle.run
-            - --safe
-            - --sandbox=bubblewrap
+            # --safe --sandbox=bubblewrap is deliberately absent. bubblewrap
+            # has to create a user namespace and mount /proc in it, which the
+            # securityContext below denies under runc — every tool call would
+            # fail with "bwrap: Can't mount proc", and no test here would catch
+            # it. Add a gVisor RuntimeClass (see README) and these two lines
+            # together, or leave both out and let the pod be the boundary.
+            #
+            # - --safe
+            # - --sandbox=bubblewrap
 
           ports:
             - name: http

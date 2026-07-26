@@ -263,11 +263,12 @@ export function startServer(options: ServerOptions = {}): Promise<StartedServer>
 
       if (config.allowRequestCode) {
         config.log(
-          `WARNING: --allow-request-code is on. Every request may submit tool scripts and ` +
-            `plugin modules, and plugin modules are imported into THIS process — they run ` +
-            `with its filesystem access and its environment, including any API keys. ` +
-            `Tool sandboxing does not confine them. Run this configuration only as one ` +
-            `disposable container per run.`,
+          `NOTE: --allow-request-code is on. Callers may submit tool scripts and plugin ` +
+            `modules; both run in their own processes and are stopped when the run ends, ` +
+            `and submitted specs cannot read this process's environment. What remains ` +
+            `yours to bound: this server has no authentication and no rate limiting, it ` +
+            `runs computation its callers choose, and it makes outbound requests to hosts ` +
+            `they name. Restrict egress and put something in front of it.`,
         );
       }
 

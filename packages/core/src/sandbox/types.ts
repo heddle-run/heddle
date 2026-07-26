@@ -60,7 +60,16 @@ export interface SandboxSession {
   readonly name: string;
   /** Host path of the shared workspace, exported to tools as $HEDDLE_WORKSPACE. */
   readonly workspace: string;
-  wrap(toolPath: string): SandboxCommand;
+  /**
+   * Rewrite an invocation to run confined.
+   *
+   * `args` is for callers that cannot make the target a self-contained
+   * executable — a plugin started as `python3 plugin.py`, say. A tool never
+   * needs it: tools are executables with a shebang, invoked by path alone.
+   * Anything named in `args` that is a path must also be in the policy's
+   * `readPaths`, or it will not exist on the confined side.
+   */
+  wrap(toolPath: string, args?: string[]): SandboxCommand;
   /** Destroys the workspace. Wrapping after disposal is a programming error. */
   dispose(): void;
 }

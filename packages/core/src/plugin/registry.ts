@@ -13,6 +13,7 @@ import type {
   PluginTransformDef,
 } from './types.js';
 import { HeddleDeserializationPlugin } from './deserializer.js';
+import type { PluginHost } from './host.js';
 import { PluginError } from '../errors.js';
 
 /** What a custom component type is, which decides how heddle handles it. */
@@ -28,6 +29,7 @@ export class PluginRegistry {
   private sdkPlugins: ComponentDeserializationPlugin[] = [];
   private pluginNames: string[] = [];
   private deserializerInstance: AgentSpecDeserializer | undefined;
+  private hosts: PluginHost[] = [];
 
   /** An empty registry — the default when no plugins are configured. */
   static empty(): PluginRegistry {
@@ -85,6 +87,36 @@ export class PluginRegistry {
           `(re-registered by "${pluginName}"). Remove the duplicate plugin.`,
       );
     }
+  }
+
+  /**
+   * Register a plugin that runs in its own process, and take ownership of that
+   * process.
+   *
+   * The registry owns it because the registry's lifetime is already the right
+   * one: it is built per run wherever plugins are untrusted, so disposing it
+   * disposes them.
+   */
+  addRemote(remote: { plugin: HeddlePlugin; host: PluginHost }): void {
+    this.add(remote.plugin);
+    this.hosts.push(remote.host);
+  }
+
+  /**
+   * Stop every plugin process this registry started.
+   *
+   * Must run at the end of a run, on every path. This is the step that stops
+   * one caller's code from outliving their request — the guarantee the
+   * in-process API cannot make, because there is nothing to stop.
+   */
+  dispose(): void {
+    for (const host of this.hosts) host.dispose();
+    this.hosts = [];
+  }
+
+  /** True when any registered plugin runs out of process. */
+  hasRemote(): boolean {
+    return this.hosts.length > 0;
   }
 
   isEmpty(): boolean {

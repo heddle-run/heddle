@@ -77,6 +77,28 @@ export { definePlugin } from './plugin/types.js';
 export { PluginRegistry } from './plugin/registry.js';
 export type { ComponentKind } from './plugin/registry.js';
 export { loadPlugin, loadPlugins } from './plugin/loader.js';
+
+// ---------------------------------------------------------------------------
+// Out-of-process plugins
+//
+// The same component types, executed in their own process. A plugin loaded this
+// way cannot read the server's environment, cannot leave state behind for the
+// next run, and cannot take the server down with it — none of which the
+// in-process path above can offer, because there a plugin *is* the server.
+// ---------------------------------------------------------------------------
+
+export { loadRemotePlugin, readManifest } from './plugin/remote-loader.js';
+export type { RemotePlugin, RemotePluginOptions } from './plugin/remote-loader.js';
+export { PluginHost } from './plugin/host.js';
+export type { PluginHostOptions, ToolRunner } from './plugin/host.js';
+export { PLUGIN_RUNTIME_JS, withRuntime } from './plugin/runtime-source.js';
+export { validateManifest } from './plugin/manifest.js';
+export type {
+  PluginManifest,
+  ManifestComponent,
+  JsonSchemaFragment,
+} from './plugin/manifest.js';
+export { checkSchema } from './plugin/schema.js';
 export type {
   HeddlePlugin,
   PluginComponent,

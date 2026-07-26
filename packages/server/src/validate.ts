@@ -1,8 +1,9 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { compile, validate, loadPlugins, PluginRegistry } from '@heddle/core';
+import { compile, validate, PluginRegistry } from '@heddle/core';
 import type { ServerConfig } from './config.js';
 import { resolveFlow, type FlowRequest } from './flow-source.js';
 import { readJsonBody, sendJson } from './http.js';
+import { buildPlugins } from './plugins.js';
 import {
   materializeRequestCode,
   rejectRequestCode,
@@ -34,18 +35,15 @@ export async function handleValidate(
   if (!config.allowRequestCode) rejectRequestCode(body);
 
   let code: MaterializedCode = NO_CODE;
+  let plugins = PluginRegistry.empty();
   try {
     if (config.allowRequestCode) {
       // Tools are irrelevant here — nothing is executed — but materializing
       // them keeps a flow that names one from failing validation for a reason
       // the caller cannot see.
       code = materializeRequestCode(body as RequestCode, config);
+      plugins = buildPlugins(config, code);
     }
-
-    const plugins =
-      code.pluginPaths.length > 0
-        ? await loadPlugins(code.pluginPaths)
-        : PluginRegistry.empty();
 
     const pf = resolveFlow(body as FlowRequest, config, plugins);
     const graph = compile(pf, { plugins });
@@ -66,6 +64,7 @@ export async function handleValidate(
       headers,
     );
   } finally {
+    plugins.dispose();
     code.dispose();
   }
 }

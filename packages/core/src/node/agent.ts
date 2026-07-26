@@ -46,7 +46,9 @@ export class AgentExecutor implements NodeExecutor {
    * impossible without credentials.
    */
   private getProvider(): Provider {
-    this.provider ??= createProvider(this.node.agent!.llmConfig!);
+    this.provider ??= createProvider(this.node.agent!.llmConfig!, {
+      allowEnvRefs: this.deps.allowEnvRefs,
+    });
     return this.provider;
   }
 

@@ -39,11 +39,15 @@ SECURITY: there is no authentication. Every caller can execute the tools in
 --tools-dir. The default bind address is loopback; overriding --host exposes an
 unauthenticated remote-code-execution surface.
 
---allow-request-code goes further: callers submit their own tool scripts and
-plugin modules. Plugin modules are imported into this Node process and run with
-its environment and its filesystem access; --safe confines tool subprocesses and
-does nothing about plugins. Use that option only where the process itself is the
-sandbox — one disposable container per run.
+--allow-request-code lets callers submit their own tool scripts and plugin
+modules. Both run in their own processes, neither receives any of this process's
+environment, and both stop when the run ends. A submitted spec cannot
+dereference this process's environment either. One server can therefore serve
+many concurrent untrusted runs.
+
+What that option does not change: this server still executes computation its
+callers choose and makes outbound requests to hosts they name. Restrict egress
+and terminate authentication in front of it. See DEPLOYMENT.md.
 `;
 
 function toInt(value: string | undefined, flag: string): number | undefined {

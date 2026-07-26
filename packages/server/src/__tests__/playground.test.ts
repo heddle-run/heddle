@@ -113,24 +113,31 @@ read -r line
 printf '%s' "$line" | tr '[:lower:]' '[:upper:]'
 `;
 
-const SHOUT_PLUGIN = `
-export default {
+/**
+ * A submitted plugin is two things: a manifest declaring what it provides, and
+ * handler source calling `serve()`. The runtime that defines `serve` is
+ * prepended by the server, so the source never imports anything — it runs from
+ * a temp directory with no node_modules beside it.
+ */
+const SHOUT_MANIFEST = {
   name: 'test-plugin',
   version: '1.0.0',
-  nodes: [
-    {
-      componentType: 'ShoutNode',
-      createExecutor() {
-        return {
-          execute(input) {
-            return { output: { text: String(input.text ?? '').toUpperCase() } };
-          },
-        };
-      },
-    },
-  ],
+  components: [{ componentType: 'ShoutNode' }],
 };
+
+const SHOUT_SOURCE = `
+serve({
+  ShoutNode: {
+    execute: (input) => ({ output: { text: String(input.text ?? '').toUpperCase() } }),
+  },
+});
 `;
+
+const shoutPlugin = () => ({
+  name: 'shout',
+  manifest: SHOUT_MANIFEST,
+  source: SHOUT_SOURCE,
+});
 
 let server: Server;
 let base: string;
@@ -297,7 +304,7 @@ describe('request-submitted plugins', () => {
     const res = await post('/v1/runs', {
       flow: pluginFlow(),
       inputs: { text: 'quiet' },
-      plugins: [{ name: 'shout', source: SHOUT_PLUGIN }],
+      plugins: [shoutPlugin()],
     });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
@@ -309,7 +316,7 @@ describe('request-submitted plugins', () => {
   it('validates a flow using a submitted plugin', async () => {
     const res = await post('/v1/validate', {
       flow: pluginFlow(),
-      plugins: [{ name: 'shout', source: SHOUT_PLUGIN }],
+      plugins: [shoutPlugin()],
     });
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ valid: true, flow: 'plugin-flow' });
@@ -320,22 +327,156 @@ describe('request-submitted plugins', () => {
     expect(res.status).toBe(400);
   });
 
-  it('reports a plugin that fails to import as a bad request', async () => {
+  // The in-process shape is not merely unsupported, it is the thing this
+  // endpoint exists to refuse: importing it would run the caller's code inside
+  // the server. The message has to say so, since the author's plugin is
+  // otherwise perfectly valid heddle.
+  it('refuses a plugin written against the in-process API', async () => {
     const res = await post('/v1/runs', {
       flow: pluginFlow(),
-      plugins: [{ name: 'broken', source: 'this is not javascript {{{' }],
+      plugins: [
+        { name: 'legacy', source: 'export default { name: "x", version: "1", nodes: [] };' },
+      ],
     });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: { message: string } };
+    expect(body.error.message).toContain('manifest');
+    expect(body.error.message).toMatch(/would run\s+inside the server|run out of process/);
+  });
+
+  it('rejects a manifest that declares no components', async () => {
+    const res = await post('/v1/runs', {
+      flow: pluginFlow(),
+      plugins: [
+        { name: 'empty', manifest: { name: 'x', version: '1', components: [] }, source: 'serve({});' },
+      ],
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('reports a plugin whose source will not run', async () => {
+    const res = await post('/v1/runs', {
+      flow: pluginFlow(),
+      inputs: { text: 'x' },
+      plugins: [{ name: 'broken', manifest: SHOUT_MANIFEST, source: 'this is not javascript {{{' }],
+    });
+    // The process is started lazily, so this surfaces when the node runs
+    // rather than at load. It is still the caller's fault, and PluginError
+    // maps to 400.
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: { type: string } };
     expect(body.error.type).toBe('PluginError');
   });
 
-  it('reports a plugin declaring nothing as a bad request', async () => {
+  it('gives the plugin none of the server environment', async () => {
+    process.env.HEDDLE_SERVER_SECRET = 'do-not-leak';
+    try {
+      const res = await post('/v1/runs', {
+        flow: pluginFlow(),
+        inputs: { text: 'x' },
+        plugins: [
+          {
+            name: 'peek',
+            manifest: SHOUT_MANIFEST,
+            source: `serve({ ShoutNode: { execute: () => ({
+              output: { text: String(process.env.HEDDLE_SERVER_SECRET ?? 'absent') } }) } });`,
+          },
+        ],
+      });
+      expect(res.status).toBe(200);
+      expect(await res.json()).toMatchObject({ state: { text: 'absent' } });
+    } finally {
+      delete process.env.HEDDLE_SERVER_SECRET;
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The property that lets one engine serve many callers.
+// ---------------------------------------------------------------------------
+
+describe('isolation between runs', () => {
+  /** Plants whatever it is given on a global, and reports everything planted. */
+  const planter = (name: string) => ({
+    name,
+    manifest: { ...SHOUT_MANIFEST, components: [{ componentType: 'ShoutNode' }] },
+    source: `
+      globalThis.__planted ??= [];
+      serve({
+        ShoutNode: {
+          execute: (input) => {
+            if (input.text) globalThis.__planted.push(input.text);
+            return { output: { text: JSON.stringify(globalThis.__planted) } };
+          },
+        },
+      });
+    `,
+  });
+
+  // The attack that succeeds against the in-process API, over HTTP.
+  it('does not carry one caller state into the next request', async () => {
+    const first = await post('/v1/runs', {
+      flow: pluginFlow(),
+      inputs: { text: 'caller-one-secret' },
+      plugins: [planter('a')],
+    });
+    expect(first.status).toBe(200);
+    expect((await first.json()) as Record<string, unknown>).toMatchObject({
+      state: { text: '["caller-one-secret"]' },
+    });
+
+    const second = await post('/v1/runs', {
+      flow: pluginFlow(),
+      inputs: {},
+      plugins: [planter('b')],
+    });
+    expect(second.status).toBe(200);
+    // A shared process would answer ["caller-one-secret"] here.
+    expect((await second.json()) as Record<string, unknown>).toMatchObject({
+      state: { text: '[]' },
+    });
+  });
+
+  it('keeps concurrent runs from seeing each other', async () => {
+    const [a, b] = await Promise.all([
+      post('/v1/runs', {
+        flow: pluginFlow(),
+        inputs: { text: 'alice-private' },
+        plugins: [planter('a')],
+      }),
+      post('/v1/runs', {
+        flow: pluginFlow(),
+        inputs: { text: 'bob-private' },
+        plugins: [planter('b')],
+      }),
+    ]);
+
+    expect(await a.json()).toMatchObject({ state: { text: '["alice-private"]' } });
+    expect(await b.json()).toMatchObject({ state: { text: '["bob-private"]' } });
+  });
+
+  it('survives a plugin that kills its own process', async () => {
     const res = await post('/v1/runs', {
       flow: pluginFlow(),
-      plugins: [{ name: 'empty', source: 'export default { name: "x", version: "1" };' }],
+      inputs: { text: 'x' },
+      plugins: [
+        {
+          name: 'suicide',
+          manifest: SHOUT_MANIFEST,
+          source: `serve({ ShoutNode: { execute: () => { process.exit(1); } } });`,
+        },
+      ],
     });
     expect(res.status).toBe(400);
+
+    // The server is still answering, which is the half that matters.
+    const after = await post('/v1/runs', {
+      flow: pluginFlow(),
+      inputs: { text: 'still here' },
+      plugins: [shoutPlugin()],
+    });
+    expect(after.status).toBe(200);
+    expect(await after.json()).toMatchObject({ state: { text: 'STILL HERE' } });
   });
 });
 
@@ -488,7 +629,7 @@ describe('a server without --allow-request-code', () => {
   it('refuses submitted plugins on the validate endpoint too', async () => {
     const res = await plainPost('/v1/validate', {
       flow: pluginFlow(),
-      plugins: [{ name: 'shout', source: SHOUT_PLUGIN }],
+      plugins: [shoutPlugin()],
     });
     expect(res.status).toBe(400);
   });
@@ -560,5 +701,130 @@ describe('streaming with submitted code', () => {
     });
     expect(res.status).toBe(400);
     expect(res.headers.get('content-type')).toContain('application/json');
+  });
+});
+
+describe('specs cannot read the server environment', () => {
+  /** A flow whose agent's llm_config is chosen by the caller. */
+  function agentFlowWith(llmConfig: Record<string, unknown>): Record<string, unknown> {
+    return {
+      component_type: 'Flow',
+      name: 'env-probe',
+      start_node: { $component_ref: 's' },
+      nodes: [{ $component_ref: 's' }, { $component_ref: 'a' }, { $component_ref: 'e' }],
+      control_flow_connections: [
+        {
+          component_type: 'ControlFlowEdge',
+          name: 'x',
+          from_node: { $component_ref: 's' },
+          to_node: { $component_ref: 'a' },
+        },
+        {
+          component_type: 'ControlFlowEdge',
+          name: 'y',
+          from_node: { $component_ref: 'a' },
+          to_node: { $component_ref: 'e' },
+        },
+      ],
+      $referenced_components: {
+        s: { component_type: 'StartNode', id: 's', name: 's' },
+        a: {
+          component_type: 'AgentNode',
+          id: 'a',
+          name: 'a',
+          agent: {
+            component_type: 'Agent',
+            id: 'ia',
+            name: 'ia',
+            system_prompt: 'x',
+            llm_config: llmConfig,
+          },
+        },
+        e: { component_type: 'EndNode', id: 'e', name: 'e' },
+      },
+    };
+  }
+
+  // The reference is not restricted to model keys: any variable the process
+  // holds can be named, and the flow chooses the URL it is sent to.
+  it('refuses to dereference an environment variable', async () => {
+    process.env.HEDDLE_UNRELATED_SECRET = 'aws-style-credential';
+    try {
+      const res = await post('/v1/runs', {
+        flow: agentFlowWith({
+          component_type: 'OpenAiConfig',
+          id: 'l',
+          name: 'l',
+          model_id: 'gpt-4o',
+          url: 'http://127.0.0.1:9/never-reached',
+          api_key: '$HEDDLE_UNRELATED_SECRET',
+        }),
+        inputs: { query: 'hi' },
+      });
+
+      expect(res.status).toBe(500);
+      const body = (await res.json()) as { error: { message: string } };
+      expect(body.error.message).toContain('does not resolve');
+      // The value must not appear in the reply, even in an error.
+      expect(JSON.stringify(body)).not.toContain('aws-style-credential');
+    } finally {
+      delete process.env.HEDDLE_UNRELATED_SECRET;
+    }
+  });
+
+  it('does not reveal whether a variable exists', async () => {
+    const forAbsent = await post('/v1/runs', {
+      flow: agentFlowWith({
+        component_type: 'OpenAiConfig',
+        id: 'l',
+        name: 'l',
+        model_id: 'gpt-4o',
+        api_key: '$DEFINITELY_NOT_SET_ANYWHERE',
+      }),
+      inputs: { query: 'hi' },
+    });
+    const absent = (await forAbsent.json()) as { error: { message: string } };
+
+    process.env.HEDDLE_PRESENT = 'value';
+    try {
+      const forPresent = await post('/v1/runs', {
+        flow: agentFlowWith({
+          component_type: 'OpenAiConfig',
+          id: 'l',
+          name: 'l',
+          model_id: 'gpt-4o',
+          api_key: '$HEDDLE_PRESENT',
+        }),
+        inputs: { query: 'hi' },
+      });
+      const present = (await forPresent.json()) as { error: { message: string } };
+
+      // Same shape either way, so the environment cannot be enumerated by
+      // comparing responses.
+      expect(present.error.message.replace('HEDDLE_PRESENT', 'X')).toBe(
+        absent.error.message.replace('DEFINITELY_NOT_SET_ANYWHERE', 'X'),
+      );
+    } finally {
+      delete process.env.HEDDLE_PRESENT;
+    }
+  });
+
+  it('still accepts a credential written into the spec', async () => {
+    // Reaches the provider and fails on connection, not on the credential —
+    // which is the point: the caller supplies their own key.
+    const res = await post('/v1/runs', {
+      flow: agentFlowWith({
+        component_type: 'OpenAiConfig',
+        id: 'l',
+        name: 'l',
+        model_id: 'gpt-4o',
+        url: 'http://127.0.0.1:9/unreachable',
+        api_key: 'sk-callers-own-key',
+      }),
+      inputs: { query: 'hi' },
+    });
+    expect(res.status).toBe(500);
+    const body = (await res.json()) as { error: { message: string } };
+    expect(body.error.message).not.toContain('does not resolve');
   });
 });
