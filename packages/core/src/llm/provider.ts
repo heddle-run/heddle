@@ -62,6 +62,51 @@ export interface ProviderOptions {
    * came from a caller — see {@link resolveEnvVar}.
    */
   allowEnvRefs?: boolean;
+  /**
+   * A credential the operator supplies for specs that name none, so a caller
+   * can run a flow without bringing a key. Both halves or neither: see
+   * {@link applyDefaultCredential} for why the URL cannot be separated from it.
+   */
+  defaultUrl?: string;
+  defaultKey?: string;
+}
+
+/**
+ * Fill in the operator's credential, but only where doing so cannot hand it to
+ * a caller.
+ *
+ * The rule is narrow and the reason is specific. A spec chooses its own `url`.
+ * If the server filled in a key for a spec that named a URL, then
+ *
+ *   llm_config: { url: https://attacker.example }     # no api_key
+ *
+ * would have the operator's key attached and posted to that host. So the
+ * default credential is only ever used with the default endpoint: a spec that
+ * supplies a URL must supply its own key too, and is refused otherwise rather
+ * than quietly falling back to no credential — a caller whose flow suddenly
+ * ran unauthenticated would have no idea why it failed.
+ */
+function applyDefaultCredential(
+  opts: { apiKey?: string; baseURL?: string },
+  config: LLMConfig,
+  options: ProviderOptions,
+): void {
+  const { defaultUrl, defaultKey } = options;
+  if (!defaultKey) return;
+
+  // The spec brought its own credential; nothing to supply.
+  if (config.apiKey) return;
+
+  if (config.url) {
+    throw new LLMError(
+      `this llm_config sets "url" but no "api_key". The server's own credential ` +
+        `is only used with its own endpoint, so a flow that chooses where to send ` +
+        `requests has to supply the key for them.`,
+    );
+  }
+
+  opts.apiKey = defaultKey;
+  if (defaultUrl) opts.baseURL = defaultUrl;
 }
 
 export function createProvider(
@@ -87,6 +132,8 @@ export function createProvider(
   if (config.url) {
     opts.baseURL = config.url;
   }
+
+  applyDefaultCredential(opts, config, options);
 
   return new OpenAIProvider(opts);
 }

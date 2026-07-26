@@ -22,4 +22,11 @@ export interface Dependencies {
    * process environment that the spec's author chooses.
    */
   allowEnvRefs?: boolean;
+  /**
+   * A credential the operator supplies for specs that name none. Only ever
+   * used with `defaultLlmUrl`; a spec that chooses its own endpoint must bring
+   * its own key. See `applyDefaultCredential`.
+   */
+  defaultLlmKey?: string;
+  defaultLlmUrl?: string;
 }

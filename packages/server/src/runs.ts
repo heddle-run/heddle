@@ -83,6 +83,8 @@ function buildDependencies(
     // variable, not only a model key — and can send it wherever its own
     // llm_config points. Credentials belong in the spec, from the caller.
     allowEnvRefs: !config.allowRequestCode,
+    defaultLlmKey: config.defaultLlmKey,
+    defaultLlmUrl: config.defaultLlmUrl,
   };
 }
 

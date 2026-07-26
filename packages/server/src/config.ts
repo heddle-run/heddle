@@ -67,6 +67,19 @@ export interface ServerConfig {
   sandbox?: Sandbox;
 
   /**
+   * A model credential for specs that name none, so a caller can run a flow
+   * without bringing a key of their own.
+   *
+   * Read from the environment at startup rather than taken as a flag, so it
+   * does not sit in `ps` output or a shell history. It is never handed to a
+   * spec that chooses its own `url` — that request is refused instead, because
+   * filling it in would post the key to a host the caller picked.
+   */
+  defaultLlmKey?: string;
+  /** Endpoint the default credential belongs to. */
+  defaultLlmUrl?: string;
+
+  /**
    * Where per-run directories for submitted code are created. Defaults to the
    * system temp directory.
    *
@@ -129,6 +142,8 @@ export function resolveConfig(options: ServerOptions = {}): ServerConfig {
     corsOrigins: options.corsOrigins ?? [],
     allowRequestCode: options.allowRequestCode ?? false,
     sandbox: options.sandbox,
+    defaultLlmKey: options.defaultLlmKey,
+    defaultLlmUrl: options.defaultLlmUrl,
     workDir: options.workDir,
     maxRequestTools: options.maxRequestTools ?? DEFAULT_MAX_REQUEST_TOOLS,
     maxRequestPlugins: options.maxRequestPlugins ?? DEFAULT_MAX_REQUEST_PLUGINS,

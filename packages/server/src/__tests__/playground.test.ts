@@ -828,3 +828,106 @@ describe('specs cannot read the server environment', () => {
     expect(body.error.message).not.toContain('does not resolve');
   });
 });
+
+describe('the operator credential is bound to the operator endpoint', () => {
+  let withKey: Server;
+  let withKeyBase: string;
+
+  beforeAll(async () => {
+    withKey = createServer({
+      allowRequestCode: true,
+      // Points at a closed port: these tests assert which credential and URL
+      // the engine *chooses*, and a chosen endpoint that answers would make
+      // them depend on a live provider.
+      defaultLlmKey: 'operator-secret-key',
+      defaultLlmUrl: 'http://127.0.0.1:9/operator',
+      log: () => {},
+    });
+    await new Promise<void>((r) => withKey.listen(0, '127.0.0.1', r));
+    const a = withKey.address();
+    withKeyBase = `http://127.0.0.1:${typeof a === 'object' && a ? a.port : 0}`;
+  });
+
+  afterAll(async () => {
+    await new Promise<void>((r) => withKey.close(() => r()));
+  });
+
+  function agentFlow(llm: Record<string, unknown>): Record<string, unknown> {
+    return {
+      component_type: 'Flow',
+      name: 'ask',
+      start_node: { $component_ref: 's' },
+      nodes: [{ $component_ref: 's' }, { $component_ref: 'a' }, { $component_ref: 'e' }],
+      control_flow_connections: [
+        { component_type: 'ControlFlowEdge', name: 'x', from_node: { $component_ref: 's' }, to_node: { $component_ref: 'a' } },
+        { component_type: 'ControlFlowEdge', name: 'y', from_node: { $component_ref: 'a' }, to_node: { $component_ref: 'e' } },
+      ],
+      $referenced_components: {
+        s: { component_type: 'StartNode', id: 's', name: 's' },
+        a: {
+          component_type: 'AgentNode', id: 'a', name: 'a',
+          agent: {
+            component_type: 'Agent', id: 'ia', name: 'ia', system_prompt: 'x',
+            // OpenAiConfig has no `url` field — agentspec drops it. Only
+          // OpenAiCompatibleConfig can name an endpoint, so that is the type a
+          // caller choosing one has to use, and the type the rule guards.
+          llm_config: {
+            component_type: llm.url ? 'OpenAiCompatibleConfig' : 'OpenAiConfig',
+            id: 'l', name: 'l', model_id: 'm', ...llm,
+          },
+          },
+        },
+        e: { component_type: 'EndNode', id: 'e', name: 'e' },
+      },
+    };
+  }
+
+  const post = (body: unknown) =>
+    fetch(`${withKeyBase}/v1/runs`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+  // The hole this rule exists to close: a caller naming a destination and
+  // letting the server attach its credential to the request.
+  it('refuses a spec that chooses a url but supplies no key', async () => {
+    const res = await post({
+      flow: agentFlow({ url: 'http://127.0.0.1:9/attacker' }),
+      inputs: { query: 'hi' },
+    });
+
+    const body = (await res.json()) as { error: { message: string } };
+    expect(body.error.message).toMatch(/has to supply the key/);
+    expect(JSON.stringify(body)).not.toContain('operator-secret-key');
+  });
+
+  it('lets a spec that supplies its own key choose its own url', async () => {
+    const res = await post({
+      flow: agentFlow({ url: 'http://127.0.0.1:9/their-own', api_key: 'callers-own-key' }),
+      inputs: { query: 'hi' },
+    });
+    const body = (await res.json()) as { error: { message: string } };
+    // Reaches the provider and fails on the connection, not on the rule.
+    expect(body.error.message).not.toMatch(/has to supply the key/);
+  });
+
+  it('supplies the credential to a spec that names neither', async () => {
+    const res = await post({ flow: agentFlow({}), inputs: { query: 'hi' } });
+    const body = (await res.json()) as { error: { message: string } };
+    // Got as far as dialling the operator endpoint, which is what "supplied"
+    // looks like from outside.
+    expect(body.error.type ?? '').toBe('LLMError');
+    expect(JSON.stringify(body)).not.toContain('operator-secret-key');
+  });
+
+  it('a server with no default credential is unchanged', async () => {
+    // The main suite's server has none configured; a spec with a url and no
+    // key is its caller's problem, not a refusal.
+    const res = await post({
+      flow: agentFlow({ url: 'http://127.0.0.1:9/x', api_key: 'k' }),
+      inputs: { query: 'hi' },
+    });
+    expect(res.status).toBe(500);
+  });
+});

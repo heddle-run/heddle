@@ -32,6 +32,8 @@ export class LLMExecutor implements NodeExecutor {
     // Resolve LLM provider from the spec's llmConfig
     const provider = createProvider(this.node.llmConfig, {
       allowEnvRefs: this.deps.allowEnvRefs,
+      defaultKey: this.deps.defaultLlmKey,
+      defaultUrl: this.deps.defaultLlmUrl,
     });
     const model = this.node.llmConfig.modelId;
 

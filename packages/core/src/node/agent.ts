@@ -48,6 +48,8 @@ export class AgentExecutor implements NodeExecutor {
   private getProvider(): Provider {
     this.provider ??= createProvider(this.node.agent!.llmConfig!, {
       allowEnvRefs: this.deps.allowEnvRefs,
+      defaultKey: this.deps.defaultLlmKey,
+      defaultUrl: this.deps.defaultLlmUrl,
     });
     return this.provider;
   }

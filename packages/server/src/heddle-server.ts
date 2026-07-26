@@ -27,6 +27,10 @@ Options:
                          or "*" for any)
   --allow-request-code   Accept tool scripts and plugin modules in the request
   --work-dir <dir>       Where per-run directories are created (default: $TMPDIR)
+  --llm-default-url <url> Endpoint the default model credential belongs to. The
+                         credential itself is read from HEDDLE_LLM_DEFAULT_KEY,
+                         and is only ever used with this URL: a spec choosing
+                         its own "url" must supply its own key.
   --safe                 Run tool subprocesses inside an OS sandbox
   --sandbox <backend>    Sandbox backend: auto, bubblewrap, seatbelt (needs --safe)
   --allow-read <path>    Grant sandboxed tools read access to a path (repeatable)
@@ -123,6 +127,7 @@ async function main(): Promise<void> {
       'cors-origin': { type: 'string', multiple: true },
       'allow-request-code': { type: 'boolean' },
       'work-dir': { type: 'string' },
+      'llm-default-url': { type: 'string' },
       safe: { type: 'boolean' },
       sandbox: { type: 'string' },
       'allow-read': { type: 'string', multiple: true },
@@ -152,6 +157,10 @@ async function main(): Promise<void> {
     corsOrigins: values['cors-origin'],
     allowRequestCode: values['allow-request-code'],
     workDir: values['work-dir'],
+    // The key comes from the environment, not a flag: a flag would put it in
+    // `ps` output and the operator's shell history.
+    defaultLlmKey: process.env.HEDDLE_LLM_DEFAULT_KEY || undefined,
+    defaultLlmUrl: values['llm-default-url'],
     // Built before the listener so a bad sandbox setup fails at startup rather
     // than on the first request that would have been confined by it.
     sandbox: buildSandbox(values, toolsDir),
