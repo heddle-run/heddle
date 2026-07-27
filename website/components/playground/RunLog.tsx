@@ -15,6 +15,7 @@ const LABELS: Record<string, string> = {
   token_delta: "text",
   warning: "warn",
   error: "error",
+  plugin_log: "log",
 };
 
 /** Events that mark a failure. */
@@ -22,6 +23,22 @@ const FAILED = new Set(["node_error", "error"]);
 
 /** Tool traffic is the interesting part of a run, so it takes the accent. */
 const ACCENTED = new Set(["tool_call", "tool_result"]);
+
+/** The prefix the engine puts in front of every event a plugin emits. */
+const PLUGIN = "plugin:";
+
+/**
+ * The label for one event, in a column fourteen characters wide.
+ *
+ * A plugin's event arrives as `plugin:<componentType>:<name>`, which does not
+ * fit and does not need to: the component is already on the row as
+ * `event.nodeName`, so the last segment is the only part that says anything the
+ * row does not already.
+ */
+function label(type: string): string {
+  if (type.startsWith(PLUGIN)) return type.slice(type.lastIndexOf(":") + 1);
+  return LABELS[type] ?? type;
+}
 
 function formatDuration(ms: number): string {
   if (ms < 1000) return `${Math.round(ms)}ms`;
@@ -53,7 +70,17 @@ function describe(event: RunEvent): string {
       return event.message ?? "";
     case "error":
       return event.error?.message ?? event.message ?? "failed";
+    case "plugin_log":
+      return event.message ?? "";
     default:
+      // A plugin's payload is its own shape, so there is nothing to format —
+      // the alternative to printing it raw is printing the type twice, which
+      // is what this row used to do.
+      if (event.type.startsWith(PLUGIN)) {
+        // `emitEvent(name)` with no data is legal, and JSON.stringify of
+        // undefined is undefined, which would render as the word.
+        return event.data === undefined ? "" : JSON.stringify(event.data);
+      }
       return event.type;
   }
 }
@@ -114,7 +141,12 @@ export default function RunLog({
         }}
       >
         {events.map((event, index) => {
-          const failed = FAILED.has(event.type);
+          // The set keys on type, and a plugin's log carries its urgency in a
+          // field instead — so an error a plugin reported can only be set in
+          // reverse here, not by adding anything to FAILED.
+          const failed =
+            FAILED.has(event.type) ||
+            (event.type === "plugin_log" && event.level === "error");
           const accented = ACCENTED.has(event.type);
           return (
             <li
@@ -146,7 +178,7 @@ export default function RunLog({
                       : "var(--text-faint)",
                 }}
               >
-                {LABELS[event.type] ?? event.type}
+                {label(event.type)}
               </span>
               <span
                 style={{

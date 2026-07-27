@@ -66,6 +66,16 @@ export interface RunEvent {
    * accumulated text must never be shown as the run's answer.
    */
   delta?: string;
+  /**
+   * The payload of an event a plugin emitted, exactly as the plugin passed it.
+   *
+   * Only ever set on a `plugin:<componentType>:<name>` type, and opaque: its
+   * shape belongs to whichever component the type names, so nothing here can do
+   * more than show it.
+   */
+  data?: unknown;
+  /** How urgent a `plugin_log` is. Absent on every other type. */
+  level?: "debug" | "info" | "warn" | "error";
   state?: Record<string, unknown>;
   /**
    * Two shapes reach this field, because two things produce it. A runner event
@@ -327,12 +337,18 @@ printf '{"shouted":"%s"}' "$(printf '%s' "$text" | tr '[:lower:]' '[:upper:]')"
  * The manifest declares the type as data, so the engine learns the flow's shape
  * while parsing it and never runs this source to find out. The source only says
  * what the node does — `serve()` is supplied by the engine.
+ *
+ * It also talks while it works, which is the other half of what a plugin can
+ * do. `capabilities` is the ask: a reverse call the manifest does not name is
+ * refused whatever the engine allows, so these two lines are what make the
+ * `ctx.log` and `ctx.emitEvent` below run rather than throw.
  */
 const REVERSE_PLUGIN: RequestPlugin = {
   name: "reverse",
   manifest: {
     name: "playground-reverse",
     version: "1.0.0",
+    capabilities: ["log", "emitEvent"],
     components: [
       {
         componentType: "ReverseNode",
@@ -343,8 +359,19 @@ const REVERSE_PLUGIN: RequestPlugin = {
   },
   source: `serve({
   ReverseNode: {
-    execute(input) {
+    execute(input, ctx) {
       const text = String(input.shouted ?? input.text ?? "");
+
+      // A line for a person. It is not the same as stderr: the engine keeps
+      // only the last few kilobytes of that and shows it only when the
+      // process fails, so a plugin that works has no way to say anything.
+      ctx.log("info", "reversing " + text.length + " characters");
+
+      // A structured report. You supply only the name — the engine publishes
+      // it as plugin:ReverseNode:progress, so it can never be read as one of
+      // the engine's own events.
+      ctx.emitEvent("progress", { characters: text.length });
+
       return { output: { reversed: [...text].reverse().join("") } };
     },
   },
