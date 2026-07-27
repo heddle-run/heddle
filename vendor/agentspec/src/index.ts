@@ -253,6 +253,29 @@ export {
   FlowBuilder,
 } from "./flows/index.js";
 
+// Schema registration — heddle local modification, patch 1 (see VENDOR.md).
+//
+// `NodeUnion` is a closed discriminated union, so a runtime that defines its own
+// node types has no way to get one past `FlowSchema.parse`: the flow is rejected
+// on structure before any deserialization plugin is consulted, and the plugin
+// system upstream ships is unreachable for exactly the components it exists to
+// carry. These two functions are the seam the SDK already uses on itself —
+// `nodes/index.ts` and `flow.ts` call them at module load to break the
+// flow/node import cycle — and they rebind the schemas that `LazyNodeRef` and
+// `LazyFlowRef` resolve to at parse time. Exporting them lets a host register a
+// widened union instead of substituting a builtin node and swapping the real one
+// back afterwards.
+//
+// Both are needed, not just the node one: `LazyNodeRef` backs `Flow.nodes`,
+// `Flow.startNode` and both edge endpoints, while `LazyFlowRef` backs every
+// subflow position (`FlowNode`, `MapNode`, `CatchExceptionNode`, the parallel
+// pair). A host that rebinds one and not the other gets a widened top-level flow
+// whose subflows still validate against the original union.
+export {
+  registerNodeUnionSchema,
+  registerFlowSchema,
+} from "./flows/lazy-schemas.js";
+
 // Datastores
 export {
   InMemoryCollectionDatastoreSchema,

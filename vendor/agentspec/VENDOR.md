@@ -1,7 +1,10 @@
 # Vendored `agentspec`
 
-This directory is a verbatim copy of the TypeScript SDK for the Oracle Open
-Agent Specification.
+This directory is a copy of the TypeScript SDK for the Oracle Open Agent
+Specification, plus a short series of local patches recorded under
+[Local modifications](#local-modifications). It was a verbatim copy until the
+first of those landed; treat the patch list, not this tree, as the record of
+what heddle changed.
 
 | | |
 |---|---|
@@ -53,10 +56,32 @@ would resolve to the wrong code.
 
 ## Local modifications
 
-None. `src/`, `tsconfig.json`, and `tsup.config.ts` are unmodified from the
-commit above. Only `package.json` differs from upstream: it is marked `private`,
-and the test/lint/example scripts and their devDependencies are dropped, since
-upstream's `tests/` and `examples/` are not vendored.
+A numbered patch series. Each entry says what it changes and what breaks in
+heddle if a refresh drops it — the refresh procedure below overwrites `src/`
+wholesale, so anything not listed here is lost silently.
+
+Every patch is additive and none changes upstream behaviour: heddle carries a
+fork of the *validation* layer of a format it does not own, and the way that
+stays affordable is that a rebase never has to resolve a semantic conflict.
+
+**1. Export the flow schema registration functions.**
+`src/index.ts` re-exports `registerNodeUnionSchema` and `registerFlowSchema`
+from `src/flows/lazy-schemas.js`. Both already exist as `export function` there;
+the barrel simply did not forward them. Without this, `NodeUnion` is closed to
+heddle's plugin-defined node types and a flow containing one is rejected by
+`FlowSchema.parse` before the SDK's own deserialization plugin ever runs —
+`packages/core/src/plugin/flow-preprocess.ts` exists only to work around that,
+by validating a stand-in `InputMessageNode` and swapping the real component back
+in by id.
+
+`package.json` also differs from upstream, and predates the series: it is marked
+`private`, and the test/lint/example scripts and their devDependencies are
+dropped, since upstream's `tests/` and `examples/` are not vendored.
+`tsconfig.json` and `tsup.config.ts` are unmodified.
+
+These changes are worth sending upstream — they are small, additive, and useful
+to anyone else building a runtime on this SDK. Do not sequence any heddle work
+behind them being merged.
 
 ## Refreshing
 
@@ -65,4 +90,10 @@ upstream's `tests/` and `examples/` are not vendored.
     rsync -a --delete tsagentspec/src/ <heddle>/vendor/agentspec/src/
     cp tsagentspec/tsconfig.json tsagentspec/tsup.config.ts <heddle>/vendor/agentspec/
 
-Then update the commit in the table above, and run `pnpm -w build && pnpm -w test`.
+`--delete` means this discards every patch in the section above. Reapply them,
+then update the commit in the table and run `pnpm -w build && pnpm -w test`.
+
+A refresh that drops a patch does not fail loudly: the SDK still builds and its
+own behaviour is unchanged, and what breaks is heddle, somewhere downstream of a
+missing export. Diffing `src/index.ts` against upstream's after the rsync is the
+cheapest way to confirm the series is back.
