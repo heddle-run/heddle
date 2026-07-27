@@ -80,39 +80,83 @@ function buildSandbox(
 function buildRunnerOpts(verbose: boolean, chat: boolean): RunnerOptions {
   const opts = { ...DEFAULT_RUNNER_OPTIONS, verbose };
   if (!chat) {
+    // The node with a half-written answer on stderr, or null when the last
+    // thing written was a whole line. A `token_delta` is a fragment rather
+    // than a line, so the `[node]` prefix is written once at the start of an
+    // answer and the deltas after it are written raw — prefixing every delta
+    // would shred one answer across hundreds of labelled lines.
+    let openNode: string | null = null;
+
+    // Anything else printing has to terminate that open line first, or it
+    // lands appended to the middle of the model's sentence.
+    const endAnswer = () => {
+      if (openNode !== null) {
+        process.stderr.write('\n');
+        openNode = null;
+      }
+    };
+    const line = (text: string) => {
+      endAnswer();
+      console.error(text);
+    };
+
     opts.eventHandler = (e: Event) => {
       switch (e.type) {
+        case 'token_delta': {
+          // Deliberately not gated on --verbose. Without this arm the default
+          // `heddle run` prints nothing at all while a model is answering,
+          // which is the silence streaming exists to fill; requiring a flag to
+          // see it would leave the default case exactly as it was. It goes to
+          // stderr with the rest of the progress output, so the run's JSON
+          // result on stdout stays clean and pipeable.
+          if (!e.delta) break;
+          const node = e.nodeName ?? '';
+          if (openNode !== node) {
+            endAnswer();
+            process.stderr.write(`[${node}] `);
+            openNode = node;
+          }
+          process.stderr.write(e.delta);
+          break;
+        }
         case 'tool_call':
-          console.error(`[${e.nodeName}] ${getToolIcon(e.toolName!)} ${getToolTitle(e.toolName!, e.toolArgs ?? {})}`);
+          line(`[${e.nodeName}] ${getToolIcon(e.toolName!)} ${getToolTitle(e.toolName!, e.toolArgs ?? {})}`);
           if (verbose) {
-            console.error(`[${e.nodeName}]   args: ${JSON.stringify(e.toolArgs ?? {})}`);
+            line(`[${e.nodeName}]   args: ${JSON.stringify(e.toolArgs ?? {})}`);
           }
           break;
         case 'tool_result':
           if (e.error) {
-            console.error(`[${e.nodeName}] Error: ${e.toolName} (${formatDuration(e.duration ?? 0)}): ${e.error.message}`);
+            line(`[${e.nodeName}] Error: ${e.toolName} (${formatDuration(e.duration ?? 0)}): ${e.error.message}`);
           } else if (verbose) {
-            console.error(`[${e.nodeName}] Done: ${e.toolName} (${formatDuration(e.duration ?? 0)})`);
-            console.error(`[${e.nodeName}]   result: ${JSON.stringify(e.toolResult)}`);
+            line(`[${e.nodeName}] Done: ${e.toolName} (${formatDuration(e.duration ?? 0)})`);
+            line(`[${e.nodeName}]   result: ${JSON.stringify(e.toolResult)}`);
           }
           break;
         case 'node_start':
-          if (verbose) console.error(`[${e.nodeName}] Starting ${e.nodeType}`);
+          if (verbose) line(`[${e.nodeName}] Starting ${e.nodeType}`);
           break;
         case 'node_complete':
-          if (verbose) console.error(`[${e.nodeName}] Completed`);
+          // Closed even when quiet: the answer is finished, and leaving the
+          // line open would run the next output into the end of it.
+          if (verbose) line(`[${e.nodeName}] Completed`);
+          else endAnswer();
           break;
         case 'warning':
-          console.error(`Warning: ${e.message}`);
+          line(`Warning: ${e.message}`);
           break;
         case 'node_error':
-          console.error(`[${e.nodeName}] Error: ${e.error}`);
+          line(`[${e.nodeName}] Error: ${e.error}`);
           break;
         case 'flow_start':
-          if (verbose) console.error('Flow started');
+          if (verbose) line('Flow started');
           break;
         case 'flow_complete':
-          if (verbose) console.error('Flow completed');
+          // Last chance to close the line before the result is written to
+          // stdout, where an unterminated stderr line would appear to run
+          // into the JSON.
+          if (verbose) line('Flow completed');
+          else endAnswer();
           break;
       }
     };

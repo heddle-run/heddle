@@ -90,6 +90,11 @@ function Chat({ graph, opts, session, inputKey }: ChatProps) {
   const [history, setHistory] = useState<ChatEntry[]>([]);
   const [input, setInput] = useState('');
   const [running, setRunning] = useState(false);
+  // The answer as far as it has been streamed. Held apart from `history`
+  // because it is not a message yet: it is a preview that gets thrown away
+  // when the turn ends, replaced either by the node's real output or by
+  // nothing at all if the run failed part way through writing it.
+  const [streamed, setStreamed] = useState('');
 
   useInput((_input, key) => {
     if (key.ctrl && _input === 'c') {
@@ -110,6 +115,7 @@ function Chat({ graph, opts, session, inputKey }: ChatProps) {
       }
 
       setInput('');
+      setStreamed('');
       setHistory((prev) => [...prev, { role: 'user', content: trimmed }]);
 
       // Capture previous messages before adding the current one
@@ -126,6 +132,14 @@ function Chat({ graph, opts, session, inputKey }: ChatProps) {
           _chat_history: previousMessages,
         };
         opts.eventHandler = (e: Event) => {
+          // Every node's deltas go into one buffer. A flow with two agent
+          // nodes therefore previews them run together, which is accurate
+          // enough for a preview that is discarded a moment later — the
+          // message that survives the turn is the run's actual result.
+          if (e.type === 'token_delta' && e.delta) {
+            setStreamed((prev) => prev + e.delta);
+          }
+
           if (e.type === 'tool_call' && e.toolCallId) {
             setHistory((prev) => [
               ...prev,
@@ -177,6 +191,11 @@ function Chat({ graph, opts, session, inputKey }: ChatProps) {
         ]);
         addMessage(session, 'assistant', `Error: ${errMsg}`);
       } finally {
+        // Drops the preview on both paths. On success the real output has
+        // just been pushed to `history` and would otherwise be shown twice;
+        // on failure the partial text is not an answer and must not be left
+        // on screen looking like one.
+        setStreamed('');
         setRunning(false);
       }
     },
@@ -219,7 +238,18 @@ function Chat({ graph, opts, session, inputKey }: ChatProps) {
         </Box>
       ))}
 
-      {running && !hasActiveToolCall && (
+      {streamed && (
+        <Box marginBottom={0}>
+          <Text>
+            <Text bold color="blue">
+              {'< '}
+            </Text>
+            {streamed}
+          </Text>
+        </Box>
+      )}
+
+      {running && !hasActiveToolCall && !streamed && (
         <Box marginTop={0}>
           <Text dimColor>
             {'   '}<Spinner />{' '}Thinking...

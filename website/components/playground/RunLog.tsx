@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { RunEvent } from "@/lib/playground";
 import { cn } from "@/lib/cn";
 
@@ -13,9 +13,43 @@ const LABELS: Record<string, string> = {
   node_error: "error",
   tool_call: "call",
   tool_result: "result",
+  token_delta: "text",
   warning: "warn",
   error: "error",
 };
+
+/**
+ * Fold a node's streamed answer back into one row.
+ *
+ * A `token_delta` arrives per fragment, so rendering the event list directly
+ * gives one row per token — a few hundred rows for one answer, which is what
+ * this collapse exists to prevent.
+ *
+ * Only *consecutive* deltas from the same node merge. A tool call landing
+ * between two stretches of an answer is real structure, and merging across it
+ * would move text in the log to a place the model did not produce it.
+ */
+function collapseDeltas(events: RunEvent[]): RunEvent[] {
+  const rows: RunEvent[] = [];
+
+  for (const event of events) {
+    if (event.type !== "token_delta") {
+      rows.push(event);
+      continue;
+    }
+    const last = rows[rows.length - 1];
+    if (last?.type === "token_delta" && last.nodeName === event.nodeName) {
+      rows[rows.length - 1] = {
+        ...last,
+        delta: (last.delta ?? "") + (event.delta ?? ""),
+      };
+    } else {
+      rows.push({ ...event });
+    }
+  }
+
+  return rows;
+}
 
 /** Events that mark a failure, and are set in reverse. */
 const FAILED = new Set(["node_error", "error"]);
@@ -44,6 +78,8 @@ function describe(event: RunEvent): string {
       return event.error
         ? `${event.toolName}: ${event.error.message}`
         : `${event.toolName} → ${JSON.stringify(event.toolResult ?? {})}`;
+    case "token_delta":
+      return event.delta ?? "";
     case "warning":
       return event.message ?? "";
     case "error":
@@ -65,9 +101,12 @@ export default function RunLog({
   error?: { type: string; message: string };
 }) {
   const endRef = useRef<HTMLDivElement>(null);
+  const rows = useMemo(() => collapseDeltas(events), [events]);
 
   // Follow the tail while a run is in flight. Only during a run, so reading
-  // back through a finished log is not fought by an autoscroll.
+  // back through a finished log is not fought by an autoscroll. Keyed on the
+  // event count rather than the row count so the view keeps following an
+  // answer that is growing inside a single row.
   useEffect(() => {
     if (status === "running") {
       endRef.current?.scrollIntoView({ block: "nearest" });
@@ -87,7 +126,7 @@ export default function RunLog({
   return (
     <div className="flex h-full flex-col">
       <ol className="flex-1 overflow-y-auto">
-        {events.map((event, index) => {
+        {rows.map((event, index) => {
           const failed = FAILED.has(event.type);
           return (
             <li
@@ -105,7 +144,16 @@ export default function RunLog({
               >
                 {LABELS[event.type] ?? event.type}
               </span>
-              <span className="min-w-0 flex-1 break-words">{describe(event)}</span>
+              <span
+                className={cn(
+                  "min-w-0 flex-1 break-words",
+                  // A model's answer carries its own line breaks, and every
+                  // other row is a single line that has none to lose.
+                  event.type === "token_delta" && "whitespace-pre-wrap",
+                )}
+              >
+                {describe(event)}
+              </span>
               {event.duration !== undefined && (
                 <span
                   className={cn(

@@ -59,6 +59,13 @@ export interface RunEvent {
   type: string;
   nodeName?: string;
   nodeType?: string;
+  /**
+   * On a `token_delta`, one fragment of a model's answer in the order it was
+   * produced. It is a report of progress and not a result: a run can fail
+   * after sending many of them and produce no output at all, so the
+   * accumulated text must never be shown as the run's answer.
+   */
+  delta?: string;
   state?: Record<string, unknown>;
   /**
    * Two shapes reach this field, because two things produce it. A runner event
