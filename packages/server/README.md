@@ -56,6 +56,16 @@ heddle-server --tools-dir ./tools
 | `--allow-env <name>` | none | Environment variable to forward into the sandbox. Repeatable. |
 | `--deny-net` | off | Block network access for sandboxed tools. |
 
+| Environment variable | Default | Meaning |
+|---|---|---|
+| `HEDDLE_LLM_DEFAULT_KEY` | none | Model credential for specs that name none. Only ever used with `--llm-default-url`. |
+| `HEDDLE_STREAM` | `1` | Whether model calls stream. Set `0` for an endpoint that serves buffered requests but not `stream: true`, or that bills the two differently. |
+
+Both are environment variables rather than flags: the key would otherwise sit in
+`ps` output, and `HEDDLE_STREAM` is a per-deployment fact for a service that
+ships as a container image with its argv baked in. An unrecognised value for
+`HEDDLE_STREAM` fails startup rather than falling back to the default.
+
 `--tools-dir` and `--flows-root` are **server-side configuration only**. A
 request that tries to set either is rejected with a 400 rather than silently
 ignored, so a caller is never misled about what the server will execute.

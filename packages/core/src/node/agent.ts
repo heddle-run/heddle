@@ -128,6 +128,9 @@ export class AgentExecutor implements NodeExecutor {
     }
     messages = pre.messages;
 
+    // One counter for the whole turn, not one per round — see ModelCallContext.
+    const turn = { emitted: 0 };
+
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
       const resp = await completeChat(
         this.getProvider(),
@@ -137,7 +140,16 @@ export class AgentExecutor implements NodeExecutor {
           messages,
           tools: toolDefs.length > 0 ? toolDefs : undefined,
         },
-        { nodeName: this.node.name, eventHandler: this.deps.eventHandler },
+        {
+          nodeName: this.node.name,
+          eventHandler: this.deps.eventHandler,
+          // Two independent vetoes. The operator may have said this deployment
+          // does not stream at all, and a `post` transform can reject this
+          // answer — a delta already sent cannot be recalled. See completeChat.
+          allowStream:
+            this.deps.stream !== false && !this.transforms.hasPhase('post'),
+          turn,
+        },
       );
 
       if (!resp.tool_calls || resp.tool_calls.length === 0) {
@@ -267,6 +279,24 @@ export class AgentExecutor implements NodeExecutor {
 export interface ModelCallContext {
   nodeName: string;
   eventHandler?: EventHandler;
+  /**
+   * Whether this call may stream. Defaults to true. Two callers set it false,
+   * for two unrelated reasons — the operator turned streaming off for this
+   * deployment, or a `post` transform can reject the answer. See
+   * {@link completeChat}.
+   */
+  allowStream?: boolean;
+  /**
+   * Deltas already sent this *turn*, shared across the rounds of one agent
+   * node so the abandonment warning knows what a client is holding.
+   *
+   * A per-call count gets this wrong in the case that matters: round one
+   * streams half an answer, round two calls a tool and fails before writing
+   * anything, and a count local to round two is zero — so no warning goes out
+   * while round one's text is still on someone's screen. Callers that make a
+   * single model call can leave it undefined.
+   */
+  turn?: { emitted: number };
 }
 
 /**
@@ -276,6 +306,20 @@ export interface ModelCallContext {
  * contract: nothing after this function can tell which one ran. The streaming
  * path's only visible difference is that `token_delta` events arrive while the
  * answer is still being written.
+ *
+ * **A `post` transform turns streaming off.** A transform in that phase can
+ * reject or rewrite the model's answer, and heddle's guardrail story rests on
+ * it: `transform_status: rejected` is supposed to mean the answer did not get
+ * out. Streaming breaks that, because a `token_delta` has already left the
+ * process — and, through the server's SSE stream, already reached a browser —
+ * by the time the transform is asked. Redacting the copy in `State` afterwards
+ * changes what the flow returns and nothing about what was shown.
+ *
+ * Buffering the deltas until the transform passes would not fix it either; it
+ * would just be a slower way to not stream. So an agent with a `post` transform
+ * does not stream at all. That is a real cost — the guardrail examples are
+ * exactly the flows a person most wants to watch arrive — and it is the correct
+ * trade until a transform can run on the stream itself rather than after it.
  *
  * **A mid-stream failure fails the node.** This is the part streaming changes.
  * A buffered call fails before anyone has seen anything; a stream can fail
@@ -294,16 +338,16 @@ export async function completeChat(
   req: ChatRequest,
   ctx: ModelCallContext,
 ): Promise<ChatResponse> {
-  if (!provider.chatCompletionStream) {
+  if (!provider.chatCompletionStream || ctx.allowStream === false) {
     return provider.chatCompletion(signal, req);
   }
 
-  let emitted = 0;
+  const turn = ctx.turn ?? { emitted: 0 };
   try {
     return await collectStream(
       provider.chatCompletionStream(signal, req),
       (text) => {
-        emitted++;
+        turn.emitted++;
         ctx.eventHandler?.({
           type: 'token_delta',
           nodeName: ctx.nodeName,
@@ -312,12 +356,12 @@ export async function completeChat(
       },
     );
   } catch (err) {
-    if (emitted > 0) {
+    if (turn.emitted > 0) {
       ctx.eventHandler?.({
         type: 'warning',
         nodeName: ctx.nodeName,
         message:
-          `"${ctx.nodeName}": the model stream failed after ${emitted} token ` +
+          `"${ctx.nodeName}": the model stream failed after ${turn.emitted} token ` +
           `deltas had already been sent. Those deltas are not this node's ` +
           `output — nothing was produced. Discard the partial text rather ` +
           `than showing it as an answer. Cause: ${

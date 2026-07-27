@@ -85,6 +85,7 @@ function buildDependencies(
     allowEnvRefs: !config.allowRequestCode,
     defaultLlmKey: config.defaultLlmKey,
     defaultLlmUrl: config.defaultLlmUrl,
+    stream: config.stream,
   };
 }
 

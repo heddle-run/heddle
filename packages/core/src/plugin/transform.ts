@@ -114,6 +114,17 @@ export class TransformChain {
   }
 
   /**
+   * Whether anything runs in this phase.
+   *
+   * Asked before a model call, not after: a `post` transform can reject an
+   * answer, and an answer cannot be un-sent. See the streaming decision in
+   * `node/agent.ts`.
+   */
+  hasPhase(phase: TransformPhase): boolean {
+    return this.entries.some((entry) => entry.phases.has(phase));
+  }
+
+  /**
    * Applies every transform for this phase in order, stopping at the first
    * rejection.
    */

@@ -11,6 +11,7 @@ export type { StartedServer } from './server.js';
 export {
   resolveConfig,
   isPubliclyBound,
+  boolEnv,
   DEFAULT_HOST,
   DEFAULT_PORT,
   DEFAULT_MAX_BODY_BYTES,

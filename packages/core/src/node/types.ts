@@ -29,4 +29,21 @@ export interface Dependencies {
    */
   defaultLlmKey?: string;
   defaultLlmUrl?: string;
+
+  /**
+   * Whether a model call may stream when the provider offers a streamed form.
+   * Defaults to true. Set false to force the buffered request.
+   *
+   * An operator-level choice, alongside the other two, because whether `stream`
+   * is safe to send is a property of the endpoint and the deployment, not of
+   * the flow: the same spec has to run against a proxy that only handles
+   * buffered requests, or one that prices streamed calls differently, without
+   * being rewritten. A spec field would attach the answer to the wrong thing —
+   * a spec is portable and the endpoint it lands on is not.
+   *
+   * Not a fallback. A streamed call that fails is not re-sent buffered, because
+   * the first one may already have been billed; this is decided before the
+   * request goes out or not at all. See `completeChat`.
+   */
+  stream?: boolean;
 }

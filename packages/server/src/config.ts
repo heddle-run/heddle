@@ -110,6 +110,18 @@ export interface ServerConfig {
   defaultLlmUrl?: string;
 
   /**
+   * Whether model calls stream. On by default, which is what the playground
+   * wants: a run people watch should show the answer arriving.
+   *
+   * Turn it off (`HEDDLE_STREAM=0`) when the endpoint behind
+   * {@link defaultLlmUrl} — or a proxy in front of it — handles buffered
+   * requests but not `stream: true`, or prices the two differently. It is not
+   * negotiated per request: a streamed call that fails is not re-sent buffered,
+   * because the first one may already have been billed.
+   */
+  stream: boolean;
+
+  /**
    * Where per-run directories for submitted code are created. Defaults to the
    * system temp directory.
    *
@@ -164,6 +176,28 @@ export const DEFAULT_PLUGIN_CALL_TIMEOUT = 30_000;
  */
 export const DEFAULT_DRAIN_TIMEOUT = 30_000;
 
+const TRUTHY = new Set(['1', 'true', 'on', 'yes']);
+const FALSY = new Set(['0', 'false', 'off', 'no']);
+
+/**
+ * Read a boolean environment variable, or undefined when it is unset.
+ *
+ * An unrecognised value fails startup rather than falling back to the default.
+ * An operator who wrote `HEDDLE_STREAM=disabled` was trying to turn something
+ * off, and booting with it still on is the one outcome they were avoiding —
+ * worse here than elsewhere because the symptom would be a live endpoint
+ * failing calls, not a message at startup.
+ */
+export function boolEnv(name: string, raw: string | undefined): boolean | undefined {
+  if (raw === undefined || raw.trim() === '') return undefined;
+  const value = raw.trim().toLowerCase();
+  if (TRUTHY.has(value)) return true;
+  if (FALSY.has(value)) return false;
+  throw new Error(
+    `${name} must be one of ${[...TRUTHY, ...FALSY].join(', ')}, got "${raw}"`,
+  );
+}
+
 export type ServerOptions = Partial<ServerConfig>;
 
 export function resolveConfig(options: ServerOptions = {}): ServerConfig {
@@ -183,6 +217,7 @@ export function resolveConfig(options: ServerOptions = {}): ServerConfig {
     sandbox: options.sandbox,
     defaultLlmKey: options.defaultLlmKey,
     defaultLlmUrl: options.defaultLlmUrl,
+    stream: options.stream ?? true,
     workDir: options.workDir,
     maxRequestTools: options.maxRequestTools ?? DEFAULT_MAX_REQUEST_TOOLS,
     maxRequestPlugins: options.maxRequestPlugins ?? DEFAULT_MAX_REQUEST_PLUGINS,

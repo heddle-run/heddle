@@ -111,6 +111,10 @@ export const runCommand = new Command('run')
     collect,
     [] as string[],
   )
+  .option(
+    '--no-stream',
+    'Ask the model for one buffered response instead of a token stream',
+  )
   .option('--safe', 'Run tools inside an OS sandbox')
   .option('--sandbox <backend>', 'Sandbox backend: auto, bubblewrap, seatbelt (requires --safe)')
   .option('--allow-read <path>', 'Grant sandboxed tools read access to a path (repeatable)', collect, [] as string[])
@@ -125,6 +129,7 @@ export const runCommand = new Command('run')
         input?: string;
         chat?: boolean;
         plugin?: string[];
+        stream?: boolean;
       } & SafeOptions,
       command: Command,
     ) => {
@@ -156,6 +161,9 @@ export const runCommand = new Command('run')
         toolRegistry: reg,
         plugins,
         eventHandler: (e: Event) => opts.eventHandler?.(e),
+        // `--no-stream` is for an endpoint that cannot serve SSE, or bills a
+        // streamed call differently. Commander leaves this true otherwise.
+        stream: options.stream,
       };
 
       const cg = compile(pf, deps);

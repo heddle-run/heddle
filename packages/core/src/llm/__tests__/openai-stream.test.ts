@@ -215,3 +215,50 @@ describe('chatCompletionStream', () => {
     ).rejects.toBeInstanceOf(LLMError);
   });
 });
+
+/**
+ * An aborted stream must not look like a finished one.
+ *
+ * The SDK does not rethrow on abort: its iterator catches `AbortError` and
+ * returns (`openai/streaming.js`), so the `for await` ends exactly the way a
+ * completed stream ends. Nothing here can tell the difference by watching the
+ * iterator, which is why the signal itself is consulted — and why these model
+ * the SDK's silence rather than a throw.
+ */
+describe('a stream the caller aborted', () => {
+  beforeEach(() => create.mockReset());
+
+  it('fails instead of returning the fragment it got to', async () => {
+    const ac = new AbortController();
+    create.mockResolvedValue({
+      async *[Symbol.asyncIterator]() {
+        yield { choices: [{ delta: { content: 'half an ' } }] };
+        ac.abort();
+        return;
+      },
+    });
+
+    const collected: ChatChunk[] = [];
+    await expect(
+      (async () => {
+        for await (const chunk of provider().chatCompletionStream(ac.signal, REQ)) {
+          collected.push(chunk);
+        }
+      })(),
+    ).rejects.toThrow(LLMError);
+
+    // The prefix was delivered — that is not the bug. Reporting it as the whole
+    // answer would have been.
+    expect(collected).toEqual([{ content: 'half an ' }]);
+  });
+
+  it('says the stream was aborted, not that it sent no choices', async () => {
+    const ac = new AbortController();
+    ac.abort();
+    create.mockResolvedValue(streamOf([]));
+
+    await expect(drain(provider().chatCompletionStream(ac.signal, REQ))).rejects.toThrow(
+      /aborted/,
+    );
+  });
+});

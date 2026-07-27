@@ -28,13 +28,14 @@ vi.mock('../../llm/provider.js', () => ({
     streaming ? { chatCompletion, chatCompletionStream } : { chatCompletion },
 }));
 
-import { AgentExecutor, collectStream } from '../agent.js';
+import { AgentExecutor, collectStream, completeChat } from '../agent.js';
+import { TransformChain } from '../../plugin/transform.js';
 import { LLMExecutor } from '../llm.js';
 import { State } from '../../state/state.js';
 import type { Dependencies } from '../types.js';
 import type { AgentNode, LLMNode } from '../../spec/types.js';
 import type { Event } from '../../runner/events.js';
-import type { ChatChunk } from '../../llm/types.js';
+import type { ChatChunk, Provider } from '../../llm/types.js';
 
 const NODE: AgentNode = {
   componentType: 'AgentNode',
@@ -330,5 +331,95 @@ describe('a stream that fails part way', () => {
 
     expect(chatCompletionStream).toHaveBeenCalledOnce();
     expect(chatCompletion).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The two vetoes, and why they exist.
+ *
+ * A `post` transform can reject the model's answer, and heddle's guardrail
+ * story is that `transform_status: rejected` means the answer did not get out.
+ * A delta is already out. The operator's switch is the other one: whether
+ * `stream: true` is safe is a property of the endpoint, not the flow.
+ */
+describe('when streaming is vetoed', () => {
+  const provider = (): Provider =>
+    ({ chatCompletion, chatCompletionStream }) as unknown as Provider;
+
+  beforeEach(() => {
+    streaming = true;
+    chatCompletion.mockReset();
+    chatCompletionStream.mockReset();
+  });
+
+  it('buffers, and shows nothing, when the caller forbids it', async () => {
+    chatCompletion.mockResolvedValueOnce({ content: 'buffered', finish_reason: 'stop' });
+    const events: Event[] = [];
+
+    const resp = await completeChat(
+      provider(),
+      undefined,
+      { model: 'gpt-4o', messages: [] },
+      { nodeName: 'guarded', eventHandler: (e) => events.push(e), allowStream: false },
+    );
+
+    expect(resp.content).toBe('buffered');
+    expect(chatCompletionStream).not.toHaveBeenCalled();
+    // The point of the exercise: nothing left the process before the transform
+    // that may reject it has had a say.
+    expect(events).toEqual([]);
+  });
+
+  it('streams when nothing forbids it', async () => {
+    chatCompletionStream.mockReturnValueOnce(chunks(words('let it flow')));
+    const events: Event[] = [];
+
+    await completeChat(
+      provider(),
+      undefined,
+      { model: 'gpt-4o', messages: [] },
+      { nodeName: 'open', eventHandler: (e) => events.push(e) },
+    );
+
+    expect(events.filter((e) => e.type === 'token_delta')).not.toEqual([]);
+    expect(chatCompletion).not.toHaveBeenCalled();
+  });
+
+  it('knows whether a chain has anything in the post phase', () => {
+    expect(TransformChain.build([], {}, 'none').hasPhase('post')).toBe(false);
+  });
+});
+
+/**
+ * The abandonment warning is about what a person is looking at, and a turn is
+ * several model calls.
+ */
+describe('deltas abandoned across rounds', () => {
+  beforeEach(() => {
+    streaming = true;
+    chatCompletion.mockReset();
+    chatCompletionStream.mockReset();
+  });
+
+  it('warns when an earlier round streamed and a later one fails silently', async () => {
+    const events: Event[] = [];
+    const turn = { emitted: 0 };
+    const provider = { chatCompletion, chatCompletionStream } as unknown as Provider;
+    const ctx = { nodeName: 'assistant', eventHandler: (e: Event) => events.push(e), turn };
+
+    // Round one: text reaches the client.
+    chatCompletionStream.mockReturnValueOnce(chunks(words('looking that up ')));
+    await completeChat(provider, undefined, { model: 'gpt-4o', messages: [] }, ctx);
+
+    // Round two: dies before writing a single delta of its own.
+    chatCompletionStream.mockReturnValueOnce(chunks([], new Error('upstream reset')));
+    await expect(
+      completeChat(provider, undefined, { model: 'gpt-4o', messages: [] }, ctx),
+    ).rejects.toThrow(/upstream reset/);
+
+    const warnings = events.filter((e) => e.type === 'warning');
+    expect(warnings).toHaveLength(1);
+    // Round one's count, not round two's zero — that text is still on screen.
+    expect(warnings[0].message).toMatch(/after 3 token deltas/);
   });
 });

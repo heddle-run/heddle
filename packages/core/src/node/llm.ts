@@ -50,7 +50,13 @@ export class LLMExecutor implements NodeExecutor {
         model,
         messages: [{ role: 'user', content: prompt }],
       },
-      { nodeName: this.node.name, eventHandler: this.deps.eventHandler },
+      {
+        nodeName: this.node.name,
+        eventHandler: this.deps.eventHandler,
+        // An LlmNode has no transforms, so the operator's setting is the only
+        // veto here.
+        allowStream: this.deps.stream !== false,
+      },
     );
 
     let output = new State();

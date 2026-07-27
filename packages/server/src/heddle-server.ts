@@ -8,6 +8,7 @@ import {
   DEFAULT_MAX_CONCURRENT_RUNS,
   DEFAULT_DRAIN_TIMEOUT,
   DEFAULT_PLUGIN_CALL_TIMEOUT,
+  boolEnv,
 } from './config.js';
 
 const USAGE = `Usage: heddle-server [options]
@@ -43,6 +44,14 @@ Options:
   --allow-env <name>     Forward an environment variable into the sandbox (repeatable)
   --deny-net             Block network access for sandboxed tools
   -h, --help             Show this message
+
+Environment:
+  HEDDLE_LLM_DEFAULT_KEY The default model credential. Read from the environment
+                         rather than a flag so it stays out of "ps" output.
+  HEDDLE_STREAM          Whether model calls stream (default: on). Set 0, false
+                         or off for an endpoint that serves buffered requests
+                         but not "stream: true", or that bills the two
+                         differently. Accepted values: 1/0, true/false, on/off.
 
 SECURITY: there is no authentication. Every caller can execute the tools in
 --tools-dir. The default bind address is loopback; overriding --host exposes an
@@ -168,6 +177,10 @@ async function main(): Promise<void> {
     // `ps` output and the operator's shell history.
     defaultLlmKey: process.env.HEDDLE_LLM_DEFAULT_KEY || undefined,
     defaultLlmUrl: values['llm-default-url'],
+    // Environment rather than a flag because this server is deployed as a
+    // container image, where env is how the platform configures it and the
+    // argv is baked into the image.
+    stream: boolEnv('HEDDLE_STREAM', process.env.HEDDLE_STREAM),
     // Built before the listener so a bad sandbox setup fails at startup rather
     // than on the first request that would have been confined by it.
     sandbox: buildSandbox(values, toolsDir),

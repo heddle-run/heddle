@@ -102,6 +102,20 @@ export class OpenAIProvider implements Provider {
         yield chunk;
       }
 
+      // Checked before `sawChoice`, because an abort arriving after the first
+      // chunk would otherwise look like a complete answer.
+      //
+      // The SDK swallows the abort: its iterator catches `AbortError` and
+      // returns rather than rethrowing (`openai/streaming.js`), so the loop
+      // above ends the same way a finished stream ends. Everything collected so
+      // far would then be handed back as the model's final answer, truncated
+      // wherever the caller happened to hang up — while `chatCompletion`
+      // rejects on the same abort. The two paths must not disagree about
+      // whether the model finished.
+      if (signal?.aborted) {
+        throw new LLMError('the model stream was aborted before it finished');
+      }
+
       if (!sawChoice) {
         // The streaming twin of "no choices in response". Ending the iteration
         // quietly would hand the caller a blank answer indistinguishable from
