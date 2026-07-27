@@ -305,7 +305,7 @@ src/
 examples/
   research-assistant/   Example flow with web_search and calculator tools
   guardrails/           Custom Processor transform used as a pre/post guardrail
-  bash-agent/           Agent whose only tool is a shell, with Python and Node in the sandbox
+  bash-agent/           Shell agent with Python and Node in the sandbox, and a way to hand files back
 testdata/               Test flow definitions and tool scripts
 ```
 

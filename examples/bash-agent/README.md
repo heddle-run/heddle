@@ -1,14 +1,16 @@
-# bash-agent: one tool, a whole shell
+# bash-agent: a whole shell, and a way to hand back what it made
 
-An agent whose only tool is `bash`. It runs a command, gets back stdout, stderr and
-an exit code, and decides what to do next. `python3` and `node` are on PATH inside
-the sandbox, so when the shell is the wrong instrument the agent can write a script
-and run it instead.
+An agent with two tools. `bash` runs a command and gets back stdout, stderr and an
+exit code; `python3` and `node` are on PATH inside the sandbox, so when the shell is
+the wrong instrument the agent can write a script and run it instead. `present_file`
+copies a file out of the workspace before the workspace is destroyed, which is the
+only way anything the agent produces reaches you.
 
 | File | What it is |
 |------|------------|
-| `spec.yaml` | The flow: `start → shell → end`, with one `bash` `ServerTool` on the agent |
-| `tools/bash.py` | The tool: resolves interpreters, runs the command, reports the exit code |
+| `spec.yaml` | The flow: `start → shell → end`, with both `ServerTool`s on the agent |
+| `tools/bash.py` | Resolves interpreters, runs the command, reports the exit code |
+| `tools/present_file.py` | Copies one file from the workspace to a directory you keep |
 
 ## Run it
 
@@ -80,7 +82,46 @@ into the tool directly answers a different question, since nothing is confined:
 echo '{"command":"python3 -V; node -v"}' | examples/bash-agent/tools/bash.py
 ```
 
+## Getting files out
+
+`$HEDDLE_WORKSPACE` is scratch. It is created when the agent starts, shared by that
+agent's tool calls, and deleted when the agent finishes — so a chart the model
+rendered is gone by the time you read the answer describing it. `present_file` copies
+one file to a directory that outlives the run:
+
+```bash
+mkdir -p heddle-out
+OPENAI_API_KEY=sk-... node packages/cli/dist/heddle.js run examples/bash-agent/spec.yaml --tools-dir examples/bash-agent/tools --safe --allow-write "$PWD/heddle-out" --input '{"task":"generate a csv of the first 20 primes and their squares, and give it to me"}'
+```
+
+```
+[shell] $ python3 -c "import csv, sympy..."
+[shell] ← Present primes.csv
+```
+
+```
+heddle-out/primes.csv
+```
+
+The destination is `./heddle-out` beside wherever heddle was started, or
+`$HEDDLE_OUTPUT_DIR` when you forward one with `--allow-env HEDDLE_OUTPUT_DIR`. Two
+things about `--safe` are worth knowing before it works:
+
+- **The directory has to exist first.** bubblewrap silently skips a `--allow-write`
+  bind for a path that is not there, and the copy then fails for a reason that reads
+  like a permissions bug. `mkdir -p` it.
+- **Nothing else on the host is writable**, which is the point of the flag. Without
+  the grant, `present_file` returns
+  `error: could not copy to .../heddle-out/report.csv: Operation not permitted.
+  Under --safe the output directory must be granted with --allow-write.` — the model
+  reports that to you rather than retrying its way around it.
+
+Same-named files are kept rather than overwritten: a second `report.csv` lands as
+`report-1.csv`.
+
 ## The tool contract
+
+### `bash`
 
 | Input | Type | |
 |---|---|---|
@@ -97,6 +138,23 @@ echo '{"command":"python3 -V; node -v"}' | examples/bash-agent/tools/bash.py
 A failed command is not a failed tool. `bash.py` always exits 0 and puts the failure in
 `exit_code`, because heddle treats a non-zero tool exit as a broken tool and aborts the
 round — which would deny the model the error message it needs to correct itself.
+`present_file.py` reports its own failures the same way, in an `error` field.
+
+### `present_file`
+
+| Input | Type | |
+|---|---|---|
+| `path` | string | Required. `$HEDDLE_WORKSPACE/report.csv` and a bare `report.csv` both work: no shell has expanded this string, so the tool expands variables itself and reads a relative path as living in the workspace. |
+| `name` | string | Renames the file on the way out. Only the basename is used, so a `name` the model invented cannot write outside the output directory. |
+
+| Output | Type | |
+|---|---|---|
+| `path` | string | Where the file now lives, empty on failure. |
+| `bytes` | integer | Size of the copy. |
+| `error` | string | Absent on success; on failure, why — usually a missing `--allow-write`. |
+
+Directories are refused rather than walked (`tar` it up and present the archive), and
+anything over 50 MB is refused rather than copied.
 
 ## What the agent has to work around
 
@@ -107,8 +165,8 @@ confusing failure if the model assumes otherwise:
   survive to the next call. Steps that depend on each other belong in one command.
 - **stdin is closed.** Anything that waits for a terminal hangs until the timeout.
 - **`$HEDDLE_WORKSPACE` is the only writable directory** under `--safe`, and it is
-  destroyed when the run ends. The working directory is read-only; everything the
-  agent creates and wants to keep has to be copied out by the task itself.
+  destroyed when the run ends. The working directory is read-only, so anything worth
+  keeping has to leave through `present_file` before the agent finishes.
 - **25 seconds per command.** Long builds need splitting, or a `nohup` and a later poll.
 
 ## What confinement actually buys

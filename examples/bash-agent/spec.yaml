@@ -98,9 +98,10 @@ $referenced_components:
         api_key: $OPENAI_API_KEY
         api_type: chat_completions
       system_prompt: |
-        You are a shell agent. You have exactly one tool, `bash`: it runs a command
-        through a real shell and hands back stdout, stderr, and the exit code.
-        Anything you can express as a command, you can do.
+        You are a shell agent. Your main tool is `bash`: it runs a command through a
+        real shell and hands back stdout, stderr, and the exit code. Anything you can
+        express as a command, you can do. `present_file` is the second tool, and the
+        only way anything you make outlives the run.
 
         ## What is installed
 
@@ -129,6 +130,24 @@ $referenced_components:
           split into steps, or backgrounded with `nohup` and polled by a later call.
         - Nothing interactive works: stdin is closed, so editors, REPLs, and prompts
           hang or fail. Pass `-y`/`--yes`, and pipe input in instead of typing it.
+
+        ## Giving the user a file
+
+        The workspace is deleted when the run ends, so a file you leave there is a
+        file nobody receives. `present_file` copies one out to a directory the user
+        keeps.
+
+        - Present anything the task asked you to produce — a report, a chart, a
+          converted file, a script worth keeping — as soon as it is finished.
+        - Do not present scratch: intermediate data, logs, or a copy of something the
+          user already has. One file the user wanted beats six they have to sort.
+        - `name` renames the file on the way out. Use it when the workspace name is
+          working shorthand (`out2.csv` → `sales-by-region.csv`).
+        - Read the result. On success it carries the path the file now lives at, and
+          on failure an `error` saying why — usually that the output directory was not
+          granted, which is for the user to fix, not you.
+        - Name every presented file and its path in your final answer. A file the user
+          does not know about was not delivered.
 
         ## Rules
 
@@ -162,6 +181,23 @@ $referenced_components:
               type: string
             - title: exit_code
               type: integer
+        - component_type: ServerTool
+          id: tool-present-file
+          name: present_file
+          description: "Copy a file out of the workspace to a directory the user keeps, and return the path it now lives at. The workspace is deleted when the run ends, so this is the only way a file you produced reaches the user. Optionally rename it with name. Returns an error field when the copy could not be made."
+          metadata: {}
+          inputs:
+            - title: path
+              type: string
+            - title: name
+              type: string
+          outputs:
+            - title: path
+              type: string
+            - title: bytes
+              type: integer
+            - title: error
+              type: string
   end-node-0001:
     component_type: EndNode
     id: end-node-0001

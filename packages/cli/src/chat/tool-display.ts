@@ -5,6 +5,7 @@ const TOOL_ICONS: Record<string, string> = {
   list_directory: '\u2192',  // →
   write_file: '\u2190',     // ←
   edit_file: '\u2190',      // ←
+  present_file: '\u2190',  // ←
   search_files: '\u2731',   // ✱
   glob: '\u2731',           // ✱
   grep: '\u2731',           // ✱
@@ -32,6 +33,8 @@ export function getToolTitle(
       return `Write ${toolArgs.path ?? ''}`;
     case 'edit_file':
       return `Edit ${toolArgs.path ?? ''}`;
+    case 'present_file':
+      return `Present ${toolArgs.name ?? toolArgs.path ?? ''}`;
     case 'list_directory':
       return `List ${toolArgs.path ?? '.'}`;
     case 'search_files':

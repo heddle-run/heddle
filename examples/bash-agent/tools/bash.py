@@ -109,6 +109,9 @@ def run():
     env["PATH"] = runtime_path(env)
 
     workdir = data.get("working_directory") or env.get("HEDDLE_WORKSPACE") or os.getcwd()
+    # No shell has touched this one, so "$HEDDLE_WORKSPACE/build" would otherwise
+    # arrive as a literal directory name that cannot exist.
+    workdir = os.path.expanduser(os.path.expandvars(workdir))
     if not os.path.isdir(workdir):
         emit("", f"working_directory does not exist: {workdir}", 1)
         return
