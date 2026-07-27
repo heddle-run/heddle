@@ -132,10 +132,12 @@ function Chat({ graph, opts, session, inputKey }: ChatProps) {
           _chat_history: previousMessages,
         };
         opts.eventHandler = (e: Event) => {
-          // Every node's deltas go into one buffer. A flow with two agent
-          // nodes therefore previews them run together, which is accurate
-          // enough for a preview that is discarded a moment later — the
-          // message that survives the turn is the run's actual result.
+          // Cleared when a node starts, so a flow with two agent nodes previews
+          // the second answer on its own rather than running it onto the end of
+          // the first.
+          if (e.type === 'node_start') {
+            setStreamed('');
+          }
           if (e.type === 'token_delta' && e.delta) {
             setStreamed((prev) => prev + e.delta);
           }
