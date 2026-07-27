@@ -11,6 +11,7 @@ import {
   DEFAULT_EXAMPLE,
   EXAMPLES,
   EngineError,
+  appendEvent,
   fetchCapabilities,
   streamRun,
   validateFlow,
@@ -128,7 +129,7 @@ export default function Playground() {
 
     try {
       for await (const event of streamRun(payload(), ac.signal)) {
-        setEvents((previous) => [...previous, event]);
+        setEvents((previous) => appendEvent(previous, event));
 
         if (event.type === "flow_complete" && event.state) {
           setResult(event.state);

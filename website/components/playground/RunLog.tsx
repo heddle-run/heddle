@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useRef } from "react";
 import type { RunEvent } from "@/lib/playground";
 import { cn } from "@/lib/cn";
 
@@ -17,39 +17,6 @@ const LABELS: Record<string, string> = {
   warning: "warn",
   error: "error",
 };
-
-/**
- * Fold a node's streamed answer back into one row.
- *
- * A `token_delta` arrives per fragment, so rendering the event list directly
- * gives one row per token — a few hundred rows for one answer, which is what
- * this collapse exists to prevent.
- *
- * Only *consecutive* deltas from the same node merge. A tool call landing
- * between two stretches of an answer is real structure, and merging across it
- * would move text in the log to a place the model did not produce it.
- */
-function collapseDeltas(events: RunEvent[]): RunEvent[] {
-  const rows: RunEvent[] = [];
-
-  for (const event of events) {
-    if (event.type !== "token_delta") {
-      rows.push(event);
-      continue;
-    }
-    const last = rows[rows.length - 1];
-    if (last?.type === "token_delta" && last.nodeName === event.nodeName) {
-      rows[rows.length - 1] = {
-        ...last,
-        delta: (last.delta ?? "") + (event.delta ?? ""),
-      };
-    } else {
-      rows.push({ ...event });
-    }
-  }
-
-  return rows;
-}
 
 /** Events that mark a failure, and are set in reverse. */
 const FAILED = new Set(["node_error", "error"]);
@@ -101,17 +68,18 @@ export default function RunLog({
   error?: { type: string; message: string };
 }) {
   const endRef = useRef<HTMLDivElement>(null);
-  const rows = useMemo(() => collapseDeltas(events), [events]);
 
   // Follow the tail while a run is in flight. Only during a run, so reading
-  // back through a finished log is not fought by an autoscroll. Keyed on the
-  // event count rather than the row count so the view keeps following an
-  // answer that is growing inside a single row.
+  // back through a finished log is not fought by an autoscroll.
+  //
+  // Keyed on the list itself and not its length: a streamed answer grows inside
+  // its own entry without adding one, so a length would sit still through the
+  // longest thing the log ever has to follow.
   useEffect(() => {
     if (status === "running") {
       endRef.current?.scrollIntoView({ block: "nearest" });
     }
-  }, [events.length, status]);
+  }, [events, status]);
 
   if (status === "idle" && events.length === 0) {
     return (
@@ -126,7 +94,7 @@ export default function RunLog({
   return (
     <div className="flex h-full flex-col">
       <ol className="flex-1 overflow-y-auto">
-        {rows.map((event, index) => {
+        {events.map((event, index) => {
           const failed = FAILED.has(event.type);
           return (
             <li
