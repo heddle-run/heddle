@@ -1,11 +1,11 @@
 # heddle-server as a long-lived, multi-run service.
 #
-# The args below drop --allow-request-code from the image's default CMD:
-# callers here are trusted, so there is no reason to accept code from them.
-# That is a smaller decision than it used to be. Submitted plugins now run in
-# their own process and submitted specs cannot read this pod's environment, so
-# accepting request code no longer implies one container per run — see
-# ../DEPLOYMENT.md if you want to turn it on.
+# The args below leave out --allow-request-code, as the image's own default
+# command does: callers here are trusted, so there is no reason to accept code
+# from them. That is a smaller decision than it used to be. Submitted plugins
+# now run in their own process and submitted specs cannot read this pod's
+# environment, so accepting request code no longer implies one container per
+# run — see ../DEPLOYMENT.md if you want to turn it on.
 #
 # What remains true, and is not a plugin problem: runs share one Node process,
 # so one run that exhausts memory OOM-kills the pod and every session on it.
@@ -49,7 +49,10 @@ spec:
 
       containers:
         - name: heddle-server
-          image: heddle-server:latest
+          # Published for linux/amd64 and linux/arm64. Pin a version tag here
+          # rather than shipping `latest`: with IfNotPresent, a floating tag
+          # means a node keeps whichever image it happened to pull first.
+          image: heddle/heddle-server:latest
           imagePullPolicy: IfNotPresent
 
           args:

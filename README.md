@@ -35,6 +35,9 @@ npm install -g @heddle/cli
 
 # Homebrew
 brew install spichen/tap/heddle
+
+# Docker — nothing to install
+docker run --rm heddle/heddle --help
 ```
 
 ## Quick Start
@@ -78,6 +81,36 @@ The final state is printed to stdout as JSON; progress and errors go to stderr.
 ```bash
 heddle validate my-project/flow.json --tools-dir my-project/tools
 ```
+
+## Docker
+
+Two images, `linux/amd64` and `linux/arm64`:
+
+| Image | Contains |
+|---|---|
+| [`heddle/heddle`](https://hub.docker.com/r/heddle/heddle) | the CLI |
+| [`heddle/heddle-server`](https://hub.docker.com/r/heddle/heddle-server) | the HTTP API |
+
+`/work` is the CLI image's working directory, so a mounted project keeps the
+paths you would have typed anyway:
+
+```bash
+docker run --rm -e OPENAI_API_KEY -v "$PWD:/work" \
+  heddle/heddle run flow.json --tools-dir tools --input '{"query": "hello"}'
+```
+
+The examples ship in the image, so there is something to run before you have
+written anything:
+
+```bash
+docker run --rm -e OPENAI_API_KEY heddle/heddle run \
+  /opt/heddle/examples/research-assistant/flow.json \
+  --tools-dir /opt/heddle/examples/research-assistant/tools \
+  --input '{"query": "what is a heddle"}'
+```
+
+See [docs/docker.md](docs/docker.md) for chat mode, local models, file
+ownership, `--safe` inside a container, and running the server image.
 
 ## CLI Reference
 

@@ -1,4 +1,12 @@
-# heddle-server, built for the playground.
+# heddle-server.
+#
+# Shaped by the playground, and now also the image anyone pulls, which is why
+# the default command below stops short of the playground's own: it does not
+# pass --allow-request-code. The playground accepts flows, tool scripts and
+# plugins written by its callers because it was built to; an image someone has
+# just pulled has not decided that. Getting the playground's posture back means
+# restating the command with that flag in it — see docs/docker.md, and read
+# packages/server/DEPLOYMENT.md first.
 #
 # This image serves many concurrent runs. It did not always: plugins used to be
 # imported into the server process, which made the process the only boundary
@@ -11,13 +19,23 @@
 # packages/server/DEPLOYMENT.md, which are what bound a busy caller's effect on
 # the host.
 #
-# Build from the repository root:
+# Published to Docker Hub as heddle/heddle-server by
+# .github/workflows/docker.yml. Build from the repository root:
 #   docker build -f packages/server/Dockerfile -t heddle-server .
 
 # ---------------------------------------------------------------------------
 # Build
 # ---------------------------------------------------------------------------
-FROM node:22-bookworm-slim AS build
+# Pinned to the *build* platform rather than the target, so that a
+# linux/arm64 image does not mean a TypeScript build under emulation.
+# Everything this stage produces is JavaScript and the server's production
+# dependency tree — @heddle/core, and openai and yaml beneath it — has no
+# native code in it, so the artifact is the same either way. Adding a
+# production dependency with a compiled binary would invalidate that.
+#
+# $BUILDPLATFORM is a BuildKit built-in. `docker build` has used BuildKit by
+# default since 23.0; on anything older, `DOCKER_BUILDKIT=1`.
+FROM --platform=$BUILDPLATFORM node:22-bookworm-slim AS build
 
 WORKDIR /build
 
@@ -88,9 +106,13 @@ ENTRYPOINT ["node", "/app/dist/heddle-server.js"]
 # --sandbox if you are running under plain runc. See DEPLOYMENT.md.
 #
 # --max-concurrent is 8, not 1: runs no longer need a container each.
+#
+# CMD, not ENTRYPOINT, so the whole line is replaceable — the playground's
+# configuration is this one plus --allow-request-code, and an operator who
+# wants it restates the list. Every flag here is a default worth overriding
+# for someone; none of them is worth acquiring by accident.
 CMD ["--host", "0.0.0.0", \
      "--port", "4319", \
-     "--allow-request-code", \
      "--work-dir", "/var/heddle/runs", \
      "--tools-dir", "/srv/tools", \
      "--safe", \

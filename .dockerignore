@@ -1,0 +1,29 @@
+# Shared by every image built from this repository — the CLI image at the root
+# and the two in packages/server — so keep the exclusions to things no build
+# needs. Each Dockerfile then COPYs only the workspace members it wants.
+
+# Installed and built inside the image. Copying the host's copies in would risk
+# shipping a stale dist, and node_modules built for the host's platform.
+**/node_modules
+**/dist
+**/.turbo
+**/*.tsbuildinfo
+
+# Never belongs in a build context, secrets least of all.
+.env
+.env.*
+.dev.vars
+**/.wrangler
+
+.git
+.gitignore
+.github
+
+# Neither the CLI nor the server loads any of this at runtime.
+website
+Formula
+BRAND.md
+
+# Local scratch.
+**/coverage
+**/.DS_Store
