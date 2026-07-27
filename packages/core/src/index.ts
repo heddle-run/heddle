@@ -170,10 +170,19 @@ export type {
 
 // ---------------------------------------------------------------------------
 // LLM providers
+//
+// `Provider` is the interface a provider plugin implements, so its streaming
+// half belongs here with it. `ChatChunk` is the shape every implementation
+// yields and `ToolCallDelta` the shape inside it that is easiest to get wrong:
+// a provider that has to transcribe them from prose instead of importing them
+// will key tool-call fragments by `id` — which looks right against a
+// single-tool transcript and silently concatenates two calls into one against a
+// real one.
 // ---------------------------------------------------------------------------
 
 export { createProvider } from './llm/provider.js';
 export type {
+  ChatChunk,
   ChatRequest,
   ChatResponse,
   JsonSchema,
@@ -181,6 +190,7 @@ export type {
   Provider,
   Role,
   ToolCall,
+  ToolCallDelta,
   ToolDefinition,
 } from './llm/types.js';
 

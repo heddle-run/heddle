@@ -13,6 +13,7 @@ const LABELS: Record<string, string> = {
   node_error: "error",
   tool_call: "call",
   tool_result: "result",
+  token_delta: "text",
   warning: "warn",
   error: "error",
 };
@@ -44,6 +45,8 @@ function describe(event: RunEvent): string {
       return event.error
         ? `${event.toolName}: ${event.error.message}`
         : `${event.toolName} → ${JSON.stringify(event.toolResult ?? {})}`;
+    case "token_delta":
+      return event.delta ?? "";
     case "warning":
       return event.message ?? "";
     case "error":
@@ -68,11 +71,15 @@ export default function RunLog({
 
   // Follow the tail while a run is in flight. Only during a run, so reading
   // back through a finished log is not fought by an autoscroll.
+  //
+  // Keyed on the list itself and not its length: a streamed answer grows inside
+  // its own entry without adding one, so a length would sit still through the
+  // longest thing the log ever has to follow.
   useEffect(() => {
     if (status === "running") {
       endRef.current?.scrollIntoView({ block: "nearest" });
     }
-  }, [events.length, status]);
+  }, [events, status]);
 
   if (status === "idle" && events.length === 0) {
     return (
@@ -105,7 +112,16 @@ export default function RunLog({
               >
                 {LABELS[event.type] ?? event.type}
               </span>
-              <span className="min-w-0 flex-1 break-words">{describe(event)}</span>
+              <span
+                className={cn(
+                  "min-w-0 flex-1 break-words",
+                  // A model's answer carries its own line breaks, and every
+                  // other row is a single line that has none to lose.
+                  event.type === "token_delta" && "whitespace-pre-wrap",
+                )}
+              >
+                {describe(event)}
+              </span>
               {event.duration !== undefined && (
                 <span
                   className={cn(

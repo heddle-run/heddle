@@ -59,6 +59,13 @@ export interface RunEvent {
   type: string;
   nodeName?: string;
   nodeType?: string;
+  /**
+   * On a `token_delta`, one fragment of a model's answer in the order it was
+   * produced. It is a report of progress and not a result: a run can fail
+   * after sending many of them and produce no output at all, so the
+   * accumulated text must never be shown as the run's answer.
+   */
+  delta?: string;
   state?: Record<string, unknown>;
   /**
    * Two shapes reach this field, because two things produce it. A runner event
@@ -71,6 +78,33 @@ export interface RunEvent {
   toolResult?: unknown;
   duration?: number;
   message?: string;
+}
+
+/**
+ * Add an event to a run's log, folding a streamed answer into one entry.
+ *
+ * A `token_delta` arrives per fragment, so keeping each one would grow the log
+ * by a few hundred entries per answer — and since the log is rebuilt on every
+ * append, an answer of n tokens would cost n² copying while it arrived. Folding
+ * here keeps the log the length of the run's real structure instead.
+ *
+ * Only consecutive deltas from the same node merge. A tool call between two
+ * stretches of an answer is real structure, and merging across it would move
+ * text to a place the model did not produce it.
+ */
+export function appendEvent(log: RunEvent[], event: RunEvent): RunEvent[] {
+  const last = log[log.length - 1];
+  if (
+    event.type === "token_delta" &&
+    last?.type === "token_delta" &&
+    last.nodeName === event.nodeName
+  ) {
+    return [
+      ...log.slice(0, -1),
+      { ...last, delta: (last.delta ?? "") + (event.delta ?? "") },
+    ];
+  }
+  return [...log, event];
 }
 
 export interface Capabilities {

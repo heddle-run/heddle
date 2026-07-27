@@ -18,7 +18,7 @@ import {
   type Sandbox,
   type SandboxBackend,
 } from '@heddle/core';
-import { getToolIcon, getToolTitle, formatDuration } from '../chat/tool-display.js';
+import { createProgressWriter, renderEvent } from './progress.js';
 
 /** Accumulates a repeatable commander flag into an array. */
 function collect(value: string, previous: string[]): string[] {
@@ -80,42 +80,10 @@ function buildSandbox(
 function buildRunnerOpts(verbose: boolean, chat: boolean): RunnerOptions {
   const opts = { ...DEFAULT_RUNNER_OPTIONS, verbose };
   if (!chat) {
-    opts.eventHandler = (e: Event) => {
-      switch (e.type) {
-        case 'tool_call':
-          console.error(`[${e.nodeName}] ${getToolIcon(e.toolName!)} ${getToolTitle(e.toolName!, e.toolArgs ?? {})}`);
-          if (verbose) {
-            console.error(`[${e.nodeName}]   args: ${JSON.stringify(e.toolArgs ?? {})}`);
-          }
-          break;
-        case 'tool_result':
-          if (e.error) {
-            console.error(`[${e.nodeName}] Error: ${e.toolName} (${formatDuration(e.duration ?? 0)}): ${e.error.message}`);
-          } else if (verbose) {
-            console.error(`[${e.nodeName}] Done: ${e.toolName} (${formatDuration(e.duration ?? 0)})`);
-            console.error(`[${e.nodeName}]   result: ${JSON.stringify(e.toolResult)}`);
-          }
-          break;
-        case 'node_start':
-          if (verbose) console.error(`[${e.nodeName}] Starting ${e.nodeType}`);
-          break;
-        case 'node_complete':
-          if (verbose) console.error(`[${e.nodeName}] Completed`);
-          break;
-        case 'warning':
-          console.error(`Warning: ${e.message}`);
-          break;
-        case 'node_error':
-          console.error(`[${e.nodeName}] Error: ${e.error}`);
-          break;
-        case 'flow_start':
-          if (verbose) console.error('Flow started');
-          break;
-        case 'flow_complete':
-          if (verbose) console.error('Flow completed');
-          break;
-      }
-    };
+    // Progress goes to stderr, so the run's JSON result on stdout stays clean
+    // and pipeable.
+    const writeProgress = createProgressWriter((text) => process.stderr.write(text));
+    opts.eventHandler = (e: Event) => writeProgress(renderEvent(e, verbose));
   }
   return opts;
 }

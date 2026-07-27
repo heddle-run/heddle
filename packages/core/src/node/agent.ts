@@ -1,8 +1,18 @@
 import type { AgentNode, ToolSpec } from '../spec/types.js';
 import { propertyTitle } from '../spec/types.js';
 import { State } from '../state/state.js';
-import type { Message, ToolCall, ToolDefinition, Provider, JsonSchema } from '../llm/types.js';
+import type {
+  ChatChunk,
+  ChatRequest,
+  ChatResponse,
+  Message,
+  ToolCall,
+  ToolDefinition,
+  Provider,
+  JsonSchema,
+} from '../llm/types.js';
 import type { NodeExecutor, Dependencies } from './types.js';
+import type { EventHandler } from '../runner/events.js';
 import type { Executor } from '../tool/types.js';
 import { createProvider } from '../llm/provider.js';
 import { TransformChain } from '../plugin/transform.js';
@@ -119,11 +129,16 @@ export class AgentExecutor implements NodeExecutor {
     messages = pre.messages;
 
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-      const resp = await this.getProvider().chatCompletion(signal, {
-        model: this.model,
-        messages,
-        tools: toolDefs.length > 0 ? toolDefs : undefined,
-      });
+      const resp = await completeChat(
+        this.getProvider(),
+        signal,
+        {
+          model: this.model,
+          messages,
+          tools: toolDefs.length > 0 ? toolDefs : undefined,
+        },
+        { nodeName: this.node.name, eventHandler: this.deps.eventHandler },
+      );
 
       if (!resp.tool_calls || resp.tool_calls.length === 0) {
         // Post-transforms see the answer in the context of the conversation
@@ -246,6 +261,126 @@ export class AgentExecutor implements NodeExecutor {
 
     return result.output;
   }
+}
+
+/** Who to tell about deltas, and which node they belong to. */
+export interface ModelCallContext {
+  nodeName: string;
+  eventHandler?: EventHandler;
+}
+
+/**
+ * One model call, streamed when the provider can and buffered when it cannot.
+ *
+ * The two paths return the same {@link ChatResponse}, and that is the whole
+ * contract: nothing after this function can tell which one ran. The streaming
+ * path's only visible difference is that `token_delta` events arrive while the
+ * answer is still being written.
+ *
+ * **A mid-stream failure fails the node.** This is the part streaming changes.
+ * A buffered call fails before anyone has seen anything; a stream can fail
+ * after half an answer has been shown to a client. The half is not salvaged
+ * and the call is not retried: salvaging would let a truncated answer become
+ * the node's output with nothing marking it as truncated, and retrying would
+ * bill the caller twice and emit the same prefix again to observers who
+ * already have it. Instead the error propagates, exactly as the buffered
+ * failure would, preceded by a `warning` that says the deltas already sent are
+ * being abandoned — because a client holding half an answer and a dead stream
+ * otherwise has no way to know which it is.
+ */
+export async function completeChat(
+  provider: Provider,
+  signal: AbortSignal | undefined,
+  req: ChatRequest,
+  ctx: ModelCallContext,
+): Promise<ChatResponse> {
+  if (!provider.chatCompletionStream) {
+    return provider.chatCompletion(signal, req);
+  }
+
+  let emitted = 0;
+  try {
+    return await collectStream(
+      provider.chatCompletionStream(signal, req),
+      (text) => {
+        emitted++;
+        ctx.eventHandler?.({
+          type: 'token_delta',
+          nodeName: ctx.nodeName,
+          delta: text,
+        });
+      },
+    );
+  } catch (err) {
+    if (emitted > 0) {
+      ctx.eventHandler?.({
+        type: 'warning',
+        nodeName: ctx.nodeName,
+        message:
+          `"${ctx.nodeName}": the model stream failed after ${emitted} token ` +
+          `deltas had already been sent. Those deltas are not this node's ` +
+          `output — nothing was produced. Discard the partial text rather ` +
+          `than showing it as an answer. Cause: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+      });
+    }
+    throw err;
+  }
+}
+
+/**
+ * Accumulate a stream into the response the buffered call would have returned.
+ *
+ * `onContent` fires per content fragment rather than per chunk, so a chunk
+ * carrying only tool-call fragments produces no delta: a caller forwarding
+ * these to a client is showing text to a person, and the half-written JSON of
+ * a tool call is not text for a person.
+ */
+export async function collectStream(
+  chunks: AsyncIterable<ChatChunk>,
+  onContent?: (text: string) => void,
+): Promise<ChatResponse> {
+  let content = '';
+  let finishReason = '';
+  // Keyed by the delta's index for the reason given on `ToolCallDelta`:
+  // fragments after the first carry no id to key on.
+  const calls = new Map<number, ToolCall>();
+
+  for await (const chunk of chunks) {
+    if (chunk.content) {
+      content += chunk.content;
+      onContent?.(chunk.content);
+    }
+
+    for (const delta of chunk.tool_calls ?? []) {
+      const call = calls.get(delta.index) ?? { id: '', name: '', arguments: '' };
+      // Last non-empty wins for id and name, which arrive once; arguments is
+      // the only field that accumulates.
+      if (delta.id) call.id = delta.id;
+      if (delta.name) call.name = delta.name;
+      if (delta.arguments) call.arguments += delta.arguments;
+      calls.set(delta.index, call);
+    }
+
+    if (chunk.finish_reason) finishReason = chunk.finish_reason;
+  }
+
+  const resp: ChatResponse = { content, finish_reason: finishReason };
+
+  // Absent rather than empty when there were none: `resp.tool_calls = []`
+  // would be a different response from the one the buffered path returns, and
+  // the agent loop branches on exactly this.
+  if (calls.size > 0) {
+    // By index, not by arrival: a provider is free to interleave the fragments
+    // of two calls, and the order the tools run in has to be the order the
+    // model asked for.
+    resp.tool_calls = [...calls.entries()]
+      .sort(([a], [b]) => a - b)
+      .map(([, call]) => call);
+  }
+
+  return resp;
 }
 
 /**

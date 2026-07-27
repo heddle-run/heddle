@@ -1,7 +1,7 @@
 import type { LLMNode } from '../spec/types.js';
 import { State } from '../state/state.js';
 import type { NodeExecutor, Dependencies } from './types.js';
-import { substituteTemplate } from './agent.js';
+import { completeChat, substituteTemplate } from './agent.js';
 import { createProvider } from '../llm/provider.js';
 import { RunError } from '../errors.js';
 
@@ -39,10 +39,19 @@ export class LLMExecutor implements NodeExecutor {
 
     const prompt = substituteTemplate(this.node.promptTemplate, input);
 
-    const resp = await provider.chatCompletion(signal, {
-      model,
-      messages: [{ role: 'user', content: prompt }],
-    });
+    // An LlmNode is a single prompt with no tools, which is the case streaming
+    // helps most: it is one long answer with nothing else to watch. Same helper
+    // as AgentExecutor, so both nodes stream or buffer on the same rule and a
+    // consumer sees one kind of `token_delta`.
+    const resp = await completeChat(
+      provider,
+      signal,
+      {
+        model,
+        messages: [{ role: 'user', content: prompt }],
+      },
+      { nodeName: this.node.name, eventHandler: this.deps.eventHandler },
+    );
 
     let output = new State();
     output = output.set('generated_text', resp.content);
