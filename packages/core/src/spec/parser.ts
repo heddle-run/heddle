@@ -1,6 +1,6 @@
 import type { ComponentBase } from 'agentspec';
 import YAML from 'yaml';
-import { toSpecFlow } from './adapter.js';
+import { restoreAgentTransforms, toSpecFlow } from './adapter.js';
 import type { Agent, ParsedFlow } from './types.js';
 import { PluginRegistry } from '../plugin/registry.js';
 import { substitutePluginNodes } from '../plugin/flow-preprocess.js';
@@ -41,6 +41,22 @@ function deserialize(
     component: d.fromJson(JSON.stringify(substitution.doc)) as ComponentBase,
     substitution,
   };
+}
+
+/**
+ * Deserializes a component and puts its real plugin transforms back.
+ *
+ * Every path that returns a component rather than a ParsedFlow goes through
+ * here. Doing the restore at the deserialize boundary is what keeps the four
+ * entry points from drifting: forgetting it in one of them is how the standalone
+ * Agent came back holding stand-ins in the first place.
+ */
+function toComponent(
+  raw: Record<string, unknown>,
+  registry: PluginRegistry,
+): ComponentBase {
+  const { component, substitution } = deserialize(raw, registry);
+  return restoreAgentTransforms(component, substitution.pluginTransforms);
 }
 
 function toFlow(
@@ -102,7 +118,10 @@ export function parseComponent(
         pluginTransforms: substitution.pluginTransforms,
       });
     case 'Agent':
-      return component as unknown as Agent;
+      return restoreAgentTransforms(
+        component,
+        substitution.pluginTransforms,
+      ) as unknown as Agent;
     default:
       throw new SpecError(`unsupported top-level componentType "${ct}"`);
   }
@@ -113,7 +132,7 @@ export function parseComponentYaml(
   data: string,
   registry: PluginRegistry = NO_PLUGINS,
 ): ComponentBase {
-  return deserialize(asDoc(YAML.parse(data), 'YAML'), registry).component;
+  return toComponent(asDoc(YAML.parse(data), 'YAML'), registry);
 }
 
 /** ParseComponentJson deserializes a JSON string via the SDK. */
@@ -121,5 +140,5 @@ export function parseComponentJson(
   data: string | Buffer,
   registry: PluginRegistry = NO_PLUGINS,
 ): ComponentBase {
-  return deserialize(toDoc(data), registry).component;
+  return toComponent(toDoc(data), registry);
 }

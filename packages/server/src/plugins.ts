@@ -1,4 +1,4 @@
-import { loadRemotePlugin, PluginRegistry } from '@heddle/core';
+import { loadRemotePlugin, PluginRegistry, type PluginCapability } from '@heddle/core';
 import type { ServerConfig } from './config.js';
 import { HttpError } from './errors.js';
 import type { MaterializedCode } from './request-code.js';
@@ -16,6 +16,30 @@ import type { MaterializedCode } from './request-code.js';
  * requirement. A plugin gets its own process, an empty environment, and is
  * killed when the run ends.
  */
+/**
+ * What a submitted plugin may be granted here.
+ *
+ * Written out rather than derived from `PLUGIN_CAPABILITIES`, so that a
+ * capability added to heddle is not granted to callers' plugins by the act of
+ * upgrading.
+ *
+ * `runTool` is on the list because it reaches nothing a caller could not
+ * already reach by other means: a plugin's tool calls resolve against the same
+ * merged registry a `ToolNode` does — see `buildRegistry` in runs.ts — so a
+ * caller who can submit a plugin can equally submit a flow naming the same
+ * tool. It is *not* limited to the tools that caller submitted. `--tools-dir`
+ * is in that registry too, and a plugin can name any executable in it, with
+ * input of its own choosing and without the flow mentioning it: the reverse
+ * call is checked against the registry, never against the spec.
+ *
+ * What that asks of an operator: under `--allow-request-code`, `--tools-dir`
+ * *is* the set of tools you are offering your callers. An executable in it that
+ * you would not hand a caller directly does not belong there — plugins or no
+ * plugins. If you must keep one there, drop `runTool` from this list and accept
+ * that guardrails cannot consult a tool.
+ */
+const GRANTED: PluginCapability[] = ['runTool'];
+
 export function buildPlugins(
   config: ServerConfig,
   code: MaterializedCode,
@@ -27,8 +51,18 @@ export function buildPlugins(
     for (const plugin of code.plugins) {
       registry.addRemote(
         loadRemotePlugin(plugin.manifest, plugin.path, {
-          // A plugin call should not outlive the run that made it.
-          timeout: config.timeout,
+          // Per call, not per run. This used to pass the run's whole
+          // wall-clock budget, so a plugin call had no independent bound at
+          // all. See ServerConfig.pluginCallTimeout.
+          //
+          // Clamped to the run budget because nothing else enforces it. A
+          // pending plugin call is not interruptible: `Runner._run` looks at
+          // the run's signal between nodes, `PluginHost.call` takes no signal,
+          // so `await executor.execute(...)` sits there until the plugin's own
+          // timer fires. Whichever of the two is larger is therefore the real
+          // bound on how long a concurrency slot is held — and an operator who
+          // lowered `--timeout` to shed load would otherwise have raised it.
+          timeout: Math.min(config.pluginCallTimeout, config.timeout),
           // Nothing. Not a filtered subset of the server's environment — none
           // of it. A plugin that needs configuration takes it from its own
           // spec fields, which the caller wrote and can see.
@@ -38,6 +72,7 @@ export function buildPlugins(
           // TMPDIR, PWD, HEDDLE_WORKSPACE, HEDDLE_SANDBOX — all synthesized,
           // and none of them the server's.
           env: {},
+          capabilities: GRANTED,
           session: config.sandbox?.session(`plugin-${plugin.name}`),
         }),
       );

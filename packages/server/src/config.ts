@@ -28,6 +28,36 @@ export interface ServerConfig {
   maxIterations: number;
   /** Wall-clock budget for a single run, in milliseconds. */
   timeout: number;
+
+  /**
+   * Wall-clock budget for a single call into a plugin process, in milliseconds.
+   *
+   * Deliberately not {@link timeout}. This server passed the whole-run budget
+   * here for a while, which meant one `execute` could hold a concurrency slot
+   * for the entire run — five minutes at the default — while doing nothing, and
+   * the only thing that ever noticed was the run's own deadline. With
+   * {@link maxConcurrentRuns} at 4, four hung calls are the whole server.
+   *
+   * A per-call bound has to be independent of the run budget for the reason the
+   * run budget cannot serve as one: a run is entitled to make many plugin calls,
+   * so "did this one call stop responding" is not a question the run's deadline
+   * can answer. Every method the plugin protocol grows inherits whatever is set
+   * here, which is the other reason it should be a small number chosen on
+   * purpose rather than a large one inherited by accident.
+   *
+   * Raise it for a plugin that legitimately blocks: the timer covers the call
+   * end to end, including any `runTool` the plugin makes back into the host
+   * while its own `execute` is still pending. A plugin that overruns is killed,
+   * because a process that may still be mid-reply cannot be trusted to keep the
+   * channel unambiguous.
+   *
+   * Independent of {@link timeout}, but not free of it: `buildPlugins` clamps
+   * what it passes to the smaller of the two. Setting this above the run budget
+   * would be a bound in name only, since a run cannot end while a plugin call
+   * is outstanding — see the clamp in plugins.ts for why the run's own deadline
+   * is not enough on its own.
+   */
+  pluginCallTimeout: number;
   /** Maximum accepted request body size, in bytes. */
   maxBodyBytes: number;
   /** Where operational messages go. Defaults to stderr. */
@@ -119,6 +149,13 @@ export const DEFAULT_MAX_REQUEST_PLUGINS = 5;
 export const DEFAULT_MAX_REQUEST_CODE_BYTES = 256 * 1024; // 256 KiB
 export const DEFAULT_MAX_CONCURRENT_RUNS = 4;
 /**
+ * Per-call plugin budget. Matches `PluginHost`'s own default, so a plugin
+ * behaves the same under this server as it does under a direct
+ * `loadRemotePlugin` — the surprise worth avoiding is a plugin that passes its
+ * author's tests and then times out only in production, or vice versa.
+ */
+export const DEFAULT_PLUGIN_CALL_TIMEOUT = 30_000;
+/**
  * How long a draining process waits for in-flight runs to finish before it
  * force-closes what remains and exits. Should be set at least as high as
  * `--timeout` so a run near its wall-clock budget can still complete, and the
@@ -137,6 +174,8 @@ export function resolveConfig(options: ServerOptions = {}): ServerConfig {
     flowsRoot: options.flowsRoot,
     maxIterations: options.maxIterations ?? DEFAULT_RUNNER_OPTIONS.maxIterations,
     timeout: options.timeout ?? DEFAULT_RUNNER_OPTIONS.timeout,
+    pluginCallTimeout:
+      options.pluginCallTimeout ?? DEFAULT_PLUGIN_CALL_TIMEOUT,
     maxBodyBytes: options.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES,
     log: options.log ?? ((message) => process.stderr.write(`${message}\n`)),
     corsOrigins: options.corsOrigins ?? [],

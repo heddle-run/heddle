@@ -389,6 +389,89 @@ describe('request-submitted plugins', () => {
       delete process.env.HEDDLE_SERVER_SECRET;
     }
   });
+
+  // -------------------------------------------------------------------------
+  // Capabilities, over HTTP.
+  //
+  // The server grants `runTool` and nothing else, written out rather than
+  // derived, so that a capability heddle learns later is not handed to callers'
+  // plugins by the act of upgrading. A submitted plugin still gets only what its
+  // own manifest declares, which is the half these three cover.
+  // -------------------------------------------------------------------------
+
+  /** Calls a submitted tool from inside the plugin, reporting either outcome. */
+  const toolCaller = (capabilities?: string[]) => ({
+    name: 'caller',
+    manifest: { ...SHOUT_MANIFEST, ...(capabilities ? { capabilities } : {}) },
+    source: `
+      serve({
+        ShoutNode: {
+          execute: async (input, ctx) => {
+            try {
+              const result = await ctx.runTool('echo_upper', { text: input.text });
+              return { output: { text: JSON.stringify(result) } };
+            } catch (err) {
+              return { output: { text: 'refused: ' + err.message } };
+            }
+          },
+        },
+      });
+    `,
+  });
+
+  it('lets a submitted plugin reach the tools submitted alongside it', async () => {
+    const res = await post('/v1/runs', {
+      flow: pluginFlow(),
+      inputs: { text: 'hello' },
+      tools: [{ name: 'echo_upper', source: ECHO_UPPER, interpreter: 'sh' }],
+      plugins: [toolCaller(['runTool'])],
+    });
+
+    expect(res.status).toBe(200);
+    // The tool uppercased the whole JSON line it was handed, keys included,
+    // which is what makes `TEXT` rather than `text` the proof it really ran.
+    expect(await res.json()).toMatchObject({
+      state: { text: '{"TEXT":"HELLO"}' },
+    });
+  });
+
+  it('refuses a plugin the tools it never declared it would use', async () => {
+    // Same plugin, same tool, same server policy. The only difference is the
+    // manifest, so this is what says the declaration carries the permission.
+    const res = await post('/v1/runs', {
+      flow: pluginFlow(),
+      inputs: { text: 'hello' },
+      tools: [{ name: 'echo_upper', source: ECHO_UPPER, interpreter: 'sh' }],
+      plugins: [toolCaller()],
+    });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { state: { text: string } };
+    expect(body.state.text).toMatch(/^refused: /);
+    expect(body.state.text).toMatch(/"runTool" is not granted to this plugin/);
+    expect(body.state.text).toMatch(/Add it to "capabilities" in the manifest/);
+  });
+
+  it('rejects a manifest asking for a capability heddle does not serve', async () => {
+    // At load, so the caller is told before anything runs, and by name — a
+    // misspelling is the likeliest way to end up here.
+    const res = await post('/v1/runs', {
+      flow: pluginFlow(),
+      inputs: { text: 'hello' },
+      plugins: [
+        {
+          name: 'greedy',
+          manifest: { ...SHOUT_MANIFEST, capabilities: ['callModel'] },
+          source: SHOUT_SOURCE,
+        },
+      ],
+    });
+
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: { message: string } };
+    expect(body.error.message).toMatch(/"callModel", which heddle does not serve/);
+    expect(body.error.message).toMatch(/It serves: runTool/);
+  });
 });
 
 // ---------------------------------------------------------------------------

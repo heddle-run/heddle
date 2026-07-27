@@ -16,6 +16,7 @@ import type { SandboxSession } from '../sandbox/types.js';
 import { PluginError } from '../errors.js';
 import { PluginHost, type PluginHostOptions } from './host.js';
 import { validateManifest, type PluginManifest } from './manifest.js';
+import type { PluginCapability } from './protocol.js';
 import { remoteComponentDef, remoteNodeDef, remoteTransformDef } from './remote.js';
 import type { HeddlePlugin } from './types.js';
 
@@ -30,6 +31,17 @@ export interface RemotePluginOptions {
    * API could not offer at any price.
    */
   env?: Record<string, string>;
+  /**
+   * Capabilities this plugin may use. A manifest that asks for one not listed
+   * here fails to load, naming the capability — the operator's policy is not
+   * something a submitted plugin gets to discover by probing at runtime.
+   *
+   * Empty by default, for the same reason the environment is: a caller that
+   * granted nothing on the heddle they installed should not find a plugin
+   * newly able to spend their model credential because a later version learned
+   * how. Widening is a decision someone makes, and it looks like one here.
+   */
+  capabilities?: PluginCapability[];
 }
 
 /** A loaded out-of-process plugin, and the process behind it. */
@@ -85,6 +97,7 @@ export function loadRemotePlugin(
   options: RemotePluginOptions = {},
 ): RemotePlugin {
   const manifest = validateManifest(rawManifest);
+  checkGrant(manifest, options.capabilities ?? []);
   const entry = isAbsolute(entryPath) ? entryPath : resolve(process.cwd(), entryPath);
 
   const command = manifest.command
@@ -103,6 +116,12 @@ export function loadRemotePlugin(
     timeout: options.timeout,
     session: options.session,
     env: options.env,
+    // The manifest's request, not the grant. Both have to allow a call, and
+    // this is where they meet: `checkGrant` above rejected anything asked for
+    // and not granted, so what a plugin declared is exactly what it may use.
+    // Passing the grant instead would give a plugin capabilities it never asked
+    // for, which is the implicit availability this replaces.
+    capabilities: manifest.capabilities,
   };
 
   const host = new PluginHost(manifest.name, hostOptions);
@@ -133,6 +152,31 @@ export function loadRemotePlugin(
   }
 
   return { plugin, host };
+}
+
+/**
+ * Refuse a plugin that asks for more than it was granted.
+ *
+ * At load, before the process exists, and naming the capability. The
+ * alternative — letting it load and failing the call — hides an operator's
+ * policy behind whichever branch of a plugin happens to run, so a flow that
+ * never reaches the guardrail's tool call would look fine until the day one
+ * does. It also leaves nowhere to report the mismatch except the middle of
+ * someone's run.
+ */
+function checkGrant(manifest: PluginManifest, granted: PluginCapability[]): void {
+  const allowed = new Set(granted);
+  const refused = manifest.capabilities.filter((capability) => !allowed.has(capability));
+  if (refused.length === 0) return;
+
+  throw new PluginError(
+    `plugin "${manifest.name}" requests ${refused.map((c) => `"${c}"`).join(', ')}, ` +
+      `which this host does not grant. Granted here: ` +
+      `${granted.length > 0 ? granted.join(', ') : 'nothing'}. ` +
+      `A capability is the operator's to give, so the plugin cannot obtain it by ` +
+      `asking differently — drop it from the manifest, or run the plugin somewhere ` +
+      `it is granted.`,
+  );
 }
 
 /** Read a manifest from disk. Data only — nothing is executed. */

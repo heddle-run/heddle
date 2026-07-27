@@ -48,6 +48,18 @@ of that.
 With `--allow-request-code`, the reference is refused, identically whether the
 variable exists or not.
 
+### `--tools-dir` is your public API
+
+With `--allow-request-code` on, every executable in `--tools-dir` is something
+you are offering your callers. A submitted flow can name one from a `ToolNode`,
+and a submitted plugin granted `runTool` can name one too — with input of its
+own choosing and without the flow mentioning it, since a plugin's reverse call
+is checked against the tool registry and never against the spec.
+
+So an executable you would not hand a caller directly does not belong in that
+directory. There is no narrower grant available: a tool is either in the
+registry or it is not.
+
 ## Credentials
 
 **The server holds none.** A caller's spec carries its own key:

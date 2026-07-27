@@ -7,6 +7,7 @@ import {
   DEFAULT_PORT,
   DEFAULT_MAX_CONCURRENT_RUNS,
   DEFAULT_DRAIN_TIMEOUT,
+  DEFAULT_PLUGIN_CALL_TIMEOUT,
 } from './config.js';
 
 const USAGE = `Usage: heddle-server [options]
@@ -20,6 +21,10 @@ Options:
   --flows-root <dir>     Root that "flowPath" requests are confined to
   --max-iterations <n>   Maximum node executions per run
   --timeout <ms>         Wall-clock budget for a single run
+  --plugin-timeout <ms>  Budget for a single call into a plugin process
+                         (default: ${DEFAULT_PLUGIN_CALL_TIMEOUT}). Raise it only for a plugin
+                         that legitimately blocks; a run may make many calls,
+                         and each one holds a concurrency slot while it runs
   --max-concurrent <n>   Runs allowed at once (default: ${DEFAULT_MAX_CONCURRENT_RUNS})
   --drain-timeout <ms>   On SIGTERM, how long to let in-flight runs finish
                          (default: ${DEFAULT_DRAIN_TIMEOUT})
@@ -122,6 +127,7 @@ async function main(): Promise<void> {
       'flows-root': { type: 'string' },
       'max-iterations': { type: 'string' },
       timeout: { type: 'string' },
+      'plugin-timeout': { type: 'string' },
       'max-concurrent': { type: 'string' },
       'drain-timeout': { type: 'string' },
       'cors-origin': { type: 'string', multiple: true },
@@ -152,6 +158,7 @@ async function main(): Promise<void> {
     flowsRoot: values['flows-root'],
     maxIterations: toInt(values['max-iterations'], '--max-iterations'),
     timeout: toInt(values.timeout, '--timeout'),
+    pluginCallTimeout: toInt(values['plugin-timeout'], '--plugin-timeout'),
     maxConcurrentRuns: toInt(values['max-concurrent'], '--max-concurrent'),
     drainTimeout: toInt(values['drain-timeout'], '--drain-timeout'),
     corsOrigins: values['cors-origin'],

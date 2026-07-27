@@ -29,8 +29,13 @@ const TOKEN_TTL_SECONDS = 300;
  *
  * Starting a container to answer a capabilities probe would mean a cold start
  * on every page load, for a response that is a property of the deployment and
- * not of any instance. It mirrors the CMD in Dockerfile.cloudflare — keep the
- * two in step.
+ * not of any instance. The limits mirror the CMD in Dockerfile.cloudflare —
+ * keep the two in step.
+ *
+ * `maxConcurrentRuns` is the exception, and deliberately so: the CMD passes
+ * `--max-concurrent 8`, but an engine here is addressed by run id and destroyed
+ * with the run, so a caller never gets more than one run out of an instance.
+ * The flag is a ceiling; 1 is what a caller can actually plan against.
  */
 function capabilities(env: Env): Record<string, unknown> {
   return {

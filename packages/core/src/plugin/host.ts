@@ -25,11 +25,17 @@ import type { SandboxSession } from '../sandbox/types.js';
 import { PluginError } from '../errors.js';
 import {
   encode,
+  isPluginMethod,
   isRequest,
   LineDecoder,
+  PLUGIN_METHODS,
+  type HostMethod,
+  type HostMethods,
+  type PluginCapability,
   type RpcMessage,
   type RpcRequest,
   type RpcResponse,
+  type RunToolParams,
 } from './protocol.js';
 
 const DEFAULT_CALL_TIMEOUT = 30_000;
@@ -42,7 +48,11 @@ export interface PluginHostOptions {
   command: string[];
   /** Working directory. Defaults to the parent's. */
   cwd?: string;
-  /** Wall-clock budget for a single call. */
+  /**
+   * Wall-clock budget for a single call, defaulting to
+   * {@link DEFAULT_CALL_TIMEOUT}. Every method shares it, so a caller that
+   * raises it to suit the slowest verb raises it for all of them.
+   */
   timeout?: number;
   /**
    * Confines the plugin process, exactly as it would a tool. Optional: the
@@ -56,6 +66,17 @@ export interface PluginHostOptions {
    * in-process default, where a plugin necessarily saw everything.
    */
   env?: Record<string, string>;
+  /**
+   * The reverse calls this plugin may make. Empty by default, on the same
+   * reasoning as `env`: what a plugin gets is chosen for it, never inherited
+   * from what heddle happens to be able to do.
+   *
+   * This is the *settled* set — the manifest's request after the loader has
+   * checked it against the operator's grant — so anything listed here has
+   * already been allowed twice, and anything absent is refused without a round
+   * trip to whoever configured the run.
+   */
+  capabilities?: PluginCapability[];
   /**
    * Serves the plugin's `runTool` calls.
    *
@@ -71,10 +92,16 @@ export type ToolRunner = (
   input: Record<string, unknown>,
 ) => Promise<Record<string, unknown>>;
 
+/** Names a declared reverse call that has no implementation. See {@link PluginHost.serve}. */
+function unserved(method: never): string {
+  return `heddle declares "${String(method)}" but does not serve it`;
+}
+
 interface Pending {
   resolve: (value: unknown) => void;
   reject: (err: Error) => void;
-  timer: NodeJS.Timeout;
+  /** Cancels the call's timer and its abort listener, however it ends. */
+  release: () => void;
 }
 
 export class PluginHost {
@@ -87,12 +114,19 @@ export class PluginHost {
   private toolRunner?: ToolRunner;
   /** Set once the process is gone, so later calls fail fast with the reason. */
   private dead?: Error;
+  /** The sandbox's scratch release, held from `wrap` until the process ends. */
+  private cleanupSandbox?: () => void;
+  private readonly granted: ReadonlySet<PluginCapability>;
 
   constructor(
     private readonly name: string,
     private readonly options: PluginHostOptions,
   ) {
     this.toolRunner = options.runTool;
+    // Copied at construction, not read from options per call: the grant is
+    // settled when the plugin loads, and a set that could be widened afterwards
+    // would be a policy the plugin's own process could outlive.
+    this.granted = new Set(options.capabilities ?? []);
   }
 
   /**
@@ -107,12 +141,36 @@ export class PluginHost {
     this.toolRunner ??= run;
   }
 
-  /** Call a method on the plugin, starting it if it is not yet running. */
-  async call(method: string, params: Record<string, unknown>): Promise<unknown> {
+  /**
+   * Call a method on the plugin, starting it if it is not yet running.
+   *
+   * Generic over the method so the params are checked against the verb rather
+   * than accepted as any object: the wire is JSON either way, and a params
+   * shape that does not match the method is a failure the plugin reports from
+   * another process, long after the call site that got it wrong.
+   *
+   * `signal` is the run's own. Without it a pending call is uninterruptible:
+   * the runner checks its signal between nodes, so an aborted run — a client
+   * that hung up, a wall-clock budget spent — would still wait out this call's
+   * whole timeout before its concurrency slot came back.
+   */
+  async call<M extends HostMethod>(
+    method: M,
+    params: HostMethods[M],
+    signal?: AbortSignal,
+  ): Promise<unknown> {
     if (this.disposed) {
       throw new PluginError(`plugin "${this.name}" was disposed`);
     }
     if (this.dead) throw this.dead;
+    // Before `start()`, so an already-dead run does not spawn a process for a
+    // call nobody is waiting for. A listener added to an aborted signal never
+    // fires, which is why this cannot be left to the handler below.
+    if (signal?.aborted) {
+      throw new PluginError(
+        `plugin "${this.name}" was not called: the run was already over`,
+      );
+    }
 
     this.start();
 
@@ -121,36 +179,65 @@ export class PluginHost {
 
     return new Promise<unknown>((resolve, reject) => {
       const timer = setTimeout(() => {
-        this.pending.delete(id);
-        // The process is not trustworthy after a timeout — it may still be
-        // mid-reply, and a late response would be matched to nothing. Kill it
-        // rather than leave the channel ambiguous.
-        this.kill();
-        reject(
+        this.abandon(
+          id,
           new PluginError(
             `plugin "${this.name}" did not answer ${method} within ${timeout}ms`,
           ),
         );
       }, timeout);
 
-      this.pending.set(id, { resolve, reject, timer });
+      const onAbort = (): void => {
+        this.abandon(
+          id,
+          new PluginError(
+            `plugin "${this.name}" was still in ${method} when the run ended`,
+          ),
+        );
+      };
+      signal?.addEventListener('abort', onAbort, { once: true });
+
+      this.pending.set(id, {
+        resolve,
+        reject,
+        release: () => {
+          clearTimeout(timer);
+          signal?.removeEventListener('abort', onAbort);
+        },
+      });
       this.write({ id, method, params });
     });
+  }
+
+  /**
+   * Give up on one outstanding call and kill the process behind it.
+   *
+   * Both ways in — the call's own timer, and the run being aborted — leave the
+   * channel ambiguous: the plugin may be mid-reply, and a late response would
+   * be matched to nothing. The kill is what makes giving up safe, and on the
+   * abort path it is also the only thing that stops a plugin's process from
+   * outliving the request that stopped waiting for it.
+   */
+  private abandon(id: number, err: Error): void {
+    const pending = this.pending.get(id);
+    if (!pending) return;
+    this.pending.delete(id);
+    pending.release();
+    this.kill();
+    pending.reject(err);
   }
 
   private start(): void {
     if (this.proc) return;
 
-    const [command, ...args] = this.resolveCommand();
+    const launch = this.resolveCommand();
 
     let proc: ChildProcess;
     try {
-      proc = spawn(command, args, {
+      proc = spawn(launch.command, launch.args, {
         stdio: ['pipe', 'pipe', 'pipe'],
-        cwd: this.options.cwd,
-        // Empty by default. A plugin that needs a variable is given it
-        // explicitly; nothing arrives just because heddle happened to have it.
-        env: this.options.env ?? {},
+        cwd: launch.cwd,
+        env: launch.env,
       });
     } catch (err) {
       throw new PluginError(`failed to start plugin "${this.name}"`, { cause: err });
@@ -189,14 +276,43 @@ export class PluginHost {
     proc.stdin?.on('error', () => {});
   }
 
-  /** argv, confined by the sandbox when one was supplied. */
-  private resolveCommand(): string[] {
-    const { command, session } = this.options;
-    if (!session) return command;
-
+  /**
+   * How to spawn the plugin, confined by the sandbox when one was supplied.
+   *
+   * The whole `SandboxCommand` is carried through, not just its argv. Backends
+   * do not agree on where the confined process's environment lives: bubblewrap
+   * re-emits it as `--setenv` pairs inside `args`, seatbelt returns it in `env`
+   * and nowhere else. Taking argv alone therefore looked correct on Linux and
+   * started every macOS `--safe` plugin with a literally empty environment — no
+   * PATH, no HOME — and stranded the scratch directory `cleanup` releases.
+   */
+  private resolveCommand(): {
+    command: string;
+    args: string[];
+    env: Record<string, string>;
+    cwd?: string;
+  } {
+    const { command, session, env, cwd } = this.options;
     const [executable, ...args] = command;
+
+    // Empty by default. A plugin that needs a variable is given it explicitly;
+    // nothing arrives just because heddle happened to have it.
+    if (!session) return { command: executable, args, env: env ?? {}, cwd };
+
+    // Program and arguments stay separate: a sandbox binds the *program* it is
+    // given into the confined filesystem and nothing else, so a joined command
+    // line would name a program that does not exist on the other side.
     const wrapped = session.wrap(executable, args);
-    return [wrapped.command, ...wrapped.args];
+    this.cleanupSandbox = wrapped.cleanup;
+
+    // The backend's env is the floor the confined process needs to start at
+    // all; what the caller named is a decision, so it wins over the floor.
+    return {
+      command: wrapped.command,
+      args: wrapped.args,
+      env: { ...wrapped.env, ...env },
+      cwd: wrapped.cwd ?? cwd,
+    };
   }
 
   private write(message: RpcMessage): void {
@@ -232,29 +348,87 @@ export class PluginHost {
     const respond = (response: Omit<RpcResponse, 'id'>): void =>
       this.write({ id: request.id, ...response });
 
-    if (request.method !== 'runTool') {
-      respond({ error: { name: 'PluginError', message: `unknown method "${request.method}"` } });
-      return;
-    }
-    if (!this.toolRunner) {
-      respond({ error: { name: 'PluginError', message: 'this plugin has no tool access' } });
+    if (!isPluginMethod(request.method)) {
+      respond({
+        error: {
+          name: 'PluginError',
+          message:
+            `heddle does not serve "${request.method}". ` +
+            `It serves: ${PLUGIN_METHODS.join(', ')}.`,
+        },
+      });
       return;
     }
 
-    const { name, input } = (request.params ?? {}) as {
-      name?: unknown;
-      input?: unknown;
-    };
-    if (typeof name !== 'string') {
-      respond({ error: { name: 'PluginError', message: 'runTool requires a "name"' } });
+    // Checked before the call is dispatched, not inside the handler, so a
+    // capability cannot be added later with its gate accidentally left out —
+    // and so an ungranted call has no effect at all, rather than one that got
+    // partway before something noticed.
+    if (!this.granted.has(request.method)) {
+      respond({
+        error: {
+          name: 'PluginError',
+          message:
+            `"${request.method}" is not granted to this plugin. ` +
+            `Add it to "capabilities" in the manifest: a plugin gets only what it ` +
+            `declares, and whether the host allows it is settled when the plugin ` +
+            `loads rather than here.`,
+        },
+      });
+      return;
+    }
+
+    switch (request.method) {
+      case 'runTool':
+        await this.serveRunTool(request, respond);
+        return;
+    }
+
+    // Unreachable: the guard above accepts exactly the methods this switch
+    // handles, both derived from one list. Writing the fallthrough out anyway
+    // is what makes the switch exhaustive — `unserved` takes `never`, so a
+    // method added to `PluginMethod` without a case here fails to compile
+    // instead of leaving the plugin that called it waiting for a reply.
+    respond({ error: { name: 'PluginError', message: unserved(request.method) } });
+  }
+
+  private async serveRunTool(
+    request: RpcRequest,
+    respond: (response: Omit<RpcResponse, 'id'>) => void,
+  ): Promise<void> {
+    // A different condition from the grant above, and it has to keep saying so.
+    // Here the plugin asked for runTool and was allowed it; what is missing is
+    // the runner, which `createExecutor` and `createTransform` install from the
+    // compiled graph's dependencies. Reaching this means the plugin's process
+    // was called without either of those running first, so it is heddle's
+    // wiring at fault and not the manifest — a message about capabilities would
+    // send the author to change a file that is already correct.
+    if (!this.toolRunner) {
+      respond({
+        error: {
+          name: 'PluginError',
+          message:
+            'runTool is granted to this plugin, but no tool runner was installed on ' +
+            'it. A plugin reaches the flow tools through the executor built for its ' +
+            'component, and nothing built one here.',
+        },
+      });
+      return;
+    }
+
+    const params = (request.params ?? {}) as Partial<RunToolParams>;
+    if (typeof params.name !== 'string' || params.name.length === 0) {
+      respond({
+        error: {
+          name: 'PluginError',
+          message: 'runTool needs a "name": the tool to run, as the flow registered it',
+        },
+      });
       return;
     }
 
     try {
-      const result = await this.toolRunner(
-        name,
-        (input ?? {}) as Record<string, unknown>,
-      );
+      const result = await this.toolRunner(params.name, params.input ?? {});
       respond({ result });
     } catch (err) {
       respond({
@@ -275,7 +449,7 @@ export class PluginHost {
     if (!pending) return;
 
     this.pending.delete(id);
-    clearTimeout(pending.timer);
+    pending.release();
 
     if (response.error) {
       pending.reject(
@@ -303,7 +477,7 @@ export class PluginHost {
 
     for (const [id, pending] of this.pending) {
       this.pending.delete(id);
-      clearTimeout(pending.timer);
+      pending.release();
       pending.reject(err);
     }
   }
@@ -324,5 +498,11 @@ export class PluginHost {
     this.die(new PluginError(`plugin "${this.name}" was disposed`));
     this.kill();
     this.proc = undefined;
+    // The sandbox allocated a scratch directory per wrapped invocation. A
+    // plugin's process is wrapped once and lives for the run, so this is the
+    // only point at which the directory can go — without it a server under
+    // --safe grows a heddle-scratch-* directory per plugin per run, forever.
+    this.cleanupSandbox?.();
+    this.cleanupSandbox = undefined;
   }
 }

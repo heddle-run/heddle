@@ -35,6 +35,12 @@ export interface RequestPlugin {
 export interface PluginManifest {
   name: string;
   version: string;
+  /**
+   * Reverse calls the plugin intends to make back into the engine, such as
+   * `runTool`. Omitted means none, and a plugin gets only what it names here —
+   * a call it did not declare is refused whatever the engine is willing to do.
+   */
+  capabilities?: string[];
   components: Array<{
     componentType: string;
     kind?: "node" | "transform" | "component";

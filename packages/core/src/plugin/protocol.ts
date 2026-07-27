@@ -23,11 +23,67 @@
  * will look first.
  */
 
-/** Methods heddle calls on a plugin. */
-export type HostMethod = 'execute' | 'apply';
+/**
+ * Methods heddle calls on a plugin, each mapped to the params it carries.
+ *
+ * The map, rather than a bare union of names, is what {@link HostMethod} is
+ * derived from — so a verb cannot be added without declaring its shape, and
+ * `PluginHost.call` can check the params against the method at every call site.
+ * With two verbs an unchecked string was survivable; the roadmap has eight, and
+ * at that width a typo reaches the wire and comes back as the plugin's own
+ * "unknown method" from another process.
+ */
+export interface HostMethods {
+  /** Run one custom node. */
+  execute: ExecuteParams;
+  /** Run one message transform. */
+  apply: ApplyParams;
+}
 
-/** Methods a plugin calls on heddle. */
-export type PluginMethod = 'runTool';
+export type HostMethod = keyof HostMethods;
+
+/** Methods a plugin calls on heddle, each mapped to the params it carries. */
+export interface PluginMethods {
+  /** Run one of the flow's registered tools. */
+  runTool: RunToolParams;
+}
+
+export type PluginMethod = keyof PluginMethods;
+
+/**
+ * What a plugin may ask heddle to do, as a manifest names it.
+ *
+ * The same set as {@link PluginMethod}, by construction rather than by
+ * coincidence. A reverse call is the only thing a plugin can do to heddle that
+ * heddle would not otherwise have done, so every reverse call needs a gate and
+ * a gate over anything else would guard nothing. Deriving the alias is what
+ * stops the two lists drifting: a verb added to `PluginMethods` is grantable
+ * the day it exists, and cannot be added without being gated.
+ */
+export type PluginCapability = PluginMethod;
+
+/**
+ * The reverse calls heddle serves, as data.
+ *
+ * A `Record` keyed by the method type, so adding a `PluginMethod` without
+ * listing it here is a compile error rather than a call that silently comes
+ * back "unknown method". The list is also what that error names, since a plugin
+ * author who guessed wrong needs to be told what does exist.
+ */
+const SERVED: Record<PluginMethod, true> = { runTool: true };
+
+export const PLUGIN_METHODS = Object.keys(SERVED) as PluginMethod[];
+
+/** The closed set a manifest's `capabilities` is checked against. */
+export const PLUGIN_CAPABILITIES: PluginCapability[] = PLUGIN_METHODS;
+
+export function isPluginMethod(method: string): method is PluginMethod {
+  return Object.hasOwn(SERVED, method);
+}
+
+export function isPluginCapability(value: string): value is PluginCapability {
+  return isPluginMethod(value);
+}
 
 export interface RpcRequest {
   id: number | string;

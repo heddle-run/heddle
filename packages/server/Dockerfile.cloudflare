@@ -74,10 +74,21 @@ ENTRYPOINT ["node", "/app/dist/heddle-server.js"]
 # No --tools-dir: on this deployment every tool arrives with the request, so
 # there is nothing server-side to expose. No --safe, per the note above.
 #
-# Many runs per instance. Plugins execute in their own process and specs cannot
-# read this one's environment, so a run is not isolated by having a container to
-# itself — which is just as well, since a container per run meant a cold start
-# per run.
+# Continuing the header: one run per instance. The broker addresses an engine by
+# run id and destroys it when the run's response stream closes, so this process
+# serves exactly one caller and is then gone.
+#
+# Warm instances would be cheaper and are still refused, for the reason the
+# header gives — no bubblewrap, no --safe. A submitted tool script is an
+# ordinary process here; its own run directory is removed afterwards, anything
+# it wrote elsewhere is not, and on a reused instance that is left where the
+# next caller's code runs. Separately, the broker's startOptions are applied
+# only on a start, so a reused instance would serve the next run under the
+# previous run's proxy token and against its budget.
+#
+# --max-concurrent is therefore a ceiling this topology never approaches, not a
+# description of it. The broker advertises the real figure — 1 — in its
+# capabilities response; see packages/broker/src/index.ts.
 CMD ["--host", "0.0.0.0", \
      "--port", "4319", \
      "--allow-request-code", \

@@ -161,25 +161,29 @@ export class AgentExecutor implements NodeExecutor {
       });
 
       for (const tc of resp.tool_calls) {
-        let args: Record<string, unknown>;
-        try {
-          args = JSON.parse(tc.arguments);
-        } catch {
-          args = {};
-        }
+        // Parsed once, here, and used by everything downstream. This used to be
+        // parsed twice — leniently for the event, strictly for the call — so an
+        // observer saw `{}` for arguments the tool never ran with. Anything
+        // watching a tool call has to be looking at what the tool was given.
+        const parsed = parseToolArguments(tc);
 
         const startedAt = Date.now();
         this.deps.eventHandler?.({
           type: 'tool_call',
           nodeName: this.node.name,
           toolName: tc.name,
-          toolArgs: args,
+          toolArgs: parsed.args,
           toolCallId: tc.id,
           startedAt,
         });
 
         try {
-          const toolResult = await this.executeTool(signal, tc, executor);
+          // Thrown inside the try so an unusable arguments blob is reported the
+          // way any other tool failure is: a tool_result carrying the error,
+          // and a tool message telling the model what went wrong so it can
+          // correct itself on the next round.
+          if (parsed.error) throw parsed.error;
+          const toolResult = await this.executeTool(signal, tc, parsed.args, executor);
           const resultJSON = JSON.stringify(toolResult);
 
           this.deps.eventHandler?.({
@@ -225,15 +229,9 @@ export class AgentExecutor implements NodeExecutor {
   private async executeTool(
     signal: AbortSignal | undefined,
     tc: ToolCall,
+    args: Record<string, unknown>,
     scoped: Executor | undefined,
   ): Promise<Record<string, unknown>> {
-    let args: Record<string, unknown>;
-    try {
-      args = JSON.parse(tc.arguments);
-    } catch (err) {
-      throw new ToolError(`failed to parse arguments for "${tc.name}"`, { cause: err });
-    }
-
     const executor = scoped ?? this.deps.toolExecutor;
     if (!this.deps.toolRegistry || !executor) {
       throw new ToolError(`"${tc.name}": registry or executor not configured`);
@@ -248,6 +246,66 @@ export class AgentExecutor implements NodeExecutor {
 
     return result.output;
   }
+}
+
+/**
+ * The single reading of a tool call's arguments.
+ *
+ * Hands the failure back instead of throwing it, so the caller can announce the
+ * call before it fails: an observer that never sees a `tool_call` cannot make
+ * sense of the `tool_result` error that follows it.
+ *
+ * A blob that parses to something other than a JSON object is refused for the
+ * same reason a malformed one is. Otherwise a bare array or `null` reaches the
+ * executor typed as named arguments, and the tool fails somewhere further away
+ * from the model that wrote them.
+ *
+ * Nothing here throws, and that is a contract the caller relies on: it is
+ * called outside the try/catch that turns a tool failure into a `tool_result`,
+ * so anything raised out of it fails the whole agent node instead.
+ */
+function parseToolArguments(tc: ToolCall): {
+  args: Record<string, unknown>;
+  error?: ToolError;
+} {
+  // `ToolCall.arguments` is typed `string`, but it is assigned straight from an
+  // endpoint's JSON in llm/openai.ts, and a spec names its own `llm_config.url`.
+  // The type is therefore a hope about the remote server, not a fact: an
+  // OpenAI-compatible endpoint that omits `function.arguments` would otherwise
+  // reach `.slice` on `undefined` and throw out of the agent node entirely,
+  // taking the run with it. Coerced here so the failure stays what every other
+  // bad tool call is — a tool_result error the model can correct next round.
+  const raw = typeof tc.arguments === 'string' ? tc.arguments : '';
+
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch (err) {
+    // A blank blob is what the missing-field case looks like by the time it
+    // gets here, and "Got: " with nothing after it tells whoever is debugging a
+    // flaky endpoint nothing at all.
+    const got = raw.trim() === '' ? 'nothing at all' : raw.slice(0, 200);
+    return {
+      args: {},
+      error: new ToolError(
+        `"${tc.name}" was called with arguments that are not JSON. ` +
+          `Send a JSON object of named arguments. Got: ${got}`,
+        { cause: err },
+      ),
+    };
+  }
+
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    const got = value === null ? 'null' : Array.isArray(value) ? 'an array' : `a ${typeof value}`;
+    return {
+      args: {},
+      error: new ToolError(
+        `"${tc.name}" was called with ${got}. Send a JSON object of named arguments.`,
+      ),
+    };
+  }
+
+  return { args: value as Record<string, unknown> };
 }
 
 /** Substitute {{key}} placeholders in a template string. */

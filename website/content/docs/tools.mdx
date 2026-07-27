@@ -140,5 +140,5 @@ Each `AgentNode` execution opens its own sandbox session. Every tool call is sti
 Widen the policy with `--allow-read <path>` and `--allow-write <path>`.
 
 <Callout type="info">
-Sandboxing applies to tools, not to plugins: plugin modules are imported into the heddle process and run with full Node privileges. Only the tools they invoke via `ctx.runTool` are confined.
+Plugins loaded with `--plugin` are not sandboxed: the CLI imports the module into the heddle process, where it runs with full Node privileges. Only the tools it invokes via `ctx.runTool` are confined. Plugins submitted to the engine as a manifest plus source are different — each runs in its own process with an empty environment, and is confined by the same sandbox as tools when one is configured.
 </Callout>

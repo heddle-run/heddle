@@ -3,8 +3,9 @@
  *
  * The SDK validates `Flow.nodes` against a discriminated union of the builtin node
  * types (NodeUnion), and `Agent.transforms` against one of the builtin transforms
- * (MessageTransformUnion). Neither union can be extended through the public API —
- * `registerNodeUnionSchema` is not exported, and there is no base
+ * (MessageTransformUnion). Neither union is extended in practice. The vendored SDK
+ * now re-exports `registerNodeUnionSchema`, but nothing in heddle calls it, so
+ * `NodeUnion` is still closed at the point a flow is parsed; and there is no base
  * `MessageTransformSchema` in the TypeScript SDK at all. So while the SDK's plugin
  * system can deserialize a custom component on its own, a flow or agent containing
  * one is rejected before any plugin runs.
@@ -16,8 +17,11 @@
  * the stand-in preserves. heddle swaps the real components back in afterwards,
  * keyed by id, so a stand-in never reaches the runtime or a serialized file.
  *
- * If the SDK ever exports a way to extend those unions, this whole module
- * collapses into registering the plugin's schemas and deleting the swap.
+ * The node half of the escape hatch exists — see the patch series in
+ * vendor/agentspec/VENDOR.md. This module collapses into registering the plugin's
+ * schemas and deleting the swap once something actually registers a widened
+ * `NodeUnion`, and the transform half exists too. Until then it is load-bearing
+ * for every plugin node, exported seam or not.
  */
 import { isBuiltinComponentType } from 'agentspec';
 import type { PluginRegistry } from './registry.js';

@@ -1,7 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { parseFlow, parseComponent } from '../parser.js';
+import {
+  parseFlow,
+  parseComponent,
+  parseAgent,
+  parseComponentJson,
+  parseComponentYaml,
+} from '../parser.js';
+import { PluginRegistry } from '../../plugin/registry.js';
+import { definePlugin } from '../../plugin/types.js';
 import type { AgentNode, BranchingNode, Agent } from '../types.js';
 
 const testdataDir = join(import.meta.dirname, '../../../testdata');
@@ -79,5 +87,119 @@ describe('parseComponent', () => {
     const agent = comp as Agent;
     expect(agent.name).toBe('test-agent');
     expect(agent.componentType).toBe('Agent');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A standalone Agent is not a Flow, and used to be the path where a plugin
+// transform came back as the stand-in heddle swapped in for the SDK's benefit —
+// a MessageSummarizationTransform pointing at an Ollama config nobody
+// configured. `heddle validate <agent> --plugin` printed that, and any path
+// that ran a standalone Agent would have run none of its real transforms.
+// ---------------------------------------------------------------------------
+
+const REDACTOR = definePlugin({
+  name: 'test-redactor',
+  version: '1.0.0',
+  transforms: [
+    {
+      componentType: 'Redactor',
+      createTransform: () => ({ apply: () => ({ action: 'pass' as const }) }),
+    },
+  ],
+});
+
+function redactorRegistry(): PluginRegistry {
+  return PluginRegistry.fromPlugins([REDACTOR]);
+}
+
+const AGENT_DOC = {
+  component_type: 'Agent',
+  id: 'a1',
+  name: 'guarded-agent',
+  system_prompt: 'be careful',
+  llm_config: {
+    component_type: 'OpenAiConfig',
+    id: 'l1',
+    name: 'gpt',
+    model_id: 'gpt-4o',
+  },
+  transforms: [
+    {
+      component_type: 'Redactor',
+      id: 't1',
+      name: 'scrubber',
+      config: { patterns: ['secret'] },
+    },
+  ],
+};
+
+const AGENT_JSON = JSON.stringify(AGENT_DOC);
+
+/** The one thing every entry point below has to get right. */
+function expectRealTransform(agent: Agent): void {
+  expect(agent.transforms).toMatchObject([
+    { componentType: 'Redactor', name: 'scrubber' },
+  ]);
+}
+
+describe('a standalone Agent carrying a plugin transform', () => {
+  it('comes back from parseAgent with the real transform', () => {
+    expectRealTransform(parseAgent(AGENT_JSON, redactorRegistry()));
+  });
+
+  it('comes back from parseComponent with the real transform', () => {
+    const agent = parseComponent(AGENT_JSON, redactorRegistry()) as Agent;
+    expectRealTransform(agent);
+  });
+
+  it('comes back from parseComponentJson with the real transform', () => {
+    const agent = parseComponentJson(
+      AGENT_JSON,
+      redactorRegistry(),
+    ) as unknown as Agent;
+    expectRealTransform(agent);
+  });
+
+  it('comes back from parseComponentYaml with the real transform', () => {
+    const yaml = [
+      'component_type: Agent',
+      'id: a1',
+      'name: guarded-agent',
+      'system_prompt: be careful',
+      'llm_config:',
+      '  component_type: OpenAiConfig',
+      '  id: l1',
+      '  name: gpt',
+      '  model_id: gpt-4o',
+      'transforms:',
+      '  - component_type: Redactor',
+      '    id: t1',
+      '    name: scrubber',
+    ].join('\n');
+
+    const agent = parseComponentYaml(yaml, redactorRegistry()) as unknown as Agent;
+    expectRealTransform(agent);
+  });
+
+  it('keeps the transform own fields, not the stand-in llm', () => {
+    const agent = parseAgent(AGENT_JSON, redactorRegistry());
+    const transform = agent.transforms![0] as unknown as {
+      config?: { patterns?: string[] };
+      llm?: unknown;
+    };
+
+    expect(transform.config?.patterns).toEqual(['secret']);
+    // The stand-in carried a synthesized OllamaConfig. Nothing downstream
+    // should be able to see it, let alone dial it.
+    expect(transform.llm).toBeUndefined();
+  });
+
+  it('leaves an agent with no plugin transforms alone', () => {
+    const plain = JSON.stringify({ ...AGENT_DOC, transforms: [] });
+    const agent = parseAgent(plain, redactorRegistry());
+
+    expect(agent.name).toBe('guarded-agent');
+    expect(agent.transforms).toEqual([]);
   });
 });

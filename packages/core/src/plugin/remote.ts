@@ -72,11 +72,20 @@ export function remoteNodeDef(
 
       return {
         async execute(input, ctx): Promise<PluginResult> {
-          const raw = await host().call('execute', {
-            componentType: entry.componentType,
-            node: wire,
-            input,
-          });
+          // The run's signal goes with the call. An in-process plugin is free
+          // to ignore `ctx.signal` and the run still ends when its own stack
+          // unwinds; a remote one is a process heddle is blocked on, so an
+          // abort that does not reach the host holds the run's concurrency
+          // slot until the plugin's per-call timer fires instead.
+          const raw = await host().call(
+            'execute',
+            {
+              componentType: entry.componentType,
+              node: wire,
+              input,
+            },
+            ctx.signal,
+          );
           return asResult(manifest.name, entry.componentType, node.name, raw);
         },
       };
@@ -107,17 +116,31 @@ export function remoteTransformDef(
 
     phase: () => entry.phase ?? 'pre',
 
-    createTransform(component: PluginComponent): PluginTransformExecutor {
+    createTransform(component: PluginComponent, deps): PluginTransformExecutor {
       const wire = serializable(component, `${entry.componentType} "${component.name}"`);
+      // Same wiring as a node's, and for the same reason: what a plugin may do
+      // has to follow from the plugin, not from where in the spec it was
+      // written. A guardrail that consults a classifier tool is the ordinary
+      // case, and without this it reached a host with no runner and was told it
+      // had no tool access.
+      host().setToolRunner(
+        toolRunner(manifest.name, entry.componentType, component.name, deps),
+      );
 
       return {
         async apply(messages: Message[], ctx): Promise<TransformResult> {
-          const raw = await host().call('apply', {
-            componentType: entry.componentType,
-            component: wire,
-            phase: ctx.phase,
-            messages,
-          });
+          // Carried for the same reason a node's is: a transform runs inside an
+          // agent turn, which is the longest a run can be blocked on one call.
+          const raw = await host().call(
+            'apply',
+            {
+              componentType: entry.componentType,
+              component: wire,
+              phase: ctx.phase,
+              messages,
+            },
+            ctx.signal,
+          );
           return asTransformResult(manifest.name, entry.componentType, raw);
         },
       };
@@ -217,15 +240,19 @@ function typeOf(value: unknown): string {
  * per-node scope. A remote plugin's calls arrive on its own channel and are not
  * tied to the execute() that is on the stack, so there is no node scope to
  * borrow — the executor's own confinement still applies to each tool.
+ *
+ * One host serves every component of one plugin, and the host keeps the first
+ * runner it is given. The runners differ only in the component they name in an
+ * error, so which one wins does not change what a plugin may do.
  */
 function toolRunner(
   plugin: string,
   componentType: string,
-  nodeName: string,
+  componentName: string,
   deps: Dependencies,
 ): ToolRunner {
   return async (name, input) => {
-    const where = `plugin "${plugin}": ${componentType} "${nodeName}"`;
+    const where = `plugin "${plugin}": ${componentType} "${componentName}"`;
     const { toolRegistry, toolExecutor } = deps;
 
     if (!toolRegistry || !toolExecutor) {

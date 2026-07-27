@@ -33,7 +33,10 @@
  * ```
  *
  * `execute` and `apply` receive a `ctx` with `runTool(name, input)` and the
- * component's own spec fields.
+ * component's own spec fields. `runTool` is always there to call and is refused
+ * unless the manifest lists it under `capabilities` — the function exists so
+ * that a plugin which forgot to declare it gets an error saying exactly that,
+ * rather than an undefined it has to work out for itself.
  *
  * **stdout is the protocol.** A plugin that prints to stdout would corrupt the
  * channel, so `console.log` is redirected to stderr below. That is the single

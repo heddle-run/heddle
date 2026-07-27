@@ -91,6 +91,31 @@ export { loadRemotePlugin, readManifest } from './plugin/remote-loader.js';
 export type { RemotePlugin, RemotePluginOptions } from './plugin/remote-loader.js';
 export { PluginHost } from './plugin/host.js';
 export type { PluginHostOptions, ToolRunner } from './plugin/host.js';
+// The wire protocol itself, for anyone writing the plugin end of it in
+// TypeScript: these are the shapes a plugin has to read and produce, and they
+// are worth having checked rather than transcribed from the docs.
+export {
+  encode,
+  isPluginCapability,
+  isPluginMethod,
+  isRequest,
+  LineDecoder,
+  PLUGIN_CAPABILITIES,
+  PLUGIN_METHODS,
+} from './plugin/protocol.js';
+export type {
+  ApplyParams,
+  ExecuteParams,
+  HostMethod,
+  HostMethods,
+  PluginCapability,
+  PluginMethod,
+  PluginMethods,
+  RpcMessage,
+  RpcRequest,
+  RpcResponse,
+  RunToolParams,
+} from './plugin/protocol.js';
 export { PLUGIN_RUNTIME_JS, withRuntime } from './plugin/runtime-source.js';
 export { validateManifest } from './plugin/manifest.js';
 export type {

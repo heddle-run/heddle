@@ -42,11 +42,13 @@ heddle-server --tools-dir ./tools
 | `--flows-root <dir>` | none | Root that `flowPath` requests are confined to. |
 | `--max-iterations <n>` | `50` | Maximum node executions per run. |
 | `--timeout <ms>` | `300000` | Wall-clock budget for a single run. |
+| `--plugin-timeout <ms>` | `30000` | Budget for a single call into a plugin process, not for the run. Clamped to `--timeout`. |
 | `--max-concurrent <n>` | `4` | Runs at once. Beyond this, requests get a 429. |
 | `--drain-timeout <ms>` | `30000` | On SIGTERM, how long in-flight runs get to finish. |
 | `--cors-origin <origin>` | none | Browser origin allowed to call this server. Repeatable. |
 | `--allow-request-code` | off | Accept tool scripts and plugin modules in the request. |
 | `--work-dir <dir>` | `$TMPDIR` | Where per-run directories are created. |
+| `--llm-default-url <url>` | none | Endpoint the default model credential (`HEDDLE_LLM_DEFAULT_KEY`) belongs to. |
 | `--safe` | off | Run tool subprocesses inside an OS sandbox. |
 | `--sandbox <backend>` | `auto` | `auto`, `bubblewrap` or `seatbelt`. Requires `--safe`. |
 | `--allow-read <path>` | none | Read access for sandboxed tools. Repeatable. |
@@ -76,6 +78,21 @@ Both kinds run outside this process:
 A plugin written against the in-process API — a module default-exporting a
 plugin object — is refused here, because loading one would run the caller's
 code inside the server.
+
+`--plugin-timeout` bounds a single call into a plugin process, not the run. A
+run is entitled to make many, so "did this one call stop responding" is not a
+question the run's budget can answer — and while a call is outstanding it is
+holding a concurrency slot. A plugin that overruns is killed, because a process
+that may still be mid-reply cannot be trusted to keep the channel unambiguous.
+Raise it for a plugin that legitimately blocks; it cannot exceed `--timeout`.
+
+A plugin granted `runTool` reaches every tool in the run's registry, which
+includes `--tools-dir` — not only the tools the same caller submitted. It can
+name any of them, with input of its own choosing, without the flow mentioning
+it. That is no wider than what a caller already has (a submitted flow can name
+the same tool from a `ToolNode`), but it is worth stating plainly: with
+`--allow-request-code` on, `--tools-dir` *is* the set of tools you are offering
+your callers.
 
 While this is on, a submitted spec also cannot dereference the environment:
 `api_key: $VAR` is refused, since the reference is not restricted to model

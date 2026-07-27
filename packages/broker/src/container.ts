@@ -9,11 +9,19 @@ export const RUN_TOKEN_HEADER = "x-heddle-run-token";
  *
  * Instances are addressed by run id, so each run gets a container that has
  * never executed anyone else's code and is reaped shortly after. That costs a
- * cold start per run, and buys the only isolation property that actually
- * holds: heddle imports submitted plugins into its own process, and node's ESM
- * registry has no unload, so a reused instance keeps the previous caller's
- * module resident for the next caller. Warm instances would be faster and
- * would quietly undo the reason this design exists.
+ * cold start per run.
+ *
+ * It used to buy the isolation the engine could not provide itself: submitted
+ * plugins were `import()`ed into the server process, and node's ESM registry
+ * has no unload, so a reused instance kept the previous caller's module
+ * resident for the next. That is no longer true — plugins run in their own
+ * process with an empty environment and are killed when the run ends. The
+ * reason instances are still not reused is narrower, and it is the tools:
+ * there is no bubblewrap on this platform and the engine runs without
+ * `--safe`, so a submitted tool script is an ordinary process with the service
+ * account's view of the filesystem. Its own run directory is removed
+ * afterwards; anything it wrote elsewhere is not, and on a warm instance that
+ * is left where the next caller's code runs.
  *
  * Two things make the container more than a process boundary:
  *
@@ -27,7 +35,10 @@ export const RUN_TOKEN_HEADER = "x-heddle-run-token";
  * signed token, minted for this run and expiring in minutes, which the broker's
  * proxy exchanges for the real one. Extracting it from the environment is easy
  * and worth nothing — it only works against a proxy that counts its use, from
- * inside a container that can only reach that proxy.
+ * inside a container that can only reach that proxy. Note that this is a second
+ * thing warm instances would break rather than merely slow: `startOptions` are
+ * applied only on a start, so a reused instance would serve the next run under
+ * the previous run's token and against its budget.
  */
 export class HeddleEngine extends Container<Env> {
   defaultPort = 4319;

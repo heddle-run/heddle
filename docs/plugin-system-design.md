@@ -3,6 +3,12 @@
 All paths are relative to the repository root. Line numbers are against the tree at the time of
 writing; every claim below was read out of the file it cites.
 
+> **Status.** This document was written against the tree *before* Phase 0, and lands in the same
+> commit as the work it describes. Phases 0, 1 and V tier 1 are done; §9 marks what remains inside
+> each. The surveys in §3 and the "today" snippets in §7 have been brought forward to match, so a
+> passage in the present tense describes the tree as it now is. Everything from Phase 2 onward is
+> still a proposal.
+
 ---
 
 ## 1. Goal
@@ -70,10 +76,10 @@ codebase's own voice, and it is correct.
 
 ### 2.2 The exact interfaces, from the vendored source
 
-The vendored SDK is *currently* a verbatim copy of upstream at commit `f8b5b034…`
-(`vendor/agentspec/VENDOR.md:3,10,54`), so what follows is upstream's contract, not a local variant.
-That is a starting condition, not a constraint — §8.1 proposes patching it, and every limit described
-in §2.4 is a limit of *this commit* rather than of the format.
+The vendored SDK is upstream at commit `f8b5b034…` plus the additive patch series recorded under
+*Local modifications* in `vendor/agentspec/VENDOR.md`; every interface quoted below is upstream's,
+unmodified. That is a starting condition, not a constraint — §8.1 proposes patching it, and every
+limit described in §2.4 is a limit of *this commit* rather than of the format.
 
 ```ts
 // vendor/agentspec/src/serialization/deserialization-plugin.ts:10-22
@@ -267,9 +273,11 @@ a non-JavaScript plugin — the other being an executable entry point with a she
 (`defaultCommand`, `remote-loader.ts:56-74`), which is the form the loader prefers under `--safe`
 (`remote-loader.ts:41-55`). `manifest.command` is needed only when the entry point cannot be made a
 self-contained executable — the `python3 plugin.py` case named at `sandbox/types.ts:64-67`. Both
-routes are the justification for JSON Lines (`protocol.ts:5-7`), and neither is tested: the only
-tests of `loadRemotePlugin` write a non-executable `.mjs` (`plugin/__tests__/remote.test.ts:74-80`),
-covering only the `[process.execPath, entry]` branch.
+routes are the justification for JSON Lines (`protocol.ts:5-7`). Both are now covered — a shell
+plugin invoked by path and the same one started through `manifest.command`, in
+`plugin/__tests__/remote.test.ts`'s "a plugin that is not a JavaScript module" — where before, the
+only tests of `loadRemotePlugin` wrote a non-executable `.mjs` and exercised the
+`[process.execPath, entry]` branch alone.
 
 ### 3.4 The placeholder-substitution workaround
 
@@ -293,14 +301,15 @@ neither swapped nor reported.
 The walk is also where an unrecognised `component_type` is caught (`:130-137`), which is why every
 document takes this path whether or not plugins are configured (`spec/parser.ts:24-31`).
 
-One real defect falls out of this. `parseAgent`, the `Agent` branch of `parseComponent`, and both
-`parseComponent*` functions discard `substitution.pluginTransforms`
-(`spec/parser.ts:104-105,116,124`), so they return the synthetic
-`MessageSummarizationTransform` pointing at the fake Ollama config. `loadComponent`
-(`spec/load.ts:32-40`) goes through that path, and it is what `heddle validate <spec>` uses
-(`packages/cli/src/cli/validate.ts:29`). The plugin's own `validate()` still ran, so it is not a
-soundness hole — but the object is wrong, and any future standalone-Agent execution path would
-silently run zero transforms.
+One real defect fell out of this, and Phase 0 fixed it. `parseAgent`, the `Agent` branch of
+`parseComponent`, and both `parseComponent*` functions discarded `substitution.pluginTransforms`,
+so they returned the synthetic `MessageSummarizationTransform` pointing at the fake Ollama config.
+`loadComponent` (`spec/load.ts:32-40`) goes through that path, and it is what
+`heddle validate <spec>` uses (`packages/cli/src/cli/validate.ts:29`). The plugin's own `validate()`
+still ran, so it was never a soundness hole — but the object was wrong, and any future
+standalone-Agent execution path would have silently run zero transforms. The restore now happens in
+`spec/parser.ts`'s `toComponent`/`restoreAgentTransforms`, covered by
+`spec/__tests__/parser.test.ts`.
 
 ### 3.5 The security model
 
@@ -310,18 +319,20 @@ The whole model is the process boundary, argued at `packages/core/src/plugin/hos
 |---|---|---|
 | Chosen, not inherited, environment | `plugin/host.ts:153` (`env: this.options.env ?? {}`) | The server passes literally `env: {}` — `packages/server/src/plugins.ts:40`, with the reasoning at `:33-39` |
 | Lazy start | `remote-loader.ts:108-111`, `host.ts:117` | Parsing and validating a flow executes zero lines of the author's code |
-| Optional sandbox | `host.ts:52,193-200`; wired at `server/plugins.ts:41` | Untested |
+| Optional sandbox | `host.ts`'s `resolveCommand`; wired at `server/plugins.ts` | Covered by "spawning a plugin under a sandbox" in `plugin/__tests__/remote.test.ts`, against a stub `SandboxSession` — the whole `SandboxCommand` crosses, not just its argv |
 | Per-run registry | `server/runs.ts:157`, disposed in `finally` at `:175` | Plus `rmSync` of the run's mkdtemp dir (`server/request-code.ts:239-240`) |
 | SIGKILL teardown | `host.ts:311-313,321-327` | No graceful path |
 | Source is never imported | `server/request-code.ts:277-280` | Written `0500` with an absolute `#!node` shebang; the interpreter is absolute because the plugin's env has no `PATH` |
 | No `$VAR` deref in submitted specs | `server/runs.ts` → `provider.ts:32-53` | See §7.3 |
 | Bounded stderr | `host.ts:170-172` | A logging loop cannot grow the server's heap |
-| Only `runTool` is served | `host.ts:235-242` | Anything else is `unknown method`; no runner set is `this plugin has no tool access` |
+| Only `runTool` is served | `host.ts`, `serve()` | Two stages, kept separate on purpose: "heddle does not serve X. It serves: …", then "X is not granted to this plugin". A missing runner is a third message, about heddle's own wiring |
 
-Two stale comments contradict this and should be fixed before anyone reasons from them:
-`packages/server/src/validate.ts:21-27` still claims "loading a plugin executes it, both at import
-and again at compile", which is false on the only path the server takes; the broker's
-container-per-run rationale rests on the same stale premise.
+Two stale comments contradicted this and have been fixed: `packages/server/src/validate.ts` claimed
+"loading a plugin executes it, both at import and again at compile", which is false on the only
+path the server takes, and the broker's container-per-run rationale
+(`packages/broker/src/container.ts`) rested on the same stale premise. The broker's conclusion
+survived the correction but its reason changed — instances are still not reused, now because
+submitted *tool scripts* run unsandboxed on that platform.
 
 ### 3.6 Extension points, summarized
 
@@ -694,22 +705,30 @@ export interface RemotePluginOptions {
 }
 ```
 
-**Enforcement** replaces the hardcoded method check:
+**Enforcement** replaced the hardcoded `request.method !== 'runTool'` check. This draft proposed a
+single `granted.has()` in its place; the implementation kept two stages instead, and that is the
+better decision:
 
 ```ts
-// packages/core/src/plugin/host.ts:235-237 — today
-if (request.method !== 'runTool') {
-  respond({ error: { name: 'PluginError', message: `unknown method "${request.method}"` } });
+// packages/core/src/plugin/host.ts — serve(), as landed
+if (!isPluginMethod(request.method)) {
+  respond({ error: { name: 'PluginError',
+    message: `heddle does not serve "${request.method}". It serves: ${PLUGIN_METHODS.join(', ')}.` } });
   return;
 }
 
-// proposed
-if (!this.granted.has(request.method as PluginCapability)) {
+if (!this.granted.has(request.method)) {
   respond({ error: { name: 'PluginError',
-    message: `"${request.method}" is not granted to this plugin` } });
+    message: `"${request.method}" is not granted to this plugin. Add it to "capabilities" ...` } });
   return;
 }
 ```
+
+Collapsing the two would merge "this heddle is too old to do that" with "your operator did not
+allow that", and a plugin built against a newer heddle has no other way to tell them apart. The
+first stage also makes the `switch` below it exhaustive against `PluginMethod`, so a capability
+added without a handler fails to compile rather than leaving its caller waiting for a reply. Both
+messages are asserted in `plugin/__tests__/remote.test.ts`'s capabilities block.
 
 **Why this must precede the protocol widening.** `packages/core/src/llm/provider.ts:92-113` closed a
 specific hole, and its own comment states it precisely:
@@ -734,20 +753,22 @@ Now add `callModel` with no gate. The plugin never sees the key — the host hol
 a spec's `llm_config`, the plugin's calls are not visible anywhere in the document the caller
 submitted: `execute` is opaque by construction (`plugin/remote.ts:75-79`). That reopens the
 operator-credential exposure `applyDefaultCredential` closed, through a door the function cannot
-see. The same argument applies to `runTool` today, which is why the accidental gate at
-`plugin/host.ts:239-242` is load-bearing and must not be deleted when it is generalized.
+see. The same argument applied to `runTool`, which is why the gate in `serve()` was load-bearing and
+had to survive being generalized — it started life as an accidental side effect of only one method
+existing, and is now the deliberate two-stage check above.
 
 Server default, given that `--allow-request-code` already refuses `$VAR` dereference for submitted
 specs: `callModel` is **denied by default whenever a default credential is configured**, and the
 denial message says so, because a caller whose plugin silently ran unauthenticated would have no
 idea why — the same reasoning as `provider.ts:88-90`.
 
-**Fix the transform inconsistency in the same change.** `remoteTransformDef.createTransform`
-(`plugin/remote.ts:110`) takes one parameter and drops the `deps` the interface declares
-(`plugin/types.ts:125-128`), so a transform's `runTool` fails with "this plugin has no tool access"
-(`host.ts:240`) — *unless* the same plugin also provides a node that already ran, in which case
-`setToolRunner`'s first-writer-wins (`host.ts:106-108`) has already installed one and it works.
-Capability that depends on unrelated graph structure is not a capability model.
+**The transform inconsistency was fixed in the same change.** `remoteTransformDef.createTransform`
+took one parameter and dropped the `deps` the interface declares (`plugin/types.ts`), so a
+transform's `runTool` failed for want of a runner — *unless* the same plugin also provided a node
+that had already run, in which case `setToolRunner`'s first-writer-wins had installed one and it
+worked. Capability that depends on unrelated graph structure is not a capability model. It now
+installs its own runner, covered by "runs a tool on the transform behalf" in
+`plugin/__tests__/remote.test.ts`.
 
 ### 7.4 The `middleware` kind
 
@@ -888,7 +909,8 @@ the provider contract is versioned and a v2 break is accepted — defensible, bu
 
 **Lifecycle.** `init` gives the protocol something it entirely lacks — a version handshake. Today a
 plugin built against a future protocol and a host built against the current one discover their
-disagreement as `unknown method` (`host.ts:236`) or a bad result shape (`plugin/remote.ts:159-169`).
+disagreement as "heddle does not serve X" (`host.ts`, `serve()`) or a bad result shape
+(`plugin/remote.ts`, `asResult`).
 `shutdown` replaces the unconditional SIGKILL (`host.ts:311-313,321-327`) with a short grace period,
 which matters for plugins holding a connection pool or a file handle. It does not weaken the
 teardown guarantee: SIGKILL still follows, and `dispose` is still called in the `finally` at
@@ -896,16 +918,16 @@ teardown guarantee: SIGKILL still follows, and `dispose` is still called in the 
 
 Two protocol gaps that are not lifecycle but should ride along:
 
-- **Cancellation does not cross the boundary.** `PluginContext.signal` and `TransformContext.signal`
-  are declared (`plugin/types.ts:56,105`), populated (`plugin/executor.ts:52`), and dropped —
-  `plugin/remote.ts:74` ignores `ctx` except for `ctx.phase` at `:118`. An aborted run
-  (`packages/server/src/runs.ts:150-154`) leaves the plugin's `execute` running until the host
-  timeout. A `cancel` frame carrying the pending id is the fix.
-- **The server's per-call timeout is the whole-run budget.** `packages/server/src/plugins.ts:31`
-  passes `config.timeout`, which defaults to `DEFAULT_RUNNER_OPTIONS.timeout` = 300 000 ms
-  (`packages/core/src/runner/options.ts:18`) via `packages/server/src/config.ts:139`. The host's own
-  default is 30 s (`plugin/host.ts:35`). One plugin call can hold a concurrency slot for five
-  minutes with no independent bound — and every new `HostMethod` inherits that.
+- **Cancellation crosses the boundary, but only as a kill.** `PluginContext.signal` and
+  `TransformContext.signal` used to be declared, populated, and then dropped by the remote adapter,
+  so an aborted run left the plugin's `execute` running until the host timeout. Phase 0 threads the
+  signal into `PluginHost.call`, which abandons the pending call and SIGKILLs the process. That is
+  the floor, not the contract: a `cancel` frame carrying the pending id would let a plugin unwind
+  its own work — close a connection, flush a partial result — instead of dying mid-call.
+- **The server's per-call timeout was the whole-run budget.** `packages/server/src/plugins.ts` passed
+  `config.timeout`, so one plugin call could hold a concurrency slot for five minutes with no
+  independent bound, and every new `HostMethod` would have inherited that. Phase 0 gives it its own
+  `--plugin-timeout`, clamped to the run budget.
 
 ### 7.6 Provider plugins
 
@@ -1290,12 +1312,12 @@ and since the SDK is ours to patch, that point is now.
 
 ### 8.1 Paying it off: extend the vendored SDK
 
-An earlier draft treated this as an upstream contribution to wait on, because `VENDOR.md:54` records
-"Local modifications: None". That constraint is a choice, not a fact, and dropping it is the single
+An earlier draft treated this as an upstream contribution to wait on, because `VENDOR.md` recorded
+no local modifications at all. That constraint is a choice, not a fact, and dropping it is the single
 highest-leverage decision in this document.
 
 The blast radius is unusually small. The SDK **is not published to npm**, and consumers list it as a
-devDependency and bundle it into their own `dist/` via tsup's `noExternal` (`VENDOR.md:14-16,48-52`).
+devDependency and bundle it into their own `dist/` via tsup's `noExternal` (`VENDOR.md:18-20,51-55`).
 There is no downstream consumer to break — only heddle builds against this tree.
 
 The work, in two tiers:
@@ -1364,37 +1386,52 @@ Three things moved after the first draft:
 - **Streaming** moved from Phase 5 into Phase 2, where the frame that carries it already lives (§7.5).
 - **9** (encoder) is new, and sits after 3 because its motivating consumer wants a real token stream.
 
-### Phase 0 — Debts that any widening makes worse
+### Phase 0 — Debts that any widening makes worse — **landed**
 
-No protocol change. Do these first because each one is a bug that a wider surface multiplies.
+No protocol change. Done first because each one is a bug that a wider surface multiplies.
 
 | Item | Where | Why now |
 |---|---|---|
-| Type `PluginHost.call(method: HostMethod, …)` | `plugin/host.ts:111`; the types are unreferenced (`protocol.ts:27-71`) | With 8 verbs instead of 2, an unchecked string is a real defect class |
-| Give remote transforms their `deps` and a tool runner | `plugin/remote.ts:110` vs `plugin/types.ts:125-128` | §4 — capability must not depend on graph structure |
-| Restore plugin transforms on the Agent paths | `spec/parser.ts:104-105,116,124` | `heddle validate <agent> --plugin` returns placeholders today |
-| One authoritative tool-argument parse | `node/agent.ts:164-169` vs `:230-235` | A `toolCall` hook cannot receive two disagreeing parses |
-| Decide the server's per-call plugin timeout | `packages/server/src/plugins.ts:31` vs `plugin/host.ts:35` | Every new `HostMethod` inherits the 5-minute bound |
-| Fix stale security prose | `packages/server/src/validate.ts:21-27` and the broker's container rationale | These are the comments a reviewer will reason from |
-| Test what is untested | `kind: 'component'`, `manifest.command`, sandboxed spawn, plugin-node branching (`plugin/executor.ts:71-81`) | Both routes to a non-JS plugin — `manifest.command` and an executable entry (`remote-loader.ts:56-74`) — have zero coverage |
+| Type `PluginHost.call(method: HostMethod, …)` | `plugin/host.ts`; the types were unreferenced (`protocol.ts`) | With 8 verbs instead of 2, an unchecked string is a real defect class |
+| Give remote transforms their `deps` and a tool runner | `plugin/remote.ts` vs `plugin/types.ts` | §4 — capability must not depend on graph structure |
+| Restore plugin transforms on the Agent paths | `spec/parser.ts` | `heddle validate <agent> --plugin` returned placeholders |
+| One authoritative tool-argument parse | `node/agent.ts`, `parseToolArguments` | A `toolCall` hook cannot receive two disagreeing parses |
+| Decide the server's per-call plugin timeout | `packages/server/src/plugins.ts` vs `plugin/host.ts` | Every new `HostMethod` inherited the 5-minute bound |
+| Fix stale security prose | `packages/server/src/validate.ts` and the broker's container rationale | These are the comments a reviewer will reason from |
+| Test what was untested | `kind: 'component'`, `manifest.command`, sandboxed spawn, plugin-node branching | Both routes to a non-JS plugin — `manifest.command` and an executable entry — had zero coverage |
 
-**Unblocks:** everything. Cost: low, and it is all cleanup with existing test infrastructure.
+Two things were finished after the first pass at this phase, and are worth knowing about because
+they are the shape of the remaining risk in this area:
 
-### Phase 1 — Capabilities
+- The per-call timeout is **clamped to the run budget** in `server/plugins.ts`, not merely made
+  independent of it. A pending plugin call is not interruptible from the runner, so before the
+  clamp an operator who lowered `--timeout` to shed load had silently *raised* how long a hung
+  plugin could hold a concurrency slot.
+- The run's `AbortSignal` is threaded through `remoteNodeDef`/`remoteTransformDef` into
+  `PluginHost.call`, which kills the process on abort. Without it, a client that hangs up leaves its
+  slot occupied until the per-call timer fires. Phase 2's `cancel` frame is the graceful version of
+  this; the kill is the floor underneath it.
 
-Manifest field + grant/deny in `RemotePluginOptions` + enforcement replacing the hardcoded check at
-`plugin/host.ts:235-237`. **No new methods.** The only behaviour change is that `runTool` becomes
+**Unblocks:** everything.
+
+### Phase 1 — Capabilities — **landed**
+
+Manifest field + grant/deny in `RemotePluginOptions` + enforcement replacing the hardcoded method
+check in `plugin/host.ts`. **No new methods.** The only behaviour change is that `runTool` became
 explicitly declared instead of implicitly available.
+
+The enforcement is two stages rather than the single `granted.has()` this document originally
+proposed — see §7.3 for why the two messages have to stay distinct.
 
 **Depends on:** Phase 0 (the transform fix, or the gate is inconsistent from day one).
 **Unblocks:** every subsequent phase. Nothing that widens `PluginMethod` may ship before this — §7.3.
-Cost: low. This is the single most important item on the list.
 
 ### Phase 2 — Lifecycle, protocol versioning, and the streaming contract
 
 `init` / `shutdown`, `PROTOCOL_VERSION`, the `RpcPartial` frame type and the `isPartial` routing rule
-(adding a frame shape later is a flag day), plus a `cancel` frame — `PluginContext.signal` is
-declared and dropped today (`plugin/remote.ts:74`).
+(adding a frame shape later is a flag day), plus a `cancel` frame. Phase 0 already carries
+`PluginContext.signal` into `PluginHost.call`, so an abort ends the call — by killing the process.
+The frame is what lets a plugin unwind instead.
 
 **Streaming ships here, not in Phase 5.** The default is the additive form: an optional
 `chatCompletionStream?(signal, req): AsyncIterable<ChatChunk>` on `Provider` (`llm/types.ts:44-49`),
@@ -1462,21 +1499,30 @@ resolves in its favour.
 **Unblocks:** MCP tool discovery, HTTP tool catalogues, single-source-of-truth tool descriptions.
 Cost: low.
 
-### Phase V — Vendored SDK extension (formerly Phase 8)
+### Phase V — Vendored SDK extension (formerly Phase 8) — **tier 1 landed, tier 2 open**
 
-Blocked by nothing; start it immediately and run it alongside Phases 0–3.
+Blocked by nothing; run it alongside Phases 0–3.
 
-Tier 1 is two lines — re-export `registerNodeUnionSchema` / `registerFlowSchema` from
-`vendor/agentspec/src/index.ts` (§8.1). Tier 2 adds lazy indirection and registration for
-`MessageTransformUnion`, `LlmConfigUnion` and `ToolUnion`. Land the `VENDOR.md` bookkeeping in the
-same commit: replace "Local modifications: None" with a numbered patch series, or the next vendor
-refresh silently reverts all of it.
+**Tier 1 — done.** `vendor/agentspec/src/index.ts` re-exports `registerNodeUnionSchema` and
+`registerFlowSchema` from `src/flows/lazy-schemas.js` (§8.1), and the `VENDOR.md` bookkeeping landed
+with it — *Local modifications* is now a numbered patch series, without which the next vendor
+refresh reverts the export silently. A regression test pins the export:
+`packages/core/src/plugin/__tests__/vendor-schema-registration.test.ts`.
+
+**What tier 1 does not yet buy.** The seam is exported and nothing calls it. `NodeUnion` is still
+closed in practice, so `plugin/flow-preprocess.ts` and its restore path in `spec/adapter.ts` remain
+load-bearing for **every** plugin node: a flow carrying one is still handed to the SDK as an
+`InputMessageNode` stand-in and swapped back by id. Read §8.1's Tier 1 "Buys" column as what becomes
+possible, not as work already delivered — the placeholder machinery goes away when a caller
+registers a widened `NodeUnion`, which is a separate change.
+
+**Tier 2 — open.** Lazy indirection and registration for `MessageTransformUnion`, `LlmConfigUnion`
+and `ToolUnion`; `src/flows/lazy-schemas.ts` still exports only the two node/flow functions.
 
 **Unblocks:** deleting `plugin/flow-preprocess.ts` entirely; every future component kind's placeholder
 cost; and the cost model of Phase 5.
-Cost: low for tier 1, medium for tier 2. This was scheduled last on the assumption that it required
-upstream cooperation — it does not, and it is now the best cost/benefit item on the list after
-Phase 1.
+Cost: medium for tier 2. This was scheduled last on the assumption that it required upstream
+cooperation — it does not.
 
 ### Phase 9 — Encoder kind
 

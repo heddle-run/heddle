@@ -120,26 +120,26 @@ export function toSpecFlow(
   };
 }
 
+/** Anything carrying a `transforms` list: an Agent, standalone or inside a node. */
+interface Transformable {
+  transforms?: Array<{ id?: string }>;
+}
+
 /**
- * Swaps stand-in transforms on an AgentNode's agent back for the real plugin
- * components. Returns undefined when there is nothing to restore, so the common
- * path allocates nothing.
+ * Swaps an agent's stand-in transforms back for the real plugin components.
+ * Returns undefined when there is nothing to restore, so the common path
+ * allocates nothing.
  *
  * The SDK freezes the components it builds, so the agent is rebuilt rather than
- * mutated.
+ * mutated. Rebuilding costs nothing structural: SDK components are zod-parsed
+ * plain objects with no prototype of their own.
  */
-function restoreTransforms(
-  node: SdkNode,
-  options: AdapterOptions,
-): SdkNode | undefined {
-  const byId = options.pluginTransforms;
-  if (!byId || byId.size === 0 || node.componentType !== 'AgentNode') {
-    return undefined;
-  }
+function withRealTransforms(
+  agent: Transformable | undefined,
+  byId: Map<string, PluginComponent> | undefined,
+): Record<string, unknown> | undefined {
+  if (!byId || byId.size === 0) return undefined;
 
-  const agent = node.agent as
-    | { transforms?: Array<{ id?: string }> }
-    | undefined;
   const transforms = agent?.transforms;
   if (!Array.isArray(transforms) || transforms.length === 0) {
     return undefined;
@@ -149,14 +149,38 @@ function restoreTransforms(
   }
 
   return {
-    ...node,
-    agent: {
-      ...agent,
-      transforms: transforms.map((t) =>
-        t?.id && byId.has(t.id) ? byId.get(t.id)! : t,
-      ),
-    },
+    ...agent,
+    transforms: transforms.map((t) =>
+      t?.id && byId.has(t.id) ? byId.get(t.id)! : t,
+    ),
   };
+}
+
+/**
+ * Restores the transforms on a component that *is* an Agent, for the paths that
+ * hand one back directly rather than through a flow — `parseAgent`,
+ * `parseComponent*`, and therefore `loadComponent` and `heddle validate`.
+ *
+ * Those paths used to return the stand-in: a `MessageSummarizationTransform`
+ * pointing at a fake Ollama config that no one configured and nothing can
+ * reach. The plugin's own `validate()` had already run, so nothing unsound got
+ * through — but the returned agent named transforms it did not have, and any
+ * path that executed a standalone Agent would have run none of the real ones.
+ *
+ * Only a top-level Agent is rebuilt. A Flow gets its transforms restored during
+ * {@link toSpecFlow}, which is the object heddle actually runs; the SDK Flow
+ * itself is left alone because its edges hold node objects by identity, and
+ * replacing entries in `nodes` alone would leave the two disagreeing.
+ */
+export function restoreAgentTransforms<T>(
+  component: T,
+  pluginTransforms: Map<string, PluginComponent> | undefined,
+): T {
+  const agent = component as { componentType?: string } & Transformable;
+  if (agent?.componentType !== 'Agent') return component;
+
+  const restored = withRealTransforms(agent, pluginTransforms);
+  return (restored as T | undefined) ?? component;
 }
 
 /** Converts an SDK node to heddle's node representation. */
@@ -168,9 +192,14 @@ function toSpecNode(node: SdkNode, options: AdapterOptions): AnyNode {
     return real as unknown as AnyNode;
   }
 
-  const restored = restoreTransforms(node, options);
-  if (restored) {
-    return restored as unknown as AnyNode;
+  if (node.componentType === 'AgentNode') {
+    const agent = withRealTransforms(
+      node.agent as Transformable | undefined,
+      options.pluginTransforms,
+    );
+    if (agent) {
+      return { ...node, agent } as unknown as AnyNode;
+    }
   }
 
   if (!SUPPORTED_NODE_TYPES.has(node.componentType)) {

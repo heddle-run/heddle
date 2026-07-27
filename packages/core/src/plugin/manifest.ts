@@ -18,6 +18,11 @@
  *   which is already the whole risk.
  */
 import { PluginError } from '../errors.js';
+import {
+  isPluginCapability,
+  PLUGIN_CAPABILITIES,
+  type PluginCapability,
+} from './protocol.js';
 import type { PluginIO } from './types.js';
 
 /** A JSON Schema fragment. Not validated structurally — Ajv is not a dependency. */
@@ -60,6 +65,20 @@ export interface PluginManifest {
    * plugin's file type — a `.mjs` entry point runs under the host's node.
    */
   command?: string[];
+  /**
+   * The reverse calls this plugin intends to make, as a request.
+   *
+   * A manifest asks; the host decides — see `loadRemotePlugin`. Absent means
+   * the plugin asks for nothing, and a plugin that asks for nothing gets
+   * nothing: `runTool` is available because a manifest names it, not because
+   * heddle happens to serve it. That default is what makes the next capability
+   * safe to add, since a plugin written before it existed cannot acquire it by
+   * being run on a newer heddle.
+   *
+   * Always an array once validated, empty where the manifest said nothing, so
+   * callers never have to distinguish "asked for none" from "did not say".
+   */
+  capabilities: PluginCapability[];
   components: ManifestComponent[];
 }
 
@@ -101,6 +120,8 @@ export function validateManifest(raw: unknown): PluginManifest {
       fail(`plugin "${manifest.name}" has a "command" that is not a non-empty string array`);
     }
   }
+
+  const capabilities = asCapabilities(manifest.name, manifest.capabilities);
 
   const seen = new Set<string>();
   const components = manifest.components.map((entry): ManifestComponent => {
@@ -149,8 +170,34 @@ export function validateManifest(raw: unknown): PluginManifest {
     name: manifest.name,
     version: manifest.version,
     command: manifest.command as string[] | undefined,
+    capabilities,
     components,
   };
+}
+
+/**
+ * Check a manifest's `capabilities` against the closed set heddle serves.
+ *
+ * Same treatment as `kind`, and for the same reason: a name heddle does not
+ * recognize is caught here, where it can be reported next to the plugin that
+ * wrote it, rather than becoming a call refused mid-run that reads as a bug in
+ * the plugin's own logic. Misspelling a capability is the most likely way to
+ * get one, so the error lists what exists.
+ */
+function asCapabilities(plugin: string, value: unknown): PluginCapability[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) {
+    fail(`plugin "${plugin}": "capabilities" must be an array of strings`);
+  }
+  return value.map((entry) => {
+    if (typeof entry !== 'string' || !isPluginCapability(entry)) {
+      fail(
+        `plugin "${plugin}" requests capability ${JSON.stringify(entry)}, ` +
+          `which heddle does not serve. It serves: ${PLUGIN_CAPABILITIES.join(', ')}.`,
+      );
+    }
+    return entry;
+  });
 }
 
 function asIo(
