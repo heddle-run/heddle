@@ -1,0 +1,30 @@
+:root{
+/* One family, four weights. Light 300 is reserved; 400/500/600 do all the work. */
+--fw-light:300; /* @kind font */
+--fw-regular:400; /* @kind font */
+--fw-medium:500; /* @kind font */
+--fw-semibold:600; /* @kind font */
+
+--fs-2xs:10px; /* @kind font */ /* uppercase micro-badges: "SELECTED", "MOST POPULAR" */
+--fs-xs:12px; /* @kind font */ /* labels, meta, footer legal */
+--fs-sm:14px; /* @kind font */ /* UI default: nav, buttons, body-in-card */
+--fs-base:16px; /* @kind font */
+--fs-lg:18px; /* @kind font */ /* hero sub-copy, card titles */
+--fs-xl:20px; /* @kind font */ /* form card heading, step heading */
+--fs-2xl:24px; /* @kind font */ /* bento hero card title */
+--fs-3xl:30px; /* @kind font */ /* section headings */
+--fs-4xl:36px; /* @kind font */ /* price numerals */
+--fs-5xl:48px; /* @kind font */ /* hero, mobile */
+--fs-7xl:72px; /* @kind font */ /* hero, tablet */
+--fs-8xl:96px; /* @kind font */ /* hero, desktop */
+
+--lh-tight:1.1; /* @kind font */ /* hero */
+--lh-snug:1.3; /* @kind font */
+--lh-normal:1.5; /* @kind font */
+--lh-relaxed:1.625; /* @kind font */ /* long paragraphs */
+
+--tracking-tighter:-.05em; /* @kind font */ /* hero only */
+--tracking-tight:-.025em; /* @kind font */ /* all headings, nav wordmark */
+--tracking-normal:0; /* @kind font */
+--tracking-widest:.1em; /* @kind font */ /* uppercase eyebrows + micro badges */
+}

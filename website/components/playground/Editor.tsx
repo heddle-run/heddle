@@ -1,14 +1,12 @@
 "use client";
 
-import { cn } from "@/lib/cn";
-
 /**
  * A monospace editing surface.
  *
- * A plain textarea rather than a code editor component: the design system has
- * no colour to highlight with, and every syntax theme worth importing is built
- * from hues this site does not have. Monospace on paper, with the caret and
- * selection inverted, is the honest version.
+ * Still a plain textarea rather than a code editor component: the design system
+ * reserves monospace for exactly this, and its own code snippets are set as
+ * unhighlighted mono on an inset surface. Matching that is more consistent than
+ * importing a syntax theme built from hues this palette does not use.
  */
 export default function Editor({
   value,
@@ -17,7 +15,6 @@ export default function Editor({
   placeholder,
   rows = 18,
   spellCheck = false,
-  className,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -25,7 +22,6 @@ export default function Editor({
   placeholder?: string;
   rows?: number;
   spellCheck?: boolean;
-  className?: string;
 }) {
   return (
     <textarea
@@ -38,12 +34,19 @@ export default function Editor({
       autoCapitalize="off"
       autoCorrect="off"
       autoComplete="off"
-      className={cn(
-        "block w-full resize-y bg-paper px-5 py-4 font-mono text-xs leading-relaxed text-ink",
-        "placeholder:text-muted-ink focus:outline-none",
-        "focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ink",
-        className,
-      )}
+      style={{
+        display: "block",
+        width: "100%",
+        resize: "vertical",
+        padding: "var(--space-4) var(--space-5)",
+        border: 0,
+        outline: "none",
+        background: "var(--bg-inset)",
+        color: "var(--text-strong)",
+        fontFamily: "var(--font-mono)",
+        fontSize: "var(--fs-xs)",
+        lineHeight: "var(--lh-relaxed)",
+      }}
     />
   );
 }

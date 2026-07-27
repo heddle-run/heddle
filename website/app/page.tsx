@@ -4,14 +4,16 @@ import Manifesto from "@/components/Manifesto";
 import Steps from "@/components/Steps";
 import Stats from "@/components/Stats";
 import Features from "@/components/Features";
-import Specimens from "@/components/Specimens";
+import SafeMode from "@/components/SafeMode";
 import Spread from "@/components/Spread";
 import Definition from "@/components/Definition";
 import FAQ from "@/components/FAQ";
 import CTA from "@/components/CTA";
 import Footer from "@/components/Footer";
-import Rule from "@/components/ui/Rule";
 
+/* Sections divide themselves now: each opens with a numbered eyebrow and its
+ * own hairline, and the boxed frames carry the accent ticks. The old explicit
+ * <Rule /> separators would double up on that, so they are gone. */
 export default function Home() {
   return (
     <>
@@ -23,20 +25,13 @@ export default function Home() {
 
       <main id="main">
         <Hero />
-        <Rule />
         <Manifesto />
-        <Rule />
         <Steps />
-        {/* The inverted band divides by mass; it needs no rule of its own. */}
         <Stats />
         <Features />
-        <Rule />
-        <Specimens />
-        <Rule />
+        <SafeMode />
         <Spread />
-        <Rule />
         <Definition />
-        <Rule />
         <FAQ />
         <CTA />
       </main>

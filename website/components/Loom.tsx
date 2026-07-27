@@ -1,10 +1,13 @@
-import { cn } from "@/lib/cn";
-
 /*
  * The loom figure: nine warp threads under tension, lifted in alternation by
  * four heddle frames, converging into a single woven output. It doubles as the
  * execution pipeline — parse, validate, compile, run — so the brand mark and
  * the architecture diagram are the same drawing.
+ *
+ * Redrawn on the FormFlow palette: the frame and inactive threads are hairlines
+ * in the neutral ramp; the single active thread and the finished cloth carry the
+ * accent. That is the system's rule — colour as an instrument, one thread at a
+ * time, never a fill.
  */
 
 const THREADS = 9;
@@ -33,17 +36,17 @@ function threadPath(index: number): string {
   return points.join(" ");
 }
 
-export default function Loom({ className }: { className?: string }) {
+export default function Loom() {
   const threads = Array.from({ length: THREADS }, (_, i) => i);
   const active = Math.floor(THREADS / 2);
 
   return (
-    <div className={cn("w-full", className)}>
+    <div style={{ width: "100%" }}>
       <svg
         viewBox="0 0 1200 340"
         role="img"
         aria-labelledby="loom-title loom-desc"
-        className="w-full"
+        style={{ width: "100%", height: "auto", color: "var(--text-muted)" }}
         fill="none"
       >
         <title id="loom-title">The heddle execution pipeline</title>
@@ -62,7 +65,7 @@ export default function Loom({ className }: { className?: string }) {
               y2={308}
               stroke="currentColor"
               strokeWidth={1}
-              opacity={0.35}
+              opacity={0.7}
             />
             <rect
               x={x - 4}
@@ -80,9 +83,9 @@ export default function Loom({ className }: { className?: string }) {
           <path
             key={i}
             d={threadPath(i)}
-            stroke="currentColor"
+            stroke={i === active ? "var(--brand-pink)" : "currentColor"}
             strokeWidth={i === active ? 2 : 1}
-            opacity={i === active ? 1 : 0.4}
+            opacity={i === active ? 1 : 0.6}
           />
         ))}
 
@@ -99,28 +102,71 @@ export default function Loom({ className }: { className?: string }) {
                 y={eyeY - 5}
                 width={10}
                 height={10}
-                fill="var(--color-paper)"
-                stroke="currentColor"
+                rx={2}
+                fill="var(--bg-page)"
+                stroke={i === active ? "var(--brand-pink)" : "currentColor"}
                 strokeWidth={i === active ? 2 : 1}
-                opacity={i === active ? 1 : 0.45}
+                opacity={i === active ? 1 : 0.5}
               />
             );
           }),
         )}
 
         {/* The cloth */}
-        <rect x={END_X} y={CENTER - 9} width={18} height={18} fill="currentColor" />
+        <rect
+          x={END_X}
+          y={CENTER - 9}
+          width={18}
+          height={18}
+          rx={3}
+          fill="var(--brand-pink)"
+        />
       </svg>
 
       {/* Stage legend — kept in markup so it stays legible at every width */}
-      <ol className="mt-8 grid grid-cols-2 border-t border-l border-ink sm:grid-cols-4">
+      <ol
+        className="hd-grid hd-grid-4"
+        style={{
+          listStyle: "none",
+          margin: "var(--space-8) 0 0",
+          padding: 0,
+          gap: "var(--space-3)",
+        }}
+      >
         {stages.map((stage, i) => (
           <li
             key={stage}
-            className="border-r border-b border-ink px-4 py-3 font-mono text-[0.625rem] uppercase tracking-[0.2em]"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "var(--space-3)",
+              padding: "var(--space-3) var(--space-4)",
+              border: "1px solid var(--border-default)",
+              borderRadius: "var(--radius-lg)",
+              background: "var(--surface-subtle)",
+            }}
           >
-            <span className="text-muted-ink">{`0${i + 1} `}</span>
-            {stage}
+            <span
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: "var(--fs-2xs)",
+                fontWeight: "var(--fw-semibold)",
+                color: "var(--brand-pink)",
+              }}
+            >
+              {`0${i + 1}`}
+            </span>
+            <span
+              style={{
+                fontSize: "var(--fs-xs)",
+                fontWeight: "var(--fw-medium)",
+                textTransform: "uppercase",
+                letterSpacing: "var(--tracking-widest)",
+                color: "var(--text-body)",
+              }}
+            >
+              {stage}
+            </span>
           </li>
         ))}
       </ol>

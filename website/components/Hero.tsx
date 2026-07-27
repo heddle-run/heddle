@@ -1,101 +1,162 @@
-import { ArrowRight } from "lucide-react";
-import Container from "./ui/Container";
-import Texture from "./ui/Texture";
-import Label from "./ui/Label";
-import Button from "./ui/Button";
+import { Badge, Button, BoxedFrame, Chip } from "@/ds";
+import Link from "next/link";
 import CopyCommand from "./CopyCommand";
 import Loom from "./Loom";
-import { AGENT_SPEC_URL, GITHUB_URL, installCommands } from "@/lib/constants";
+import {
+  AGENT_SPEC_URL,
+  GITHUB_URL,
+  VERSION,
+  installCommands,
+} from "@/lib/constants";
 
-const badges = ["Agent Spec compliant", "MIT licensed", "Runs locally"];
+const marks = [
+  { icon: "braces", label: "No SDK required" },
+  { icon: "shield", label: "Agent Spec compliant" },
+  { icon: "network", label: "CLI or HTTP server" },
+  { icon: "scroll-text", label: "MIT licensed" },
+];
+
+/* Per-word hero, in the design system's idiom: Medium weight at -0.05em, each
+ * word taking a hue on hover. Written out rather than using SectionHeading so
+ * the accent can land on the last word alone. */
+const HERO_WORDS = [
+  { text: "Weave", hue: "var(--hue-purple)" },
+  { text: "agents", hue: "var(--hue-blue)" },
+  { text: "from", hue: "var(--hue-emerald)" },
+  { text: "spec.", hue: "var(--brand-pink)" },
+];
 
 export default function Hero() {
   return (
-    <section className="relative overflow-hidden">
-      <Texture variant="warp" />
-      <Texture variant="noise" />
-
-      <Container className="relative pt-16 pb-20 md:pt-24 md:pb-28">
-        <div className="flex items-center gap-6">
-          <Label>Open Agent Specification</Label>
-          <span aria-hidden className="h-px flex-1 bg-hairline" />
-          <Label className="hidden sm:block">Est. 2026</Label>
+    <section style={{ position: "relative" }}>
+      <div
+        className="hd-container hd-container-narrow"
+        style={{ paddingTop: "var(--space-20)", paddingBottom: "var(--space-16)" }}
+      >
+        <div style={{ display: "flex", justifyContent: "center" }}>
+          <Badge pulse>v{VERSION} is live</Badge>
         </div>
 
-        <h1 className="mt-12">
-          <span className="flex items-end gap-6">
-            <span className="font-display text-[4.5rem] italic leading-[0.78] tracking-tighter sm:text-8xl lg:text-9xl">
-              Weave
+        <h1
+          className="ff-fade-in-up"
+          style={{
+            margin: "var(--space-8) 0 0",
+            display: "flex",
+            flexWrap: "wrap",
+            justifyContent: "center",
+            gap: "0 .28em",
+            fontSize: "clamp(48px,8vw,96px)",
+            fontWeight: "var(--fw-medium)",
+            letterSpacing: "var(--tracking-tighter)",
+            lineHeight: "var(--lh-tight)",
+            color: "var(--text-strong)",
+            textAlign: "center",
+          }}
+        >
+          {HERO_WORDS.map((w) => (
+            <span
+              key={w.text}
+              className="hd-hero-word"
+              style={{ ["--hd-hue" as string]: w.hue }}
+            >
+              {w.text}
             </span>
-            <span aria-hidden className="mb-5 h-px flex-1 bg-ink sm:mb-8" />
-          </span>
-          <span className="mt-3 block font-display text-4xl leading-[0.95] tracking-tight sm:text-5xl lg:text-6xl">
-            agents from spec.
-          </span>
+          ))}
         </h1>
 
-        {/* Rule and punctuation square */}
-        <div className="mt-12 flex items-center">
-          <span aria-hidden className="h-1 flex-1 bg-ink" />
-          <span aria-hidden className="ml-4 h-4 w-4 border-2 border-ink" />
+        <p
+          className="ff-fade-in-up ff-delay-100"
+          style={{
+            margin: "var(--space-6) auto 0",
+            maxWidth: "var(--container-prose)",
+            textAlign: "center",
+            fontSize: "var(--fs-lg)",
+            lineHeight: "var(--lh-relaxed)",
+            color: "var(--text-body)",
+          }}
+        >
+          heddle compiles a declarative{" "}
+          <a
+            href={AGENT_SPEC_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              color: "var(--brand-pink)",
+              textDecoration: "underline",
+              textUnderlineOffset: 3,
+            }}
+          >
+            Agent Spec
+          </a>{" "}
+          into an executable graph — tool-calling loop, branching and
+          any-language tools already in the box. There is no SDK to install and
+          nothing to subclass: the flow is a document, not code. Run it from the
+          CLI, or serve it over HTTP.
+        </p>
+
+        <div
+          className="ff-fade-in-up ff-delay-200"
+          style={{
+            marginTop: "var(--space-10)",
+            display: "flex",
+            flexWrap: "wrap",
+            justifyContent: "center",
+            gap: "var(--space-4)",
+          }}
+        >
+          <Link href="/docs">
+            <Button size="lg" iconAfter="arrow-right">
+              Read the docs
+            </Button>
+          </Link>
+          <a href={GITHUB_URL} target="_blank" rel="noopener noreferrer">
+            <Button size="lg" variant="outline" icon="github">
+              View source
+            </Button>
+          </a>
         </div>
 
-        <div className="mt-12 grid gap-14 md:grid-cols-12 md:gap-0">
-          <div className="min-w-0 md:col-span-7 md:pr-12">
-            <p className="max-w-[46ch] text-xl leading-relaxed text-muted-ink">
-              heddle compiles a declarative{" "}
-              <a
-                href={AGENT_SPEC_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-ink underline decoration-1 underline-offset-4"
-              >
-                Agent Spec
-              </a>{" "}
-              into an executable graph — with the tool-calling loop, branching
-              and any-language tools already in the box. No orchestration code.
-              No server. One command.
-            </p>
-
-            <div className="mt-10 flex flex-col gap-4 sm:flex-row">
-              <Button href="/docs">
-                Read the docs
-                <ArrowRight size={16} strokeWidth={1.5} />
-              </Button>
-              <Button href={GITHUB_URL} variant="secondary" external>
-                View source
-              </Button>
-            </div>
-          </div>
-
-          <div className="min-w-0 md:col-span-5 md:border-l md:border-ink md:pl-12">
-            <Label>Install</Label>
-            <div className="mt-5 flex flex-col gap-3">
-              {installCommands.map((c) => (
-                <CopyCommand key={c.label} label={c.label} command={c.cmd} />
-              ))}
-            </div>
-
-            <ul className="mt-8 flex flex-wrap gap-2">
-              {badges.map((badge) => (
-                <li
-                  key={badge}
-                  className="border border-hairline px-3 py-1.5 font-mono text-[0.625rem] uppercase tracking-[0.15em] text-muted-ink"
-                >
-                  {badge}
-                </li>
-              ))}
-            </ul>
-          </div>
+        {/* Install — the one place the page states a command outright */}
+        <div
+          className="ff-fade-in-up ff-delay-300"
+          style={{
+            margin: "var(--space-12) auto 0",
+            maxWidth: 560,
+            display: "flex",
+            flexDirection: "column",
+            gap: "var(--space-3)",
+          }}
+        >
+          {installCommands.map((c) => (
+            <CopyCommand key={c.label} label={c.label} command={c.cmd} />
+          ))}
         </div>
-      </Container>
 
-      {/* The loom band — pipeline and brand mark in one drawing */}
-      <div className="relative border-t border-ink">
-        <Texture variant="grid" />
-        <Container className="relative py-14 md:py-20">
+        <ul
+          style={{
+            listStyle: "none",
+            margin: "var(--space-8) 0 0",
+            padding: 0,
+            display: "flex",
+            flexWrap: "wrap",
+            justifyContent: "center",
+            gap: "var(--space-3)",
+          }}
+        >
+          {marks.map((m) => (
+            <li key={m.label}>
+              <Chip icon={m.icon}>{m.label}</Chip>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      {/* The loom band — pipeline and brand mark in one drawing. Framed by the
+          signature corner ticks, which is this system's way of saying "look here". */}
+      <div className="hd-container" style={{ paddingBottom: "var(--space-24)" }}>
+        <BoxedFrame beam pad="var(--space-8)">
           <Loom />
-        </Container>
+        </BoxedFrame>
       </div>
     </section>
   );

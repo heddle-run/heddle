@@ -1,6 +1,7 @@
 import Link from "next/link";
-import Container from "./ui/Container";
-import { AGENT_SPEC_URL, GITHUB_URL, NPM_URL } from "@/lib/constants";
+import { BoxedFrame } from "@/ds";
+import Wordmark from "./Wordmark";
+import { AGENT_SPEC_URL, GITHUB_URL, NPM_URL, VERSION } from "@/lib/constants";
 
 const columns = [
   {
@@ -17,87 +18,141 @@ const columns = [
     links: [
       { label: "GitHub", href: GITHUB_URL, external: true },
       { label: "npm", href: NPM_URL, external: true },
-      { label: "Examples", href: `${GITHUB_URL}/tree/main/examples`, external: true },
+      {
+        label: "Examples",
+        href: `${GITHUB_URL}/tree/main/examples`,
+        external: true,
+      },
     ],
   },
   {
     title: "Standard",
     links: [
       { label: "Open Agent Spec", href: AGENT_SPEC_URL, external: true },
-      { label: "MIT licence", href: `${GITHUB_URL}/blob/main/LICENSE`, external: true },
+      {
+        label: "MIT licence",
+        href: `${GITHUB_URL}/blob/main/LICENSE`,
+        external: true,
+      },
     ],
   },
 ];
 
-const linkClass =
-  "inline-block border-b border-transparent py-1 font-mono text-xs tracking-wide text-muted-ink transition-colors duration-100 hover:border-ink hover:text-ink focus-visible:outline focus-visible:outline-[3px] focus-visible:outline-offset-2 focus-visible:outline-ink";
+const linkStyle = {
+  fontSize: "var(--fs-sm)",
+  color: "var(--text-muted)",
+} as const;
 
 export default function Footer() {
   return (
-    <footer className="border-t-8 border-ink">
-      <Container className="py-16 md:py-20">
-        <div className="grid gap-12 md:grid-cols-12">
-          <div className="md:col-span-5">
-            <p className="font-display text-4xl leading-none tracking-tight">
-              heddle
-              <span className="font-mono text-sm tracking-normal text-muted-ink">
-                .run
-              </span>
-            </p>
-            <p className="mt-5 max-w-[34ch] text-base leading-relaxed text-muted-ink">
-              A CLI runtime for the Open Agent Specification. Open source, MIT
-              licensed, and entirely local.
-            </p>
-          </div>
-
-          {columns.map((column) => (
-            <nav
-              key={column.title}
-              aria-label={column.title}
-              className="md:col-span-2"
-            >
-              <p className="border-b border-hairline pb-3 font-mono text-[0.625rem] uppercase tracking-[0.2em]">
-                {column.title}
+    <footer
+      style={{
+        borderTop: "1px solid var(--border-hairline)",
+        background: "var(--bg-elevated)",
+        padding: "var(--space-16) 0 var(--space-8)",
+      }}
+    >
+      <div className="hd-container">
+        <BoxedFrame
+          corners="diagonal"
+          edges="none"
+          pad="var(--space-8)"
+          style={{ marginBottom: "var(--space-8)" }}
+        >
+          <div className="hd-footer-grid">
+            <div>
+              <Wordmark size="lg" />
+              <p
+                style={{
+                  margin: "var(--space-4) 0 0",
+                  maxWidth: "34ch",
+                  fontSize: "var(--fs-sm)",
+                  lineHeight: "var(--lh-relaxed)",
+                  color: "var(--text-muted)",
+                }}
+              >
+                A CLI runtime for the Open Agent Specification. Open source, MIT
+                licensed, and entirely local.
               </p>
-              <ul className="mt-4 space-y-1">
-                {column.links.map((link) => (
-                  <li key={link.label}>
-                    {"external" in link && link.external ? (
-                      <a
-                        href={link.href}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className={linkClass}
-                      >
-                        {link.label}
-                      </a>
-                    ) : (
-                      <Link href={link.href} className={linkClass}>
-                        {link.label}
-                      </Link>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </nav>
-          ))}
-        </div>
+              <p
+                className="hd-mono"
+                style={{
+                  margin: "var(--space-4) 0 0",
+                  color: "var(--text-faint)",
+                }}
+              >
+                v{VERSION}
+              </p>
+            </div>
 
-        <div className="mt-16 flex flex-col gap-3 border-t border-ink pt-6 font-mono text-[0.625rem] uppercase tracking-[0.2em] text-muted-ink sm:flex-row sm:items-center sm:justify-between">
-          <p>MIT licensed</p>
-          <p>
+            {columns.map((column) => (
+              <nav key={column.title} aria-label={column.title}>
+                <h2 className="hd-eyebrow" style={{ display: "block" }}>
+                  {column.title}
+                </h2>
+                <ul
+                  style={{
+                    listStyle: "none",
+                    margin: "var(--space-4) 0 0",
+                    padding: 0,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "var(--space-2)",
+                  }}
+                >
+                  {column.links.map((link) => (
+                    <li key={link.label}>
+                      {"external" in link && link.external ? (
+                        <a
+                          href={link.href}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="ff-text-transition"
+                          style={linkStyle}
+                        >
+                          {link.label}
+                        </a>
+                      ) : (
+                        <Link
+                          href={link.href}
+                          className="ff-text-transition"
+                          style={linkStyle}
+                        >
+                          {link.label}
+                        </Link>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </nav>
+            ))}
+          </div>
+        </BoxedFrame>
+
+        <div
+          className="hd-footer-bottom"
+          style={{
+            borderTop: "1px solid var(--border-hairline)",
+            paddingTop: "var(--space-8)",
+            fontSize: "var(--fs-xs)",
+            color: "var(--text-muted)",
+          }}
+        >
+          <p style={{ margin: 0 }}>MIT licensed</p>
+          <p style={{ margin: 0 }}>
             Built by{" "}
             <a
               href="https://github.com/spichen"
               target="_blank"
               rel="noopener noreferrer"
-              className="border-b border-transparent text-ink transition-colors duration-100 hover:border-ink"
+              className="ff-text-transition"
+              style={{ color: "var(--text-strong)" }}
             >
               spichen
             </a>
           </p>
         </div>
-      </Container>
+      </div>
     </footer>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
-import { Plus, X } from "lucide-react";
 import Editor from "./Editor";
+import { Icon, Select } from "@/ds";
 import { INTERPRETERS } from "@/lib/playground";
 
 interface Entry {
@@ -65,19 +65,47 @@ export default function CodeList({
 
   return (
     <div>
-      <p className="border-b border-hairline px-5 py-3 font-mono text-[0.6875rem] leading-relaxed text-muted-ink">
+      <p
+        style={{
+          margin: 0,
+          padding: "var(--space-3) var(--space-5)",
+          borderBottom: "1px solid var(--border-hairline)",
+          fontSize: "var(--fs-xs)",
+          lineHeight: "var(--lh-relaxed)",
+          color: "var(--text-muted)",
+        }}
+      >
         {note}
       </p>
 
       {entries.length === 0 && (
-        <p className="px-5 py-10 text-center font-mono text-[0.6875rem] uppercase tracking-[0.2em] text-muted-ink">
+        <p
+          className="hd-eyebrow"
+          style={{
+            margin: 0,
+            padding: "var(--space-10) var(--space-5)",
+            textAlign: "center",
+          }}
+        >
           No {kind}s
         </p>
       )}
 
       {entries.map((entry, index) => (
-        <div key={index} className="border-b border-hairline last:border-b-0">
-          <div className="flex items-stretch border-b border-hairline">
+        <div
+          key={index}
+          style={{ borderBottom: "1px solid var(--border-hairline)" }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "var(--space-2)",
+              padding: "var(--space-2) var(--space-3)",
+              borderBottom: "1px solid var(--border-hairline)",
+              background: "var(--surface-subtle)",
+            }}
+          >
             <label className="sr-only" htmlFor={`${kind}-name-${index}`}>
               {kind} name
             </label>
@@ -89,7 +117,19 @@ export default function CodeList({
               autoCapitalize="off"
               autoCorrect="off"
               placeholder="name"
-              className="min-h-[44px] min-w-0 flex-1 bg-paper px-5 font-mono text-xs text-ink placeholder:text-muted-ink focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ink"
+              style={{
+                minHeight: 36,
+                minWidth: 0,
+                flex: 1,
+                padding: "0 var(--space-3)",
+                background: "var(--bg-inset)",
+                color: "var(--text-strong)",
+                border: "1px solid var(--border-default)",
+                borderRadius: "var(--radius-lg)",
+                outline: "none",
+                fontFamily: "var(--font-mono)",
+                fontSize: "var(--fs-xs)",
+              }}
             />
 
             {entry.interpreter !== undefined && (
@@ -97,18 +137,15 @@ export default function CodeList({
                 <label className="sr-only" htmlFor={`${kind}-interp-${index}`}>
                   interpreter
                 </label>
-                <select
+                <Select
                   id={`${kind}-interp-${index}`}
                   value={entry.interpreter}
-                  onChange={(e) => update(index, { interpreter: e.target.value })}
-                  className="min-h-[44px] border-l border-hairline bg-paper px-4 font-mono text-[0.6875rem] uppercase tracking-[0.15em] text-muted-ink focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ink"
-                >
-                  {INTERPRETERS.map((name) => (
-                    <option key={name} value={name}>
-                      {name}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
+                    update(index, { interpreter: e.target.value })
+                  }
+                  options={INTERPRETERS}
+                  style={{ width: 120, flex: "0 0 auto" }}
+                />
               </>
             )}
 
@@ -116,9 +153,21 @@ export default function CodeList({
               type="button"
               onClick={() => remove(index)}
               aria-label={`Remove ${kind} ${entry.name}`}
-              className="flex min-h-[44px] w-11 items-center justify-center border-l border-hairline text-muted-ink transition-colors duration-100 hover:bg-ink hover:text-paper focus-visible:outline focus-visible:outline-[3px] focus-visible:-outline-offset-[3px] focus-visible:outline-ink"
+              style={{
+                display: "flex",
+                minHeight: 36,
+                width: 36,
+                flex: "0 0 auto",
+                alignItems: "center",
+                justifyContent: "center",
+                background: "transparent",
+                border: "1px solid var(--border-default)",
+                borderRadius: "var(--radius-lg)",
+                color: "var(--text-faint)",
+                cursor: "pointer",
+              }}
             >
-              <X size={14} strokeWidth={1.5} />
+              <Icon name="x" size={14} />
             </button>
           </div>
 
@@ -135,9 +184,26 @@ export default function CodeList({
         <button
           type="button"
           onClick={add}
-          className="flex min-h-[44px] w-full items-center justify-center gap-2 border-t border-hairline font-mono text-[0.6875rem] uppercase tracking-[0.2em] text-muted-ink transition-colors duration-100 hover:bg-ink hover:text-paper focus-visible:outline focus-visible:outline-[3px] focus-visible:-outline-offset-[3px] focus-visible:outline-ink"
+          style={{
+            display: "flex",
+            minHeight: 44,
+            width: "100%",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "var(--space-2)",
+            border: 0,
+            borderTop: "1px solid var(--border-hairline)",
+            background: "transparent",
+            cursor: "pointer",
+            fontFamily: "var(--font-sans)",
+            fontSize: "var(--fs-xs)",
+            fontWeight: "var(--fw-medium)",
+            textTransform: "uppercase",
+            letterSpacing: "var(--tracking-widest)",
+            color: "var(--text-muted)",
+          }}
         >
-          <Plus size={14} strokeWidth={1.5} />
+          <Icon name="plus" size={14} />
           Add {kind}
         </button>
       )}

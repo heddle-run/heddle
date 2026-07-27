@@ -1,11 +1,10 @@
 import type { Metadata } from "next";
 import Nav from "@/components/Nav";
 import Footer from "@/components/Footer";
-import Container from "@/components/ui/Container";
-import Label from "@/components/ui/Label";
-import Texture from "@/components/ui/Texture";
-import Rule from "@/components/ui/Rule";
+import SectionLabel from "@/components/SectionLabel";
+import CodeBlock from "@/components/CodeBlock";
 import Playground from "@/components/playground/Playground";
+import { Icon } from "@/ds";
 
 export const metadata: Metadata = {
   title: "Playground",
@@ -23,63 +22,127 @@ export default function PlaygroundPage() {
       <Nav />
 
       <main id="main">
-        <section className="relative overflow-hidden">
-          <Texture variant="warp" />
-          <Container className="relative py-20 md:py-24">
-            <div className="flex items-center gap-6">
-              <Label>007 — Playground</Label>
-              <span aria-hidden className="h-px flex-1 bg-hairline" />
-            </div>
+        <section
+          className="hd-section"
+          style={{ paddingBottom: "var(--space-10)" }}
+        >
+          <div className="hd-container">
+            <SectionLabel index="007">Playground</SectionLabel>
 
-            <h1 className="mt-8 max-w-[16ch] font-display text-6xl leading-[0.95] tracking-tight md:text-7xl">
-              Run it <span className="italic">here</span>.
+            <h1
+              style={{
+                margin: 0,
+                maxWidth: "16ch",
+                fontSize: "clamp(36px,6vw,72px)",
+                fontWeight: "var(--fw-medium)",
+                letterSpacing: "var(--tracking-tighter)",
+                lineHeight: "var(--lh-tight)",
+                color: "var(--text-strong)",
+              }}
+            >
+              Run it here.
             </h1>
 
-            <p className="mt-8 max-w-[54ch] text-lg leading-relaxed text-muted-ink">
+            <p
+              style={{
+                margin: "var(--space-6) 0 0",
+                maxWidth: "54ch",
+                fontSize: "var(--fs-lg)",
+                lineHeight: "var(--lh-relaxed)",
+                color: "var(--text-body)",
+              }}
+            >
               A flow, its inputs, the tools it calls and the plugins that extend
               it — all editable, all executed by the same engine the CLI drives.
               Events stream back as the run happens.
             </p>
 
-            <p className="mt-6 max-w-[54ch] font-mono text-xs leading-loose text-muted-ink">
-              Tools and plugins you submit run in their own sandboxed processes
-              and are deleted when the run ends. Nothing is stored. An API key
-              in your flow does travel to the engine to reach the model — use a
-              key you are willing to spend, and revoke it when you are done.
-            </p>
-          </Container>
+            {/* Security note. Kept prominent: it is the one thing on this page a
+                visitor must read before pasting a key. */}
+            <div
+              style={{
+                display: "flex",
+                gap: "var(--space-3)",
+                margin: "var(--space-8) 0 0",
+                maxWidth: "62ch",
+                padding: "var(--space-4)",
+                border: "1px solid var(--brand-pink-20)",
+                background: "var(--brand-pink-05)",
+                borderRadius: "var(--radius-lg)",
+              }}
+            >
+              <span
+                aria-hidden
+                style={{
+                  color: "var(--brand-pink)",
+                  display: "inline-flex",
+                  flex: "0 0 auto",
+                  marginTop: 2,
+                }}
+              >
+                <Icon name="shield" size={16} />
+              </span>
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: "var(--fs-sm)",
+                  lineHeight: "var(--lh-relaxed)",
+                  color: "var(--text-body)",
+                }}
+              >
+                Tools and plugins you submit run in their own sandboxed
+                processes and are deleted when the run ends. Nothing is stored.
+                An API key in your flow does travel to the engine to reach the
+                model — use a key you are willing to spend, and revoke it when
+                you are done.
+              </p>
+            </div>
+          </div>
         </section>
-
-        <Rule />
 
         <Playground />
 
-        <Rule />
+        <section className="hd-section">
+          <div className="hd-container">
+            <SectionLabel index="008">The same thing, locally</SectionLabel>
 
-        <section className="relative overflow-hidden">
-          <Texture variant="lines" />
-          <Container className="relative py-20 md:py-24">
-            <div className="flex items-center gap-6">
-              <Label>008 — The same thing, locally</Label>
-              <span aria-hidden className="h-px flex-1 bg-hairline" />
-            </div>
-
-            <h2 className="mt-6 max-w-[24ch] font-display text-4xl leading-[1.02] tracking-tight md:text-5xl">
+            <h2
+              style={{
+                margin: 0,
+                maxWidth: "24ch",
+                fontSize: "clamp(30px,4vw,48px)",
+                fontWeight: "var(--fw-semibold)",
+                letterSpacing: "var(--tracking-tight)",
+                lineHeight: "var(--lh-snug)",
+                color: "var(--text-strong)",
+              }}
+            >
               Nothing here is browser-only.
             </h2>
 
-            <p className="mt-8 max-w-[58ch] text-lg leading-relaxed text-muted-ink">
+            <p
+              style={{
+                margin: "var(--space-6) 0 0",
+                maxWidth: "58ch",
+                fontSize: "var(--fs-lg)",
+                lineHeight: "var(--lh-relaxed)",
+                color: "var(--text-body)",
+              }}
+            >
               The playground has no privileges the CLI lacks. Save the flow to a
               file, put the tools in a directory, and the same run happens on
               your own machine — with your own keys, and without the limits this
               page runs under.
             </p>
 
-            <pre className="mt-10 overflow-x-auto border border-ink px-6 py-5 font-mono text-xs leading-loose">
-              <code>{`brew install spichen/tap/heddle
-heddle run flow.yaml --tools-dir ./tools --input '{"text":"hello"}'`}</code>
-            </pre>
-          </Container>
+            <div style={{ marginTop: "var(--space-8)", maxWidth: 720 }}>
+              <CodeBlock
+                label="terminal"
+                code={`brew install spichen/tap/heddle
+heddle run flow.yaml --tools-dir ./tools --input '{"text":"hello"}'`}
+              />
+            </div>
+          </div>
         </section>
       </main>
 

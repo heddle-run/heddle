@@ -1,23 +1,19 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Copy } from "lucide-react";
-import { cn } from "@/lib/cn";
+import { Icon } from "@/ds";
 
-/**
- * An install line. On paper it is a bordered box; on an inverted surface it
- * borrows the surrounding colours, so the same component serves both.
- */
+/** An install line: mono command in an inset field, with a copy affordance.
+ *  Border warms to the accent on hover; the tick flashes pink on success. */
 export default function CopyCommand({
   label,
   command,
-  inverted = false,
 }: {
   label: string;
   command: string;
-  inverted?: boolean;
 }) {
   const [copied, setCopied] = useState(false);
+  const [hover, setHover] = useState(false);
 
   const copy = async () => {
     try {
@@ -30,52 +26,56 @@ export default function CopyCommand({
   };
 
   return (
-    <div
-      className={cn(
-        "flex items-stretch border",
-        inverted ? "border-paper/40" : "border-ink",
-      )}
+    <button
+      type="button"
+      onClick={copy}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      aria-label={`Copy: ${command}`}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: "var(--space-3)",
+        width: "100%",
+        padding: "var(--space-3) var(--space-4)",
+        background: "var(--bg-inset)",
+        border: `1px solid ${hover ? "var(--brand-pink-30)" : "var(--border-default)"}`,
+        borderRadius: "var(--radius-lg)",
+        cursor: "pointer",
+        textAlign: "left",
+        transition: "border-color var(--dur-base) var(--ease-standard)",
+      }}
     >
       <span
-        className={cn(
-          "flex shrink-0 items-center border-r px-2.5 font-mono text-[0.625rem] uppercase tracking-[0.15em]",
-          inverted
-            ? "border-paper/40 text-paper/50"
-            : "border-hairline text-muted-ink",
-        )}
+        className="hd-eyebrow"
+        style={{ flex: "0 0 auto", color: "var(--text-faint)" }}
       >
         {label}
       </span>
-
       <code
-        className={cn(
-          // min-w-0 lets the box shrink below the command's width and scroll.
-          "min-w-0 flex-1 overflow-x-auto whitespace-nowrap px-3 py-3 text-left font-mono text-[0.8125rem]",
-          inverted ? "text-paper" : "text-ink",
-        )}
+        style={{
+          flex: 1,
+          minWidth: 0,
+          overflowX: "auto",
+          whiteSpace: "nowrap",
+          fontFamily: "var(--font-mono)",
+          fontSize: "var(--fs-xs)",
+          color: "var(--text-strong)",
+        }}
       >
-        <span className={inverted ? "text-paper/40" : "text-muted-ink"}>$ </span>
         {command}
       </code>
-
-      <button
-        type="button"
-        onClick={copy}
-        aria-label={`Copy: ${command}`}
-        className={cn(
-          "flex w-12 shrink-0 items-center justify-center border-l transition-colors duration-100 focus-visible:outline focus-visible:outline-[3px] focus-visible:outline-offset-2",
-          inverted
-            ? "border-paper/40 text-paper hover:bg-paper hover:text-ink focus-visible:outline-paper"
-            : "border-ink text-ink hover:bg-ink hover:text-paper focus-visible:outline-ink",
-        )}
+      <span
+        style={{
+          flex: "0 0 auto",
+          display: "inline-flex",
+          color: copied ? "var(--brand-pink)" : "var(--text-faint)",
+          transition: "color var(--dur-fast) var(--ease-standard)",
+        }}
       >
-        {copied ? (
-          <Check size={16} strokeWidth={1.5} />
-        ) : (
-          <Copy size={16} strokeWidth={1.5} />
-        )}
-        <span className="sr-only">{copied ? "Copied" : "Copy"}</span>
-      </button>
-    </div>
+        <Icon name={copied ? "check" : "copy"} size={14} />
+      </span>
+      <span className="sr-only">{copied ? "Copied" : "Copy"}</span>
+    </button>
   );
 }

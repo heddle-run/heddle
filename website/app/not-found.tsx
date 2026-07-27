@@ -1,45 +1,69 @@
+import Link from "next/link";
 import Nav from "@/components/Nav";
 import Footer from "@/components/Footer";
-import Container from "@/components/ui/Container";
-import Texture from "@/components/ui/Texture";
-import Button from "@/components/ui/Button";
-import Label from "@/components/ui/Label";
+import { Badge, BoxedFrame, Button } from "@/ds";
 
 export default function NotFound() {
   return (
     <>
       <Nav />
 
-      <main className="relative overflow-hidden border-b-4 border-ink">
-        <Texture variant="warp" />
+      <main className="hd-section">
+        <div className="hd-container">
+          <BoxedFrame beam pad="var(--space-16)">
+            <div style={{ textAlign: "center" }}>
+              <Badge uppercase>Error — 404</Badge>
 
-        <Container className="relative py-32 md:py-44">
-          <Label>Error — 404</Label>
+              <h1
+                style={{
+                  margin: "var(--space-6) auto 0",
+                  maxWidth: "12ch",
+                  fontSize: "clamp(48px,7vw,96px)",
+                  fontWeight: "var(--fw-medium)",
+                  letterSpacing: "var(--tracking-tighter)",
+                  lineHeight: "var(--lh-tight)",
+                  color: "var(--text-strong)",
+                }}
+              >
+                Dropped a thread.
+              </h1>
 
-          <h1 className="mt-8 font-display text-[4.5rem] italic leading-[0.8] tracking-tighter sm:text-8xl lg:text-9xl">
-            Dropped
-          </h1>
-          <p className="mt-3 font-display text-4xl leading-none tracking-tight sm:text-5xl">
-            a thread.
-          </p>
+              <p
+                style={{
+                  margin: "var(--space-6) auto 0",
+                  maxWidth: "var(--container-prose)",
+                  fontSize: "var(--fs-lg)",
+                  lineHeight: "var(--lh-relaxed)",
+                  color: "var(--text-body)",
+                }}
+              >
+                This page is not part of the weave. Head back to the front, or
+                pick the pattern up in the documentation.
+              </p>
 
-          <div className="mt-12 flex items-center">
-            <span aria-hidden className="h-1 flex-1 bg-ink" />
-            <span aria-hidden className="ml-4 h-4 w-4 border-2 border-ink" />
-          </div>
-
-          <p className="mt-12 max-w-[46ch] text-xl leading-relaxed text-muted-ink">
-            This page is not part of the weave. Head back to the front, or pick
-            the pattern up in the documentation.
-          </p>
-
-          <div className="mt-10 flex flex-col gap-4 sm:flex-row">
-            <Button href="/">Return home</Button>
-            <Button href="/docs" variant="secondary">
-              Documentation
-            </Button>
-          </div>
-        </Container>
+              <div
+                style={{
+                  marginTop: "var(--space-10)",
+                  display: "flex",
+                  flexWrap: "wrap",
+                  justifyContent: "center",
+                  gap: "var(--space-4)",
+                }}
+              >
+                <Link href="/">
+                  <Button size="lg" iconAfter="arrow-right">
+                    Return home
+                  </Button>
+                </Link>
+                <Link href="/docs">
+                  <Button size="lg" variant="outline">
+                    Documentation
+                  </Button>
+                </Link>
+              </div>
+            </div>
+          </BoxedFrame>
+        </div>
       </main>
 
       <Footer />
