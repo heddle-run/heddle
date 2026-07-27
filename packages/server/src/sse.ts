@@ -9,10 +9,18 @@ import type { Event } from '@heddle/core';
  * transformations are the ones JSON forces: `State` becomes a plain object and
  * `Error` becomes `{name, message}`, since neither survives `JSON.stringify`
  * usefully on its own.
+ *
+ * The field list is fixed, and that is a hazard worth naming: a field added to
+ * `Event` and not added here is dropped silently — no type error, no warning,
+ * just a client that never sees it. `message` was in exactly that state, so
+ * every `warning` reached the browser with nothing in it. Anything added to
+ * `Event` has to be added here in the same change.
  */
 export function serializeEvent(e: Event): Record<string, unknown> {
   return {
     type: e.type,
+    message: e.message,
+    delta: e.delta,
     nodeName: e.nodeName,
     nodeType: e.nodeType,
     state: e.state?.toData(),
