@@ -25,20 +25,46 @@ import type { SandboxSession } from '../sandbox/types.js';
 import { PluginError } from '../errors.js';
 import {
   encode,
+  hostRequest,
+  isObject,
+  isPartial,
   isPluginMethod,
   isRequest,
   LineDecoder,
   PLUGIN_METHODS,
+  PROTOCOL_VERSION,
+  spokenProtocol,
   type HostMethod,
   type HostMethods,
   type PluginCapability,
   type RpcMessage,
+  type RpcPartial,
   type RpcRequest,
   type RpcResponse,
   type RunToolParams,
 } from './protocol.js';
 
 const DEFAULT_CALL_TIMEOUT = 30_000;
+
+/**
+ * How long a plugin has to acknowledge `cancel` before it is killed instead.
+ *
+ * Short on purpose. Nothing is waiting on the answer — the call it refers to is
+ * already rejected — so this is only the delay between giving up on a plugin
+ * and destroying it, and the plugin that most needs cancelling is the one least
+ * likely to reply.
+ */
+const CANCEL_GRACE = 500;
+
+/**
+ * How long a plugin has to exit after `shutdown` before SIGKILL.
+ *
+ * Longer than {@link CANCEL_GRACE} because there is real work behind it — a
+ * connection pool to drain, a file to flush — and because a plugin that is
+ * going to exit cleanly does so at once, so the full second is only ever paid
+ * by one that would have been killed anyway.
+ */
+const SHUTDOWN_GRACE = 1_000;
 
 /** How much of the plugin's stderr to keep for error messages. */
 const STDERR_LIMIT = 4096;
@@ -97,11 +123,25 @@ function unserved(method: never): string {
   return `heddle declares "${String(method)}" but does not serve it`;
 }
 
+/** A callback that consumes one `{ id, partial }` frame. See {@link PluginHost.call}. */
+export type PartialHandler = (partial: unknown) => void;
+
 interface Pending {
   resolve: (value: unknown) => void;
   reject: (err: Error) => void;
   /** Cancels the call's timer and its abort listener, however it ends. */
   release: () => void;
+  /**
+   * Restarts the call's timeout. Absent on the host's own lifecycle frames,
+   * which carry their own deadline or none at all.
+   */
+  extend?: () => void;
+  onPartial?: PartialHandler;
+}
+
+/** Ids arrive as whatever the plugin echoed; the host issues only numbers. */
+function idOf(id: number | string): number {
+  return typeof id === 'number' ? id : Number(id);
 }
 
 export class PluginHost {
@@ -153,11 +193,17 @@ export class PluginHost {
    * the runner checks its signal between nodes, so an aborted run — a client
    * that hung up, a wall-clock budget spent — would still wait out this call's
    * whole timeout before its concurrency slot came back.
+   *
+   * `onPartial` receives each `{ id, partial }` frame the plugin sends for this
+   * call. Nothing in heddle emits one yet; the parameter exists so the consumer
+   * side of the frame is settled at the same time as the frame, rather than
+   * being the reason `call`'s signature changes once plugins depend on it.
    */
   async call<M extends HostMethod>(
     method: M,
     params: HostMethods[M],
     signal?: AbortSignal,
+    onPartial?: PartialHandler,
   ): Promise<unknown> {
     if (this.disposed) {
       throw new PluginError(`plugin "${this.name}" was disposed`);
@@ -178,14 +224,15 @@ export class PluginHost {
     const timeout = this.options.timeout ?? DEFAULT_CALL_TIMEOUT;
 
     return new Promise<unknown>((resolve, reject) => {
-      const timer = setTimeout(() => {
+      const expire = (): void => {
         this.abandon(
           id,
           new PluginError(
             `plugin "${this.name}" did not answer ${method} within ${timeout}ms`,
           ),
         );
-      }, timeout);
+      };
+      let timer = setTimeout(expire, timeout);
 
       const onAbort = (): void => {
         this.abandon(
@@ -204,27 +251,92 @@ export class PluginHost {
           clearTimeout(timer);
           signal?.removeEventListener('abort', onAbort);
         },
+        // The timeout is a silence budget, not a total budget. Measured from
+        // the request it would kill a plugin that has been answering all along
+        // — a token stream, a long tool loop reporting progress — and report it
+        // as one that never answered.
+        extend: () => {
+          clearTimeout(timer);
+          timer = setTimeout(expire, timeout);
+        },
+        onPartial,
       });
       this.write({ id, method, params });
     });
   }
 
   /**
-   * Give up on one outstanding call and kill the process behind it.
+   * Give up on one outstanding call and deal with the process behind it.
    *
    * Both ways in — the call's own timer, and the run being aborted — leave the
    * channel ambiguous: the plugin may be mid-reply, and a late response would
-   * be matched to nothing. The kill is what makes giving up safe, and on the
-   * abort path it is also the only thing that stops a plugin's process from
-   * outliving the request that stopped waiting for it.
+   * be matched to nothing. Settling that ambiguity is what makes giving up
+   * safe: either the plugin says it has dropped the call, or it is destroyed.
+   * {@link cancelRemotely} is where those two meet, and it ends in the second
+   * unless the plugin actively chooses the first.
+   *
+   * The rejection happens first and unconditionally, before anything is
+   * attempted on the process. Whatever {@link cancelRemotely} manages or fails
+   * to manage, the caller's promise is already settled — a graceful path that
+   * hangs cannot turn a failed call into a pending one.
    */
   private abandon(id: number, err: Error): void {
     const pending = this.pending.get(id);
     if (!pending) return;
     this.pending.delete(id);
     pending.release();
-    this.kill();
     pending.reject(err);
+    this.cancelRemotely(id);
+  }
+
+  /**
+   * Ask the plugin to drop an abandoned call, and kill it if it will not.
+   *
+   * Killing outright — what this path used to do — is correct and expensive. It
+   * costs the plugin any chance to close a connection or unlink a temp file,
+   * and it costs the run the process, so the next node reaching the same plugin
+   * pays a spawn to get one back. A `cancel` frame buys both back from a plugin
+   * willing to answer it, which is the only kind worth keeping.
+   *
+   * The kill is armed *before* the frame is written, and the one thing that
+   * disarms it is a reply on the cancel's own id. A plugin that does not
+   * implement `cancel`, refuses it, ignores it, or dies while thinking about it
+   * is killed exactly as it was before — {@link CANCEL_GRACE} later, which is
+   * the whole of what this costs when it does not work.
+   */
+  private cancelRemotely(abandoned: number): void {
+    const proc = this.proc;
+    // Nothing to negotiate with: the process is already gone, and `die` has
+    // reported why to everything that was waiting.
+    if (!proc || this.dead) return;
+
+    const id = this.nextId++;
+    const kill = setTimeout(() => {
+      this.pending.delete(id);
+      proc.kill('SIGKILL');
+    }, CANCEL_GRACE);
+
+    this.pending.set(id, {
+      // Acknowledged. The plugin says the call is dropped, so its process is
+      // idle and may serve the next one.
+      resolve: () => clearTimeout(kill),
+      // Refused, unknown, or the process died under us. Either way there is
+      // nothing left to wait for.
+      reject: () => {
+        clearTimeout(kill);
+        // Except when this rejection came from `dispose`. `dispose` sets the
+        // flag, then calls `die`, which rejects every pending — including this
+        // one — before it reaches `stopProcess`. Killing here would beat the
+        // graceful stop to the process and skip it entirely, and it would do so
+        // precisely when a call was abandoned in the last CANCEL_GRACE: the
+        // case this whole path exists to handle well.
+        if (this.disposed) return;
+        proc.kill('SIGKILL');
+      },
+      release: () => {},
+    });
+
+    this.write(hostRequest(id, 'cancel', { call: abandoned }));
   }
 
   private start(): void {
@@ -274,6 +386,78 @@ export class PluginHost {
     // A plugin that exits while heddle is mid-write breaks the pipe; the real
     // failure is reported by the handlers above.
     proc.stdin?.on('error', () => {});
+
+    this.greet();
+  }
+
+  /**
+   * Announce heddle's protocol version, and tell the plugin what it was granted.
+   *
+   * Written first, so a plugin reading its stdin in order sees the handshake
+   * before any work. Not *waited* for, and that is the deliberate part: making
+   * the first call block on the answer would charge every plugin a round trip
+   * for a check that, when it fails, fails that call anyway — and would report a
+   * plugin whose handler never returns as "did not answer init", sending its
+   * author to the handshake instead of to the handler. The version is checked
+   * when the answer arrives, and a mismatch fails whatever is in flight.
+   *
+   * There is no timer here on purpose. An `init` that is never answered belongs
+   * to a plugin that answers nothing, and the call behind it already has a
+   * deadline that says so in the caller's own terms; a second one would only
+   * race it to report the same failure less usefully.
+   */
+  private greet(): void {
+    const id = this.nextId++;
+    this.pending.set(id, {
+      resolve: (result) => this.checkProtocol(result),
+      // A plugin built before `init` existed answers "unknown method" — an
+      // error frame, which lands here rather than on `resolve`. That is one of
+      // the two silences {@link spokenProtocol} reads as UNVERSIONED, so it
+      // goes through the same check as a result would: today that means it
+      // passes, and the day PROTOCOL_VERSION moves past 1 it is reported as the
+      // mismatch it has become. Swallowing it here instead would have made that
+      // promise quietly unkeepable.
+      //
+      // Unless the process is already gone. Then `die` is rejecting every
+      // pending at once, the reason is recorded, and "your plugin speaks the
+      // wrong protocol" is the wrong thing to say about a corpse.
+      reject: () => {
+        if (!this.dead && !this.disposed) this.checkProtocol(undefined);
+      },
+      release: () => {},
+    });
+
+    this.write(
+      hostRequest(id, 'init', {
+        protocol: PROTOCOL_VERSION,
+        capabilities: [...this.granted],
+      }),
+    );
+  }
+
+  /**
+   * Fail the plugin when the two ends do not speak the same protocol.
+   *
+   * Reported here rather than left to surface on its own, because on its own it
+   * surfaces as something else entirely: a verb the plugin has never heard of
+   * comes back as its own "unknown method" from another process, and a frame
+   * shape it does not produce comes back as a result that does not parse. Both
+   * send the author looking at their handler. Naming both versions and the
+   * plugin is the only form of this that points at the actual problem.
+   */
+  private checkProtocol(result: unknown): void {
+    const spoken = spokenProtocol(result);
+    if (spoken === PROTOCOL_VERSION) return;
+
+    this.die(
+      new PluginError(
+        `plugin "${this.name}" speaks plugin protocol version ${spoken}, and this ` +
+          `heddle speaks ${PROTOCOL_VERSION}. The two are not interchangeable — each ` +
+          `side sends frames the other has no rule for. Rebuild the plugin against ` +
+          `protocol ${PROTOCOL_VERSION}, or run it on a heddle that speaks ${spoken}.`,
+      ),
+    );
+    this.kill();
   }
 
   /**
@@ -336,11 +520,53 @@ export class PluginHost {
       return;
     }
 
+    // Ahead of the response check, and that order is the point of the frame.
+    // `settle` reads any non-request as an answer, and `{ id, partial }` has
+    // neither `result` nor `error` — so routed there it would resolve the call
+    // with `undefined` and the caller would be told the plugin returned nothing.
+    if (isPartial(message)) {
+      this.progress(message);
+      return;
+    }
     if (isRequest(message)) {
       void this.serve(message);
       return;
     }
+    // `null`, a number, an array — valid JSON, and none of the three frames.
+    // Named rather than ignored: a plugin emitting these is broken in a way its
+    // author needs told, and `settle` would read `.id` off it and throw on the
+    // stdout handler's stack, where nothing catches it.
+    if (!isObject(message)) {
+      this.die(
+        new PluginError(
+          `plugin "${this.name}" wrote JSON that is not a protocol frame. ` +
+            `Every frame is an object carrying an "id". Got: ${line.slice(0, 200)}`,
+        ),
+      );
+      return;
+    }
     this.settle(message);
+  }
+
+  /** Take one partial: keep the call open, and keep its clock honest. */
+  private progress(frame: RpcPartial): void {
+    const id = idOf(frame.id);
+    const pending = this.pending.get(id);
+    // Same reasoning as a late response: a partial for a call that has already
+    // ended belongs to nobody, and is not worth failing a plugin over.
+    if (!pending) return;
+
+    pending.extend?.();
+
+    try {
+      pending.onPartial?.(frame.partial);
+    } catch (err) {
+      // A consumer that threw is on the stdout handler's stack, where an escape
+      // becomes an uncaught exception naming neither the plugin nor the call.
+      // It ends the call the partial belonged to instead: a caller that cannot
+      // take a piece of the answer has no use for the rest of it.
+      this.abandon(id, err instanceof Error ? err : new PluginError(String(err)));
+    }
   }
 
   /** Answer a request the plugin made of heddle. */
@@ -442,7 +668,7 @@ export class PluginHost {
 
   /** Match a response to the call that is waiting for it. */
   private settle(response: RpcResponse): void {
-    const id = typeof response.id === 'number' ? response.id : Number(response.id);
+    const id = idOf(response.id);
     const pending = this.pending.get(id);
     // A response to nothing is not fatal: it is what a late reply after a
     // timeout looks like, and the call it belonged to has already failed.
@@ -490,19 +716,68 @@ export class PluginHost {
    * Stop the plugin and fail anything outstanding.
    *
    * Must be called at the end of every run, on success and on failure alike:
-   * this is what stops one caller's code from outliving their request.
+   * this is what stops one caller's code from outliving their request. It stays
+   * synchronous for that reason — its caller is a `finally` that does not await
+   * (`packages/server/src/runs.ts`), so anything that needed awaiting here would
+   * be a teardown nobody waits for.
    */
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+
+    const proc = this.proc;
+    // Read before `die` sets it, since `die` is how a dead process is recorded
+    // and a corpse has nothing to say goodbye with.
+    const alreadyGone = this.dead !== undefined;
     this.die(new PluginError(`plugin "${this.name}" was disposed`));
-    this.kill();
     this.proc = undefined;
+
+    if (proc && !alreadyGone) this.stopProcess(proc);
+    else proc?.kill('SIGKILL');
+
     // The sandbox allocated a scratch directory per wrapped invocation. A
     // plugin's process is wrapped once and lives for the run, so this is the
     // only point at which the directory can go — without it a server under
     // --safe grows a heddle-scratch-* directory per plugin per run, forever.
     this.cleanupSandbox?.();
     this.cleanupSandbox = undefined;
+  }
+
+  /**
+   * Ask the plugin to stop, then make sure it did.
+   *
+   * `shutdown` and the closed stdin behind it are the whole of the graceful
+   * path, and neither is trusted. The SIGKILL is armed before either is sent,
+   * and the only thing that cancels it is the process actually ending — so a
+   * plugin that implements neither dies exactly as it did before this existed,
+   * {@link SHUTDOWN_GRACE} later. What it buys is the case that used to be
+   * impossible: a plugin holding a connection pool or a half-written file gets
+   * to close it instead of learning it is over from SIGKILL, which cannot be
+   * caught.
+   *
+   * The timer is deliberately not `unref`'d. Teardown is the guarantee this
+   * class exists for, and a timer node is free to skip on its way out is not a
+   * guarantee — it would leave an uncooperative plugin orphaned rather than
+   * killed.
+   */
+  private stopProcess(proc: ChildProcess): void {
+    const kill = setTimeout(() => proc.kill('SIGKILL'), SHUTDOWN_GRACE);
+    proc.once('close', () => clearTimeout(kill));
+
+    try {
+      if (proc.stdin?.writable) {
+        // Not `this.write`: `dispose` has already cleared `this.proc`, and the
+        // process it cleared is the one that has to be told.
+        proc.stdin.write(encode(hostRequest(this.nextId++, 'shutdown', {})));
+        // Ends a plugin that never learned the verb: closing stdin is what the
+        // protocol has always documented as the end of a run, and it is what
+        // every read-loop plugin — including the shell one in the tests — sees
+        // as its cue to exit.
+        proc.stdin.end();
+      }
+    } catch {
+      // A broken pipe means the plugin is already on its way out. The kill
+      // above covers the case where it is not.
+    }
   }
 }

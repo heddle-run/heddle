@@ -708,8 +708,11 @@ describe("kind: 'component'", () => {
     // else — which is the whole of what this kind does today.
     const entry = writePlugin(
       'holder',
+      // Frames naming no component are the host's own lifecycle — the init
+      // handshake reaches this handler too, since the preamble routes
+      // everything here. What this test counts is components.
       `globalThis.__asked ??= [];
-       globalThis.__asked.push(msg.params.componentType);
+       if (msg.params.componentType) globalThis.__asked.push(msg.params.componentType);
        return { output: { policy: msg.params.node.policy,
                           asked: globalThis.__asked.slice() } };`,
     );
