@@ -16,6 +16,7 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadRemotePlugin } from '../remote-loader.js';
+import { withRuntime } from '../runtime-source.js';
 import { PluginRegistry } from '../registry.js';
 import { compile } from '../../graph/compile.js';
 import { validate } from '../../graph/validate.js';
@@ -83,6 +84,13 @@ function writePlugin(name: string, handleBody: string): string {
   return entry;
 }
 
+/** Write a plugin against the inlined `serve()` helper heddle ships. */
+function writeHelperPlugin(name: string, source: string): string {
+  const entry = join(scratch, `${name}.mjs`);
+  writeFileSync(entry, withRuntime(source));
+  return entry;
+}
+
 function manifest(
   componentType: string,
   extra: Record<string, unknown> = {},
@@ -103,7 +111,7 @@ function manifest(
  * capability tests can change the manifest and leave the policy alone. The
  * cases that are about the grant call `loadRemotePlugin` themselves.
  */
-const ALL_CAPABILITIES = ['runTool'] as const;
+const ALL_CAPABILITIES = ['runTool', 'emitEvent', 'log'] as const;
 
 /**
  * A flow: start -> the plugin's node -> end.
@@ -461,6 +469,138 @@ describe('reverse calls', () => {
   });
 });
 
+/**
+ * An executor whose scopes are distinguishable.
+ *
+ * Every `execute` reports the workspace of whichever scope it was reached
+ * through, so a tool that ran outside the node's scope is visible as a
+ * different string rather than as a subtle sandbox failure that only appears
+ * under `--safe`.
+ */
+function scopedExecutor(): {
+  execute: (
+    signal: AbortSignal | undefined,
+    path: string,
+    input: Record<string, unknown>,
+  ) => Promise<{ output: Record<string, unknown>; stderr: string }>;
+  beginScope: (label: string) => {
+    executor: unknown;
+    workspace: string;
+    dispose: () => void;
+  };
+} {
+  let scopes = 0;
+  const at = (workspace: string): ReturnType<typeof scopedExecutor> => ({
+    execute: async (signal) => ({
+      output: { workspace, sawSignal: signal !== undefined },
+      stderr: '',
+    }),
+    beginScope: (label: string) => {
+      const scope = `/scope-${label}-${++scopes}`;
+      return { executor: at(scope), workspace: scope, dispose: () => {} };
+    },
+  });
+  return at('/unscoped');
+}
+
+describe('where a plugin node tools run', () => {
+  it('runs them in the scope heddle opened for that execution', async () => {
+    // The property `getWorkspace` sells: a file the plugin writes there can be
+    // named to `runTool` by path. That only holds if the tool runs in the same
+    // sandbox session the workspace came from. Served from the host's own
+    // runner instead, every tool got a throwaway session — a different
+    // workspace — so the file was simply not there on the tool's side, and it
+    // read as the tool being broken.
+    const entry = writeHelperPlugin(
+      'scoped-tool',
+      `serve({
+         ScopedToolNode: {
+           async execute(input, ctx) {
+             const r = await ctx.runTool('where', {});
+             return { output: { toolSaw: r.workspace, pluginSaw: ctx.getWorkspace() } };
+           },
+         },
+       });`,
+    );
+
+    const state = await runWith(
+      'ScopedToolNode',
+      entry,
+      manifest('ScopedToolNode', {}, ['runTool']),
+      {},
+      {
+        toolRegistry: {
+          lookup: (name: string) => ({ name, description: '', path: '/where' }),
+          all: () => [],
+        },
+        toolExecutor: scopedExecutor(),
+      },
+    );
+
+    expect(state.pluginSaw).toBe('/scope-p-1');
+    expect(state.toolSaw).toBe(state.pluginSaw);
+  });
+
+  it('gives the tool the run signal, which the host-wide runner drops', async () => {
+    // A pending tool call is otherwise uninterruptible: the run's signal never
+    // reaches it, so an aborted run waits out the tool's own timeout before its
+    // concurrency slot comes back.
+    const entry = writeHelperPlugin(
+      'signalled-tool',
+      `serve({
+         SignalledToolNode: {
+           async execute(input, ctx) {
+             const r = await ctx.runTool('where', {});
+             return { output: { sawSignal: r.sawSignal } };
+           },
+         },
+       });`,
+    );
+
+    const state = await runWith(
+      'SignalledToolNode',
+      entry,
+      manifest('SignalledToolNode', {}, ['runTool']),
+      {},
+      {
+        toolRegistry: {
+          lookup: (name: string) => ({ name, description: '', path: '/where' }),
+          all: () => [],
+        },
+        toolExecutor: scopedExecutor(),
+      },
+    );
+
+    expect(state.sawSignal).toBe(true);
+  });
+
+  it('still serves a plugin that hand-rolls the protocol and names no call', async () => {
+    // Every plugin written before `call` was on `RunToolParams` looks like
+    // this. It keeps working, on the host-wide runner it always had.
+    const entry = writePlugin(
+      'callless-tool',
+      `const r = await runTool('where', {});
+       return { output: { toolSaw: r.workspace } };`,
+    );
+
+    const state = await runWith(
+      'CalllessToolNode',
+      entry,
+      manifest('CalllessToolNode', {}, ['runTool']),
+      {},
+      {
+        toolRegistry: {
+          lookup: (name: string) => ({ name, description: '', path: '/where' }),
+          all: () => [],
+        },
+        toolExecutor: scopedExecutor(),
+      },
+    );
+
+    expect(state.toolSaw).toBe('/unscoped');
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Capabilities.
 //
@@ -586,6 +726,7 @@ describe('capabilities', () => {
       componentType: 'NoRunnerNode',
       node: {},
       input: {},
+      workspace: scratch,
     })) as { output: Record<string, unknown> };
 
     expect(String(result.output.err)).toMatch(/no tool runner was installed/);
@@ -1005,6 +1146,7 @@ describe('aborting a run that is inside a plugin call', () => {
           componentType: 'NeverNode',
           node: { componentType: 'NeverNode', name: 'p' },
           input: {},
+          workspace: scratch,
         },
         AbortSignal.abort(),
       ),
@@ -1074,6 +1216,7 @@ describe('spawning a plugin under a sandbox', () => {
       componentType: 'SandboxedNode',
       node: { componentType: 'SandboxedNode', name: 'p' },
       input: {},
+      workspace: scratch,
     });
 
     // The plugin still answers, so the wrapping produced something runnable.
@@ -1106,6 +1249,7 @@ describe('spawning a plugin under a sandbox', () => {
         componentType: 'EnvNode',
         node: { componentType: 'EnvNode', name: 'p' },
         input: {},
+        workspace: scratch,
       }),
     ).resolves.toMatchObject({ output: { base: 'floor' } });
   });
@@ -1132,6 +1276,7 @@ describe('spawning a plugin under a sandbox', () => {
         componentType: 'OverrideNode',
         node: { componentType: 'OverrideNode', name: 'p' },
         input: {},
+        workspace: scratch,
       }),
     ).resolves.toMatchObject({ output: { base: 'chosen' } });
   });
@@ -1151,6 +1296,7 @@ describe('spawning a plugin under a sandbox', () => {
       componentType: 'CleanNode',
       node: { componentType: 'CleanNode', name: 'p' },
       input: {},
+      workspace: scratch,
     });
     expect(stub.cleanups).toEqual([]);
 
@@ -1261,12 +1407,18 @@ describe('isolation', () => {
       componentType: 'LivesNode',
       node: {},
       input: {},
+      workspace: scratch,
     });
 
     registry.dispose();
 
     await expect(
-      remote.host.call('execute', { componentType: 'LivesNode', node: {}, input: {} }),
+      remote.host.call('execute', {
+        componentType: 'LivesNode',
+        node: {},
+        input: {},
+        workspace: scratch,
+      }),
     ).rejects.toThrow(/disposed/);
   });
 });

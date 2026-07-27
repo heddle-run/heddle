@@ -18,6 +18,8 @@ const FULL: Event = {
   type: 'tool_result',
   message: 'a warning worth reading',
   delta: 'the ',
+  data: { done: 3, total: 10 },
+  level: 'warn',
   nodeName: 'assistant',
   nodeType: 'AgentNode',
   state: new State({ result: 41 }),
@@ -98,5 +100,63 @@ describe('serializeEvent', () => {
 
     expect(wire.state).toEqual({ result: 41 });
     expect(wire.error).toEqual({ name: 'Error', message: 'it broke' });
+  });
+});
+
+describe('plugin events on the wire', () => {
+  it('carries a plugin event whole, with its namespaced type as the frame name', () => {
+    const c = collector();
+    const stream = new SseStream(c.res);
+    stream.open();
+
+    const event: Event = {
+      type: 'plugin:LlmJudge:progress',
+      nodeName: 'judge',
+      nodeType: 'LlmJudge',
+      data: { scored: 3, of: 10 },
+    };
+    stream.send(event.type, serializeEvent(event));
+
+    // The type is the SSE event name, which is what a browser subscribes to —
+    // so the namespacing has to survive the transport intact, or two plugins'
+    // events arrive indistinguishable.
+    expect(c.frames()).toEqual([
+      {
+        event: 'plugin:LlmJudge:progress',
+        data: {
+          type: 'plugin:LlmJudge:progress',
+          nodeName: 'judge',
+          nodeType: 'LlmJudge',
+          data: { scored: 3, of: 10 },
+        },
+      },
+    ]);
+  });
+
+  it('carries a log line, which is the whole of what a client renders', () => {
+    const wire = serializeEvent({
+      type: 'plugin_log',
+      nodeName: 'judge',
+      nodeType: 'LlmJudge',
+      level: 'warn',
+      message: 'the third row had no id; skipping it',
+    });
+
+    expect(wire.level).toBe('warn');
+    expect(wire.message).toBe('the third row had no id; skipping it');
+  });
+
+  it('will not let an event name write a frame of its own', () => {
+    const c = collector();
+    const stream = new SseStream(c.res);
+    stream.open();
+
+    // `pluginEventType` refuses this name at construction, so nothing in heddle
+    // produces it. This is the last line before the wire: a name that got here
+    // anyway must not be able to append a `flow_complete` a client believes.
+    stream.send('plugin:X:a\n\nevent: flow_complete\ndata: {}', { type: 'x' });
+
+    expect(c.frames()).toHaveLength(1);
+    expect(c.frames()[0].event).not.toContain('\n');
   });
 });

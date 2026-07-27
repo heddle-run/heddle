@@ -32,11 +32,56 @@
  * });
  * ```
  *
- * `execute` and `apply` receive a `ctx` with `runTool(name, input)` and the
- * component's own spec fields. `runTool` is always there to call and is refused
- * unless the manifest lists it under `capabilities` — the function exists so
- * that a plugin which forgot to declare it gets an error saying exactly that,
- * rather than an undefined it has to work out for itself.
+ * `execute` and `apply` receive a `ctx` with the component's own spec fields and
+ * four things to call:
+ *
+ * ```js
+ * await ctx.runTool('grep', { pattern: 'TODO' });   // run a flow tool
+ * ctx.emitEvent('progress', { done: 3, total: 10 }); // tell the run's watchers
+ * ctx.log('warn', 'retrying after a 429');           // say something for a person
+ * const dir = ctx.getWorkspace();                    // a directory tools can see
+ * ```
+ *
+ * Every one of these is a capability the manifest has to list under
+ * `capabilities`, except `getWorkspace`, which is not a call into heddle at all
+ * — the path arrives with the request. They are always there to call and fail
+ * when they were not declared, so a plugin that forgot gets an error saying
+ * exactly that rather than an `undefined` to work out for itself.
+ *
+ * `ctx.emitEvent(name, data)` publishes an event on the run's stream, where
+ * every client watching the run sees it. **You supply only `name`**: heddle
+ * publishes it as `plugin:<componentType>:<name>`, so an event of yours can
+ * never be read as one of heddle's own. `name` has to be an identifier
+ * (`[A-Za-z_][A-Za-z0-9_]*`) and `data` has to be plain JSON; both are checked
+ * here, in your process, so a mistake throws at the call that made it.
+ *
+ * `ctx.log(level, message)` — `debug`, `info`, `warn` or `error` — is for a
+ * person rather than a program. It is not the same as writing to stderr: heddle
+ * keeps only the last few kilobytes of that and shows it only when your process
+ * *fails*, so a plugin that works has no way to say anything. A log line is an
+ * event, so it survives success and arrives in order with everything else.
+ *
+ * `ctx.getWorkspace()` returns a directory this execution shares with the tools
+ * it runs, so a file you write can be named to `runTool` by path. It is the
+ * only way to hand a tool something large — `runTool` input is JSON on its way
+ * to a subprocess's stdin. heddle destroys it when the node returns. It is
+ * available to `execute` and not to `apply`: a transform owns no tool scope, so
+ * there is no directory its tool calls would agree on.
+ *
+ * It also throws when the operator runs heddle with `--safe`, which confines
+ * your process to a sandbox of its own. The node's tools are confined to a
+ * different one, so there is no directory both sides can open and heddle sends
+ * none rather than a path that would fail at your first write. Under `--safe` a
+ * plugin node hands a tool its input through `runTool` and nothing else.
+ *
+ * **There is one way to report progress and this is it.** The protocol also has
+ * a `{ id, partial }` frame, and it is not a second one: a partial is a piece of
+ * *one call's answer*, delivered only to whatever inside heddle is awaiting that
+ * call — and nothing awaits a plugin's yet, so this helper deliberately gives
+ * you no way to send one. An event is a report *about the run*, and it reaches
+ * the client. Neither costs you your deadline: heddle's per-call timeout is a
+ * silence budget, and anything you report resets it, so a plugin that works for
+ * ten minutes and says so throughout is not killed for taking ten minutes.
  *
  * `ctx.signal` is an `AbortSignal` that fires when heddle cancels the call or
  * stops the plugin. Cancellation is cooperative, exactly as it is anywhere else
@@ -84,12 +129,106 @@ function serve(handlers, options) {
   const pending = new Map();
   let nextId = 0;
 
-  const runTool = (name, input) =>
+  // Bound to the call it was made inside, like a report. Not for attribution
+  // here but for scope: heddle runs the tool in the tool scope it opened for
+  // that call, which is the one whose directory getWorkspace() names. Without
+  // the id the tool lands in a throwaway sandbox session and cannot see the
+  // file this plugin just wrote for it.
+  const runTool = (call, name, input) =>
     new Promise((resolve, reject) => {
       const id = 't' + nextId++;
       pending.set(id, { resolve, reject });
-      send({ id, method: 'runTool', params: { name, input: input ?? {} } });
+      send({ id, method: 'runTool', params: { call, name, input: input ?? {} } });
     });
+
+  // What heddle's init said this plugin was granted.
+  let granted = new Set();
+
+  // heddle's own rules, restated in the plugin's process because this is the
+  // only place a check can throw at the call that broke it. emitEvent and log
+  // return nothing, so heddle's refusal comes back as a frame nobody is
+  // awaiting — checked only there, a plugin that misspelt an event name or
+  // forgot to declare the capability would report into silence.
+  const EVENT_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+  const LOG_LEVELS = ['debug', 'info', 'warn', 'error'];
+
+  const needs = (verb) => {
+    if (granted.has(verb)) return;
+    throw new Error(
+      verb + ' is not granted to this plugin. Add it to "capabilities" in the ' +
+        'manifest: a plugin gets only what it declares.',
+    );
+  };
+
+  // Sent, not awaited. In heddle's process these two return nothing, and they
+  // return nothing here for the same reason: the same plugin logic has to be
+  // writable for both. What is left for heddle to refuse a well-formed report
+  // for is heddle's own wiring, so that goes to stderr rather than to a caller
+  // who is not listening for it.
+  const report = (call, method, params) => {
+    const id = 'r' + nextId++;
+    pending.set(id, {
+      resolve: () => {},
+      reject: (err) => toStderr('heddle refused ' + method + ': ' + err.message),
+    });
+    send({ id, method, params: Object.assign({ call }, params) });
+  };
+
+  const emitEvent = (call, name, data) => {
+    needs('emitEvent');
+    if (typeof name !== 'string' || !EVENT_NAME.test(name)) {
+      throw new Error(
+        JSON.stringify(name) + ' is not a usable event name. heddle publishes this ' +
+          'event as "plugin:<componentType>:<name>", so the name is its last segment ' +
+          'and has to match ' + EVENT_NAME.source + ' — letters, digits and ' +
+          'underscores, starting with a letter or underscore. Try "progress".',
+      );
+    }
+    if (data !== undefined) {
+      try {
+        JSON.stringify(data);
+      } catch (err) {
+        throw new Error(
+          '"' + name + '" was emitted with data that is not JSON: ' +
+            String((err && err.message) || err) + '. An event payload is written ' +
+            'straight into the client stream, so it has to be plain values — no ' +
+            'cycles, no BigInt, no class instances that stringify to nothing.',
+        );
+      }
+    }
+    report(call, 'emitEvent', { name, data });
+  };
+
+  const log = (call, level, message) => {
+    needs('log');
+    if (LOG_LEVELS.indexOf(level) === -1) {
+      throw new Error(
+        'log level ' + JSON.stringify(level) + ' is not one of: ' +
+          LOG_LEVELS.join(', ') + '.',
+      );
+    }
+    report(call, 'log', { level, message: String(message) });
+  };
+
+  // Two different people's problems arrive here as the same missing field, so
+  // heddle marks which. Blaming transforms for both would send a node author
+  // whose operator runs --safe to change something that is already correct.
+  const workspaceOf = (params) => {
+    if (typeof params.workspace === 'string') return params.workspace;
+    if (params.workspaceUnavailable === 'confined') {
+      throw new Error(
+        'getWorkspace has nothing to return: this plugin runs inside a sandbox of ' +
+          'its own, and the directory its node shares with the tools it runs is ' +
+          'outside that sandbox — a path this process could not open. Pass what the ' +
+          'tool needs in runTool\'s input, or ask the operator to run without --safe.',
+      );
+    }
+    throw new Error(
+      'getWorkspace is only available while a node is executing. A transform owns ' +
+        'no tool scope, so there is no directory its tool calls would share and ' +
+        'heddle sends it none.',
+    );
+  };
 
   // Every call heddle is still waiting on, so cancel and shutdown have
   // something to act on rather than a promise nobody kept a handle to.
@@ -112,6 +251,10 @@ function serve(handlers, options) {
   // Answered before the componentType lookup below, which these carry none of.
   const lifecycle = (request) => {
     if (request.method === 'init') {
+      // The settled grant, which is what the checks above test against. A
+      // plugin that is never greeted has been granted nothing, and that is the
+      // right answer rather than a special case: no handshake, no permission.
+      granted = new Set((request.params || {}).capabilities || []);
       send({ id: request.id, result: { protocol: HEDDLE_PROTOCOL_VERSION } });
       return true;
     }
@@ -157,10 +300,16 @@ function serve(handlers, options) {
     inflight.set(key, { controller, cancelId: undefined });
     try {
       const ctx = {
-        runTool,
+        runTool: (name, input) => runTool(request.id, name, input),
         node: params.node || params.component || {},
         phase: params.phase,
         signal: controller.signal,
+        // Bound to this request's id, so heddle knows which node a report
+        // belongs to and can keep that call's clock running. A plugin never
+        // supplies it, which is what makes the attribution heddle's.
+        emitEvent: (name, data) => emitEvent(request.id, name, data),
+        log: (level, message) => log(request.id, level, message),
+        getWorkspace: () => workspaceOf(params),
       };
       const result =
         request.method === 'apply'

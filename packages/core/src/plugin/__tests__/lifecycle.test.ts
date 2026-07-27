@@ -107,7 +107,7 @@ function execute(
 ): Promise<unknown> {
   return host.call(
     'execute',
-    { componentType, node: { name: 'p' }, input },
+    { componentType, node: { name: 'p' }, input, workspace: scratch },
     undefined,
     onPartial,
   );

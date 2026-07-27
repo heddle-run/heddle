@@ -83,8 +83,33 @@ export function remoteNodeDef(
               componentType: entry.componentType,
               node: wire,
               input,
+              // Read here rather than served as a reverse call, for the
+              // reasons on `ExecuteParams.workspace` — and withheld when the
+              // plugin's own process is confined, because the node's scope is
+              // a different sandbox session and its path is one the plugin
+              // cannot open. Sending it anyway would be the one thing that
+              // field must not do. The cost of sending it is visible at this
+              // line: without a sandbox `getWorkspace` creates the directory
+              // whether or not the plugin ever opens it, so a confined plugin
+              // is also spared a mkdtemp for a path it could not use.
+              ...(host().confined
+                ? { workspaceUnavailable: 'confined' as const }
+                : { workspace: ctx.getWorkspace() }),
             },
             ctx.signal,
+            undefined,
+            // The context heddle built for this node, handed over whole. What
+            // a remote plugin's `emitEvent` reaches is therefore the same
+            // object an in-process one calls directly — the namespace, the
+            // attribution and the name check come from one place, and the two
+            // paths cannot drift into publishing different events.
+            ctx,
+            // The same trade for tools, and the half that was missing. This
+            // node's `runTool` is bound to the tool scope heddle opened for
+            // this execution, so a tool the plugin runs sees the workspace the
+            // plugin was told about — and gets the run's signal, which the
+            // host-wide runner below drops.
+            ctx.runTool,
           );
           return asResult(manifest.name, entry.componentType, node.name, raw);
         },
@@ -140,6 +165,12 @@ export function remoteTransformDef(
               messages,
             },
             ctx.signal,
+            undefined,
+            // As a node's, and carrying the same attribution decision: a
+            // transform's events name the agent it hangs off, because the
+            // chain built this context knowing which agent that is and a
+            // transform holds no position in the graph of its own.
+            ctx,
           );
           return asTransformResult(manifest.name, entry.componentType, raw);
         },
@@ -233,13 +264,15 @@ function typeOf(value: unknown): string {
 }
 
 /**
- * The `runTool` a plugin's reverse calls land on.
+ * The `runTool` a plugin's reverse calls fall back to.
  *
- * Mirrors what `PluginNodeAdapter` gives an in-process plugin, with one
- * difference that matters: this runs the tool through the executor without a
- * per-node scope. A remote plugin's calls arrive on its own channel and are not
- * tied to the execute() that is on the stack, so there is no node scope to
- * borrow — the executor's own confinement still applies to each tool.
+ * Scopeless, and that is what makes it a fallback rather than the path. The
+ * executor's own confinement still applies to each tool, but a tool started
+ * here gets a throwaway sandbox session, so it shares a workspace with nothing
+ * — including the node that asked for it. A node's own `runTool` therefore goes
+ * through {@link PluginHost.call}'s `runTool` argument instead, and this serves
+ * the two cases that have no scope to offer: a transform, which owns none, and
+ * a plugin hand-rolling the protocol that sends no `call` id.
  *
  * One host serves every component of one plugin, and the host keeps the first
  * runner it is given. The runners differ only in the component they name in an

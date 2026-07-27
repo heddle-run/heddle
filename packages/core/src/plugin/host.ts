@@ -26,16 +26,20 @@ import { PluginError } from '../errors.js';
 import {
   encode,
   hostRequest,
+  isLogLevel,
   isObject,
   isPartial,
   isPluginMethod,
   isRequest,
   LineDecoder,
+  LOG_LEVELS,
   PLUGIN_METHODS,
   PROTOCOL_VERSION,
   spokenProtocol,
+  type EmitEventParams,
   type HostMethod,
   type HostMethods,
+  type LogParams,
   type PluginCapability,
   type RpcMessage,
   type RpcPartial,
@@ -43,6 +47,7 @@ import {
   type RpcResponse,
   type RunToolParams,
 } from './protocol.js';
+import type { PluginReporter } from './types.js';
 
 const DEFAULT_CALL_TIMEOUT = 30_000;
 
@@ -126,6 +131,14 @@ function unserved(method: never): string {
 /** A callback that consumes one `{ id, partial }` frame. See {@link PluginHost.call}. */
 export type PartialHandler = (partial: unknown) => void;
 
+/** Answers one request the plugin made, on that request's own id. */
+type Respond = (response: Omit<RpcResponse, 'id'>) => void;
+
+/** An error frame, in the one shape every refusal below takes. */
+function refuse(message: string): Omit<RpcResponse, 'id'> {
+  return { error: { name: 'PluginError', message } };
+}
+
 interface Pending {
   resolve: (value: unknown) => void;
   reject: (err: Error) => void;
@@ -137,6 +150,38 @@ interface Pending {
    */
   extend?: () => void;
   onPartial?: PartialHandler;
+  /**
+   * Publishes what the plugin reports while this call is running.
+   *
+   * Held per call rather than per host, because it carries the attribution: one
+   * process serves every component of a plugin, so a single reporter on the
+   * host would file node B's events under node A the moment two calls overlap.
+   * A reverse call names the call it came from and the host looks the reporter
+   * up here, which is also why a plugin cannot choose the namespace its events
+   * are published under — it was fixed when heddle dispatched the call.
+   */
+  reporter?: PluginReporter;
+  /**
+   * Runs this call's tools, in the scope heddle opened for it.
+   *
+   * Per call for a stronger reason than the reporter's. The host's own runner
+   * is scopeless, so every tool it starts gets a throwaway sandbox session — a
+   * different workspace from the one `ExecuteParams.workspace` named. A plugin
+   * that writes a file and passes its path to `runTool` would then hand the
+   * tool a path that is not there, and it would read as the tool being broken.
+   */
+  toolRunner?: ToolRunner;
+  /**
+   * Marks a frame heddle sent on its own behalf — `init` or `cancel` — rather
+   * than a call anything is running under.
+   *
+   * These sit in the same map as real calls, so their ids are guessable: `init`
+   * is always 1. Without this marker a plugin that never answers `init` and
+   * then reports against call 1 gets heddle's "nothing built an executor here"
+   * message, which blames heddle's own wiring for a frame the plugin forged and
+   * sends whoever reads it into plumbing that is working correctly.
+   */
+  lifecycle?: true;
 }
 
 /** Ids arrive as whatever the plugin echoed; the host issues only numbers. */
@@ -182,6 +227,18 @@ export class PluginHost {
   }
 
   /**
+   * Whether this plugin's process runs inside a sandbox session of its own.
+   *
+   * Read by `remoteNodeDef` to decide whether the node's workspace path means
+   * anything on the plugin's side of the boundary. It does not, when this is
+   * true: the two are different sessions, and confinement is fixed at spawn —
+   * see `ExecuteParams.workspace`.
+   */
+  get confined(): boolean {
+    return this.options.session !== undefined;
+  }
+
+  /**
    * Call a method on the plugin, starting it if it is not yet running.
    *
    * Generic over the method so the params are checked against the verb rather
@@ -198,12 +255,30 @@ export class PluginHost {
    * call. Nothing in heddle emits one yet; the parameter exists so the consumer
    * side of the frame is settled at the same time as the frame, rather than
    * being the reason `call`'s signature changes once plugins depend on it.
+   *
+   * `reporter` is what the plugin's `emitEvent` and `log` land on for the
+   * duration of this call. Passed in rather than built here on purpose: the
+   * caller hands over the very object an in-process plugin would have been
+   * given, so the remote path publishes the same events by construction instead
+   * of by a second implementation that has to be kept identical. A call made
+   * without one still runs; the plugin is told there is nowhere to report to.
+   *
+   * `runTool` is the same trade for the plugin's tool calls, and it is what
+   * keeps this call's tools inside this call's scope. A caller that has one —
+   * a node, which opened a tool scope for its execution — hands over the very
+   * function an in-process plugin would have called, so the tool runs in the
+   * session whose workspace the plugin was told about. A caller that has none —
+   * a transform, which owns no scope — passes nothing and the plugin falls back
+   * to {@link setToolRunner}'s host-wide runner, which is all a transform ever
+   * had.
    */
   async call<M extends HostMethod>(
     method: M,
     params: HostMethods[M],
     signal?: AbortSignal,
     onPartial?: PartialHandler,
+    reporter?: PluginReporter,
+    runTool?: ToolRunner,
   ): Promise<unknown> {
     if (this.disposed) {
       throw new PluginError(`plugin "${this.name}" was disposed`);
@@ -260,6 +335,8 @@ export class PluginHost {
           timer = setTimeout(expire, timeout);
         },
         onPartial,
+        reporter,
+        toolRunner: runTool,
       });
       this.write({ id, method, params });
     });
@@ -334,6 +411,7 @@ export class PluginHost {
         proc.kill('SIGKILL');
       },
       release: () => {},
+      lifecycle: true,
     });
 
     this.write(hostRequest(id, 'cancel', { call: abandoned }));
@@ -425,6 +503,7 @@ export class PluginHost {
         if (!this.dead && !this.disposed) this.checkProtocol(undefined);
       },
       release: () => {},
+      lifecycle: true,
     });
 
     this.write(
@@ -571,18 +650,15 @@ export class PluginHost {
 
   /** Answer a request the plugin made of heddle. */
   private async serve(request: RpcRequest): Promise<void> {
-    const respond = (response: Omit<RpcResponse, 'id'>): void =>
-      this.write({ id: request.id, ...response });
+    const respond: Respond = (response) => this.write({ id: request.id, ...response });
 
     if (!isPluginMethod(request.method)) {
-      respond({
-        error: {
-          name: 'PluginError',
-          message:
-            `heddle does not serve "${request.method}". ` +
+      respond(
+        refuse(
+          `heddle does not serve "${request.method}". ` +
             `It serves: ${PLUGIN_METHODS.join(', ')}.`,
-        },
-      });
+        ),
+      );
       return;
     }
 
@@ -591,22 +667,26 @@ export class PluginHost {
     // and so an ungranted call has no effect at all, rather than one that got
     // partway before something noticed.
     if (!this.granted.has(request.method)) {
-      respond({
-        error: {
-          name: 'PluginError',
-          message:
-            `"${request.method}" is not granted to this plugin. ` +
+      respond(
+        refuse(
+          `"${request.method}" is not granted to this plugin. ` +
             `Add it to "capabilities" in the manifest: a plugin gets only what it ` +
             `declares, and whether the host allows it is settled when the plugin ` +
             `loads rather than here.`,
-        },
-      });
+        ),
+      );
       return;
     }
 
     switch (request.method) {
       case 'runTool':
         await this.serveRunTool(request, respond);
+        return;
+      case 'emitEvent':
+        this.serveEmitEvent(request, respond);
+        return;
+      case 'log':
+        this.serveLog(request, respond);
         return;
     }
 
@@ -615,13 +695,33 @@ export class PluginHost {
     // is what makes the switch exhaustive — `unserved` takes `never`, so a
     // method added to `PluginMethod` without a case here fails to compile
     // instead of leaving the plugin that called it waiting for a reply.
-    respond({ error: { name: 'PluginError', message: unserved(request.method) } });
+    respond(refuse(unserved(request.method)));
   }
 
-  private async serveRunTool(
-    request: RpcRequest,
-    respond: (response: Omit<RpcResponse, 'id'>) => void,
-  ): Promise<void> {
+  /**
+   * Which executor serves one `runTool`, preferring the calling node's own.
+   *
+   * A node opened a tool scope for its execution and handed the runner bound to
+   * it to {@link call}, so a tool started through that one lands in the session
+   * whose workspace the plugin was told about — the property
+   * `PluginContext.getWorkspace` promises and the reason a plugin can hand a
+   * tool a 200 MB file at all.
+   *
+   * Falls back to the host-wide runner in the two cases where there is no
+   * better answer, rather than refusing: a transform, which owns no scope and
+   * never had one, and a plugin that hand-rolls the protocol and sends no
+   * `call` — written before this field existed, and still entitled to run a
+   * tool. Both get what they got before, which is a throwaway session per call.
+   */
+  private runningToolsFor(request: RpcRequest): ToolRunner | undefined {
+    const { call } = (request.params ?? {}) as { call?: unknown };
+    if (typeof call !== 'number' && typeof call !== 'string') return this.toolRunner;
+    return this.pending.get(idOf(call))?.toolRunner ?? this.toolRunner;
+  }
+
+  private async serveRunTool(request: RpcRequest, respond: Respond): Promise<void> {
+    const runner = this.runningToolsFor(request);
+
     // A different condition from the grant above, and it has to keep saying so.
     // Here the plugin asked for runTool and was allowed it; what is missing is
     // the runner, which `createExecutor` and `createTransform` install from the
@@ -629,34 +729,184 @@ export class PluginHost {
     // was called without either of those running first, so it is heddle's
     // wiring at fault and not the manifest — a message about capabilities would
     // send the author to change a file that is already correct.
-    if (!this.toolRunner) {
-      respond({
-        error: {
-          name: 'PluginError',
-          message:
-            'runTool is granted to this plugin, but no tool runner was installed on ' +
+    if (!runner) {
+      respond(
+        refuse(
+          'runTool is granted to this plugin, but no tool runner was installed on ' +
             'it. A plugin reaches the flow tools through the executor built for its ' +
             'component, and nothing built one here.',
-        },
-      });
+        ),
+      );
       return;
     }
 
     const params = (request.params ?? {}) as Partial<RunToolParams>;
     if (typeof params.name !== 'string' || params.name.length === 0) {
-      respond({
-        error: {
-          name: 'PluginError',
-          message: 'runTool needs a "name": the tool to run, as the flow registered it',
-        },
-      });
+      respond(
+        refuse('runTool needs a "name": the tool to run, as the flow registered it'),
+      );
       return;
     }
 
     try {
-      const result = await this.toolRunner(params.name, params.input ?? {});
+      const result = await runner(params.name, params.input ?? {});
       respond({ result });
     } catch (err) {
+      respond({
+        error: {
+          name: err instanceof Error ? err.name : 'Error',
+          message: err instanceof Error ? err.message : String(err),
+        },
+      });
+    }
+  }
+
+  /**
+   * Find where a report goes, and keep the clock of the call it came from.
+   *
+   * A report names the `execute` or `apply` it was made inside, and that id is
+   * the whole of how heddle attributes it — see `InFlight` in the protocol.
+   * Three ways it comes back with nowhere to go, and each is a different
+   * person's mistake, so each says something different: a plugin that named no
+   * call, a plugin that named a call that is over, and a heddle that dispatched
+   * a call without giving it anywhere to report to.
+   */
+  private reportingTo(
+    verb: 'emitEvent' | 'log',
+    request: RpcRequest,
+    respond: Respond,
+  ): PluginReporter | undefined {
+    const { call } = (request.params ?? {}) as { call?: unknown };
+    if (typeof call !== 'number' && typeof call !== 'string') {
+      respond(
+        refuse(
+          `${verb} needs a "call": the id of the execute or apply request it was ` +
+            `made inside. heddle files a report under the node that call is ` +
+            `running, so one naming no call has nothing to file it under.`,
+        ),
+      );
+      return undefined;
+    }
+
+    const pending = this.pending.get(idOf(call));
+    if (!pending) {
+      respond(
+        refuse(
+          `${verb} named call ${String(call)}, which heddle is not waiting on. A ` +
+            `report belongs to the execute or apply it was made inside, and that ` +
+            `one has already been answered, timed out, or been cancelled.`,
+        ),
+      );
+      return undefined;
+    }
+
+    // Before the report is checked, not after. A plugin that says anything at
+    // all has not hung, and whether it is alive does not depend on whether it
+    // got the frame right. Same rule a partial runs under.
+    pending.extend?.();
+
+    // Ahead of the reporter check, because a lifecycle id is not a call that
+    // lost its executor — it is a frame heddle sent the plugin, and its id is
+    // guessable (`init` is always 1). Reported as "nothing built one here" it
+    // would blame heddle's wiring for a plugin's forgery.
+    if (pending.lifecycle) {
+      respond(
+        refuse(
+          `${verb} named call ${String(call)}, which is not an execute or apply. A ` +
+            `report belongs to the call it was made inside; that id is a lifecycle ` +
+            `frame heddle sent the plugin, and nothing runs under it.`,
+        ),
+      );
+      return undefined;
+    }
+
+    if (!pending.reporter) {
+      // A different condition from the grant, exactly as the missing tool
+      // runner is: the plugin asked and was allowed, and what is absent is
+      // heddle's own wiring. Sending an author to the manifest here would send
+      // them to change a file that is already correct.
+      respond(
+        refuse(
+          `${verb} is granted to this plugin, but call ${String(call)} was made ` +
+            `with nowhere to report to. A plugin reports through the executor ` +
+            `built for its component, and nothing built one here.`,
+        ),
+      );
+      return undefined;
+    }
+
+    return pending.reporter;
+  }
+
+  private serveEmitEvent(request: RpcRequest, respond: Respond): void {
+    const reporter = this.reportingTo('emitEvent', request, respond);
+    if (!reporter) return;
+
+    const params = (request.params ?? {}) as Partial<EmitEventParams>;
+    if (typeof params.name !== 'string') {
+      respond(
+        refuse(
+          'emitEvent needs a "name": the plugin\'s half of the event type, which ' +
+            'heddle publishes as plugin:<componentType>:<name>.',
+        ),
+      );
+      return;
+    }
+
+    try {
+      // The very call an in-process plugin makes, so the name check, the
+      // namespacing and the published shape are one implementation instead of
+      // two that have to be kept identical. It is also where the plugin's half
+      // of the name is refused if it is not an identifier — the check that
+      // stops an event name from carrying a frame of its own.
+      reporter.emitEvent(params.name, params.data);
+      respond({ result: {} });
+    } catch (err) {
+      // Reported back rather than allowed to escape. `serve` runs from the
+      // stdout handler, so a throw here is an unhandled rejection naming
+      // neither the plugin nor the event; answered, it is the plugin's own call
+      // failing, which is what an in-process plugin gets for the same mistake.
+      respond({
+        error: {
+          name: err instanceof Error ? err.name : 'Error',
+          message: err instanceof Error ? err.message : String(err),
+        },
+      });
+    }
+  }
+
+  private serveLog(request: RpcRequest, respond: Respond): void {
+    const reporter = this.reportingTo('log', request, respond);
+    if (!reporter) return;
+
+    const params = (request.params ?? {}) as Partial<LogParams>;
+    if (!isLogLevel(params.level)) {
+      respond(
+        refuse(
+          `log needs a "level", one of: ${LOG_LEVELS.join(', ')}. Got ` +
+            `${JSON.stringify(params.level)}.`,
+        ),
+      );
+      return;
+    }
+    if (typeof params.message !== 'string') {
+      respond(
+        refuse(
+          'log needs a "message": one line for a person watching the run. A ' +
+            'structured payload belongs on emitEvent, which is the verb that ' +
+            'carries the plugin\'s own shape.',
+        ),
+      );
+      return;
+    }
+
+    try {
+      reporter.log(params.level, params.message);
+      respond({ result: {} });
+    } catch (err) {
+      // `log` cannot fail of itself, but the event handler behind it belongs to
+      // whoever is watching the run — an SSE stream that has gone away, say —
+      // and its failure must not become this process's uncaught exception.
       respond({
         error: {
           name: err instanceof Error ? err.name : 'Error',

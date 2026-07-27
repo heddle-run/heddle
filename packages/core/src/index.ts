@@ -63,7 +63,22 @@ export type { CompiledNode, DataSource } from './graph/types.js';
 export { Runner } from './runner/runner.js';
 export { DEFAULT_RUNNER_OPTIONS } from './runner/options.js';
 export type { RunnerOptions } from './runner/options.js';
-export type { Event, EventType, EventHandler } from './runner/events.js';
+// `EventType` is half closed and half open, and both halves are named here
+// because a consumer's first question about an event is which half it came
+// from. `isPluginEvent` answers it and `PLUGIN_EVENT_PREFIX` is what a consumer
+// strips to get back to the plugin's own name. What is deliberately *not*
+// exported is `pluginEventType`, the function that mints one: heddle deciding
+// the wire type is the whole of why a plugin cannot forge a builtin event, and
+// that stops being true the moment anything else can call it.
+export type {
+  BuiltinEventType,
+  Event,
+  EventType,
+  EventHandler,
+  LogLevel,
+  PluginEventType,
+} from './runner/events.js';
+export { isPluginEvent, PLUGIN_EVENT_PREFIX } from './runner/events.js';
 
 export { State } from './state/state.js';
 
@@ -102,10 +117,12 @@ export {
   encode,
   hostRequest,
   isPartial,
+  isLogLevel,
   isPluginCapability,
   isPluginMethod,
   isRequest,
   LineDecoder,
+  LOG_LEVELS,
   PLUGIN_CAPABILITIES,
   PLUGIN_METHODS,
   PROTOCOL_VERSION,
@@ -114,6 +131,7 @@ export {
 export type {
   ApplyParams,
   CancelParams,
+  EmitEventParams,
   ExecuteParams,
   HostLifecycleMethods,
   HostMethod,
@@ -122,6 +140,7 @@ export type {
   HostVerbs,
   InitParams,
   InitResult,
+  LogParams,
   PluginCapability,
   PluginMethod,
   PluginMethods,
@@ -149,9 +168,11 @@ export type {
   PluginNode,
   PluginNodeDef,
   PluginNodeExecutor,
+  PluginReporter,
   PluginResult,
   PluginTransformDef,
   PluginTransformExecutor,
+  TransformContext,
   TransformPhase,
   TransformResult,
 } from './plugin/types.js';

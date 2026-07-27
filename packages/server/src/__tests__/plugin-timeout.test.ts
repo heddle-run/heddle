@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { PluginNode } from '@heddle/core';
+import type { PluginContext, PluginNode } from '@heddle/core';
 import { resolveConfig, DEFAULT_PLUGIN_CALL_TIMEOUT } from '../config.js';
 import { materializeRequestCode, type MaterializedCode } from '../request-code.js';
 import { buildPlugins } from '../plugins.js';
@@ -29,6 +29,26 @@ function hangNode(): PluginNode {
     name: 'hang',
     id: 'hang',
     metadata: {},
+  };
+}
+
+/**
+ * The whole context a node executor is given, built once and annotated.
+ *
+ * These tests reach past the runner and call `execute` directly, which is the
+ * only way to time one plugin call rather than a whole run. That means
+ * assembling the context heddle would have assembled — and assembling it here
+ * rather than inline at each call site, which is how three of them came to be
+ * missing `getWorkspace` the moment the remote executor started reading it.
+ */
+function pluginContext(): PluginContext {
+  return {
+    signal: undefined,
+    node: hangNode(),
+    runTool: async () => ({}),
+    getWorkspace: () => tmpdir(),
+    emitEvent: () => {},
+    log: () => {},
   };
 }
 
@@ -87,9 +107,9 @@ describe('per-call plugin budget', () => {
     const executor = loadHangingPlugin(300, 300_000);
 
     const started = Date.now();
-    await expect(
-      executor.execute({}, { signal: undefined, node: hangNode(), runTool: async () => ({}) }),
-    ).rejects.toThrow(/did not answer execute within 300ms/);
+    await expect(executor.execute({}, pluginContext())).rejects.toThrow(
+      /did not answer execute within 300ms/,
+    );
     expect(Date.now() - started).toBeLessThan(10_000);
   });
 
@@ -103,15 +123,15 @@ describe('per-call plugin budget', () => {
     const executor = loadHangingPlugin(30_000, 300);
 
     const started = Date.now();
-    await expect(
-      executor.execute({}, { signal: undefined, node: hangNode(), runTool: async () => ({}) }),
-    ).rejects.toThrow(/did not answer execute within 300ms/);
+    await expect(executor.execute({}, pluginContext())).rejects.toThrow(
+      /did not answer execute within 300ms/,
+    );
     expect(Date.now() - started).toBeLessThan(10_000);
   });
 
   it('kills the plugin, so a second call does not wait on a channel it cannot trust', async () => {
     const executor = loadHangingPlugin(300, 300_000);
-    const ctx = { signal: undefined, node: hangNode(), runTool: async () => ({}) };
+    const ctx = pluginContext();
 
     await expect(executor.execute({}, ctx)).rejects.toThrow(/did not answer/);
     await expect(executor.execute({}, ctx)).rejects.toThrow(/hang/);

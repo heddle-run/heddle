@@ -43,6 +43,7 @@ export class SubprocessExecutor implements Executor {
         sandbox: this.sandbox,
         session,
       }),
+      workspace: session.workspace,
       dispose: () => {
         if (disposed) return;
         disposed = true;

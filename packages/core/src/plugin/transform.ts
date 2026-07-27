@@ -9,10 +9,12 @@ import type { Dependencies } from '../node/types.js';
 import type { TransformSpec } from '../spec/types.js';
 import type {
   PluginComponent,
+  PluginReporter,
   PluginTransformExecutor,
   TransformPhase,
 } from './types.js';
 import type { Message } from '../llm/types.js';
+import { pluginReporter } from './executor.js';
 import { PluginError } from '../errors.js';
 
 /** Transforms the SDK defines but heddle does not execute yet. */
@@ -41,6 +43,12 @@ export interface TransformOutcome {
 interface Entry {
   component: PluginComponent;
   impl: PluginTransformExecutor;
+  /**
+   * Built once, at compile time, rather than per application. It closes over
+   * the agent name, which `apply` is not given and should not have to be — the
+   * chain already knows which agent it belongs to.
+   */
+  reporter: PluginReporter;
   phases: Set<TransformPhase>;
 }
 
@@ -98,6 +106,14 @@ export class TransformChain {
       entries.push({
         component,
         impl: def.createTransform(component, deps),
+        // Attributed to the agent, not to the transform's own name: a transform
+        // is not a node, and the agent is the only position in the graph a
+        // consumer can hang its events off. Which transform spoke is in
+        // `nodeType`, and in the event type itself.
+        reporter: pluginReporter(deps.eventHandler, {
+          nodeName: agentName,
+          componentType: spec.componentType,
+        }),
         phases:
           phase === 'both'
             ? new Set<TransformPhase>(['pre', 'post'])
@@ -142,6 +158,7 @@ export class TransformChain {
         signal,
         phase,
         component: entry.component,
+        ...entry.reporter,
       });
 
       if (!result || !VALID_ACTIONS.has(result.action)) {

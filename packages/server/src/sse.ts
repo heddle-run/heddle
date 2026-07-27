@@ -12,7 +12,10 @@ import type { Event } from '@heddle/core';
  * Carried across rather than listed field by field, and that is the point. A
  * fixed list drops anything added to `Event` later without a type error or a
  * warning — `message` was in exactly that state, so every `warning` reached the
- * browser empty. Spreading means a new field arrives on its own.
+ * browser empty. Spreading means a new field arrives on its own, which is how
+ * `data` and `level` reach a client without this function being told they
+ * exist: a plugin's event payload is opaque to heddle, and a rendering that had
+ * to enumerate what a plugin can send would be wrong the day after it shipped.
  */
 export function serializeEvent(e: Event): Record<string, unknown> {
   const { state, error, ...rest } = e;
@@ -48,7 +51,17 @@ export class SseStream {
 
   send(event: string, data: unknown): void {
     if (this.closed) return;
-    this.res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    // The event name is the one part of a frame that is not JSON-escaped, so a
+    // newline inside it ends the frame early and everything after it is read as
+    // a frame of the sender's own composition. `EventType` is no longer closed —
+    // a plugin supplies half of `plugin:<componentType>:<name>` — and writing
+    // "\n\nevent: flow_complete" into that half is precisely the forgery the
+    // namespacing prevents in the type system, reached around it. Names are
+    // already refused at construction; this refuses them again at the last
+    // point before the wire, because that check lives in another package and
+    // this is the line that would carry the damage.
+    const name = event.replace(/[\r\n]+/g, ' ');
+    this.res.write(`event: ${name}\ndata: ${JSON.stringify(data)}\n\n`);
   }
 
   close(): void {

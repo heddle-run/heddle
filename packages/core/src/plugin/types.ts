@@ -10,6 +10,7 @@
 import type { Property } from 'agentspec';
 import type { Message } from '../llm/types.js';
 import type { Dependencies } from '../node/types.js';
+import type { LogLevel } from '../runner/events.js';
 
 /**
  * A lightweight input/output declaration. heddle converts these into Agent Spec
@@ -51,8 +52,56 @@ export interface PluginResult {
   branch?: string;
 }
 
+/**
+ * The half of a plugin's context that reports on work in progress.
+ *
+ * Shared by nodes and transforms, and shared deliberately. Both are silent for
+ * the whole of their execution — a plugin node emits nothing between
+ * `node_start` and `node_complete`, and a transform emits nothing ever — and
+ * neither silence is more defensible than the other. A guardrail that rejects a
+ * prompt has as much to say about why as a judge node has about its progress,
+ * and an author who learns one API should not find the other missing it.
+ */
+export interface PluginReporter {
+  /**
+   * Report something structured to whoever is watching the run.
+   *
+   * `name` is the plugin's half of the event type and heddle supplies the rest,
+   * publishing the event as `plugin:<componentType>:<name>`. A plugin never
+   * chooses the whole type, which is what stops it emitting `flow_complete` and
+   * telling every client watching the run that a flow it does not own has
+   * finished. `name` has to be an identifier — see `pluginEventType` — and one
+   * that is not throws here rather than reaching a client.
+   *
+   * `data` reaches the client verbatim, so it has to survive `JSON.stringify`.
+   * A payload that does not is refused here for the reason given on
+   * `assertSerializable`.
+   */
+  emitEvent(name: string, data?: unknown): void;
+  /**
+   * Say something for a person watching the run.
+   *
+   * **Not a duplicate of stderr**, which a plugin also has. Out of process,
+   * stderr is capped at 4 KB and read only when the process *fails*
+   * (`PluginHost`), so a plugin that works has no way to say anything at all;
+   * in process it lands in heddle's own stderr, ordered against nothing and
+   * seen by nobody watching the run. A log line here is an event: it survives
+   * success, it arrives in order with `emitEvent` and with the engine's own
+   * events, and it goes to the run's stream — where the client is already
+   * looking — instead of an operator's terminal.
+   *
+   * **Not a duplicate of `emitEvent` either**, and the difference is who the
+   * payload is for. `data` is the plugin's own shape, so only a client written
+   * against that plugin can render it. A log line is heddle's shape — a level
+   * and a string — so every client can render it without knowing the plugin
+   * exists. That is why this cannot carry `data`: the moment it could, it would
+   * be `emitEvent` under a worse name.
+   */
+  log(level: LogLevel, message: string): void;
+}
+
 /** Runtime services handed to a plugin node on every execution. */
-export interface PluginContext {
+export interface PluginContext extends PluginReporter {
   signal: AbortSignal | undefined;
   /** The node instance being executed, with its spec fields. */
   node: PluginNode;
@@ -61,6 +110,37 @@ export interface PluginContext {
     name: string,
     input: Record<string, unknown>,
   ): Promise<Record<string, unknown>>;
+  /**
+   * A directory this execution may write to, shared with the tools it runs.
+   *
+   * **The sharing is the point, not the scratch.** A plugin can always make its
+   * own temp directory; what it cannot do is find the one its tools can see.
+   * Under `--safe` a node's tool calls are confined to a session workspace and
+   * nothing else on the filesystem exists for them, so a plugin that ran
+   * `mkdtemp` and passed the path to {@link PluginContext.runTool} would hand
+   * the tool a path that is not there on its side — a failure that appears only
+   * under sandboxing, only at the tool, and reads as the tool being broken.
+   * heddle knows which directory that is; the plugin has no way to. This is it,
+   * and a file written here can be named to `runTool` by path.
+   *
+   * It is also the only channel for anything large. `runTool` input is JSON on
+   * its way to a subprocess's stdin, so a plugin with a 200 MB artifact to hand
+   * over has one option, and it is this one.
+   *
+   * **Scoped to this execution.** heddle creates the directory and destroys it
+   * when the node returns, so a plugin that fails partway leaves nothing behind
+   * and a run cannot accumulate scratch. Nothing written here reaches the next
+   * node — what a node passes on goes in its `output`.
+   *
+   * The same string on every call, and cheap to call: with a sandbox it is the
+   * session's own workspace, and without one heddle makes a directory the first
+   * time a plugin asks and not before.
+   *
+   * **Not a confinement.** In process, a plugin is the same program as heddle
+   * and can open any path it likes; this says where it *should* write, not
+   * where it *can*.
+   */
+  getWorkspace(): string;
 }
 
 /** The runtime half of a custom node. */
@@ -101,7 +181,20 @@ export interface TransformResult {
   reason?: string;
 }
 
-export interface TransformContext {
+/**
+ * What a transform is handed on every application.
+ *
+ * The reporting half is {@link PluginReporter}, the same one a node gets. What
+ * a transform does *not* get is {@link PluginContext.getWorkspace}, and that is
+ * a property of where it runs rather than a judgement about transforms: a node
+ * opens a tool scope of its own, so the tools it runs share one workspace and a
+ * path into it means something. A transform runs inside an agent's turn and
+ * owns no scope, so its tool calls each get a throwaway sandbox session that is
+ * destroyed when the call returns. There is no directory here that two calls
+ * would agree on, and handing over one that only the transform can see would be
+ * a `mkdtemp` with heddle's name on it.
+ */
+export interface TransformContext extends PluginReporter {
   signal: AbortSignal | undefined;
   phase: TransformPhase;
   component: PluginComponent;

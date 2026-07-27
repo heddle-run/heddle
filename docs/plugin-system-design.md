@@ -1,14 +1,18 @@
 # Plugin System: Design and Extension Roadmap
 
-All paths are relative to the repository root. Line numbers are against the tree at the time of
-writing; every claim below was read out of the file it cites.
+All paths are relative to the repository root. Every claim below was read out of the file it cites.
+Line numbers are against the tree at the time of writing and rot with every commit; the files that
+churn most — `plugin/types.ts`, `plugin/executor.ts`, `plugin/host.ts`, `plugin/protocol.ts`,
+`plugin/transform.ts`, `runner/events.ts` — are therefore cited by **symbol** rather than by line,
+which is the only anchor that survives a phase landing. That rule is enforced, not merely stated:
+`plugin/__tests__/design-doc-citations.test.ts` fails on a `file:line` citation into any of them.
 
 > **Status.** This document was written against the tree *before* Phase 0, and lands in the same
-> commit as the work it describes. Phases 0, 1, 2 and V tier 1 are done; §9 marks what remains inside
-> each. The surveys in §3 and the "today" snippets in §7 have been brought forward to match, so a
-> passage in the present tense describes the tree as it now is. Everything from Phase 3 onward is
-> still a proposal — and where Phase 2 landed differently from what §7.1 and §7.5 proposed, the
-> proposal has been replaced by what was built, not annotated alongside it.
+> commit as the work it describes. Phases 0, 1, 2, 3 and V tier 1 are done; §9 marks what remains
+> inside each. The surveys in §3 and the "today" snippets in §7 have been brought forward to match, so
+> a passage in the present tense describes the tree as it now is. Everything from Phase 4 onward is
+> still a proposal — and where a phase landed differently from what §7 proposed, the proposal has
+> been replaced by what was built, not annotated alongside it.
 
 ---
 
@@ -22,8 +26,8 @@ Concretely, "any part of the agent" means the list the engine currently hardcode
 answers a model call, what happens when a node throws, whether a tool call is allowed to proceed,
 how a tool's result is serialized back into the conversation, how state merges between nodes, how
 a prompt template renders, which tools exist at all, and what the run looks like on the wire. Today
-none of these are reachable from a plugin — the plugin surface is three component kinds and three
-RPC verbs.
+none of these are reachable from a plugin — the plugin surface is three component kinds, two verbs
+heddle calls (`execute`, `apply`) and three a plugin may call back (`runTool`, `emitEvent`, `log`).
 
 What the goal does **not** mean:
 
@@ -72,7 +76,7 @@ different pieces of software:
 
 So: **an Agent Spec plugin teaches a deserializer how to read a `component_type`. It says nothing
 about how to run it.** That second half — "the execution logic … must be added in an Agent Spec
-Runtime of choice" — is heddle. `packages/core/src/plugin/types.ts:4-8` already says this in the
+Runtime of choice" — is heddle. `packages/core/src/plugin/types.ts`'s module docblock already says this in the
 codebase's own voice, and it is correct.
 
 ### 2.2 The exact interfaces, from the vendored source
@@ -216,14 +220,14 @@ for the in-process path at `packages/core/src/plugin/registry.ts:55-59`.
 
 | `kind` | Author writes | Manifest supplies | RPC | Engine wiring |
 |---|---|---|---|---|
-| `node` | `createExecutor(node, deps) -> { execute(input, ctx) }` (`plugin/types.ts:132-143`) | `inputs`, `outputs`, `branches`, `schema` (`manifest.ts:32-48`) | `execute` (`plugin/remote.ts:75-79`) | `graph/compile.ts:77-80` → `PluginNodeAdapter` (`plugin/executor.ts:14`), result becomes the node's output `State` (`plugin/executor.ts:83`) |
-| `transform` | `createTransform(component, deps) -> { apply(messages, ctx) }` (`plugin/types.ts:122-129`) | `phase`, `schema` (`manifest.ts:48-50`) | `apply` (`plugin/remote.ts:115-120`) | `TransformChain` (`plugin/transform.ts:63-109,131-179`) around the model call at `node/agent.ts:125` (pre) and `:158-162` (post) |
-| `component` | `validate?(component)` only (`plugin/types.ts:75-83`) | `schema` | **none** | **none** |
+| `node` | `createExecutor(node, deps) -> { execute(input, ctx) }` (`plugin/types.ts`, `PluginNodeDef`) | `inputs`, `outputs`, `branches`, `schema` (`manifest.ts:32-48`) | `execute` (`plugin/remote.ts`, `remoteNodeDef`) | `graph/compile.ts:77-80` → `PluginNodeAdapter` (`plugin/executor.ts`, `PluginNodeAdapter`), result becomes the node's output `State` (`plugin/executor.ts`'s `runNode`) |
+| `transform` | `createTransform(component, deps) -> { apply(messages, ctx) }` (`plugin/types.ts`, `PluginTransformDef`) | `phase`, `schema` (`manifest.ts:48-50`) | `apply` (`plugin/remote.ts`, `remoteTransformDef`) | `TransformChain` (`plugin/transform.ts`, `TransformChain` / `apply`) around the model call at `node/agent.ts:125` (pre) and `:158-162` (post) |
+| `component` | `validate?(component)` only (`plugin/types.ts`, `PluginComponentDef`) | `schema` | **none** | **none** |
 
 **`kind: 'component'` does nothing at runtime.** `remoteComponentDef` returns `{ componentType }`
-plus at most a `validate` (`plugin/remote.ts:135-141`). `nodeDef` and `transformDef` both return
-`undefined` unless the kind matches (`plugin/registry.ts:131-141`), so a `component` is unreachable
-from `graph/compile.ts:77` and from `plugin/transform.ts:74`. `flow-preprocess.ts:128-130` leaves it
+plus at most a `validate` (`plugin/remote.ts`, `remoteComponentDef`). `nodeDef` and `transformDef` both return
+`undefined` unless the kind matches (`plugin/registry.ts`, `nodeDef` / `transformDef`), so a `component` is unreachable
+from `graph/compile.ts:77` and from `plugin/transform.ts`, `TransformChain.build`. `flow-preprocess.ts:128-130` leaves it
 in the document with no stand-in, on the stated grounds that it is "deserialized with their parent".
 
 That is the whole contract, and it is narrower than it looks: a `component` survives *only* because
@@ -238,13 +242,28 @@ rejects it before any plugin code runs. Nothing documents that constraint, and t
 // packages/core/src/plugin/protocol.ts — as landed
 export interface HostMethods          { execute: ExecuteParams; apply: ApplyParams }
 export interface HostLifecycleMethods { init: InitParams; shutdown: ShutdownParams; cancel: CancelParams }
-export interface PluginMethods        { runTool: RunToolParams }
+export interface PluginMethods        { runTool: RunToolParams; emitEvent: EmitEventParams; log: LogParams }
 ```
 
-`ExecuteParams` carries `{ componentType, node, input }`; `ApplyParams` carries
-`{ componentType, component, phase, messages }`; `RunToolParams` carries `{ name, input }`. Framing is
-JSON Lines with direction decided by shape — a message with a `method` is a request, one with a
-`partial` is progress on a call that has not finished (`isPartial`), and anything else is a response.
+`ExecuteParams` carries `{ componentType, node, input, workspace?, workspaceUnavailable? }`;
+`ApplyParams` carries `{ componentType, component, phase, messages }`. Every reverse call carries the
+id of the `execute` or `apply` it was made inside (`InFlight`), so `RunToolParams` carries
+`{ call, name, input }`, `EmitEventParams` `{ call, name, data? }` and `LogParams`
+`{ call, level, message }`. That id is what selects the reporter and the tool scope heddle built for
+the call, which is why a plugin cannot choose the namespace its events are published under or the
+sandbox session its tools run in.
+
+`workspace` is a pushed value rather than a verb, and the argument is written out on the field: it is
+a constant for the whole call and heddle knows it before it dispatches, so a verb would spend a round
+trip, a capability grant and a `PluginMethods` entry on a string it already had — and it would make
+`getWorkspace` asynchronous out of process and synchronous in it, so the same plugin logic could not
+be written once. It is absent, with `workspaceUnavailable: 'confined'` in its place, when the plugin's
+own process is sandboxed: the node's tool scope is a different session, so the path would be one the
+plugin cannot open.
+
+Framing is JSON Lines with direction decided by shape — a message with a `method` is a request, one
+with a `partial` is progress on a call that has not finished (`isPartial`), and anything else is a
+response.
 
 Two verb sets rather than one, and the split is enforcement rather than taxonomy: every lifecycle
 verb is paired with machinery — `init`'s version check, `cancel`'s grace timer, `shutdown`'s SIGKILL —
@@ -270,8 +289,8 @@ every question the parser and compiler need answered is answered *as data*, so o
 shape can be inspected without running the author's code. `/v1/validate` depends on the second one.
 
 The cost is that a manifest cannot compute. `inferInputs`, `inferOutputs`, `branches` and `phase`
-all take the component in the in-process API (`plugin/types.ts:124,134-141`); the remote adapter
-collapses them to constants (`plugin/remote.ts:92-94,108`). Anything whose shape depends on its own
+all take the component in the in-process API (`plugin/types.ts`, `PluginTransformDef` / `PluginNodeDef`); the remote adapter
+collapses them to constants (`plugin/remote.ts`'s `remoteNodeDef` / `remoteTransformDef` tails). Anything whose shape depends on its own
 configuration is not expressible out of process — including the shipped guardrails plugin, whose
 `phase` is read from a spec field (`examples/guardrails/plugin.js:136`).
 
@@ -280,7 +299,7 @@ a non-JavaScript plugin — the other being an executable entry point with a she
 (`defaultCommand`, `remote-loader.ts:56-74`), which is the form the loader prefers under `--safe`
 (`remote-loader.ts:41-55`). `manifest.command` is needed only when the entry point cannot be made a
 self-contained executable — the `python3 plugin.py` case named at `sandbox/types.ts:64-67`. Both
-routes are the justification for JSON Lines (`protocol.ts:5-7`). Both are now covered — a shell
+routes are the justification for JSON Lines (`plugin/protocol.ts`, module docblock). Both are now covered — a shell
 plugin invoked by path and the same one started through `manifest.command`, in
 `plugin/__tests__/remote.test.ts`'s "a plugin that is not a JavaScript module" — where before, the
 only tests of `loadRemotePlugin` wrote a non-executable `.mjs` and exercised the
@@ -320,19 +339,19 @@ standalone-Agent execution path would have silently run zero transforms. The res
 
 ### 3.5 The security model
 
-The whole model is the process boundary, argued at `packages/core/src/plugin/host.ts:1-22`.
+The whole model is the process boundary, argued at `plugin/host.ts`, module docblock.
 
 | Control | Where | Note |
 |---|---|---|
-| Chosen, not inherited, environment | `PluginHost.resolveCommand` → `env: launch.env` (`plugin/host.ts:352`, defaulted at `:484`) | The server passes literally `env: {}` — `packages/server/src/plugins.ts:40`, with the reasoning at `:33-39` |
-| Lazy start | `loadRemotePlugin` reads only the manifest; the process starts inside `PluginHost.call` (`host.ts:202-222`) | Parsing and validating a flow executes zero lines of the author's code |
+| Chosen, not inherited, environment | `PluginHost.resolveCommand` → `env: launch.env`, defaulted on `PluginHostOptions.env` | The server passes literally `env: {}` — `packages/server/src/plugins.ts`, with the reasoning in the comment above it |
+| Lazy start | `loadRemotePlugin` reads only the manifest; the process starts inside `PluginHost.call` | Parsing and validating a flow executes zero lines of the author's code |
 | Optional sandbox | `host.ts`'s `resolveCommand`; wired at `server/plugins.ts` | Covered by "spawning a plugin under a sandbox" in `plugin/__tests__/remote.test.ts`, against a stub `SandboxSession` — the whole `SandboxCommand` crosses, not just its argv |
 | Per-run registry | `server/runs.ts:157`, disposed in `finally` at `:175` | Plus `rmSync` of the run's mkdtemp dir (`server/request-code.ts:239-240`) |
 | Teardown that cannot be declined | `dispose` → `stopProcess` (`host.ts`) | `shutdown` then a closed stdin, then SIGKILL. The kill is armed *before* either is sent and only the process actually ending disarms it, so a plugin that ignores both dies as it always did, `SHUTDOWN_GRACE` later |
 | Source is never imported | `server/request-code.ts:277-280` | Written `0500` with an absolute `#!node` shebang; the interpreter is absolute because the plugin's env has no `PATH` |
 | No `$VAR` deref in submitted specs | `server/runs.ts` → `provider.ts:32-53` | See §7.3 |
-| Bounded stderr | `host.ts:369-370` (`STDERR_LIMIT`) | A logging loop cannot grow the server's heap |
-| Only `runTool` is served | `host.ts`, `serve()` | Two stages, kept separate on purpose: "heddle does not serve X. It serves: …", then "X is not granted to this plugin". A missing runner is a third message, about heddle's own wiring |
+| Bounded stderr | `host.ts`'s `STDERR_LIMIT`, applied in the `stderr` handler in `start` | A logging loop cannot grow the server's heap |
+| Only declared verbs are served, and only granted ones answered | `plugin/protocol.ts`'s `SERVED` / `PLUGIN_METHODS`; `host.ts`, `serve()` | Two stages, kept separate on purpose: "heddle does not serve X. It serves: …", then "X is not granted to this plugin". A missing runner is a third message, about heddle's own wiring. The served set and the granted set are now different: heddle serves `runTool`, `emitEvent`, `log`, and the server grants all three to a submitted plugin (`packages/server/src/plugins.ts`'s `GRANTED`), with its own reasoning about a plugin pushing bytes down its caller's stream written above that constant |
 
 Two stale comments contradicted this and have been fixed: `packages/server/src/validate.ts` claimed
 "loading a plugin executes it, both at import and again at compile", which is false on the only
@@ -346,12 +365,12 @@ submitted *tool scripts* run unsandboxed on that platform.
 | Extension point | Exists? | Spec-named? | Runs out of process? | Evidence |
 |---|---|---|---|---|
 | Custom node | yes | yes | yes | `graph/compile.ts:77-80` |
-| Custom transform | yes | yes | yes | `plugin/transform.ts:74` |
-| Custom sub-component | nominal | only under a plugin parent | n/a — never executed | `plugin/remote.ts:135-141` |
+| Custom transform | yes | yes | yes | `plugin/transform.ts`, `TransformChain.build` |
+| Custom sub-component | nominal | only under a plugin parent | n/a — never executed | `plugin/remote.ts`, `remoteComponentDef` |
 | Custom tool *type* | no | — | — | `ToolUnion` closed; `registry.claim` forbids builtin names (`plugin/registry.ts:77-83`) |
 | Custom LLM provider | no | — | — | `llm/provider.ts:10-15,122,141` |
-| Custom tool source / registry | no | — | — | `Registry` is an interface (`tool/types.ts:44-47`) with no plugin route |
-| Custom wire protocol / encoder | no | — | — | `serializeEvent` (`packages/server/src/sse.ts:19-34`) is a free function with one hardcoded rendering |
+| Custom tool source / registry | no | — | — | `Registry` is an interface (`tool/types.ts`, `Registry`) with no plugin route |
+| Custom wire protocol / encoder | no | — | — | `serializeEvent` (`packages/server/src/sse.ts`, `serializeEvent`) is a free function with one hardcoded rendering |
 | Any interception | no | — | — | §5 |
 
 ---
@@ -363,7 +382,7 @@ What happens next:
 
 1. `remote-loader.ts:121-133` has a three-arm switch with nowhere to put it. Add a fourth arm — it
    pushes into… what? `HeddlePlugin` has exactly `components`, `nodes`, `transforms`
-   (`plugin/types.ts:151-153`).
+   (`plugin/types.ts`, `HeddlePlugin`).
 2. Add `providers?: PluginProviderDef[]`. Now `PluginRegistry.add` (`registry.ts:55-59`) groups it
    and `kindOf` reports it. Fine so far.
 3. `flow-preprocess.ts:107-127` has no arm for it, so the component has no stand-in and
@@ -374,7 +393,8 @@ What happens next:
    (`llm/provider.ts:10-15,122`) and returns `new OpenAIProvider(opts)` unconditionally (`:141`).
    Nothing consults a registry. Add the lookup.
 5. Now the plugin is asked for a provider. **`HostMethod` is `'execute' | 'apply'`
-   (`protocol.ts:80-87`).** There is no verb that means "answer a chat completion". Add one.
+   (`plugin/protocol.ts`, `HostMethods`).** There is no verb that means "answer a chat completion".
+   Add one.
 
 Steps 1–4 are plumbing. Step 5 is the ceiling: **a new manifest kind expands what a plugin can *be*;
 it does nothing about what a plugin can *do* while running.** Those are two independent axes, and the
@@ -383,22 +403,30 @@ protocol only widens on one of them at a time.
 | Axis | Type | Today | What widening buys |
 |---|---|---|---|
 | What a plugin can **be** | `HostMethod` — heddle calls the plugin | `execute`, `apply` | New kinds. Each new kind needs a verb, a dispatch arm, an engine call site, and (usually) a placeholder. |
-| What a plugin can **do** | `PluginMethod` — the plugin calls heddle | `runTool` | New *abilities* for kinds that already exist. A node that can `callModel` is a new class of node with no new kind, no placeholder, and no SDK involvement. |
+| What a plugin can **do** | `PluginMethod` — the plugin calls heddle | `runTool`, `emitEvent`, `log` | New *abilities* for kinds that already exist. A node that can `callModel` is a new class of node with no new kind, no placeholder, and no SDK involvement. |
 
-The second axis is dramatically cheaper and is currently at one method. A plugin node cannot emit an
-event (`PluginContext` is `{ signal, node, runTool }`, `plugin/types.ts:55-64`), cannot call a model,
-cannot log through heddle, cannot reach the sandbox workspace, and cannot read run-scoped state. It
-can compute and it can run a tool. That is the real constraint on what people can build, and no
-number of manifest kinds relieves it.
+The second axis is dramatically cheaper and is currently at three methods. A plugin node **cannot
+call a model and cannot read run-scoped state**; those two are what is left of the ceiling. Emitting,
+logging and the workspace handle all landed in Phase 3 — `PluginContext` (`plugin/types.ts`,
+`PluginContext`) is now `{ signal, node, runTool, getWorkspace, emitEvent, log }`, built at
+`plugin/executor.ts`'s `runNode`. So a plugin can compute, run a tool, report on itself, and write a
+file its tools can read; what it still cannot do is think. No number of manifest kinds relieves that,
+and `callModel` (§7.6, Phase 4) is the single change that does.
 
-There is a second-order trap here. `PluginHost.setToolRunner` is first-writer-wins
-(`plugin/host.ts:180-200`) and is called from `createExecutor` (`plugin/remote.ts:71`), which runs
-once per node. The comment at `setToolRunner`'s own doc block justifies this because every executor in one compile
-shares the same registry — true today, and false the moment per-node registries or per-node policy
-exist. And because the transform branch never calls it at all (`plugin/remote.ts:110` drops the
-`deps` parameter the interface declares at `plugin/types.ts:125-128`), a transform's `runTool` works
-or fails depending on whether an unrelated plugin node happened to run first. **Capability currently
-depends on graph structure.** Any capability model has to fix that before it can mean anything.
+There is a second-order trap here, and it has been narrowed twice rather than removed.
+`PluginHost.setToolRunner` (`plugin/host.ts`, `setToolRunner`) is first-writer-wins and is called
+from both `createExecutor` and `createTransform` (`plugin/remote.ts`). Phase 0 added the second call:
+before it, a transform's `runTool` worked or failed depending on whether an unrelated plugin node
+happened to run first, which made **capability depend on graph structure** and would have made any
+capability model meaningless.
+
+Phase 3 narrowed it again, for a different reason. A node's `runTool` no longer goes through that
+host-wide runner at all: `PluginHost.call` takes the node's own scoped runner and `serveRunTool`
+looks it up from the `call` id the frame names, so a node's tools run in the tool scope whose
+workspace the node was handed. What is left on `setToolRunner` is the fallback — a transform, which
+owns no scope, and a hand-rolled plugin that sends no `call`. The first-writer-wins comment justifies
+itself because every executor in one compile shares the same registry, which is true today and false
+the moment per-node registries or per-node policy exist.
 
 ---
 
@@ -434,7 +462,7 @@ timeout (the only timeout is whole-run, `runner.ts:17`), node-result caching, dr
 approval gates, checkpointing.
 
 And line 72 is unconditional: **every node error is fatal, and heddle has no error-handling
-extension point of any kind.** `EventHandler` returns `void` (`runner/events.ts:53`) and the emit at
+extension point of any kind.** `EventHandler` returns `void` (`runner/events.ts`, `EventHandler`) and the emit at
 `:66` cannot influence the throw. `grep -rn 'retry\|backoff' packages/core/src` finds nothing. A
 transient 429 from a tool ends the run.
 
@@ -477,8 +505,8 @@ accounting, record/replay for CI — all unreachable.
 
 ### 5.4 heddle already has one working middleware
 
-`TransformChain.apply` (`plugin/transform.ts:131-179`) returns `pass | modify | reject`
-(`plugin/types.ts:97-102`) and that return value genuinely changes control flow: a `pre` rejection
+`TransformChain.apply` (`plugin/transform.ts`, `TransformChain.apply`) returns `pass | modify | reject`
+(`plugin/types.ts`, `TransformResult`) and that return value genuinely changes control flow: a `pre` rejection
 skips the model call entirely (`node/agent.ts:125-128`), which is why the playground can demo
 guardrails with no credential.
 
@@ -506,7 +534,7 @@ a handful of call sites; **L** = touches the protocol, the event system, or the 
 | 8 | Agent termination | `node/agent.ts:155`; `finish_reason` unread (`llm/openai.ts:41`, and in `collectStream`) | stop on truncation; stop when a `submit_answer` tool is called | middleware | S |
 | 9 | Output shaping | `node/agent.ts:168-175` | enforce declared `outputs` as a schema; repair non-conforming answers | middleware | S |
 | 10 | Round cap | `node/agent.ts:21` | a research agent needing 40 rounds; partial results instead of `:251` throwing | config, not a plugin | S |
-| 11 | Tool registry | `tool/types.ts:44-47`; only `FileRegistry` | MCP discovery, HTTP tool catalogue, inline spec tools | component | S |
+| 11 | Tool registry | `tool/types.ts`, `Registry`; only `FileRegistry` | MCP discovery, HTTP tool catalogue, inline spec tools | component | S |
 | 12 | Tool executor / protocol | `tool/executor.ts:6,137,151,173` | wrap an existing CLI (argv in, exit code out) without a JSON shim | component | M |
 | 13 | Tool discovery metadata | `tool/registry.ts:35,46,52-56` | descriptions and schemas from the tool itself, not duplicated in the spec | component | S |
 | 14 | Tool JSON Schema | `buildToolSchema` (`node/agent.ts:527-551`), `:542` | optional parameters — today every input is `required` | middleware | S |
@@ -519,30 +547,30 @@ a handful of call sites; **L** = touches the protocol, the event system, or the 
 | 21 | Branch matcher | `node/branching.ts:6,25,28-34,42-48` | numeric ranges, regex, LLM-decided routing. Also fixes the order-dependent fallback at `:28-34` | component | S |
 | 22 | Graph rewrite | `graph/compile.ts:70` | wrap every `AgentNode` in a guardrail; insert checkpoints. The generic escape hatch | middleware | M |
 | 23 | Graph validation | `graph/validate.ts:5-56` | org policy rules; warnings that don't block | component | S |
-| 24 | Event emission | `runner/events.ts:53`, 9 emit sites | any two-way hook at all; and `EventType` (`:4-13`) is closed so a plugin cannot even emit | protocol | M |
-| 25 | Plugin context | `plugin/types.ts:55-64`; built at `plugin/executor.ts:51-55` | `callModel`, `emitEvent`, workspace handle — all already in `deps` at the call site | protocol | S |
+| 24 | Event emission | `runner/events.ts`, `EventHandler`, 9 emit sites | any two-way hook at all — a plugin that *observes* or intercepts the engine's events (Phase 6). ~~`EventType` is closed so a plugin cannot even emit~~ **emission landed, Phase 3**: `EventType = BuiltinEventType \| PluginEventType` (`runner/events.ts`), `pluginReporter` (`plugin/executor.ts`), the `emitEvent`/`log` verbs (`plugin/protocol.ts`'s `PluginMethods`, served in `plugin/host.ts`'s `serve`) | protocol | M |
+| 25 | Plugin context | `plugin/types.ts`, `PluginContext`; built at `plugin/executor.ts`'s `runNode` | ~~`emitEvent`, workspace handle~~ **landed, Phase 3** (`emitEvent`, `log`, `getWorkspace`); still wanted: `callModel` (Phase 4) and run-scoped state | protocol | S |
 | 26 | Generation params | `spec/types.ts:24` unread; `ChatRequest` (`llm/types.ts:30-34`) | temperature, max_tokens, JSON mode, seed. **No spec can set any of these today** | data widening | S |
 | 27 | Streaming | ~~absent from `Provider`~~ **landed, Phase 2**: `chatCompletionStream?` (`llm/types.ts`), `llm/openai.ts`, `token_delta` (`runner/events.ts`) | token-by-token rendering | protocol | L |
 | 28 | Sandbox backend | `sandbox/index.ts:7,50-68` | Docker/gVisor for the playground; a recording no-op for CI | component | S |
 | 29 | Sandbox policy | global at startup (`server/runs.ts:74-77`) | "fetch needs network, file-writer must not" — unexpressible | middleware | M |
 | 30 | Spec format / source | `spec/parser.ts:21,71`; `spec/load.ts:13-15,22` | TOML, a DSL; load from a URL or a git ref | component | S |
-| 31 | Builtin override | `plugin/registry.ts:77-83`; skip list `plugin/transform.ts:19-22` | ship a real `MessageSummarizationTransform`; "AgentNode with retries" | precedence rule | M |
+| 31 | Builtin override | `plugin/registry.ts:77-83`; skip list `plugin/transform.ts`, `BUILTIN_TRANSFORMS` | ship a real `MessageSummarizationTransform`; "AgentNode with retries" | precedence rule | M |
 | 32 | Placeholder slots | `plugin/flow-preprocess.ts:32,39,107,118` | **the ceiling on every "component" row above** | vendored SDK | M |
-| 33 | Wire protocol / event encoding | `serializeEvent` (`packages/server/src/sse.ts:19-34`), `SseStream.send` (`:60-63`) | render a run as AG-UI, OpenAI-compatible chunks, or OTLP spans instead of heddle's own frames | encoder | S |
+| 33 | Wire protocol / event encoding | `serializeEvent` (`packages/server/src/sse.ts`, `serializeEvent`), `SseStream.send` | render a run as AG-UI, OpenAI-compatible chunks, or OTLP spans instead of heddle's own frames | encoder | S |
 
 ### Ranked shortlist
 
 1. **#4 node error** (`runner.ts:63-73`) — largest capability gap in the engine (heddle cannot
    recover from *any* failure), smallest diff, and it is the cleanest place to prove the middleware
    verdict vocabulary.
-2. **#25 plugin context** (`plugin/types.ts:55-64`) — purely additive; every value is already in
-   `deps` at `plugin/executor.ts:51-55`. `callModel` alone unlocks LLM-as-judge nodes, semantic
+2. **#25 plugin context** (`plugin/types.ts`, `PluginContext`) — the reporting and workspace half
+   landed in Phase 3. What is left is `callModel`, which alone unlocks LLM-as-judge nodes, semantic
    routers and summarizers without each plugin shipping its own SDK *and its own credential*.
 3. **#1+#2 providers** (`llm/provider.ts:141`) — best leverage/cost ratio in the codebase; the
    interface is already one method. Needs #26 first or a provider plugin receives nothing to act on.
 4. **#5 tool call** (`agent.ts:190-249`) — this is the mechanism `Agent.humanInTheLoop`
    (`spec/types.ts:46`) promises and nothing implements. Grep confirms the field is read nowhere.
-5. **#11 tool registry** (`tool/types.ts:44-47`) — two methods, and the demand is already proven:
+5. **#11 tool registry** (`tool/types.ts`, `Registry`) — two methods, and the demand is already proven:
    the server had to write `mergeRegistries` *outside* core (`packages/server/src/tools.ts:15-29`)
    because no composition existed inside.
 6. **#6+#7 tool result / error** (`agent.ts:214,242-246`) — result-size management is the most common
@@ -701,35 +729,70 @@ timeout is a silence budget, not a total budget, and measured from the request i
 that has been answering all along and report it as one that never answered.
 
 **`partial` is `unknown`, and stays that way.** The payload is per-verb: a `chat` partial (§7.6) is a
-`ChatChunk`, a `before`/`after` partial is progress on a middleware. Typing the frame against any one
-of them would make the others liars. What the frame owes the host is routing, and routing needs only
-the `id`.
+`ChatChunk`. Typing the frame against any one verb would make the others liars. What the frame owes
+the host is routing, and routing needs only the `id`.
 
-### 7.2 The widened `PluginMethod` set
+**A partial is not `emitEvent` in another envelope, and the line between them is settled** — Phase 3,
+argued at `RpcPartial` in `plugin/protocol.ts`. A partial is *a piece of one call's answer*: it is
+delivered to the `onPartial` that `PluginHost.call`'s own caller passed and to nothing else, so what
+it means is decided by that call site rather than by the plugin. An `emitEvent` event is *a report
+about the run*: published on the run's stream, reaching every client watching it, namespaced so it
+cannot be mistaken for one of heddle's own, and outliving the call that made it. A partial also
+cannot be a `PluginCapability`, because it is a frame with no request to refuse and no response to be
+refused on — which is the deciding argument for `emitEvent` being a verb rather than a shape of
+partial: a malformed event name has to come back as an error, and a frame with no id to answer can
+only be dropped.
 
-This is the cheap axis, and the one that changes what people can build.
+Both reset the timeout of the call they name, so no author ever has to pick a frame in order to stay
+alive. And the emitted runtime deliberately offers a plugin author **no way to send a partial**
+(`plugin/runtime-source.ts`, module docblock), because nothing in heddle passes an `onPartial` for a
+plugin's `execute` or `apply` — a frame whose only consumer would be `undefined` is not a progress
+channel. **Middleware progress in Phase 6 is therefore `emitEvent`, not a partial channel.**
+
+### 7.2 The widened `PluginMethod` set — **partly landed, Phase 3**
+
+This is the cheap axis, and the one that changes what people can build. `emitEvent` and `log` landed;
+`callModel` and `getState` are still proposals. `getWorkspace` landed as something other than a verb,
+which is recorded below the table.
 
 ```ts
 export type PluginMethod =
   | 'runTool'      // exists
+  | 'emitEvent'    // landed, Phase 3
+  | 'log'          // landed, Phase 3
   | 'callModel'    // §7.6
-  | 'emitEvent'    // progress reporting
-  | 'log'          // structured logging that is not "hope stderr is read"
   | 'getState'     // read the run's accumulated State
-  | 'getWorkspace' // the sandbox workspace path for this scope
   | 'callPlugin';  // deliberately NOT proposed — see Open questions
 ```
 
 | Method | Rationale | Serving code |
 |---|---|---|
-| `callModel` | The single highest-value addition. Without it, an LLM-as-judge node, a semantic router or a summarizer must ship its own SDK *and* obtain its own credential — and a submitted plugin has an empty environment (`PluginHost.resolveCommand`), so it cannot. The engine already holds a `Provider`. | New arm in `PluginHost.serve` (`host.ts:573-620`), backed by a `ModelRunner` installed the way `setToolRunner` is (`host.ts:180`) — but per-node, not first-writer-wins. |
-| `emitEvent` | A plugin node is silent between `node_start` and `node_complete` (`runner.ts:47,77`). Requires opening `EventType` (`runner/events.ts:4-13`) to a namespaced `string` plus a `data?: unknown` payload. | `deps.eventHandler` is already in scope at `plugin/executor.ts:51-55`. |
-| `log` | `console.log` is silently redirected to stderr (the generated runtime's `console` shim, `plugin/runtime-source.ts`) and stderr is bounded to 4096 bytes and only surfaced on failure (`host.ts:70,369-370,382`). There is no way for a working plugin to say anything. | Same handler as `emitEvent`, `type: 'warning'`-adjacent. |
-| `getState` | `execute` receives only the node's resolved input (`plugin/remote.ts:75-79`), which after `resolveInputs` is *usually* the whole state (`runner.ts:112-114`) but is not guaranteed to be. Explicit beats incidental. | Requires the Runner to hand `currentState` to `Dependencies` per node — a real change, and the weakest item on this list. |
-| `getWorkspace` | The sandbox workspace exists and is exported to tools as `$HEDDLE_WORKSPACE` but is never surfaced to a plugin (`sandbox/types.ts`). A plugin that runs two tools cannot find the file the first one wrote. | The scope is right there at `plugin/executor.ts:38`. |
+| `callModel` | The single highest-value addition. Without it, an LLM-as-judge node, a semantic router or a summarizer must ship its own SDK *and* obtain its own credential — and a submitted plugin has an empty environment (`PluginHost.resolveCommand`), so it cannot. The engine already holds a `Provider`. | New arm in `PluginHost.serve` (`host.ts`, `serve`), backed by a `ModelRunner` installed the way `setToolRunner` is (`host.ts`'s `setToolRunner`) — but per-node, not first-writer-wins. |
+| `emitEvent` | **Landed.** A plugin node was silent between `node_start` and `node_complete` (`runner.ts:47,77`). Required opening `EventType` (`runner/events.ts`) to a namespaced string plus a `data?: unknown` payload, which is what `PluginEventType` is. | `pluginReporter` (`plugin/executor.ts`), served in `plugin/host.ts`'s `serveEmitEvent` against the reporter the call was dispatched with. |
+| `log` | **Landed.** `console.log` is silently redirected to stderr (the generated runtime's `console` shim, `plugin/runtime-source.ts`) and stderr is bounded to 4096 bytes and only surfaced on failure (`host.ts`'s `STDERR_LIMIT`). There was no way for a working plugin to say anything. | Same reporter as `emitEvent`, published as `plugin_log` carrying `level` and `message`. |
+| `getState` | `execute` receives only the node's resolved input (`plugin/remote.ts`, `remoteNodeDef`), which after `resolveInputs` is *usually* the whole state (`runner.ts:112-114`) but is not guaranteed to be. Explicit beats incidental. | Requires the Runner to hand `currentState` to `Dependencies` per node — a real change, and the weakest item on this list. |
 
 Note what is *not* here: no `readFile`, no `fetch`, no `getEnv`. The process boundary denies those,
-and re-granting them over RPC would hand back exactly what `plugin/host.ts:10-17` bought.
+and re-granting them over RPC would hand back exactly what `plugin/host.ts`, module docblock bought.
+
+**Values pushed with the request, which are not verbs.** `getWorkspace` was on this list and does not
+belong on it. What a node's tool-scope workspace answers is: a plugin that runs two tools cannot
+otherwise find the file the first one wrote, and under `--safe` a path it invented with `mkdtemp` is
+not there on the tool's side at all. It ships as `ExecuteParams.workspace` (`plugin/protocol.ts`),
+read by `PluginContext.getWorkspace` (`plugin/types.ts`), **with no capability and no entry in
+`PluginMethods`.**
+
+The argument for pushing it, written out on the field: the value is a constant for the whole call and
+heddle knows it before it dispatches, so a verb would spend a round trip, a capability grant and a
+`PluginMethods` entry on a string it already had — and it would make `getWorkspace` asynchronous out
+of process and synchronous in it, so the same plugin logic could not be written once. The price is
+that heddle `mkdtemp`s for every remote node execution including the ones that never open it, where
+in process the same call is deferred until a plugin asks; and that this is the one asymmetry between
+the two paths. `reporting.test.ts` pins the rule as "needs no capability, because it is not a call
+into heddle".
+
+That also keeps §7.3's invariant intact: `PluginCapability = PluginMethod` is what makes the grantable
+set derivable rather than maintained, and it holds only while every member is a verb.
 
 ### 7.3 The capability model — and why it must land first
 
@@ -744,7 +807,7 @@ and re-granting them over RPC would hand back exactly what `plugin/host.ts:10-17
 }
 ```
 
-Validated in `validateManifest` (`packages/core/src/plugin/manifest.ts:79`) against a closed set,
+Validated in `validateManifest` (`packages/core/src/plugin/manifest.ts`, `validateManifest`) against a closed set,
 same treatment as `kind` at `:123-128`: an unknown capability is a load-time error naming the
 plugin, not a runtime surprise.
 
@@ -811,7 +874,7 @@ The operator's key is attached only when the spec brought no credential *and* na
 Now add `callModel` with no gate. The plugin never sees the key — the host holds it — but it
 **spends** it, without limit, on a provider built with `defaultKey` at `provider.ts:111`. And unlike
 a spec's `llm_config`, the plugin's calls are not visible anywhere in the document the caller
-submitted: `execute` is opaque by construction (`plugin/remote.ts:75-79`). That reopens the
+submitted: `execute` is opaque by construction (`plugin/remote.ts`, `remoteNodeDef`). That reopens the
 operator-credential exposure `applyDefaultCredential` closed, through a door the function cannot
 see. The same argument applied to `runTool`, which is why the gate in `serve()` was load-bearing and
 had to survive being generalized — it started life as an accidental side effect of only one method
@@ -846,10 +909,10 @@ export type Seam =
 
 **Why not `around(input, next)`.** Classic onion middleware needs the plugin to hold the
 continuation and call back to proceed. The channel is already bidirectional and would support it
-(`PluginHost.serve`, `plugin/host.ts:573-620`, serves plugin-initiated requests), but it means a run's control flow is
+(`PluginHost.serve`, `plugin/host.ts`, `serve`, serves plugin-initiated requests), but it means a run's control flow is
 suspended inside another process, and a plugin that returns without calling `next` hangs the run
-until the call timeout fires (`host.ts:223-227`). Instead: a `before`/`after` pair that returns a
-verdict — the same shape `TransformResult` already has (`plugin/types.ts:97-102`), which is the
+until the call timeout fires (`plugin/host.ts`, `call`). Instead: a `before`/`after` pair that returns a
+verdict — the same shape `TransformResult` already has (`plugin/types.ts`, `TransformResult`), which is the
 precedent and the reason authors will recognise it.
 
 ```ts
@@ -879,7 +942,7 @@ order plugins were passed (`plugin/registry.ts:47,55-65`), and `buildPlugins` it
   middleware *evaluated in that phase* that returns a non-neutral verdict wins and short-circuits the
   remainder of that phase, and the host emits a `warning` naming the winner. In `after` that is the
   last-registered middleware, which is the point of the onion. This mirrors `TransformChain.apply`
-  stopping at the first rejection (`plugin/transform.ts:154-165`).
+  stopping at the first rejection (`plugin/transform.ts`, `TransformChain.apply`).
 - **Which verdicts are neutral.** In `before`, `proceed` is neutral and `modify` continues the chain
   (see the next bullet); `replace` and `reject` short-circuit. In `after`, `pass` is neutral;
   `replace`, `retry` **and** `fail` all short-circuit. Extending the short-circuit to every
@@ -887,7 +950,7 @@ order plugins were passed (`plugin/registry.ts:47,55-65`), and `buildPlugins` it
   construction, so the design owes no ranking between them. Collect-then-rank would be the
   alternative, and it would need a justification for why `after` ranks while `before` short-circuits.
 - **Two middlewares both modifying**: modifications compose. Each sees the previous one's output,
-  exactly as `plugin/transform.ts:174` does (`current = result.messages`).
+  exactly as `TransformChain.apply` does (`plugin/transform.ts`, `current = result.messages`).
 - **Pairing invariant.** `after` runs for exactly the set of middlewares whose `before` ran, in
   reverse of that set — never for one whose `before` was skipped. A short-circuiting `before` counts
   as having run, so the winner's own `after` still runs, on the value the winner supplied. Nothing
@@ -904,7 +967,7 @@ order plugins were passed (`plugin/registry.ts:47,55-65`), and `buildPlugins` it
   `"maximum": 10`) is author-declared config and guarantees nothing on its own.
 - A middleware may **not** introduce a branch. `graph/validate.ts:26-51` checks reachability before
   anything executes, and `PluginNodeAdapter` already enforces declared branches for the same reason
-  (`plugin/executor.ts:71-81`). A `replace` verdict on `node` supplies a `State`, never a route.
+  (`plugin/executor.ts`'s `runNode` branch check). A `replace` verdict on `node` supplies a `State`, never a route.
 
 **Manifest.** Seams are declared, not discovered, so `parseFlow` still learns everything from data:
 
@@ -1110,12 +1173,12 @@ work lands — but it is a stopgap with a migration, not a co-equal design.
 
 ### 7.7 Registry / tool-source plugins
 
-`Registry` is two methods (`packages/core/src/tool/types.ts:44-47`) — the cheapest component kind on
+`Registry` is two methods (`packages/core/src/tool/types.ts`, `Registry`) — the cheapest component kind on
 the list, and demand is proven: the server had to write registry composition *outside* core
 (`packages/server/src/tools.ts:15-29`) because none existed inside.
 
 The one real constraint: **`lookup` must stay synchronous.** It is called inside execution at
-`node/agent.ts:267` and `plugin/remote.ts:234`, and at request-validation time by
+`node/agent.ts:267` and `plugin/remote.ts`'s `toolRunner`, and at request-validation time by
 `assertToolsAvailable` (`packages/server/src/tools.ts:39`). A synchronous call cannot cross the pipe.
 
 So a registry plugin is a **discovery** plugin, not a live registry:
@@ -1235,7 +1298,7 @@ serve({
 
 `branches` is declared in the manifest because `graph/validate.ts:26-42` checks reachability before
 anything runs, and `PluginNodeAdapter` rejects an undeclared branch with a message that names the
-declared set (`plugin/executor.ts:71-81`) rather than letting it surface as a confusing
+declared set (`plugin/executor.ts`'s `runNode` branch check) rather than letting it surface as a confusing
 "no next node" from `runner.ts:94-97`.
 
 **(c) An Anthropic provider (host-configured form).**
@@ -1270,7 +1333,7 @@ serve({
 
 Note `capabilities: []`. A provider plugin needs nothing back from heddle — but it does need
 **network access**, which the process boundary does not restrict and the sandbox might
-(`PluginHost.resolveCommand`, `plugin/host.ts:473-500`). That is a policy question the capability list does not currently
+(`PluginHost.resolveCommand`, `plugin/host.ts`, `resolveCommand`). That is a policy question the capability list does not currently
 model, and it is one of the open questions below.
 
 ### 7.9 The `encoder` kind
@@ -1282,7 +1345,7 @@ interception around an engine step. It is a **sink on the event stream**.
 Today that layer is a free function with exactly one rendering:
 
 ```ts
-// packages/server/src/sse.ts:19-34
+// packages/server/src/sse.ts — serializeEvent
 export function serializeEvent(e: Event): Record<string, unknown> {
   return { type: e.type, nodeName: e.nodeName, /* … */ };
 }
@@ -1319,9 +1382,11 @@ for deciding in Phase 9 whether the boundary is heddle's to emit.
 **Why not a node or a transform.** Both were considered and both are the wrong layer:
 
 - A **transform** sees `Message[]` at two taps and returns `pass | modify | reject`. `TransformContext`
-  is `{ signal, phase, component }` (`plugin/types.ts:104-108`) — there is no path from it to the
-  client at all. It is a message filter; AG-UI is a wire format.
-- A **node** returns `{ output, branch }` once, at the end (`plugin/types.ts:47-52`). A terminal node
+  is `{ signal, phase, component }` plus the Phase 3 reporter (`plugin/types.ts`,
+  `TransformContext`), so it can now *add* to the run's stream — but only its own namespaced events,
+  and it sees none of the engine's. There is still no path from it to the rendering of the run. It is
+  a message filter; AG-UI is a wire format.
+- A **node** returns `{ output, branch }` once, at the end (`plugin/types.ts`, `PluginResult`). A terminal node
   could return an array of AG-UI events as its output, but that is a batch, not a stream, and it sees
   only its own input rather than the run's events.
 
@@ -1357,12 +1422,15 @@ Two properties make this the cheapest kind on the board:
 - **No capability surface.** `Event → WireFrame[]` needs nothing from the host. An encoder is the one
   plugin that can be granted the empty capability set and still do its job.
 
-The one genuine cost is that opening this layer makes the `Event` shape a **public contract**. Today
-`Event` (`runner/events.ts:16-49`) is an internal struct that `serializeEvent` happens to mirror;
+The one genuine cost is that opening this layer makes the `Event` shape a **public contract**. `Event`
+(`runner/events.ts`, `Event`) is a struct that `serializeEvent` mirrors by spreading;
 `packages/server/src/sse.ts:4-18` is explicit that the wire form is the engine's own model. Once
 third-party encoders consume it, adding a field is fine and changing one is a break. That argues for
-versioning `Event` at the same time, and for the namespaced `EventType` widening in Phase 3 landing
-first so encoders see the final shape rather than the current closed enum.
+versioning `Event` at the same time.
+
+The precondition this paragraph used to ask for is met: the namespaced `EventType` widening landed in
+Phase 3, so an encoder written now sees the final shape — `BuiltinEventType | PluginEventType`, with
+`data` and `level` on `Event` — rather than a closed enum that would grow under it.
 
 ### 7.10 Open questions
 
@@ -1391,7 +1459,7 @@ first so encoders see the final shape rather than the current closed enum.
    `/v1/validate` cheap (`remote-loader.ts:109-111`). Manifest-declared tools cover most real cases;
    MCP discovery is the case that does not, and it is the case people will ask for.
 7. **Should a plugin ever be allowed to claim a builtin type?** `plugin/registry.ts:77-83` forbids it,
-   which means the two transforms heddle skips (`plugin/transform.ts:19-22`) can never be supplied by
+   which means the two transforms heddle skips (`plugin/transform.ts`, `BUILTIN_TRANSFORMS`) can never be supplied by
    a plugin — the feature is impossible in both directions at once. Allowing it needs a precedence
    rule and an explicit `implements: "builtin"` opt-in so shadowing is visible, and the compiler's
    plugin-first lookup (`graph/compile.ts:74-80`) would need its comment corrected.
@@ -1491,7 +1559,7 @@ numbering was left alone so cross-references stay valid. The actual order:
 | 0 Debts | — | landed |
 | 1 Capabilities | 0 | landed; gates everything that widens `PluginMethod` |
 | 2 Lifecycle + streaming | 1 | landed |
-| 3 `PluginContext` | 1, 2 | |
+| 3 `PluginContext` | 1, 2 | landed |
 | 4 `callModel` | 1, 3 | |
 | 5 Provider kind | 2, 4 | *strongly prefers* V |
 | 6 Middleware kind | 1, 2, 3 | |
@@ -1577,25 +1645,48 @@ oversight:
   land with it so `call`'s signature is not what changes once plugins depend on it.
 - **`InitParams.seams` is absent.** It describes a middleware registration that does not exist
   (Phase 6). It goes in when there is something to put in it.
-- **The CLI and the playground do not render `token_delta`.** Both ignore unknown event types, so
-  neither broke, and neither shows a token. `packages/cli/src/cli/run.ts` has no arm for it;
-  `website/lib/playground.ts`'s `RunEvent` has no `delta` field and `RunLog.tsx` has no label, so the
-  playground currently renders one unlabelled row per token. Streaming is a contract, not a feature,
-  until a consumer draws it.
+- **~~The CLI and the playground do not render `token_delta`.~~ Since drawn.** Both ignored unknown
+  event types, so neither broke and neither showed a token. `packages/cli/src/cli/progress.ts` now
+  has an arm for it — ungated, because a `heddle run` that prints nothing while a model answers is
+  the silence streaming exists to fill — and `RunEvent` carries `delta` with a label in `RunLog.tsx`.
+  The rule the entry was written for stands: streaming is a contract, not a feature, until a consumer
+  draws it, and Phase 3 met the same problem with `plugin_log`.
 
 **Depended on:** Phase 1 (`init` carries the granted capability set).
 **Unblocks:** Phase 5 inherits a settled `Provider`; Phase 9 gets something worth encoding;
 cooperative cancellation; every future frame without a compatibility break.
 
-### Phase 3 — `PluginContext` widening
+### Phase 3 — `PluginContext` widening — **landed**
 
-`emitEvent`, `log`, `getWorkspace`. In-process first — every value is already in `deps` at the
-construction site (`plugin/executor.ts:51-55`) — then the RPC forms. Requires opening `EventType`
-(`runner/events.ts:4-13`) to a namespaced string plus a `data?: unknown` payload.
+| Item | Where |
+|---|---|
+| `EventType` opened as `BuiltinEventType \| PluginEventType`, so a plugin event cannot spell a builtin however it is named | `runner/events.ts` |
+| `pluginEventType`, the only way to mint one — and deliberately **not** exported from `packages/core/src/index.ts`, which is the load-bearing half of the forgery argument: a caller can recognise a plugin event but cannot construct one | `runner/events.ts`, `core/index.ts` |
+| `isPluginEvent`, `PLUGIN_EVENT_PREFIX`, and `Event.data` / `Event.level`, all exported for consumers | `runner/events.ts`, `core/index.ts` |
+| `PluginReporter`, shared by nodes and transforms so attribution and the name check have one implementation | `plugin/types.ts`, `plugin/executor.ts`'s `pluginReporter` |
+| The `emitEvent` and `log` verbs, gated by the same two-stage capability check as `runTool` | `plugin/protocol.ts`, `plugin/host.ts`'s `serveEmitEvent` / `serveLog` |
+| `InFlight.call` on every reverse call, so a report is attributed to the call heddle dispatched and a `runTool` runs in that call's tool scope | `plugin/protocol.ts`, `plugin/host.ts`'s `reportingTo` / `runningToolsFor` |
+| `ExecuteParams.workspace` and `PluginContext.getWorkspace` — a pushed value, not a verb (§7.2) | `plugin/protocol.ts`, `plugin/types.ts`, `plugin/executor.ts` |
+| `serializeEvent` spreading rather than listing, so `data` and `level` reach a client without it being told they exist | `packages/server/src/sse.ts` |
+| `plugin_log` and namespaced events rendered by `heddle run`, and by the playground's log | `packages/cli/src/cli/progress.ts`, `website/components/playground/RunLog.tsx` |
+
+Two things deliberately did **not** land:
+
+- **`getWorkspace` is not available to a confined plugin.** Under `--safe` the plugin's process gets a
+  sandbox session of its own (`packages/server/src/plugins.ts`) and the node's tool scope is a
+  different one; both backends fix confinement when the process is spawned, while the tool scope is
+  opened per execution afterwards, so there is no moment at which the node's directory could be bound
+  in. heddle sends no path and the plugin's `getWorkspace` fails naming the limitation, rather than
+  handing back a path that EPERMs at the first write. The capability gap is real and stated on the
+  field: under `--safe`, a plugin node passes a tool its input through `runTool` and nothing else.
+- **The chat TUI still ignores plugin events.** `packages/cli/src/chat/ui.tsx` reads four event types
+  — `node_start`, `token_delta`, `tool_call`, `tool_result` — and has no arm for `plugin_log` or a
+  namespaced type, so a plugin used from `heddle chat` is as silent as it was before. Recorded here
+  for the same reason Phase 2 recorded `token_delta`: a contract nothing draws is not yet a feature.
 
 **Depends on:** Phases 1, 2.
 **Unblocks:** any plugin that wants to report progress. Also fixes the observability gap where a
-plugin node is silent between `node_start` and `node_complete`.
+plugin node was silent between `node_start` and `node_complete`.
 Cost: low.
 
 ### Phase 4 — `callModel`
@@ -1673,13 +1764,14 @@ cooperation — it does not.
 implementation and heddle's current frames re-expressed as the builtin one.
 
 **Depends on:** ~~Phase 2 (token streaming)~~ — satisfied: `token_delta` exists, so AG-UI no longer
-degrades to a single `TextMessageChunk` carrying the whole answer. Still needs Phase 3 (a namespaced
-`EventType`, so encoders see the final `Event` shape rather than today's closed enum), and still owes
-the message-boundary decision in §7.9. Independent of 4–7.
+degrades to a single `TextMessageChunk` carrying the whole answer. ~~Phase 3 (a namespaced
+`EventType`)~~ — satisfied: `EventType` is now `BuiltinEventType | PluginEventType` with `data` and
+`level` on `Event`, so an encoder sees the final shape. Still owes the message-boundary decision in
+§7.9. Independent of 4–7.
 
 **Unblocks:** CopilotKit and any AG-UI client against a heddle flow with no adapter in between;
 OpenAI-compatible chunk output; OTLP span export from the same event stream.
-Cost: low — but it promotes `Event` (`runner/events.ts:16-49`) from an internal struct to a public
+Cost: low — but it promotes `Event` (`runner/events.ts`, `Event`) from an internal struct to a public
 contract, so version it in the same change.
 
 ---
@@ -1688,9 +1780,9 @@ contract, so version it in the same change.
 
 ### Compatibility surface
 
-`HeddlePlugin` and friends are exported from `packages/core/src/index.ts:76-136`, so they are public
+`HeddlePlugin` and friends are exported from `packages/core/src/index.ts`, so they are public
 API. Adding optional fields (`capabilities`, `seams`, `providers`) is safe. Changing
-`PluginNodeDef.createExecutor`'s signature (`plugin/types.ts:142`) is not, and the shipped
+`PluginNodeDef.createExecutor`'s signature (`plugin/types.ts`, `PluginNodeDef.createExecutor`) is not, and the shipped
 `examples/guardrails/plugin.js` is a live consumer of the in-process shape — the examples test loads
 it for every example that ships one.
 
@@ -1700,19 +1792,24 @@ documentation rather than an accident.
 
 Two new contracts appear in this revision and both are easy to create by accident:
 
-- **`Event` becomes public the moment encoders exist** (§7.9). Today it is an internal struct
-  (`runner/events.ts`) that `packages/server/src/sse.ts` explicitly describes as "the same
-  event model the engine already emits". Once third-party code renders it, adding a field is safe and
-  changing one is a break. Version it in Phase 9, not after the first encoder ships.
+- **`Event` becomes public the moment encoders exist** (§7.9). `Event` and `EventType` have been
+  exported from `packages/core/src/index.ts` since before Phase 3, and Phase 3 added `data`, `level`,
+  `isPluginEvent` and `PLUGIN_EVENT_PREFIX` to that surface — so third-party code can already consume
+  the shape, and `packages/server/src/sse.ts` still describes the wire form as "the same event model
+  the engine already emits". Once an encoder renders it, adding a field is safe and changing one is a
+  break. **Version it in Phase 9, not now**: Phase 3 only added fields, which is the direction this
+  paragraph calls safe, and no encoder consumes `Event` yet. If that decision should move forward, it
+  should move as an argued change rather than as a side effect of a cleanup.
 
   Phase 2 found the sharp edge on the way there, and it is worth naming because every phase that adds
-  an event will meet it. `serializeEvent` copies a **fixed list of fields**, so a field added to
-  `Event` and not added there is dropped with no type error and no warning: the engine emits it, the
+  an event will meet it. `serializeEvent` used to copy a **fixed list of fields**, so a field added to
+  `Event` and not added there was dropped with no type error and no warning: the engine emits it, the
   browser never sees it, and nothing anywhere says so. `message` had been in exactly that state since
-  the function was written, which meant every `warning` frame reached clients empty. It is now
-  covered by a test that walks a fully-populated `Event` and asserts nothing is missing
-  (`packages/server/src/__tests__/sse.test.ts`), which is the only form of this that survives someone
-  adding a field in a hurry.
+  the function was written, which meant every `warning` frame reached clients empty. It now spreads
+  instead of listing — which is how Phase 3's `data` and `level` reached clients without it being
+  told they exist — and is covered by a test that walks a fully-populated `Event` and asserts nothing
+  is missing (`packages/server/src/__tests__/sse.test.ts`), which is the only form of this that
+  survives someone adding a field in a hurry.
 - **A patched `vendor/agentspec` is a fork** (§8.1). It is a cheap one — the package is unpublished
   and bundled via `noExternal`, so there is no downstream consumer — but the refresh workflow in
   `VENDOR.md` assumes a verbatim copy and will silently revert the patches if it is followed as
@@ -1721,7 +1818,7 @@ Two new contracts appear in this revision and both are easy to create by acciden
 ### A hook that runs on every node can break every flow
 
 This is the sharpest new risk and it has no precedent in the current design. A `transform` only
-affects agents that declare it (`plugin/transform.ts:74`). A middleware on `node` affects
+affects agents that declare it (`plugin/transform.ts`, `TransformChain.build`). A middleware on `node` affects
 **everything**, including flows written before the middleware existed and by people who have never
 heard of it. A middleware that throws at `runner.ts:61` fails runs it has nothing to do with.
 
@@ -1731,7 +1828,7 @@ Mitigations, all of which should ship *with* Phase 6 and not after:
   before anything runs — the same property `manifest.ts:1-19` already buys.
 - An error policy, decided rather than defaulted (§7.10 Q3).
 - A middleware may not introduce a branch: `graph/validate.ts:26-51` checks reachability before
-  execution, and `plugin/executor.ts:71-81` already enforces the analogous rule for nodes.
+  execution, and `plugin/executor.ts`'s `runNode` branch check already enforces the analogous rule for nodes.
 - A `replace` verdict is reported as a `warning` event, so "the flow returned something odd" is
   traceable to the middleware that did it.
 
@@ -1739,9 +1836,9 @@ Mitigations, all of which should ship *with* Phase 6 and not after:
 
 `runner.ts:61-62` costs one `await` today. With two middlewares on the `node` seam it costs four JSON
 Lines round trips through a pipe, plus four full serializations of the node's `State` — and
-`plugin/remote.ts:43-51` already does a complete `JSON.parse(JSON.stringify(...))` round trip of the
-component's spec fields once per compiled node (`remote.ts:68`), on top of the per-call framing in
-`encode` (`protocol.ts:297-302`). A 20-node flow with two middlewares is 80 round trips carrying the accumulated
+`plugin/remote.ts`'s `serializable` already does a complete `JSON.parse(JSON.stringify(...))` round trip of the
+component's spec fields once per compiled node (`remote.ts`, `createExecutor`), on top of the per-call framing in
+`encode` (`protocol.ts`, `encode`). A 20-node flow with two middlewares is 80 round trips carrying the accumulated
 state each time, and `State.merge` is a shallow spread that only grows (`state/state.ts:36-38`).
 
 `modelCall` and `toolCall` middleware are less alarming because the underlying operation is already
@@ -1760,6 +1857,6 @@ the seam permits it.
 | Builtin type shadowing | `plugin/registry.ts:77-83` | Only with an explicit `implements: "builtin"` opt-in and a stated precedence rule (§7.10 Q7). The default stays: a plugin cannot silently become `AgentNode`. |
 | `$VAR` dereference for submitted specs | `llm/provider.ts:32-53` | The reference is not restricted to model credentials, and the "is not set" error is an enumeration oracle. |
 | Plugins in the server's process | `packages/server/src/plugins.ts:9-18` | Everything above is designed *around* this constraint. If a proposal is easier in-process, that is a reason to reject the proposal. |
-| Environment inheritance | `PluginHost.resolveCommand` (`plugin/host.ts:473-500`), `packages/server/src/plugins.ts:40` | Named capabilities grant heddle-mediated *operations*, never raw process access. There is no `getEnv`, and there should not be one. |
+| Environment inheritance | `PluginHost.resolveCommand` (`plugin/host.ts`, `resolveCommand`), `packages/server/src/plugins.ts` | Named capabilities grant heddle-mediated *operations*, never raw process access. There is no `getEnv`, and there should not be one. |
 | An encoder that can alter the run | §7.9 | `Event → WireFrame[]` is one-directional on purpose. An encoder renders what happened; giving it a return path would make it middleware with none of §7.4's ordering rules, and a rendering layer that can change the thing it renders is not a rendering layer. |
 | Divergence from the Agent Spec *format* | §8.1 | Extending the SDK's unions is in scope; inventing fields or semantics that make a heddle spec unreadable to another Agent Spec implementation is not. Every patch should be one upstream would plausibly accept. |

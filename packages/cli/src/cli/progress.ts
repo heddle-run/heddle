@@ -1,4 +1,4 @@
-import type { Event } from '@heddle/core';
+import { isPluginEvent, type Event } from '@heddle/core';
 import { getToolIcon, getToolTitle, formatDuration } from '../chat/tool-display.js';
 
 /**
@@ -60,8 +60,30 @@ export function renderEvent(e: Event, verbose: boolean): Output {
       return verbose ? lines('Flow started') : lines();
     case 'flow_complete':
       return verbose ? lines('Flow completed') : lines();
+    case 'plugin_log':
+      // `debug` is the only level a plugin author aims at themselves; the rest
+      // are addressed to whoever is running the flow, so they are ungated like
+      // `warning` and `node_error` above. Gating them all behind --verbose is
+      // what made `ctx.log` look broken from heddle's own primary client, and
+      // sent plugin authors back to stderr — capped at 4 KB and shown only when
+      // the process fails.
+      return e.level === 'debug' && !verbose
+        ? lines()
+        : lines(`[${e.nodeName}] ${e.level}: ${e.message}`);
     default:
-      return lines();
+      // A plugin's `data` is opaque to heddle, so this prints the type and the
+      // payload rather than enumerating shapes — the same reason `serializeEvent`
+      // spreads instead of listing fields. It cannot be a `case`, because a
+      // template-literal type has no single label to match. Verbose-gated
+      // because a plugin that reports per row would otherwise flood a default
+      // run with a shape only a client written against that plugin can read.
+      return isPluginEvent(e.type) && verbose
+        ? lines(
+            `[${e.nodeName}] ${e.type}${
+              e.data === undefined ? '' : ` ${JSON.stringify(e.data)}`
+            }`,
+          )
+        : lines();
   }
 }
 

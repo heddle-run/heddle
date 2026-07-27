@@ -75,6 +75,15 @@ export interface PluginManifest {
    * safe to add, since a plugin written before it existed cannot acquire it by
    * being run on a newer heddle.
    *
+   * Every reverse call is here, including the ones that only *say* something.
+   * `emitEvent` and `log` look harmless next to running a tool, and they are
+   * gated all the same, because what they reach is somebody's screen: an
+   * operator who streams runs somewhere other than back to the caller who
+   * started them has an audience the plugin did not come with. Gating is also
+   * what makes the set derivable — `PluginCapability` is `PluginMethod`, so a
+   * verb that needed no declaration would be a hole in that rule rather than an
+   * exception to it.
+   *
    * Always an array once validated, empty where the manifest said nothing, so
    * callers never have to distinguish "asked for none" from "did not say".
    */

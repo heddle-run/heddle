@@ -83,3 +83,95 @@ describe('everything else', () => {
     expect(r.text()).toBe('Flow started\n[a] Starting AgentNode\n');
   });
 });
+
+/**
+ * What a plugin says, and where it lands.
+ *
+ * `ctx.log` is documented as reaching "the run's stream — where the client is
+ * already looking", and the CLI is heddle's own primary client. Every case here
+ * failed silently before: `plugin_log` and the namespaced types fell through
+ * the switch's `default`, so a plugin that logged produced no output at all.
+ */
+describe('what a plugin reports', () => {
+  it('prints a log line without --verbose', () => {
+    const r = record();
+    r.feed({
+      type: 'plugin_log',
+      nodeName: 'judge',
+      nodeType: 'LlmJudge',
+      level: 'warn',
+      message: 'retrying after a 429',
+    });
+    expect(r.text()).toBe('[judge] warn: retrying after a 429\n');
+  });
+
+  it('holds debug back until --verbose, since it is aimed at the plugin author', () => {
+    const quiet = record();
+    const loud = record(true);
+    const debug: Event = {
+      type: 'plugin_log',
+      nodeName: 'judge',
+      nodeType: 'LlmJudge',
+      level: 'debug',
+      message: 'cache miss',
+    };
+    quiet.feed(debug);
+    loud.feed(debug);
+    expect(quiet.text()).toBe('');
+    expect(loud.text()).toBe('[judge] debug: cache miss\n');
+  });
+
+  it('closes a streamed answer before writing one', () => {
+    // The invariant this file exists for, applied to the new arm: a log line
+    // that landed mid-sentence would shred the model's answer.
+    const r = record();
+    r.feed(delta('assistant', 'half'), {
+      type: 'plugin_log',
+      nodeName: 'guard',
+      nodeType: 'Blocklist',
+      level: 'error',
+      message: 'blocked',
+    });
+    expect(r.text()).toBe('[assistant] half\n[guard] error: blocked\n');
+  });
+
+  it('prints a namespaced event and its payload with --verbose', () => {
+    const r = record(true);
+    r.feed({
+      type: 'plugin:LlmJudge:progress',
+      nodeName: 'judge',
+      nodeType: 'LlmJudge',
+      data: { done: 3, total: 10 },
+    });
+    expect(r.text()).toBe('[judge] plugin:LlmJudge:progress {"done":3,"total":10}\n');
+  });
+
+  it('prints a namespaced event with no payload at all', () => {
+    // `emitEvent(name)` with no data is legal, and JSON.stringify(undefined) is
+    // undefined — printed unguarded it would read "progress undefined".
+    const r = record(true);
+    r.feed({ type: 'plugin:Reverse:started', nodeName: 'reverse', nodeType: 'Reverse' });
+    expect(r.text()).toBe('[reverse] plugin:Reverse:started\n');
+  });
+
+  it('stays quiet about namespaced events without --verbose', () => {
+    const r = record();
+    r.feed({
+      type: 'plugin:Reverse:row',
+      nodeName: 'reverse',
+      nodeType: 'Reverse',
+      data: { n: 1 },
+    });
+    expect(r.text()).toBe('');
+  });
+
+  it('still closes a streamed answer for the events it says nothing about', () => {
+    const r = record();
+    r.feed(delta('assistant', 'half'), {
+      type: 'plugin:Reverse:row',
+      nodeName: 'reverse',
+      nodeType: 'Reverse',
+    });
+    expect(r.text()).toBe('[assistant] half\n');
+  });
+});

@@ -37,8 +37,39 @@ import type { MaterializedCode } from './request-code.js';
  * you would not hand a caller directly does not belong there — plugins or no
  * plugins. If you must keep one there, drop `runTool` from this list and accept
  * that guardrails cannot consult a tool.
+ *
+ * `emitEvent` and `log` are on the list because of who is listening. A run's
+ * events go to the SSE stream opened by the `POST` that started the run — see
+ * `runStreaming` in runs.ts — and this server has no endpoint that attaches an
+ * observer to somebody else's run. So under `--allow-request-code` the audience
+ * of a submitted plugin's events is the caller who submitted it. That is not a
+ * stranger putting text in front of your users; it is a caller writing to their
+ * own client, on a stream whose contents they already choose by choosing the
+ * flow.
+ *
+ * What makes that a grant rather than a shrug is that neither verb lets a
+ * plugin be believed for something heddle said. The event type is minted by
+ * heddle as `plugin:<componentType>:<name>` and the plugin supplies only the
+ * last segment, so no submitted plugin can produce `flow_complete` and stop a
+ * client early; the name has to be an identifier, and `SseStream.send` strips
+ * CR/LF from it again at the wire, so it cannot carry a frame of its own; and
+ * `log` arrives under heddle's own `plugin_log` type carrying the node it came
+ * from, so a line is always attributable to the component that wrote it.
+ *
+ * What it does cost is volume. Neither verb is rate-limited or size-capped, so
+ * a plugin in a loop can push bytes down its caller's stream and spend this
+ * server's CPU doing it. The bound is the one every submitted flow already has
+ * — the run's wall-clock budget and the plugin's per-call timeout — and the
+ * cost lands on the connection incurring it. Note that reporting also *resets*
+ * that per-call timeout, by design (`InFlight` in the protocol), so a plugin
+ * that reports steadily is bounded by `--timeout` rather than by
+ * `--plugin-call-timeout`.
+ *
+ * The assumption to check before keeping them: if you stream runs to a shared
+ * operator console rather than back to the caller, the audience is not the
+ * submitter any more and this reasoning does not hold. Drop both from this list.
  */
-const GRANTED: PluginCapability[] = ['runTool'];
+const GRANTED: PluginCapability[] = ['runTool', 'emitEvent', 'log'];
 
 export function buildPlugins(
   config: ServerConfig,

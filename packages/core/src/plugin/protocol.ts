@@ -23,6 +23,7 @@
  * is surfaced verbatim when the process fails, which is where a plugin author
  * will look first.
  */
+import type { LogLevel } from '../runner/events.js';
 
 /**
  * The protocol's version, as an integer rather than a semver string.
@@ -136,6 +137,10 @@ export function hostRequest<V extends HostVerb>(
 export interface PluginMethods {
   /** Run one of the flow's registered tools. */
   runTool: RunToolParams;
+  /** Publish one event on the run's stream, under the plugin's own namespace. */
+  emitEvent: EmitEventParams;
+  /** Say one thing, at a level, for whoever is watching the run. */
+  log: LogParams;
 }
 
 export type PluginMethod = keyof PluginMethods;
@@ -160,7 +165,11 @@ export type PluginCapability = PluginMethod;
  * back "unknown method". The list is also what that error names, since a plugin
  * author who guessed wrong needs to be told what does exist.
  */
-const SERVED: Record<PluginMethod, true> = { runTool: true };
+const SERVED: Record<PluginMethod, true> = {
+  runTool: true,
+  emitEvent: true,
+  log: true,
+};
 
 export const PLUGIN_METHODS = Object.keys(SERVED) as PluginMethod[];
 
@@ -202,6 +211,33 @@ export interface RpcResponse {
  * caller gets a plugin that "returned nothing". Adding the shape after
  * third-party plugins exist is therefore a flag day; adding it now costs a
  * branch nobody takes yet.
+ *
+ * ---
+ *
+ * **This is not `emitEvent` in another envelope**, and the line between them is
+ * where the payload goes.
+ *
+ * A partial is *a piece of one call's answer*. It is delivered to whatever
+ * inside heddle is awaiting that call and to nothing else — `PluginHost.call`
+ * hands it to the `onPartial` its own caller passed — so what it means is
+ * decided by that call site, not by the plugin. Nothing in heddle passes an
+ * `onPartial` for a plugin's `execute` or `apply` today, which is why the
+ * inlined runtime offers a plugin author no way to send one: a frame whose only
+ * consumer would be `undefined` is not a progress channel, and offering it as
+ * one would be handing authors a choice whose wrong answer is silence.
+ *
+ * An {@link EmitEventParams} event is *a report about the run*. It is published
+ * on the run's event stream, reaches every client watching it, is namespaced so
+ * it cannot be mistaken for one of heddle's own, and outlives the call that
+ * made it. It is also a {@link PluginCapability}, which a partial cannot be: a
+ * partial is a frame, so there is no request to refuse and no response to be
+ * refused on. That is the deciding argument for `emitEvent` being a verb rather
+ * than a shape of partial — a malformed event name has to come back as an
+ * error, and a frame with no id to answer can only be dropped.
+ *
+ * What the two share is the clock: both reset the timeout of the call they name
+ * (see `PluginHost.call`), because a plugin saying anything at all is a plugin
+ * that has not hung. An author never has to pick a frame in order to stay alive.
  */
 export interface RpcPartial {
   id: number | string;
@@ -278,6 +314,54 @@ export interface ExecuteParams extends Record<string, unknown> {
   node: Record<string, unknown>;
   /** The node's input state. */
   input: Record<string, unknown>;
+  /**
+   * The directory this execution shares with the tools it runs — what
+   * `PluginContext.getWorkspace` returns, sent rather than asked for.
+   *
+   * A reverse call would have been the obvious shape and is the wrong one. The
+   * value is a constant for the whole call and heddle knows it before it
+   * dispatches, so a verb would spend a round trip, a capability grant and an
+   * entry in {@link PluginMethods} on a string it already had — and it would
+   * make `getWorkspace` asynchronous out of process and synchronous in it, so
+   * the same plugin logic could not be written once. Sending it keeps
+   * {@link PluginCapability} free of anything that is not a verb.
+   *
+   * The price is that heddle creates the directory for every remote node
+   * execution, including the ones that never open it; in process the same call
+   * is deferred until a plugin asks. That is one `mkdtemp` and one `rm` beside
+   * a process boundary and a round trip, and only when there is no sandbox —
+   * with one, this is the session's own workspace and already exists.
+   *
+   * **Absent when the plugin's own process is confined**, which is why this is
+   * optional. `packages/server/src/plugins.ts` gives every submitted plugin its
+   * own `SandboxSession` under `--safe`, and that session's confinement is
+   * fixed when the process is spawned — `wrap()` is called once per plugin,
+   * before any node executes, while the node's tool scope is opened per
+   * execution afterwards. There is therefore no moment at which the node's
+   * workspace could be bound into the plugin's namespace, and sending the path
+   * anyway would hand an untrusted process a host path from outside its own
+   * confinement that every write to fails: ENOENT under bubblewrap, which binds
+   * only its own workspace, and EPERM under seatbelt, whose write rules do not
+   * cover it. Omitted, `getWorkspace` fails inside the plugin naming the
+   * limitation — see `workspaceOf` in runtime-source.ts — which is the one
+   * thing this field must never do, namely hand back a path that is not there.
+   *
+   * The consequence is worth stating plainly: under `--safe` a plugin node
+   * cannot pass a file to a tool it runs, because the two are confined to
+   * different sandboxes. That is a real capability gap, and naming it is better
+   * than papering over it with a path that fails at the first write.
+   */
+  workspace?: string;
+  /**
+   * Why {@link ExecuteParams.workspace} is absent, when it is.
+   *
+   * A node whose plugin is confined and a transform both arrive at the runtime
+   * with no `workspace`, and they are different problems for different people —
+   * one is an operator's `--safe`, the other is where the component was
+   * written. Without this marker `getWorkspace` would have to blame transforms
+   * for both, sending a node author to change something that is already right.
+   */
+  workspaceUnavailable?: 'confined';
 }
 
 /** Params for `apply`: run one message transform. */
@@ -288,10 +372,106 @@ export interface ApplyParams extends Record<string, unknown> {
   messages: unknown[];
 }
 
-/** Params for `runTool`, sent by the plugin. */
-export interface RunToolParams extends Record<string, unknown> {
+/**
+ * What every reverse call names, besides its own payload.
+ *
+ * One process serves every component of one plugin, and the channel the call
+ * arrives on belongs to the plugin rather than to any one call on it. So each
+ * reverse call has to say which `execute` or `apply` it was made inside, for
+ * three reasons.
+ *
+ * **Attribution.** Concurrent calls on one plugin are ordinary. The host keeps
+ * the reporter heddle built for each call it dispatched, and this id is what
+ * selects it. That is also what keeps `componentType` out of the plugin's
+ * hands: the namespace an event is published under comes from the entry heddle
+ * is executing, never from these params, so the worst a plugin can do by naming
+ * the wrong id is misattribute its own event to another of its own nodes.
+ *
+ * **Scope.** A `runTool` names the call for a different reason, and it is the
+ * one that made this field general rather than reporting-only. The tool has to
+ * run in the *node's* tool scope — the same sandbox session whose workspace
+ * heddle sent as {@link ExecuteParams.workspace} — or a plugin that writes a
+ * file and names it to `runTool` hands the tool a path that is not there on its
+ * side. Without the id the host has only its own process-wide runner, which
+ * opens a throwaway session per call, and the two halves of the documented
+ * contract come apart under exactly the sandboxing that contract exists for.
+ *
+ * **The clock.** A call's timeout is a silence budget — see `PluginHost.call` —
+ * and a plugin reporting steadily is not silent. Naming the call is what lets
+ * `emitEvent` and `log` reset it, so a plugin that spends ten minutes and says
+ * so throughout is not killed for saying so. `runTool` does not reset it: the
+ * host is inside that call for its whole duration, so a plugin waiting on a
+ * tool has already stopped being the thing the budget is measuring.
+ *
+ * Optional on the wire in one direction only: a plugin that names no call is
+ * served from the host's own runner, so hand-rolled plugins written before this
+ * field existed keep working. A report has no such fallback, because there is
+ * nothing to attribute it to.
+ */
+interface InFlight extends Record<string, unknown> {
+  /** The id of the `execute` or `apply` request this was made inside. */
+  call: number | string;
+}
+
+/**
+ * Params for `runTool`, sent by the plugin.
+ *
+ * `call` is inherited rather than declared here, and it is not optional in the
+ * type: heddle's own inlined runtime always sends it, because a tool that runs
+ * outside the calling node's scope cannot see the workspace that node was
+ * given. The host tolerates its absence for plugins that hand-roll the protocol
+ * — see `serveRunTool` — but nothing heddle emits should rely on that.
+ */
+export interface RunToolParams extends InFlight {
   name: string;
   input: Record<string, unknown>;
+}
+
+/** Params for `emitEvent`: publish one event on the run's stream. */
+export interface EmitEventParams extends InFlight {
+  /**
+   * The plugin's half of the event type, and the only half it supplies. heddle
+   * publishes the event as `plugin:<componentType>:<name>`, so no spelling of
+   * this names a builtin. See `pluginEventType` for the shape it has to have.
+   */
+  name: string;
+  /**
+   * The event's payload, opaque to heddle and passed to the client verbatim.
+   *
+   * Necessarily serializable, having arrived as JSON — which is why the host
+   * cannot be the place a bad payload is caught for a remote plugin. The
+   * inlined runtime refuses one in the plugin's own process, at the call that
+   * built it, where the failure still names the event.
+   */
+  data?: unknown;
+}
+
+/** Params for `log`: one line about the run, for a person. */
+export interface LogParams extends InFlight {
+  level: LogLevel;
+  message: string;
+}
+
+/**
+ * The levels a `log` frame may carry, as data.
+ *
+ * `LogLevel` is a type, and a type checks nothing about a string that arrived
+ * from another process. Keyed by the type rather than written as an array so
+ * that a level added to `LogLevel` and forgotten here is a compile error,
+ * instead of a value the host refuses after the type said it was fine.
+ */
+const LEVELS: Record<LogLevel, true> = {
+  debug: true,
+  info: true,
+  warn: true,
+  error: true,
+};
+
+/** The closed set a `log` frame's `level` is checked against. */
+export const LOG_LEVELS = Object.keys(LEVELS) as LogLevel[];
+
+export function isLogLevel(value: unknown): value is LogLevel {
+  return typeof value === 'string' && Object.hasOwn(LEVELS, value);
 }
 
 export function encode(message: RpcMessage): string {
