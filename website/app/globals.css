@@ -2,343 +2,399 @@
 @import "fumadocs-ui/css/neutral.css";
 @import "fumadocs-ui/css/preset.css";
 
+/* The FormFlow design system: tokens, keyframes and the .ff-* effect classes.
+   Vendored under ds/ — see ds/DEVIATIONS.md. */
+@import "../ds/tokens/index.css";
+
 @source '../node_modules/fumadocs-ui/dist/**/*.js';
 
 /* ==========================================================================
-   heddle — Minimalist Monochrome
-   Pure black and white. Serif typography. Zero radius. Lines, not shadows.
+   heddle — built on the FormFlow design system
+   Near-monochrome neutrals, dark by default, drawn in 1px hairlines, with
+   #ff005e used as an instrument and never as a fill.
    ========================================================================== */
 
-@theme {
-  /* --- Palette (absolute: no other colors exist) -------------------------- */
-  --color-paper: #ffffff;
-  --color-ink: #000000;
-  --color-muted: #f5f5f5;
-  --color-muted-ink: #525252;
-  --color-hairline: #e5e5e5;
-
-  /* --- Fumadocs surface mapped onto the same palette ---------------------- */
-  --color-fd-background: #ffffff;
-  --color-fd-foreground: #000000;
-  --color-fd-muted: #f5f5f5;
-  --color-fd-muted-foreground: #525252;
-  --color-fd-popover: #ffffff;
-  --color-fd-popover-foreground: #000000;
-  --color-fd-card: #ffffff;
-  --color-fd-card-foreground: #000000;
-  --color-fd-border: #000000;
-  --color-fd-primary: #000000;
-  --color-fd-primary-foreground: #ffffff;
-  --color-fd-secondary: #f5f5f5;
-  --color-fd-secondary-foreground: #000000;
-  --color-fd-accent: #f5f5f5;
-  --color-fd-accent-foreground: #000000;
-  --color-fd-ring: #000000;
-
-  /* --- Typefaces ---------------------------------------------------------- */
-  --font-display: var(--font-playfair), Georgia, "Times New Roman", serif;
-  --font-body: var(--font-source-serif), Georgia, "Times New Roman", serif;
-  --font-mono: var(--font-jetbrains), ui-monospace, SFMono-Regular, monospace;
-  --font-sans: var(--font-source-serif), Georgia, serif;
-
-  /* --- Type scale (dramatic range: fine print to oversized statements) ---- */
-  --text-xs: 0.75rem;
-  --text-sm: 0.875rem;
-  --text-base: 1rem;
-  --text-lg: 1.125rem;
-  --text-xl: 1.25rem;
-  --text-2xl: 1.5rem;
-  --text-3xl: 2rem;
-  --text-4xl: 2.5rem;
-  --text-4xl--line-height: 1.05;
-  --text-5xl: 3.5rem;
-  --text-5xl--line-height: 1;
-  --text-6xl: 4.5rem;
-  --text-6xl--line-height: 0.95;
-  --text-7xl: 6rem;
-  --text-7xl--line-height: 0.9;
-  --text-8xl: 8rem;
-  --text-8xl--line-height: 0.85;
-  --text-9xl: 10rem;
-  --text-9xl--line-height: 0.82;
-
-  /* --- Geometry: sharp, always -------------------------------------------- */
-  --radius-xs: 0px;
-  --radius-sm: 0px;
-  --radius-md: 0px;
-  --radius-lg: 0px;
-  --radius-xl: 0px;
-  --radius-2xl: 0px;
-  --radius-3xl: 0px;
-  --radius-4xl: 0px;
-
-  /* --- No depth: shadows are not part of this system ---------------------- */
-  --shadow-2xs: none;
-  --shadow-xs: none;
-  --shadow-sm: none;
-  --shadow-md: none;
-  --shadow-lg: none;
-  --shadow-xl: none;
-  --shadow-2xl: none;
+/* Inter arrives via next/font (app/layout.tsx) rather than the upstream Google
+   Fonts @import. --font-inter is the next/font variable; --font-sans is what
+   every design-system component reads. */
+:root {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", sans-serif;
 }
 
-/* Non-negotiable: every corner is 90°. Enforced globally so third-party
-   (fumadocs) components can't reintroduce pills or rounded cards. */
-*,
-*::before,
-*::after {
-  border-radius: 0 !important;
+/* --------------------------------------------------------------------------
+   fumadocs surface, mapped onto the design system's semantic tokens.
+   Set as plain custom properties (not @theme) so they re-resolve under .dark.
+   -------------------------------------------------------------------------- */
+:root {
+  --color-fd-background: var(--bg-page);
+  --color-fd-foreground: var(--text-strong);
+  --color-fd-muted: var(--bg-sunken);
+  --color-fd-muted-foreground: var(--text-muted);
+  --color-fd-popover: var(--bg-elevated);
+  --color-fd-popover-foreground: var(--text-strong);
+  --color-fd-card: var(--surface-card);
+  --color-fd-card-foreground: var(--text-strong);
+  --color-fd-border: var(--border-default);
+  --color-fd-primary: var(--brand-pink);
+  --color-fd-primary-foreground: #fff;
+  --color-fd-secondary: var(--bg-sunken);
+  --color-fd-secondary-foreground: var(--text-strong);
+  --color-fd-accent: var(--bg-sunken);
+  --color-fd-accent-foreground: var(--text-strong);
+  --color-fd-ring: var(--brand-pink);
 }
 
+@theme inline {
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+}
+
+/* --------------------------------------------------------------------------
+   Page chassis
+   -------------------------------------------------------------------------- */
 html {
   scroll-behavior: smooth;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  color-scheme: light;
+}
+html.dark {
+  color-scheme: dark;
 }
 
 body {
+  /* The boxed-frame motif draws 1px rules that extend 100vw past their block;
+     without this they create a horizontal scrollbar. */
   overflow-x: hidden;
-  background: var(--color-paper);
-  color: var(--color-ink);
-  font-family: var(--font-body);
+  background: var(--bg-page);
+  color: var(--text-body);
+  font-family: var(--font-sans);
+  transition: background-color var(--dur-base) var(--ease-standard);
 }
 
-::selection {
-  background: #000;
-  color: #fff;
+/* Backdrop is fixed at z-0; page content rides above it. */
+.hd-content {
+  position: relative;
+  z-index: 10;
 }
 
-/* Skip link — visible, black, square */
+/* Visible skip link, in the design system's own idiom */
 .skip-link {
   position: absolute;
   left: -9999px;
   z-index: 100;
 }
 .skip-link:focus {
-  left: 1.5rem;
-  top: 1.5rem;
-  background: #000;
+  left: var(--space-6);
+  top: var(--space-6);
+  background: var(--brand-pink);
   color: #fff;
-  padding: 0.75rem 1.5rem;
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  letter-spacing: 0.1em;
+  padding: var(--space-3) var(--space-6);
+  border-radius: var(--radius-full);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  letter-spacing: var(--tracking-widest);
   text-transform: uppercase;
 }
 
-/* ==========================================================================
-   Textures — layered, subtle, required. Flat is not the goal; quiet is.
-   Each is an absolutely-positioned overlay (see components/Texture.tsx).
-   ========================================================================== */
-
-.texture {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--brand-pink);
+  outline-offset: 2px;
 }
 
-/* Global paper rule-lines */
-.texture-lines {
-  background-image: repeating-linear-gradient(
-    0deg,
-    transparent,
-    transparent 1px,
-    #000 1px,
-    #000 2px
-  );
-  background-size: 100% 4px;
-  opacity: 0.015;
+/* --------------------------------------------------------------------------
+   Layout helpers. Inline styles carry the design system's own values; these
+   exist only for the things inline styles cannot express — media queries.
+   -------------------------------------------------------------------------- */
+.hd-container {
+  width: 100%;
+  max-width: var(--container-max);
+  margin: 0 auto;
+  padding-left: var(--space-6);
+  padding-right: var(--space-6);
+}
+.hd-container-narrow {
+  max-width: var(--container-narrow);
 }
 
-/* Warp threads — the heddle motif: vertical lines under tension */
-.texture-warp {
-  background-image: repeating-linear-gradient(
-    90deg,
-    transparent,
-    transparent 23px,
-    #000 23px,
-    #000 24px
-  );
-  opacity: 0.07;
+.hd-section {
+  padding-top: var(--space-16);
+  padding-bottom: var(--space-16);
+}
+@media (min-width: 768px) {
+  .hd-section {
+    padding-top: var(--section-pad-y);
+    padding-bottom: var(--section-pad-y);
+  }
 }
 
-/* Editorial grid */
-.texture-grid {
-  background-image: linear-gradient(#00000008 1px, transparent 1px),
-    linear-gradient(90deg, #00000008 1px, transparent 1px);
-  background-size: 40px 40px;
-  opacity: 0.5;
+.hd-grid {
+  display: grid;
+  gap: var(--space-6);
+  grid-template-columns: 1fr;
+}
+@media (min-width: 640px) {
+  .hd-grid-4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (min-width: 768px) {
+  .hd-grid-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (min-width: 900px) {
+  .hd-grid-3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .hd-grid-4 {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
 }
 
-/* Diagonal weave — process / timeline sections */
-.texture-diagonal {
-  background-image: repeating-linear-gradient(
-    45deg,
-    transparent,
-    transparent 40px,
-    #00000010 40px,
-    #00000010 42px
-  );
-  opacity: 0.6;
+/* Bento: one tall feature cell beside a stack of smaller ones */
+.hd-bento {
+  display: grid;
+  gap: var(--space-6);
+  grid-template-columns: 1fr;
+}
+@media (min-width: 900px) {
+  .hd-bento {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-auto-rows: 300px;
+  }
+  .hd-bento > .hd-bento-hero {
+    grid-column: span 2;
+    grid-row: span 2;
+  }
 }
 
-/* Paper grain */
-.texture-noise {
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
-  opacity: 0.02;
+.hd-split {
+  display: grid;
+  gap: var(--space-8);
+  grid-template-columns: 1fr;
+  align-items: center;
+}
+@media (min-width: 900px) {
+  .hd-split {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-12);
+  }
 }
 
-/* Inverted surfaces */
-.texture-warp-inverted {
-  background-image: repeating-linear-gradient(
-    90deg,
-    transparent,
-    transparent 3px,
-    #fff 3px,
-    #fff 4px
-  );
-  opacity: 0.05;
-}
-
-.texture-radial-inverted {
-  background-image: radial-gradient(
-    circle at top center,
-    #ffffff,
-    transparent 70%
-  );
-  opacity: 0.06;
-}
-
-/* ==========================================================================
-   Typographic details
-   ========================================================================== */
-
-/* Boxed drop cap — opens the manifesto */
-.drop-cap::first-letter {
-  float: left;
-  font-family: var(--font-display);
-  font-size: 4.5rem;
-  line-height: 0.78;
-  padding: 0.75rem 1rem;
-  margin: 0.25rem 1.25rem 0 0;
-  border: 1px solid #000;
-}
-
-/* Oversized quotation mark */
-.pull-quote::before {
-  content: "\201C";
-  font-family: var(--font-display);
-  display: block;
-  font-size: 12rem;
-  line-height: 0.6;
-  height: 4.5rem;
-  opacity: 0.1;
-}
-
-.hide-scrollbar {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
-.hide-scrollbar::-webkit-scrollbar {
+/* Nav links collapse on small screens */
+.hd-nav-links {
   display: none;
 }
+@media (min-width: 860px) {
+  .hd-nav-links {
+    display: flex;
+  }
+}
+.hd-nav-secondary {
+  display: none;
+}
+@media (min-width: 640px) {
+  .hd-nav-secondary {
+    display: flex;
+  }
+}
 
-/* ==========================================================================
-   Documentation shell — same palette, same discipline
-   ========================================================================== */
+/* Footer columns */
+.hd-footer-grid {
+  display: grid;
+  gap: var(--space-8);
+  grid-template-columns: 1fr;
+}
+@media (min-width: 640px) {
+  .hd-footer-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (min-width: 900px) {
+  .hd-footer-grid {
+    grid-template-columns: 2fr 1fr 1fr 1fr;
+    gap: var(--space-12);
+  }
+}
 
+.hd-footer-bottom {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  align-items: flex-start;
+}
+@media (min-width: 640px) {
+  .hd-footer-bottom {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+  }
+}
+
+/* FAQ disclosure. Native <details>, so the only state the CSS needs is [open]. */
+.hd-faq summary::-webkit-details-marker,
+.hd-faq summary::marker {
+  display: none;
+  content: "";
+}
+.hd-faq-chevron {
+  transition: transform var(--dur-base) var(--ease-standard);
+}
+.hd-faq[open] .hd-faq-chevron {
+  transform: rotate(180deg);
+  color: var(--brand-pink);
+}
+.hd-faq:hover {
+  border-color: var(--border-strong);
+}
+
+/* Per-word hero hover. The design system tints each word a different hue on
+   hover; --hd-hue carries the word's colour so this needs no client state. */
+.hd-hero-word {
+  cursor: default;
+  transition:
+    color var(--dur-slow) var(--ease-standard),
+    text-shadow var(--dur-base) ease;
+}
+.hd-hero-word:hover {
+  color: var(--hd-hue);
+  text-shadow: 0 0 30px currentColor;
+}
+
+/* Mono readouts — spec fragments, commands, numerals */
+.hd-mono {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  letter-spacing: 0;
+}
+.hd-eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-widest);
+  font-weight: var(--fw-semibold);
+  /* --text-faint is the design system's quietest step, but at 10px on the dark
+     page it falls under 3:1. --text-muted keeps the label subordinate and legible. */
+  color: var(--text-muted);
+}
+
+/* --------------------------------------------------------------------------
+   Documentation shell — the same tokens, applied to fumadocs
+   -------------------------------------------------------------------------- */
 #nd-docs-layout,
 #nd-page,
 #nd-sidebar,
 #nd-nav,
 #nd-tocnav {
-  font-family: var(--font-body);
+  font-family: var(--font-sans);
 }
 
 #nd-nav {
-  border-bottom: 1px solid #000;
-  background: #fff;
-  backdrop-filter: none;
+  border-bottom: 1px solid var(--border-hairline);
+  background: var(--surface-chrome);
+  backdrop-filter: blur(var(--blur-chrome));
 }
 
+/* The backdrop swirls sit behind the whole app. Chrome surfaces need their own
+   translucent fill, or the colour washes straight through the sidebar. */
 #nd-sidebar {
-  border-right: 1px solid #000;
-  background: #fff;
+  border-right: 1px solid var(--border-hairline);
+  background: var(--surface-chrome);
+  backdrop-filter: blur(var(--blur-chrome));
 }
 
 #nd-sidebar a,
 #nd-tocnav a,
 #nd-toc a {
-  font-family: var(--font-mono);
-  font-size: 0.8125rem;
-  letter-spacing: 0.01em;
+  font-size: var(--fs-sm);
+  letter-spacing: 0;
 }
 
-/* Sidebar section headings read as editorial labels */
+/* Sidebar section headings read as micro-labels */
 #nd-sidebar p[class*="font-medium"],
 #nd-sidebar h3 {
   font-family: var(--font-mono);
   text-transform: uppercase;
-  letter-spacing: 0.14em;
-  font-size: 0.6875rem;
+  letter-spacing: var(--tracking-widest);
+  font-size: var(--fs-2xs);
+  color: var(--text-faint);
 }
 
-/* Prose */
 #nd-page h1,
 #nd-page h2,
 #nd-page h3,
 #nd-page h4 {
-  font-family: var(--font-display);
-  letter-spacing: -0.025em;
+  letter-spacing: var(--tracking-tight);
+  font-weight: var(--fw-semibold);
+  color: var(--text-strong);
 }
 
 #nd-page h1 {
-  font-size: 3rem;
-  line-height: 1.02;
+  font-size: var(--fs-4xl);
+  line-height: var(--lh-tight);
 }
 
 #nd-page h2 {
-  border-top: 4px solid #000;
-  padding-top: 1.5rem;
-  margin-top: 3.5rem;
+  border-top: 1px solid var(--border-default);
+  padding-top: var(--space-6);
+  margin-top: var(--space-12);
 }
 
 #nd-page .prose :where(p, li) {
-  font-family: var(--font-body);
+  color: var(--text-body);
+  line-height: var(--lh-relaxed);
 }
 
+/* utilities.css strips underlines from every <a>; prose links need them back.
+   Headings are excluded — fumadocs wraps each one in its own anchor link, and
+   without this every h2 would render as pink underlined body copy. */
 #nd-page .prose :where(a) {
+  color: var(--brand-pink);
+  text-decoration: underline;
   text-underline-offset: 3px;
   text-decoration-thickness: 1px;
 }
 
+#nd-page .prose :where(h1, h2, h3, h4, h5, h6) a,
+#nd-page :where(h1, h2, h3, h4, h5, h6) a {
+  color: inherit;
+  text-decoration: none;
+}
+#nd-page :where(h1, h2, h3, h4, h5, h6) a:hover {
+  color: var(--brand-pink);
+}
+
 #nd-page .prose :where(table) {
-  border: 1px solid #000;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
 }
 
 #nd-page .prose :where(th) {
   font-family: var(--font-mono);
   text-transform: uppercase;
-  letter-spacing: 0.1em;
-  font-size: 0.6875rem;
-  border-bottom: 2px solid #000;
+  letter-spacing: var(--tracking-widest);
+  font-size: var(--fs-2xs);
+  border-bottom: 1px solid var(--border-default);
+  color: var(--text-faint);
 }
 
 #nd-page .prose :where(blockquote) {
-  border-left: 4px solid #000;
-  font-style: italic;
+  border-left: 2px solid var(--brand-pink);
+  font-style: normal;
+  color: var(--text-muted);
 }
 
-/* There is one theme. The toggle has nothing to offer. */
-button[aria-label="Toggle Theme"] {
-  display: none;
-}
-
-/* Code: monochrome by desaturation — token contrast survives, color doesn't */
+/* Code. The previous system desaturated syntax highlighting because it allowed
+   no colour at all; this one has a full neutral ramp plus accent hues, so the
+   tokens are left to read normally. */
 #nd-page figure:has(pre),
 #nd-page pre:not(figure pre) {
-  border: 1px solid #000;
-  background: #fff;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-inset);
 }
 
 #nd-page figure:has(pre) pre {
@@ -349,23 +405,52 @@ button[aria-label="Toggle Theme"] {
 #nd-page .shiki,
 #nd-page .shiki span {
   font-family: var(--font-mono);
-}
-
-#nd-page .shiki {
-  filter: grayscale(1) contrast(1.35);
+  font-size: var(--fs-sm);
 }
 
 #nd-page :not(pre) > code {
   font-family: var(--font-mono);
-  border: 1px solid var(--color-hairline);
-  background: var(--color-muted);
+  border: 1px solid var(--border-default);
+  background: var(--bg-sunken);
+  border-radius: var(--radius-sm);
   padding: 0.1em 0.35em;
-  font-size: 0.85em;
+  font-size: 0.875em;
+  color: var(--text-strong);
 }
 
-/* Focus discipline across the docs shell */
 #nd-docs-layout a:focus-visible,
 #nd-docs-layout button:focus-visible {
-  outline: 3px solid #000;
+  outline: 2px solid var(--brand-pink);
   outline-offset: 2px;
+}
+
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* --------------------------------------------------------------------------
+   Reduced motion. The design system leans on slow infinite loops — swirls,
+   tracing beams, marquees. Honour the preference and hold them still.
+   -------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .ff-fade-in-up {
+    opacity: 1;
+    transform: none;
+  }
+  .ff-swirl,
+  .ff-beam-runner {
+    display: none;
+  }
 }

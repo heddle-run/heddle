@@ -1,12 +1,3 @@
-import {
-  FileJson,
-  GitBranch,
-  Bot,
-  Terminal,
-  Shuffle,
-  MessageSquare,
-} from "lucide-react";
-
 export const SITE_URL = "https://heddle.run";
 export const GITHUB_URL = "https://github.com/spichen/heddle";
 export const NPM_URL = "https://www.npmjs.com/package/@heddle/cli";
@@ -27,10 +18,10 @@ export const definition = {
 };
 
 export const stats = [
-  { value: "6", label: "Node types" },
+  { value: "0", label: "SDKs to install" },
+  { value: "0", label: "Lines of glue code" },
+  { value: "2", label: "Ways to run a spec" },
   { value: "4", label: "LLM providers" },
-  { value: "0", label: "Servers to run" },
-  { value: "1", label: "Command" },
 ];
 
 export const steps = [
@@ -84,7 +75,7 @@ json.dump({
     number: "03",
     title: "Run",
     description:
-      "Parse, validate, compile, execute. One command, on your machine, with the whole graph checked before a single token is spent.",
+      "Parse, validate, compile, execute — with the whole graph checked before a single token is spent. One command locally, or the same spec behind heddle-server over HTTP.",
     code: `$ heddle run flow.yaml \\
     --tools-dir ./tools \\
     --input '{"query": "shed"}'
@@ -99,123 +90,94 @@ json.dump({
   },
 ];
 
+/* Icon names are design-system registry keys (ds/components/core/Icon.jsx),
+   not component references — the DS resolves them itself. */
 export const features = [
   {
-    icon: FileJson,
-    title: "Declarative flows",
+    icon: "file-json",
+    hue: "var(--brand-pink)",
+    title: "No SDK to install",
     description:
-      "Multi-step agent workflows in YAML or JSON. The spec is the program; there is no boilerplate to maintain alongside it.",
+      "Every other framework starts with an import: a class to subclass, a decorator to remember, a graph to assemble in code. heddle starts with a document. Write the flow in YAML or JSON and hand it to the runtime — there is no library in your dependency tree, and nothing to migrate when the framework changes its mind.",
   },
   {
-    icon: GitBranch,
+    icon: "git-branch",
+    hue: "var(--hue-purple)",
     title: "Graph execution",
     description:
       "Flows compile into a directed graph of control-flow and data-flow edges, validated for reachability before anything runs.",
   },
   {
-    icon: Bot,
+    icon: "bot",
+    hue: "var(--hue-blue)",
     title: "Tool-calling loop",
     description:
       "Agent nodes call tools autonomously until the task is finished — up to ten rounds per node, with every call traced.",
   },
   {
-    icon: Terminal,
+    icon: "terminal",
+    hue: "var(--hue-emerald)",
     title: "Any-language tools",
     description:
       "A tool is a subprocess that speaks JSON over stdin and stdout. If it runs on your machine, it works here.",
   },
   {
-    icon: Shuffle,
+    icon: "shuffle",
+    hue: "var(--hue-amber)",
     title: "Provider agnostic",
     description:
       "OpenAI, vLLM, Ollama, or any OpenAI-compatible endpoint. Swap the model without touching the flow.",
   },
   {
-    icon: MessageSquare,
-    title: "Interactive chat",
+    icon: "network",
+    hue: "var(--hue-rose)",
+    title: "CLI or HTTP server",
     description:
-      "Hold a persistent multi-turn conversation with a flow through --chat, and read the transcript back from disk.",
+      "The same spec runs two ways: heddle run on your machine, or heddle-server streaming events over HTTP. One engine, no rewrite between them.",
   },
 ];
 
-export const specimens = [
-  {
-    index: "I",
-    title: "Research Assistant",
-    category: "Flow",
-    description: "An agent with web search and a calculator",
-    code: `component_type: AgentNode
-name: researcher
-agent:
-  component_type: Agent
-  name: research-agent
-  system_prompt: Research the user's question.
-  llm_config:
-    component_type: OpenAiConfig
-    name: openai
-    model_id: gpt-4o
-  tools:
-    - { component_type: ServerTool, name: web_search }
-    - { component_type: ServerTool, name: calculator }`,
-  },
-  {
-    index: "II",
-    title: "Math Homework",
-    category: "Agent",
-    description: "A multiplication tool served by vLLM",
-    code: `component_type: Agent
-name: math-helper
-system_prompt: Solve the multiplication problem.
-llm_config:
-  component_type: VllmConfig
-  name: llama
-  model_id: meta-llama/Llama-3.1-8B
-  url: http://localhost:8000/v1
-tools:
-  - component_type: ServerTool
-    name: multiplication_tool
-    inputs:
-      - { title: a, type: integer }
-      - { title: b, type: integer }`,
-  },
-  {
-    index: "III",
-    title: "Retrieval Expert",
-    category: "Agent",
-    description: "A domain expert grounded in your corpus",
-    code: `component_type: Agent
-name: rag-expert
-system_prompt: |
-  You are an expert in
-  {{domain_of_expertise}}.
-llm_config:
-  component_type: OpenAiConfig
-  name: openai
-  model_id: gpt-4o
-tools:
-  - component_type: ServerTool
-    name: rag_tool
-    inputs:
-      - title: query
-        type: string`,
-  },
-  {
-    index: "IV",
-    title: "IT Assistant",
-    category: "Agent",
-    description: "Enterprise support on a local model",
-    code: `component_type: Agent
-name: it-assistant
-system_prompt: |
-  You are an IT assistant.
-  Help users troubleshoot.
-llm_config:
-  component_type: VllmConfig
-  name: llama
-  model_id: meta-llama/Llama-3.1-8B
-  url: http://vllm:8000/v1`,
-  },
-];
+/**
+ * Safe mode.
+ *
+ * Every claim here is checked against packages/core/src/sandbox/ and
+ * packages/server/DEPLOYMENT.md. It is a security promise on a public page —
+ * do not soften or extend it without re-reading those two sources.
+ */
+export const safeMode = {
+  flag: "--safe",
+  points: [
+    {
+      icon: "shield",
+      hue: "var(--brand-pink)",
+      title: "Tools run confined",
+      description:
+        "A tool subprocess gets no $HOME, cannot write outside the run workspace, and sees only the environment variables --allow-env names. bubblewrap on Linux, seatbelt on macOS.",
+    },
+    {
+      icon: "boxes",
+      hue: "var(--hue-purple)",
+      title: "Plugins run out of process",
+      description:
+        "A plugin never shares the runtime's heap, globals or environment. It speaks JSON-Lines over stdio from its own process, and is killed when the run ends.",
+    },
+    {
+      icon: "file-code",
+      hue: "var(--hue-blue)",
+      title: "The spec is data, not code",
+      description:
+        "A flow is parsed, never evaluated. Where a spec arrives from a caller rather than from you, a $VAR reference into the host environment is refused rather than resolved — running your own spec locally, it still resolves.",
+    },
+    {
+      icon: "circle-check-big",
+      hue: "var(--hue-emerald)",
+      title: "It never degrades quietly",
+      description:
+        "Ask for a sandbox backend that is not available and the run fails. There is no path on which --safe silently falls back to an unconfined process.",
+    },
+  ],
+};
+
 
 /** The spec / terminal spread. */
 export const specimenSpread = {
@@ -283,7 +245,22 @@ export const faqItems = [
   {
     question: "What is heddle?",
     answer:
-      "heddle is a lightweight CLI runtime for agentic workflows. You declare a multi-step flow in YAML or JSON using the Open Agent Specification, and heddle parses it, validates it, compiles it into an executable graph, and runs it locally with a single command.",
+      "heddle is a lightweight runtime for agentic workflows. You declare a multi-step flow in YAML or JSON using the Open Agent Specification, and heddle parses it, validates it, compiles it into an executable graph, and runs it — from the CLI on your machine, or behind an HTTP server.",
+  },
+  {
+    question: "How is this different from other agent frameworks?",
+    answer:
+      "There is no SDK. Frameworks like LangGraph, CrewAI and AutoGen are libraries: you install them, import them, and assemble the graph in Python or TypeScript, so your agent is code that depends on their abstractions. heddle inverts that. The flow is a document you write, and heddle is a runtime you point at it. Nothing enters your dependency tree, no class needs subclassing, and because the document conforms to a published specification rather than to this project, the same flow runs on any other compliant runtime.",
+  },
+  {
+    question: "Can I run it as a service?",
+    answer:
+      "Yes. heddle-server exposes the same engine over HTTP and streams execution events as the run happens — it is what the playground on this site talks to. It binds to 127.0.0.1 by default and ships no authentication of its own, so put an authenticating proxy in front of it before exposing it to anything you do not control.",
+  },
+  {
+    question: "What stops a tool from doing whatever it likes?",
+    answer:
+      "Run with --safe. Tool scripts are then executed inside a kernel-level sandbox — bubblewrap on Linux, seatbelt on macOS — with no $HOME, no writes outside the run workspace, and an environment cut down to the variables you name with --allow-env. Plugins are confined differently, by construction: they run in their own process and never see the runtime's memory or environment. If you ask for a sandbox backend the machine cannot provide, the run fails rather than quietly continuing unconfined.",
   },
   {
     question: "What is the Open Agent Specification?",

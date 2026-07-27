@@ -1,38 +1,87 @@
-import Container from "./ui/Container";
-import Texture from "./ui/Texture";
+import { BoxedFrame, Icon } from "@/ds";
 import { definition } from "@/lib/constants";
 
-/** The epigraph: the name is the thesis, so the dictionary entry is the pull quote. */
+/** The epigraph: the name is the thesis, so the dictionary entry is the pull
+ *  quote. Framed by the signature corner ticks and opened by an oversized
+ *  quotation glyph at low opacity. */
 export default function Definition() {
   return (
-    <section className="relative overflow-hidden">
-      <Texture variant="lines" />
-
-      <Container className="relative py-24 md:py-32">
-        <figure className="pull-quote mx-auto max-w-3xl text-center">
-          <figcaption className="flex flex-wrap items-baseline justify-center gap-x-3 gap-y-1">
-            <span className="font-display text-2xl tracking-tight">
-              {definition.word}
+    <section className="hd-section">
+      <div className="hd-container">
+        <BoxedFrame pad="var(--space-12)" beam>
+          <figure
+            style={{
+              margin: 0,
+              maxWidth: 760,
+              marginInline: "auto",
+              textAlign: "center",
+            }}
+          >
+            <span
+              aria-hidden
+              style={{
+                display: "inline-flex",
+                color: "var(--brand-pink)",
+                opacity: 0.35,
+              }}
+            >
+              <Icon name="quote" size={40} />
             </span>
-            <span className="font-mono text-xs text-muted-ink">
-              {definition.pronunciation}
-            </span>
-            <span className="font-display text-lg italic text-muted-ink">
-              {definition.partOfSpeech}
-            </span>
-          </figcaption>
 
-          <blockquote className="mt-8 font-display text-2xl italic leading-[1.35] tracking-tight sm:text-3xl md:text-4xl md:leading-[1.25]">
-            {definition.body}
-          </blockquote>
+            <figcaption
+              style={{
+                marginTop: "var(--space-6)",
+                display: "flex",
+                flexWrap: "wrap",
+                alignItems: "baseline",
+                justifyContent: "center",
+                gap: "var(--space-3)",
+              }}
+            >
+              <span
+                style={{
+                  fontSize: "var(--fs-2xl)",
+                  fontWeight: "var(--fw-semibold)",
+                  letterSpacing: "var(--tracking-tight)",
+                  color: "var(--text-strong)",
+                }}
+              >
+                {definition.word}
+              </span>
+              <span
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: "var(--fs-xs)",
+                  color: "var(--text-faint)",
+                }}
+              >
+                {definition.pronunciation}
+              </span>
+              <span
+                style={{
+                  fontSize: "var(--fs-sm)",
+                  color: "var(--text-muted)",
+                }}
+              >
+                {definition.partOfSpeech}
+              </span>
+            </figcaption>
 
-          <div className="mt-12 flex items-center justify-center gap-4">
-            <span aria-hidden className="h-px w-20 bg-ink" />
-            <span aria-hidden className="h-2.5 w-2.5 border border-ink" />
-            <span aria-hidden className="h-px w-20 bg-ink" />
-          </div>
-        </figure>
-      </Container>
+            <blockquote
+              style={{
+                margin: "var(--space-6) 0 0",
+                fontSize: "clamp(20px,2.6vw,30px)",
+                fontWeight: "var(--fw-light)",
+                letterSpacing: "var(--tracking-tight)",
+                lineHeight: "var(--lh-snug)",
+                color: "var(--text-strong)",
+              }}
+            >
+              {definition.body}
+            </blockquote>
+          </figure>
+        </BoxedFrame>
+      </div>
     </section>
   );
 }

@@ -1,42 +1,52 @@
-import Container from "./ui/Container";
-import Texture from "./ui/Texture";
-import Label from "./ui/Label";
+import { FeatureCard } from "@/ds";
+import SectionLabel from "./SectionLabel";
 import { features } from "@/lib/constants";
 
+/** The bento: one tall cell carrying the headline capability with a pink glow
+ *  orb behind it, and five hairline tiles around it. */
 export default function Features() {
+  const [lead, ...rest] = features;
+
   return (
-    <section className="relative overflow-hidden">
-      <Texture variant="lines" />
+    <section className="hd-section">
+      <div className="hd-container">
+        <SectionLabel index="003">Apparatus</SectionLabel>
 
-      <Container className="relative py-24 md:py-32">
-        <div className="flex items-center gap-6">
-          <Label>003 — Apparatus</Label>
-          <span aria-hidden className="h-px flex-1 bg-hairline" />
-        </div>
-
-        <h2 className="mt-6 max-w-[20ch] font-display text-4xl leading-[1.02] tracking-tight md:text-5xl">
+        <h2
+          style={{
+            margin: "0 0 var(--space-12)",
+            maxWidth: "20ch",
+            fontSize: "clamp(30px,4vw,48px)",
+            fontWeight: "var(--fw-semibold)",
+            letterSpacing: "var(--tracking-tight)",
+            lineHeight: "var(--lh-snug)",
+            color: "var(--text-strong)",
+          }}
+        >
           What comes in the box.
         </h2>
 
-        <ul className="mt-16 grid border-t border-l border-ink sm:grid-cols-2 lg:grid-cols-3">
-          {features.map(({ icon: Icon, title, description }) => (
-            <li
-              key={title}
-              className="group border-r border-b border-ink bg-paper p-8 transition-colors duration-100 hover:bg-ink hover:text-paper"
-            >
-              <span className="flex h-11 w-11 items-center justify-center border border-ink transition-colors duration-100 group-hover:border-paper">
-                <Icon size={20} strokeWidth={1.5} />
-              </span>
-              <h3 className="mt-6 font-display text-2xl leading-tight tracking-tight">
-                {title}
-              </h3>
-              <p className="mt-3 text-base leading-relaxed text-muted-ink transition-colors duration-100 group-hover:text-paper/70">
-                {description}
-              </p>
-            </li>
+        <div className="hd-bento">
+          <FeatureCard
+            className="hd-bento-hero"
+            icon={lead.icon}
+            hue={lead.hue}
+            title={lead.title}
+            body={lead.description}
+            feature
+            glow
+          />
+          {rest.map((f) => (
+            <FeatureCard
+              key={f.title}
+              icon={f.icon}
+              hue={f.hue}
+              title={f.title}
+              body={f.description}
+            />
           ))}
-        </ul>
-      </Container>
+        </div>
+      </div>
     </section>
   );
 }

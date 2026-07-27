@@ -1,23 +1,17 @@
 import type { Metadata } from "next";
-import { Playfair_Display, Source_Serif_4, JetBrains_Mono } from "next/font/google";
+import { Inter } from "next/font/google";
 import { RootProvider } from "fumadocs-ui/provider";
+import { Backdrop } from "@/ds";
 import "./globals.css";
 
-const playfair = Playfair_Display({
+/* One family, four weights — the design system ships nothing else.
+   Self-hosted by next/font rather than the upstream Google Fonts @import;
+   see ds/DEVIATIONS.md. */
+const inter = Inter({
   subsets: ["latin"],
-  style: ["normal", "italic"],
-  variable: "--font-playfair",
-});
-
-const sourceSerif = Source_Serif_4({
-  subsets: ["latin"],
-  style: ["normal", "italic"],
-  variable: "--font-source-serif",
-});
-
-const jetbrainsMono = JetBrains_Mono({
-  subsets: ["latin"],
-  variable: "--font-jetbrains",
+  weight: ["300", "400", "500", "600"],
+  variable: "--font-inter",
+  display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -27,20 +21,23 @@ export const metadata: Metadata = {
     template: "%s — heddle",
   },
   description:
-    "heddle is a lightweight CLI runtime for the Open Agent Specification. Declare a flow in YAML, wire tools in any language, and run the whole thing from one command.",
+    "Build agents without an SDK. heddle is a runtime for the Open Agent Specification: declare the flow as a YAML or JSON document, wire tools in any language, and run it from the CLI or behind an HTTP server — with every tool confined to a sandbox under --safe.",
   keywords: [
     "heddle",
     "agent spec",
     "open agent specification",
     "ai agents",
     "agentic workflows",
+    "no sdk",
+    "declarative agents",
+    "agent sandbox",
     "cli",
     "llm",
   ],
   openGraph: {
     title: "heddle — Weave agents from spec",
     description:
-      "A lightweight CLI runtime for the Open Agent Specification. Declare the flow, wire the tools, run one command.",
+      "No SDK, no imports. Declare the agent as a document and run it from the CLI or an HTTP server, with tools confined to a sandbox.",
     url: "https://heddle.run",
     siteName: "heddle",
     type: "website",
@@ -53,12 +50,23 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html
-      lang="en"
-      className={`${playfair.variable} ${sourceSerif.variable} ${jetbrainsMono.variable}`}
-    >
-      <body className="bg-paper font-body text-ink antialiased">
-        <RootProvider theme={{ enabled: false }}>{children}</RootProvider>
+    // next-themes (inside RootProvider) writes the `dark` class and injects its
+    // own pre-paint script, so suppressHydrationWarning is required here.
+    <html lang="en" className={inter.variable} suppressHydrationWarning>
+      <body>
+        <RootProvider
+          theme={{
+            enabled: true,
+            attribute: "class",
+            defaultTheme: "dark",
+            enableSystem: false,
+            disableTransitionOnChange: true,
+          }}
+        >
+          {/* Swirls, hairline grid and noise film — fixed at z-0, content at z-10. */}
+          <Backdrop />
+          <div className="hd-content">{children}</div>
+        </RootProvider>
       </body>
     </html>
   );

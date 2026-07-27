@@ -1,66 +1,109 @@
-import Container from "./ui/Container";
-import Label from "./ui/Label";
+import { WindowChrome, Icon } from "@/ds";
+import SectionLabel from "./SectionLabel";
 import { specimenSpread } from "@/lib/constants";
 
-/* Terminal lines carry no colour — only weight and opacity. */
+/* Terminal lines carry weight and one accent — pink marks the tool calls,
+ * which is the only part of a run worth looking at twice. */
 const lineTone: Record<string, string> = {
-  prompt: "text-paper",
-  cont: "text-paper/70",
-  muted: "text-paper/40",
-  step: "text-paper",
-  tool: "text-paper/60",
-  out: "text-paper/85",
-  blank: "text-paper/40",
+  prompt: "var(--text-strong)",
+  cont: "var(--text-body)",
+  muted: "var(--text-faint)",
+  step: "var(--text-strong)",
+  tool: "var(--brand-pink)",
+  out: "var(--text-body)",
+  blank: "transparent",
 };
 
 export default function Spread() {
   return (
-    <section className="relative overflow-hidden">
-      <Container className="relative py-24 md:py-32">
-        <div className="flex items-center gap-6">
-          <Label>005 — In practice</Label>
-          <span aria-hidden className="h-px flex-1 bg-hairline" />
-        </div>
+    <section className="hd-section">
+      <div className="hd-container">
+        <SectionLabel index="005">In practice</SectionLabel>
 
-        <h2 className="mt-6 max-w-[24ch] font-display text-4xl leading-[1.02] tracking-tight md:text-5xl">
-          The document on the left.
-          <br />
-          <span className="italic">The run on the right.</span>
+        <h2
+          style={{
+            margin: "0 0 var(--space-12)",
+            maxWidth: "24ch",
+            fontSize: "clamp(30px,4vw,48px)",
+            fontWeight: "var(--fw-semibold)",
+            letterSpacing: "var(--tracking-tight)",
+            lineHeight: "var(--lh-snug)",
+            color: "var(--text-strong)",
+          }}
+        >
+          The document on the left. The run on the right.
         </h2>
 
-        <div className="mt-16 grid border border-ink lg:grid-cols-2">
-          <div className="min-w-0 border-b border-ink lg:border-r lg:border-b-0">
-            <p className="border-b border-hairline px-6 py-4 font-mono text-[0.625rem] uppercase tracking-[0.2em] text-muted-ink">
-              flow.yaml
-            </p>
-            <pre className="overflow-x-auto px-6 py-8 font-mono text-xs leading-relaxed">
+        <div className="hd-split" style={{ alignItems: "stretch" }}>
+          <WindowChrome beam={false}>
+            <Caption glyph="file-code">flow.yaml</Caption>
+            <pre
+              style={{
+                margin: 0,
+                padding: "var(--space-5)",
+                maxHeight: 520,
+                overflow: "auto",
+                fontFamily: "var(--font-mono)",
+                fontSize: "var(--fs-xs)",
+                lineHeight: 1.65,
+                color: "var(--text-body)",
+              }}
+            >
               <code>{specimenSpread.spec}</code>
             </pre>
-          </div>
+          </WindowChrome>
 
-          <div className="min-w-0 bg-ink text-paper">
-            <p className="border-b border-paper/25 px-6 py-4 font-mono text-[0.625rem] uppercase tracking-[0.2em] text-paper/50">
-              stdout
-            </p>
-            <pre className="overflow-x-auto px-6 py-8 font-mono text-xs leading-relaxed">
-              <code>
-                {specimenSpread.terminal.map((line, i) => (
-                  <span key={i} className={`block ${lineTone[line.kind]}`}>
-                    {line.kind === "prompt" ? (
-                      <>
-                        <span className="text-paper/40">$ </span>
-                        {line.text}
-                      </>
-                    ) : (
-                      line.text || " "
-                    )}
-                  </span>
-                ))}
-              </code>
-            </pre>
-          </div>
+          <WindowChrome>
+            <Caption glyph="terminal">heddle run</Caption>
+            <div
+              style={{
+                padding: "var(--space-5)",
+                maxHeight: 520,
+                overflow: "auto",
+                fontFamily: "var(--font-mono)",
+                fontSize: "var(--fs-xs)",
+                lineHeight: 1.75,
+              }}
+            >
+              {specimenSpread.terminal.map((line, i) => (
+                <div
+                  key={i}
+                  style={{
+                    color: lineTone[line.kind] ?? "var(--text-body)",
+                    minHeight: "1.75em",
+                    whiteSpace: "pre",
+                  }}
+                >
+                  {line.kind === "prompt" ? `$ ${line.text}` : line.text}
+                </div>
+              ))}
+            </div>
+          </WindowChrome>
         </div>
-      </Container>
+      </div>
     </section>
+  );
+}
+
+function Caption({ glyph, children }: { glyph: string; children: string }) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: "var(--space-2)",
+        padding: "var(--space-2) var(--space-5)",
+        borderBottom: "1px solid var(--border-hairline)",
+        background: "var(--surface-subtle)",
+      }}
+    >
+      <span
+        aria-hidden
+        style={{ display: "inline-flex", color: "var(--brand-pink)" }}
+      >
+        <Icon name={glyph} size={12} />
+      </span>
+      <span className="hd-eyebrow">{children}</span>
+    </div>
   );
 }

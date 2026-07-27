@@ -1,11 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Play, Square, CheckCheck, RotateCcw } from "lucide-react";
 import Editor from "./Editor";
 import Tabs from "./Tabs";
 import CodeList from "./CodeList";
 import RunLog from "./RunLog";
+import { Badge, Button, Icon, WindowChrome } from "@/ds";
 import {
   API_BASE,
   DEFAULT_EXAMPLE,
@@ -21,7 +21,6 @@ import {
   type RequestTool,
   type RunEvent,
 } from "@/lib/playground";
-import { cn } from "@/lib/cn";
 
 type Status = "idle" | "running" | "done" | "error";
 
@@ -50,7 +49,9 @@ export default function Playground() {
   const [flow, setFlow] = useState(DEFAULT_EXAMPLE.flow);
   const [inputs, setInputs] = useState(DEFAULT_EXAMPLE.inputs);
   const [tools, setTools] = useState<RequestTool[]>(DEFAULT_EXAMPLE.tools);
-  const [plugins, setPlugins] = useState<RequestPlugin[]>(DEFAULT_EXAMPLE.plugins);
+  const [plugins, setPlugins] = useState<RequestPlugin[]>(
+    DEFAULT_EXAMPLE.plugins,
+  );
 
   const [tab, setTab] = useState("flow");
   const [events, setEvents] = useState<RunEvent[]>([]);
@@ -82,7 +83,11 @@ export default function Playground() {
     const text = inputs.trim();
     if (!text) return {};
     const parsed: unknown = JSON.parse(text);
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    if (
+      typeof parsed !== "object" ||
+      parsed === null ||
+      Array.isArray(parsed)
+    ) {
       throw new SyntaxError("Inputs must be a JSON object.");
     }
     return parsed as Record<string, unknown>;
@@ -195,152 +200,220 @@ export default function Playground() {
   const codeAllowed = capabilities?.allowRequestCode ?? true;
   const limits = capabilities?.limits;
 
+  const statusTone: Record<Status, string> = {
+    idle: "var(--text-faint)",
+    running: "var(--brand-pink)",
+    done: "var(--hue-emerald)",
+    error: "var(--hue-red)",
+  };
+
   return (
-    <div className="border-t border-ink">
-      <EngineBar
-        capabilities={capabilities}
-        reachable={reachable}
-        codeAllowed={codeAllowed}
-      />
+    <div className="hd-container" style={{ paddingBottom: "var(--space-10)" }}>
+      {/* The playground is heddle's builder window — the design system's
+          floating, blurred, chrome-topped panel is exactly the right frame. */}
+      <WindowChrome>
+        <EngineBar
+          capabilities={capabilities}
+          reachable={reachable}
+          codeAllowed={codeAllowed}
+        />
 
-      <ExamplePicker current={example} onSelect={load} disabled={busy} />
+        <ExamplePicker current={example} onSelect={load} disabled={busy} />
 
-      <div className="grid border-t border-ink lg:grid-cols-2">
-        {/* --- Editors ------------------------------------------------- */}
-        <section
-          aria-label="Specification"
-          className="flex min-w-0 flex-col border-b border-ink lg:border-b-0 lg:border-r"
-        >
-          <div className="flex items-stretch justify-between border-b border-ink">
-            <Tabs
-              tabs={[
-                { id: "flow", label: "Flow" },
-                { id: "inputs", label: "Inputs" },
-                { id: "tools", label: "Tools", badge: tools.length },
-                { id: "plugins", label: "Plugins", badge: plugins.length },
-              ]}
-              active={tab}
-              onSelect={setTab}
-            />
-            <button
-              type="button"
-              onClick={restore}
-              title={`Restore the "${example.title}" example`}
-              className="flex min-h-[44px] w-11 shrink-0 items-center justify-center border-l border-hairline text-muted-ink transition-colors duration-100 hover:bg-ink hover:text-paper focus-visible:outline focus-visible:outline-[3px] focus-visible:-outline-offset-[3px] focus-visible:outline-ink"
+        <div className="hd-split" style={{ gap: 0, alignItems: "stretch" }}>
+          {/* --- Editors ------------------------------------------------- */}
+          <section
+            aria-label="Specification"
+            style={{
+              display: "flex",
+              minWidth: 0,
+              flexDirection: "column",
+              borderTop: "1px solid var(--border-hairline)",
+              borderRight: "1px solid var(--border-hairline)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "stretch",
+                justifyContent: "space-between",
+                borderBottom: "1px solid var(--border-hairline)",
+              }}
             >
-              <RotateCcw size={14} strokeWidth={1.5} />
-              <span className="sr-only">Restore example</span>
-            </button>
-          </div>
-
-          <div className="min-w-0 flex-1">
-            {tab === "flow" && (
-              <Editor
-                label="Flow specification"
-                value={flow}
-                onChange={setFlow}
-                rows={30}
-                placeholder="An Agent Spec flow, as YAML or JSON"
+              <Tabs
+                tabs={[
+                  { id: "flow", label: "Flow" },
+                  { id: "inputs", label: "Inputs" },
+                  { id: "tools", label: "Tools", badge: tools.length },
+                  { id: "plugins", label: "Plugins", badge: plugins.length },
+                ]}
+                active={tab}
+                onSelect={setTab}
               />
-            )}
+              <button
+                type="button"
+                onClick={restore}
+                title={`Restore the "${example.title}" example`}
+                style={{
+                  display: "flex",
+                  minHeight: 44,
+                  width: 44,
+                  flexShrink: 0,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  border: 0,
+                  borderLeft: "1px solid var(--border-hairline)",
+                  background: "transparent",
+                  color: "var(--text-faint)",
+                  cursor: "pointer",
+                }}
+              >
+                <Icon name="rotate-ccw" size={14} />
+                <span className="sr-only">Restore example</span>
+              </button>
+            </div>
 
-            {tab === "inputs" && (
-              <Editor
-                label="Inputs"
-                value={inputs}
-                onChange={setInputs}
-                rows={12}
-                placeholder='{ "query": "..." }'
-              />
-            )}
-
-            {tab === "tools" && (
-              <CodeList
-                kind="tool"
-                entries={tools}
-                onChange={(next) => setTools(next as RequestTool[])}
-                limit={limits?.maxRequestTools ?? 10}
-                emptySource={TOOL_STUB}
-                note="A tool reads its arguments as JSON on stdin and writes JSON on stdout. It runs as a subprocess, inside the engine's sandbox."
-              />
-            )}
-
-            {tab === "plugins" && (
-              <CodeList
-                kind="plugin"
-                entries={plugins}
-                onChange={(next) => setPlugins(next as RequestPlugin[])}
-                limit={limits?.maxRequestPlugins ?? 5}
-                emptySource={PLUGIN_STUB}
-                emptyManifest={PLUGIN_MANIFEST_STUB}
-                note="A plugin adds component types the engine does not ship. The manifest declares them as data; the source runs in its own process, so it never sees the engine's memory or environment. Call serve({ ComponentType: { execute } }) — it is supplied for you."
-              />
-            )}
-          </div>
-
-          <div className="flex items-stretch border-t border-ink">
-            <button
-              type="button"
-              onClick={busy ? stop : run}
-              className={cn(
-                "flex min-h-[56px] flex-1 items-center justify-center gap-3 border-r border-hairline font-mono text-xs uppercase tracking-[0.2em] transition-colors duration-100",
-                "focus-visible:outline focus-visible:outline-[3px] focus-visible:-outline-offset-[3px] focus-visible:outline-ink",
-                "bg-ink text-paper hover:bg-paper hover:text-ink",
+            <div style={{ minWidth: 0, flex: 1 }}>
+              {tab === "flow" && (
+                <Editor
+                  label="Flow specification"
+                  value={flow}
+                  onChange={setFlow}
+                  rows={30}
+                  placeholder="An Agent Spec flow, as YAML or JSON"
+                />
               )}
-            >
-              {busy ? (
-                <>
-                  <Square size={14} strokeWidth={1.5} /> Stop
-                </>
-              ) : (
-                <>
-                  <Play size={14} strokeWidth={1.5} /> Run
-                </>
+
+              {tab === "inputs" && (
+                <Editor
+                  label="Inputs"
+                  value={inputs}
+                  onChange={setInputs}
+                  rows={12}
+                  placeholder='{ "query": "..." }'
+                />
               )}
-            </button>
 
-            <button
-              type="button"
-              onClick={check}
-              disabled={busy}
-              className="flex min-h-[56px] flex-1 items-center justify-center gap-3 font-mono text-xs uppercase tracking-[0.2em] transition-colors duration-100 hover:bg-ink hover:text-paper focus-visible:outline focus-visible:outline-[3px] focus-visible:-outline-offset-[3px] focus-visible:outline-ink disabled:opacity-40 disabled:hover:bg-paper disabled:hover:text-ink"
-            >
-              <CheckCheck size={14} strokeWidth={1.5} /> Validate
-            </button>
-          </div>
-        </section>
+              {tab === "tools" && (
+                <CodeList
+                  kind="tool"
+                  entries={tools}
+                  onChange={(next) => setTools(next as RequestTool[])}
+                  limit={limits?.maxRequestTools ?? 10}
+                  emptySource={TOOL_STUB}
+                  note="A tool reads its arguments as JSON on stdin and writes JSON on stdout. It runs as a subprocess, inside the engine's sandbox."
+                />
+              )}
 
-        {/* --- Run log ------------------------------------------------- */}
-        <section aria-label="Run" className="flex min-w-0 flex-col">
-          <div className="flex min-h-[44px] items-center justify-between border-b border-ink px-5">
-            <p className="font-mono text-[0.6875rem] uppercase tracking-[0.2em] text-muted-ink">
-              Run
-            </p>
-            <p
-              aria-live="polite"
-              className="font-mono text-[0.6875rem] uppercase tracking-[0.2em] text-muted-ink"
+              {tab === "plugins" && (
+                <CodeList
+                  kind="plugin"
+                  entries={plugins}
+                  onChange={(next) => setPlugins(next as RequestPlugin[])}
+                  limit={limits?.maxRequestPlugins ?? 5}
+                  emptySource={PLUGIN_STUB}
+                  emptyManifest={PLUGIN_MANIFEST_STUB}
+                  note="A plugin adds component types the engine does not ship. The manifest declares them as data; the source runs in its own process, so it never sees the engine's memory or environment. Call serve({ ComponentType: { execute } }) — it is supplied for you."
+                />
+              )}
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                gap: "var(--space-3)",
+                padding: "var(--space-4)",
+                borderTop: "1px solid var(--border-hairline)",
+                background: "var(--surface-subtle)",
+              }}
             >
-              {
+              <Button
+                shape="rounded"
+                variant={busy ? "accent" : "solid"}
+                icon={busy ? "square" : "play"}
+                onClick={busy ? stop : run}
+                style={{ flex: 1 }}
+              >
+                {busy ? "Stop" : "Run"}
+              </Button>
+              <Button
+                shape="rounded"
+                variant="subtle"
+                icon="check-check"
+                onClick={check}
+                disabled={busy}
+                style={{ flex: 1 }}
+              >
+                Validate
+              </Button>
+            </div>
+          </section>
+
+          {/* --- Run log ------------------------------------------------- */}
+          <section
+            aria-label="Run"
+            style={{
+              display: "flex",
+              minWidth: 0,
+              flexDirection: "column",
+              borderTop: "1px solid var(--border-hairline)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                minHeight: 44,
+                alignItems: "center",
+                justifyContent: "space-between",
+                padding: "0 var(--space-5)",
+                borderBottom: "1px solid var(--border-hairline)",
+              }}
+            >
+              <span className="hd-eyebrow">Run</span>
+              <span
+                aria-live="polite"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "var(--space-2)",
+                  fontFamily: "var(--font-mono)",
+                  fontSize: "var(--fs-2xs)",
+                  textTransform: "uppercase",
+                  letterSpacing: "var(--tracking-widest)",
+                  color: statusTone[status],
+                }}
+              >
+                <span
+                  aria-hidden
+                  style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: "50%",
+                    background: "currentColor",
+                  }}
+                />
                 {
-                  idle: "ready",
-                  running: "running",
-                  done: "complete",
-                  error: "failed",
-                }[status]
-              }
-            </p>
-          </div>
+                  {
+                    idle: "ready",
+                    running: "running",
+                    done: "complete",
+                    error: "failed",
+                  }[status]
+                }
+              </span>
+            </div>
 
-          <div className="min-h-[24rem] flex-1">
-            <RunLog
-              events={events}
-              status={status}
-              result={result}
-              error={error}
-            />
-          </div>
-        </section>
-      </div>
+            <div style={{ minHeight: "24rem", flex: 1 }}>
+              <RunLog
+                events={events}
+                status={status}
+                result={result}
+                error={error}
+              />
+            </div>
+          </section>
+        </div>
+      </WindowChrome>
     </div>
   );
 }
@@ -359,9 +432,12 @@ function EngineBar({
     return (
       <Notice>
         No engine is configured for this build. Set{" "}
-        <code className="font-mono">NEXT_PUBLIC_HEDDLE_API</code> to a running{" "}
-        <code className="font-mono">heddle-server</code> and rebuild, or run one
-        locally and point the site at it.
+        <code style={{ fontFamily: "var(--font-mono)" }}>
+          NEXT_PUBLIC_HEDDLE_API
+        </code>{" "}
+        to a running{" "}
+        <code style={{ fontFamily: "var(--font-mono)" }}>heddle-server</code>{" "}
+        and rebuild, or run one locally and point the site at it.
       </Notice>
     );
   }
@@ -369,9 +445,10 @@ function EngineBar({
   if (reachable === false) {
     return (
       <Notice>
-        The engine at <code className="font-mono">{API_BASE}</code> is not
-        answering. It may be down, or it may not list this site as an allowed
-        origin.
+        The engine at{" "}
+        <code style={{ fontFamily: "var(--font-mono)" }}>{API_BASE}</code> is
+        not answering. It may be down, or it may not list this site as an
+        allowed origin.
       </Notice>
     );
   }
@@ -386,16 +463,38 @@ function EngineBar({
     : [["engine", "connecting"]];
 
   return (
-    <dl className="flex flex-wrap items-stretch">
+    <dl
+      style={{
+        display: "flex",
+        flexWrap: "wrap",
+        margin: 0,
+        padding: "var(--space-3) var(--space-5)",
+        gap: "var(--space-2) var(--space-6)",
+        borderBottom: "1px solid var(--border-hairline)",
+        background: "var(--surface-subtle)",
+      }}
+    >
       {facts.map(([term, value]) => (
         <div
           key={term}
-          className="flex min-h-[44px] items-center gap-3 border-r border-hairline px-5"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "var(--space-2)",
+          }}
         >
-          <dt className="font-mono text-[0.625rem] uppercase tracking-[0.2em] text-muted-ink">
-            {term}
-          </dt>
-          <dd className="font-mono text-[0.6875rem] tabular-nums">{value}</dd>
+          <dt className="hd-eyebrow">{term}</dt>
+          <dd
+            style={{
+              margin: 0,
+              fontFamily: "var(--font-mono)",
+              fontSize: "var(--fs-xs)",
+              fontVariantNumeric: "tabular-nums",
+              color: "var(--text-strong)",
+            }}
+          >
+            {value}
+          </dd>
         </div>
       ))}
     </dl>
@@ -404,7 +503,19 @@ function EngineBar({
 
 function Notice({ children }: { children: React.ReactNode }) {
   return (
-    <p className="bg-ink px-6 py-4 font-mono text-[0.6875rem] leading-relaxed text-paper md:px-8 lg:px-12">
+    <p
+      style={{
+        display: "flex",
+        gap: "var(--space-3)",
+        margin: 0,
+        padding: "var(--space-4) var(--space-5)",
+        borderBottom: "1px solid var(--brand-pink-20)",
+        background: "var(--brand-pink-05)",
+        fontSize: "var(--fs-sm)",
+        lineHeight: "var(--lh-relaxed)",
+        color: "var(--text-body)",
+      }}
+    >
       {children}
     </p>
   );
@@ -413,10 +524,11 @@ function Notice({ children }: { children: React.ReactNode }) {
 /**
  * Switches between the worked examples.
  *
- * A row of inverting cells rather than a <select>: the choice is the first
- * thing on the page that does anything, and a native dropdown hides three of
- * four options behind a click. Each cell carries its own one-line description,
- * so what an example demonstrates is readable without loading it.
+ * A row of cards rather than a <select>: the choice is the first thing on the
+ * page that does anything, and a native dropdown hides three of four options
+ * behind a click. Each card carries its own one-line description, so what an
+ * example demonstrates is readable without loading it. The selected card takes
+ * the design system's 2px accent edge.
  */
 function ExamplePicker({
   current,
@@ -431,7 +543,11 @@ function ExamplePicker({
     <div
       role="group"
       aria-label="Examples"
-      className="grid border-t border-ink sm:grid-cols-2 lg:grid-cols-4"
+      className="hd-grid hd-grid-4"
+      style={{
+        gap: "var(--space-3)",
+        padding: "var(--space-4) var(--space-5)",
+      }}
     >
       {EXAMPLES.map((example) => {
         const active = example.id === current.id;
@@ -442,36 +558,61 @@ function ExamplePicker({
             onClick={() => onSelect(example)}
             disabled={disabled}
             aria-pressed={active}
-            className={cn(
-              "group flex min-h-[44px] flex-col items-start gap-2 border-b border-r border-ink px-5 py-4 text-left transition-colors duration-100",
-              "focus-visible:outline focus-visible:outline-[3px] focus-visible:-outline-offset-[3px] focus-visible:outline-ink",
-              "disabled:cursor-not-allowed disabled:opacity-40",
-              active
-                ? "bg-ink text-paper"
-                : "bg-paper text-ink hover:bg-ink hover:text-paper",
-            )}
+            style={{
+              display: "flex",
+              minHeight: 44,
+              flexDirection: "column",
+              alignItems: "flex-start",
+              gap: "var(--space-2)",
+              // The 2px selected edge would shift the card by 1px; the padding
+              // gives that pixel back.
+              padding: active ? "calc(var(--space-4) - 1px)" : "var(--space-4)",
+              textAlign: "left",
+              cursor: disabled ? "not-allowed" : "pointer",
+              opacity: disabled ? 0.4 : 1,
+              borderRadius: "var(--radius-lg)",
+              background: active
+                ? "var(--brand-pink-05)"
+                : "var(--surface-subtle)",
+              border: active
+                ? "2px solid var(--brand-pink-50)"
+                : "1px solid var(--border-default)",
+              transition:
+                "border-color var(--dur-base) var(--ease-standard), background-color var(--dur-base) var(--ease-standard)",
+            }}
           >
-            <span className="flex w-full items-baseline justify-between gap-3">
-              <span className="font-mono text-[0.6875rem] uppercase tracking-[0.2em]">
+            <span
+              style={{
+                display: "flex",
+                width: "100%",
+                alignItems: "baseline",
+                justifyContent: "space-between",
+                gap: "var(--space-3)",
+              }}
+            >
+              <span
+                style={{
+                  fontSize: "var(--fs-xs)",
+                  fontWeight: "var(--fw-semibold)",
+                  textTransform: "uppercase",
+                  letterSpacing: "var(--tracking-widest)",
+                  color: active ? "var(--brand-pink)" : "var(--text-strong)",
+                }}
+              >
                 {example.title}
               </span>
               {example.needsKey && (
-                <span
-                  title="Needs your own model credential"
-                  className={cn(
-                    "shrink-0 font-mono text-[0.5625rem] uppercase tracking-[0.15em]",
-                    active ? "text-paper/60" : "text-muted-ink group-hover:text-paper/60",
-                  )}
-                >
+                <Badge tone="neutral" uppercase title="Needs your own model credential">
                   key
-                </span>
+                </Badge>
               )}
             </span>
             <span
-              className={cn(
-                "text-xs leading-relaxed",
-                active ? "text-paper/70" : "text-muted-ink group-hover:text-paper/70",
-              )}
+              style={{
+                fontSize: "var(--fs-xs)",
+                lineHeight: "var(--lh-relaxed)",
+                color: "var(--text-muted)",
+              }}
             >
               {example.blurb}
             </span>

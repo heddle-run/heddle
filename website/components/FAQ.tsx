@@ -1,50 +1,91 @@
-import Container from "./ui/Container";
-import Label from "./ui/Label";
+import { Icon } from "@/ds";
+import SectionLabel from "./SectionLabel";
 import { faqItems } from "@/lib/constants";
 
 /*
  * Native <details> elements: keyboard-accessible, no JavaScript, and the state
- * change is instant — which is exactly the motion this system asks for.
+ * change is instant. The only motion is the chevron, which rotates on open.
  */
 export default function FAQ() {
   return (
-    <section className="relative overflow-hidden">
-      <Container className="relative py-24 md:py-32">
-        <div className="grid gap-12 md:grid-cols-12">
-          <div className="md:col-span-4">
-            <Label>006 — Questions</Label>
-            <h2 className="mt-6 font-display text-4xl leading-[1.02] tracking-tight md:text-5xl">
-              Asked
-              <br />
-              <span className="italic">and answered.</span>
-            </h2>
-          </div>
+    <section className="hd-section">
+      <div className="hd-container">
+        <SectionLabel index="006">Questions</SectionLabel>
 
-          <dl className="border-t border-ink md:col-span-8">
+        <div className="hd-split" style={{ alignItems: "start" }}>
+          <h2
+            style={{
+              margin: 0,
+              fontSize: "clamp(30px,4vw,48px)",
+              fontWeight: "var(--fw-semibold)",
+              letterSpacing: "var(--tracking-tight)",
+              lineHeight: "var(--lh-snug)",
+              color: "var(--text-strong)",
+            }}
+          >
+            Asked and answered.
+          </h2>
+
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "var(--space-3)",
+            }}
+          >
             {faqItems.map((item) => (
-              <div key={item.question} className="border-b border-ink">
-                <details className="group">
-                  <summary className="flex cursor-pointer list-none items-start justify-between gap-6 py-6 focus-visible:outline focus-visible:outline-[3px] focus-visible:-outline-offset-[3px] focus-visible:outline-ink [&::-webkit-details-marker]:hidden">
-                    <dt className="font-display text-xl leading-snug tracking-tight md:text-2xl">
-                      {item.question}
-                    </dt>
-                    <span
-                      aria-hidden
-                      className="relative mt-2 h-3.5 w-3.5 shrink-0"
-                    >
-                      <span className="absolute top-1/2 left-0 h-px w-full -translate-y-1/2 bg-ink" />
-                      <span className="absolute top-0 left-1/2 h-full w-px -translate-x-1/2 bg-ink group-open:hidden" />
-                    </span>
-                  </summary>
-                  <dd className="max-w-[62ch] pb-8 text-lg leading-relaxed text-muted-ink">
-                    {item.answer}
-                  </dd>
-                </details>
-              </div>
+              <details
+                key={item.question}
+                className="hd-faq"
+                style={{
+                  border: "1px solid var(--border-default)",
+                  borderRadius: "var(--radius-xl)",
+                  background: "var(--surface-subtle)",
+                  padding: "var(--space-4) var(--space-5)",
+                }}
+              >
+                <summary
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: "var(--space-4)",
+                    cursor: "pointer",
+                    listStyle: "none",
+                    fontSize: "var(--fs-base)",
+                    fontWeight: "var(--fw-medium)",
+                    color: "var(--text-strong)",
+                  }}
+                >
+                  {item.question}
+                  <span
+                    aria-hidden
+                    className="hd-faq-chevron"
+                    style={{
+                      display: "inline-flex",
+                      flex: "0 0 auto",
+                      color: "var(--text-faint)",
+                    }}
+                  >
+                    <Icon name="chevron-down" size={16} />
+                  </span>
+                </summary>
+                <p
+                  style={{
+                    margin: "var(--space-3) 0 0",
+                    paddingRight: "var(--space-8)",
+                    fontSize: "var(--fs-sm)",
+                    lineHeight: "var(--lh-relaxed)",
+                    color: "var(--text-body)",
+                  }}
+                >
+                  {item.answer}
+                </p>
+              </details>
             ))}
-          </dl>
+          </div>
         </div>
-      </Container>
+      </div>
     </section>
   );
 }

@@ -1,7 +1,5 @@
 "use client";
 
-import { cn } from "@/lib/cn";
-
 export interface Tab {
   id: string;
   label: string;
@@ -10,8 +8,8 @@ export interface Tab {
 }
 
 /**
- * Section switcher. Active is a full inversion rather than an underline or a
- * tint, which is the only emphasis this palette has.
+ * Section switcher. The design system marks a selected state with a 2px accent
+ * edge and a lift in text weight — never a full inversion.
  */
 export default function Tabs({
   tabs,
@@ -23,7 +21,11 @@ export default function Tabs({
   onSelect: (id: string) => void;
 }) {
   return (
-    <div role="tablist" aria-label="Editors" className="flex flex-wrap">
+    <div
+      role="tablist"
+      aria-label="Editors"
+      style={{ display: "flex", flexWrap: "wrap" }}
+    >
       {tabs.map((tab) => {
         const selected = tab.id === active;
         return (
@@ -33,21 +35,37 @@ export default function Tabs({
             role="tab"
             aria-selected={selected}
             onClick={() => onSelect(tab.id)}
-            className={cn(
-              "flex min-h-[44px] items-center gap-2 border-r border-hairline px-5 font-mono text-[0.6875rem] uppercase tracking-[0.2em] transition-colors duration-100",
-              "focus-visible:outline focus-visible:outline-[3px] focus-visible:-outline-offset-[3px] focus-visible:outline-ink",
-              selected
-                ? "bg-ink text-paper"
-                : "bg-paper text-muted-ink hover:bg-ink hover:text-paper",
-            )}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "var(--space-2)",
+              minHeight: 44,
+              padding: "0 var(--space-5)",
+              cursor: "pointer",
+              background: selected ? "var(--bg-sunken)" : "transparent",
+              color: selected ? "var(--text-strong)" : "var(--text-muted)",
+              border: 0,
+              borderBottom: `2px solid ${selected ? "var(--brand-pink)" : "transparent"}`,
+              fontFamily: "var(--font-sans)",
+              fontSize: "var(--fs-xs)",
+              fontWeight: selected
+                ? "var(--fw-semibold)"
+                : "var(--fw-medium)",
+              textTransform: "uppercase",
+              letterSpacing: "var(--tracking-widest)",
+              transition:
+                "color var(--dur-base) var(--ease-standard), background-color var(--dur-base) var(--ease-standard), border-color var(--dur-base) var(--ease-standard)",
+            }}
           >
             {tab.label}
             {tab.badge !== undefined && tab.badge !== 0 && (
               <span
-                className={cn(
-                  "font-mono text-[0.625rem] tabular-nums",
-                  selected ? "text-paper/60" : "text-muted-ink",
-                )}
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: "var(--fs-2xs)",
+                  fontVariantNumeric: "tabular-nums",
+                  color: selected ? "var(--brand-pink)" : "var(--text-faint)",
+                }}
               >
                 {tab.badge}
               </span>

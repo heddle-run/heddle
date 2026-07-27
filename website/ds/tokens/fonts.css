@@ -1,0 +1,12 @@
+/* FormFlow ships a single webfont: Inter (300/400/500/600).
+
+   DEVIATION from the upstream design system (see ds/DEVIATIONS.md):
+   upstream loads Inter from Google Fonts with the @import below. This site is a
+   Next.js static export, where a render-blocking third-party @import costs a
+   round trip and risks a flash of fallback text. Inter is loaded via
+   next/font/google in app/layout.tsx instead — self-hosted, preloaded, and
+   assigned to --font-inter, which app/globals.css maps onto --font-sans.
+   Same family, same weights; only the delivery changed.
+
+   @import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap"); */
+:root{--font-sans:"Inter",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;--font-mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace}
