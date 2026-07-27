@@ -5,32 +5,21 @@ import type { Event } from '@heddle/core';
  * Wire form of a runner {@link Event}.
  *
  * This is the same event model the engine already emits — one SSE frame per
- * runner event, with the event's `type` as the SSE event name. The only
- * transformations are the ones JSON forces: `State` becomes a plain object and
- * `Error` becomes `{name, message}`, since neither survives `JSON.stringify`
- * usefully on its own.
+ * runner event, with the event's `type` as the SSE event name. Only `state` and
+ * `error` need touching, because neither survives `JSON.stringify` usefully on
+ * its own; everything else is carried across as it is.
  *
- * The field list is fixed, and that is a hazard worth naming: a field added to
- * `Event` and not added here is dropped silently — no type error, no warning,
- * just a client that never sees it. `message` was in exactly that state, so
- * every `warning` reached the browser with nothing in it. Anything added to
- * `Event` has to be added here in the same change.
+ * Carried across rather than listed field by field, and that is the point. A
+ * fixed list drops anything added to `Event` later without a type error or a
+ * warning — `message` was in exactly that state, so every `warning` reached the
+ * browser empty. Spreading means a new field arrives on its own.
  */
 export function serializeEvent(e: Event): Record<string, unknown> {
+  const { state, error, ...rest } = e;
   return {
-    type: e.type,
-    message: e.message,
-    delta: e.delta,
-    nodeName: e.nodeName,
-    nodeType: e.nodeType,
-    state: e.state?.toData(),
-    error: e.error ? { name: e.error.name, message: e.error.message } : undefined,
-    toolName: e.toolName,
-    toolArgs: e.toolArgs,
-    toolResult: e.toolResult,
-    toolCallId: e.toolCallId,
-    startedAt: e.startedAt,
-    duration: e.duration,
+    ...rest,
+    state: state?.toData(),
+    error: error && { name: error.name, message: error.message },
   };
 }
 
