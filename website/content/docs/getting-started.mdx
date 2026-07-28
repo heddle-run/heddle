@@ -25,6 +25,51 @@ heddle --help
 
 heddle requires Node.js 18 or newer.
 
+### Docker
+
+There is also an image, if you would rather not install Node at all:
+
+```bash
+docker run --rm salahpichen/heddle --help
+```
+
+| | Docker Hub | GitHub Container Registry |
+|---|---|---|
+| CLI | `salahpichen/heddle` | `ghcr.io/heddle-run/heddle` |
+| Server | `salahpichen/heddle-server` | `ghcr.io/heddle-run/heddle-server` |
+
+One build pushes both, for `linux/amd64` and `linux/arm64`, with identical digests. Take whichever you prefer — Docker Hub caps anonymous pulls per IP, which is the difference a CI job feels first.
+
+The examples ship inside the image, so there is a working agent to run before you have written anything. It needs a key, which the next section covers:
+
+```bash
+docker run --rm -e OPENAI_API_KEY salahpichen/heddle run \
+  /opt/heddle/examples/research-assistant/flow.json \
+  --tools-dir /opt/heddle/examples/research-assistant/tools \
+  --input '{"query": "What is the Open Agent Specification?"}'
+```
+
+`-e OPENAI_API_KEY` with no value forwards the variable from your shell. Spelling it out as `-e OPENAI_API_KEY=sk-...` would put the key in your shell history and in the process list.
+
+For your own project, `/work` is the image's working directory: mount your project there and every path stays the one you would have typed anyway.
+
+```bash
+docker run --rm -e OPENAI_API_KEY -v "$PWD:/work" salahpichen/heddle \
+  run my-agent/flow.json --tools-dir my-agent/tools --input '{"query": "hello"}'
+```
+
+An alias is enough to make the rest of this page work unchanged:
+
+```bash
+alias heddle='docker run --rm -i -e OPENAI_API_KEY -v "$PWD:/work" salahpichen/heddle'
+```
+
+<Callout>
+`-i`, not `-it`. A pty is one stream, so allocating one folds the progress output on stderr into the JSON result on stdout and `| jq` chokes on it. Chat mode is the exception, and it is spelled out below.
+</Callout>
+
+Tools run inside the container, so what matters is what the image can execute: `bash`, `python3` and `node` are all present. [The Docker guide](https://github.com/heddle-run/heddle/blob/main/docs/docker.md) covers the rest — file ownership, reaching a local model, `--safe` under a container runtime, and running the server image.
+
 ## Set an API Key
 
 The scaffolded project uses OpenAI, so export a key before running anything:
@@ -81,6 +126,15 @@ heddle run my-agent/flow.json --tools-dir my-agent/tools --chat
 This opens a multi-turn session that re-runs the flow for each message, passing the conversation so far to the agent. Transcripts are written to `~/.heddle/conversations/`. Type `/exit` to quit.
 
 Your message is bound to the first output declared on the start node, falling back to `query` if the start node declares none.
+
+From the image, this is the one command that wants a TTY, so it takes `-it` rather than the alias above:
+
+```bash
+docker run --rm -it -e OPENAI_API_KEY -v "$PWD:/work" salahpichen/heddle \
+  run my-agent/flow.json --tools-dir my-agent/tools --chat
+```
+
+Transcripts then live inside the container and leave with it. Mount a volume at `/home/node/.heddle` to keep them.
 
 ## Validate a Spec
 

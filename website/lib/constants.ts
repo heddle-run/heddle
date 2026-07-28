@@ -7,6 +7,9 @@ export const VERSION = "0.1.0-beta6";
 export const installCommands = [
   { label: "npm", cmd: "npm install -g @heddle/cli" },
   { label: "brew", cmd: "brew install spichen/tap/heddle" },
+  // Third because it is not an install at all — the runtime arrives with the
+  // command. Kept in the same list because the reader's question is the same.
+  { label: "docker", cmd: "docker run --rm salahpichen/heddle --help" },
 ];
 
 /** Dictionary epigraph — the name is the product thesis. */
