@@ -2,15 +2,22 @@ name: Publish images
 
 # The two published images: `heddle`, the CLI, and `heddle-server`.
 #
+# Each goes to two registries from one build — Docker Hub, where people look,
+# and GHCR, which needs no credentials and does not rate-limit pulls. The
+# manifests are identical; only the name in front differs.
+#
 # This runs alongside release.yml rather than inside it. Both fire on a `v*`
 # tag, and neither waits for the other: a broken npm publish should not
-# withhold an image that built, and a Docker Hub outage should not hold up a
+# withhold an image that built, and a registry outage should not hold up a
 # release. The tag is the shared input, not one job's output.
 #
-# Requires two secrets and, optionally, one variable:
-#   DOCKERHUB_USERNAME    a Docker Hub account with push access
+# GHCR authenticates with the workflow's own token, so it works in a fresh
+# checkout with nothing configured. Docker Hub needs two secrets, and is
+# skipped with a notice when they are absent rather than failing the run:
+#
+#   DOCKERHUB_USERNAME    an account with push access to the namespace
 #   DOCKERHUB_TOKEN       an access token for it, not the password
-#   DOCKERHUB_NAMESPACE   the org or user to publish under (default: heddle)
+#   DOCKERHUB_NAMESPACE   variable, not secret. Defaults to heddlerun.
 
 on:
   push:
@@ -25,18 +32,19 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  NAMESPACE: ${{ vars.DOCKERHUB_NAMESPACE || 'heddle' }}
+  NAMESPACE: ${{ vars.DOCKERHUB_NAMESPACE || 'heddlerun' }}
 
 jobs:
   publish:
     runs-on: ubuntu-latest
 
-    # A fork has no credentials to publish with, and the failure it would hit
-    # is a confusing one. Skip rather than fail.
+    # A fork publishes nothing. GHCR would resolve to the fork's own owner and
+    # quietly populate a namespace nobody asked for.
     if: github.repository == 'heddle-run/heddle'
 
     permissions:
       contents: read
+      packages: write
 
     strategy:
       # Independent images. One failing to build says nothing about the other,
@@ -63,32 +71,50 @@ jobs:
 
       - uses: docker/setup-buildx-action@v3
 
-      # Checked before the login step so a missing secret reads as a missing
-      # secret, rather than as an authentication failure against Docker Hub.
-      - name: Check credentials
+      # Absent credentials are a state this repository was in until someone
+      # registered the account, not a mistake. GHCR still publishes; the notice
+      # says what did not.
+      - name: Check Docker Hub credentials
+        id: dockerhub
         env:
           USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
-          if [ -z "$USERNAME" ] || [ -z "$TOKEN" ]; then
-            echo "::error::DOCKERHUB_USERNAME and DOCKERHUB_TOKEN must be set on this repository."
-            exit 1
+          if [ -n "$USERNAME" ] && [ -n "$TOKEN" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::DOCKERHUB_USERNAME and DOCKERHUB_TOKEN are unset; publishing to GHCR only."
           fi
 
-      - uses: docker/login-action@v3
+      - name: Log in to Docker Hub
+        if: steps.dockerhub.outputs.enabled == 'true'
+        uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       # `latest` comes from flavor=auto: it follows a release tag and is left
       # alone by a prerelease, so `v0.2.0-beta.1` publishes 0.2.0-beta.1 and
       # nothing else. main publishes `edge` and a sha tag — the sha is what
       # makes an edge image identifiable after the tag has moved on.
+      #
+      # One tag set, both names. GHCR keeps the hyphen the repository has;
+      # Docker Hub cannot, because an account name there is alphanumeric.
       - name: Derive tags and labels
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.NAMESPACE }}/${{ matrix.name }}
+          images: |
+            name=${{ env.NAMESPACE }}/${{ matrix.name }},enable=${{ steps.dockerhub.outputs.enabled == 'true' }}
+            name=ghcr.io/${{ github.repository_owner }}/${{ matrix.name }}
           flavor: latest=auto
           tags: |
             type=semver,pattern={{version}}
@@ -119,7 +145,7 @@ jobs:
       - name: Summarise
         run: |
           {
-            echo "### ${{ env.NAMESPACE }}/${{ matrix.name }}"
+            echo "### ${{ matrix.name }}"
             echo
             echo '```'
             echo "${{ steps.meta.outputs.tags }}"

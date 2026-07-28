@@ -13,7 +13,9 @@ to sit alongside it.
 - **Tagline:** Weave agents from spec.
 - **Package:** `@heddle/cli` · **Binary:** `heddle` · **Tap:** `spichen/tap/heddle`
 - **Server:** `@heddle/server` · **Binary:** `heddle-server`
-- **Images:** `heddle/heddle` · `heddle/heddle-server`
+- **Images:** `heddlerun/heddle` · `heddlerun/heddle-server` — also
+  `ghcr.io/heddle-run/…`. The Docker Hub namespace loses the hyphen because an
+  account name there is alphanumeric; `heddle` itself was taken in 2019.
 
 **The name.** A heddle is the part of a loom that lifts individual warp threads
 to form the shed — the opening the weft passes through. It decides, thread by

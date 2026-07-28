@@ -1,12 +1,25 @@
 # heddle in a container
 
-Two images are published to Docker Hub, both for `linux/amd64` and
-`linux/arm64`:
+Two images, both for `linux/amd64` and `linux/arm64`:
 
 | Image | Contains | Entrypoint |
 |---|---|---|
-| [`heddle/heddle`](https://hub.docker.com/r/heddle/heddle) | the CLI | `heddle` |
-| [`heddle/heddle-server`](https://hub.docker.com/r/heddle/heddle-server) | the HTTP API | `heddle-server` |
+| [`heddlerun/heddle`](https://hub.docker.com/r/heddlerun/heddle) | the CLI | `heddle` |
+| [`heddlerun/heddle-server`](https://hub.docker.com/r/heddlerun/heddle-server) | the HTTP API | `heddle-server` |
+
+Each is published to two registries from one build, with identical manifests:
+Docker Hub under `heddlerun/`, and GitHub Container Registry under
+`ghcr.io/heddle-run/`. Every command here works with either name.
+
+```bash
+docker pull heddlerun/heddle             # Docker Hub
+docker pull ghcr.io/heddle-run/heddle    # GHCR
+```
+
+Reach for GHCR when Docker Hub's anonymous pull limit is in your way — CI that
+pulls on every job is the usual case — or when you want the name to match the
+repository, hyphen and all. Docker Hub cannot have the hyphen: an account name
+there is alphanumeric.
 
 Tags follow releases: `0.2.0` for a version, `0.2` for its line, `latest` for
 the newest release. Prereleases publish their own version and nothing else, so
@@ -20,7 +33,7 @@ on.
 docker run --rm \
   -e OPENAI_API_KEY \
   -v "$PWD:/work" \
-  heddle/heddle run flow.json --tools-dir tools --input '{"query": "hello"}'
+  heddlerun/heddle run flow.json --tools-dir tools --input '{"query": "hello"}'
 ```
 
 `/work` is the working directory, so paths on the command line are the ones you
@@ -35,7 +48,7 @@ does outside a container, so `| jq` works.
 Nothing needs mounting to try one first — the examples are in the image:
 
 ```bash
-docker run --rm -e OPENAI_API_KEY heddle/heddle run \
+docker run --rm -e OPENAI_API_KEY heddlerun/heddle run \
   /opt/heddle/examples/research-assistant/flow.json \
   --tools-dir /opt/heddle/examples/research-assistant/tools \
   --input '{"query": "what is a heddle"}'
@@ -44,13 +57,13 @@ docker run --rm -e OPENAI_API_KEY heddle/heddle run \
 Scaffolding writes into the mount:
 
 ```bash
-docker run --rm -v "$PWD:/work" heddle/heddle init my-project
+docker run --rm -v "$PWD:/work" heddlerun/heddle init my-project
 ```
 
 If typing that gets old:
 
 ```bash
-alias heddle='docker run --rm -i -e OPENAI_API_KEY -v "$PWD:/work" heddle/heddle'
+alias heddle='docker run --rm -i -e OPENAI_API_KEY -v "$PWD:/work" heddlerun/heddle'
 ```
 
 `-i` and not `-it`, deliberately. `-t` allocates a pty, and a pty is one
@@ -66,7 +79,7 @@ Chat mode draws a terminal UI, which needs a TTY:
 docker run --rm -it \
   -e OPENAI_API_KEY \
   -v "$PWD:/work" \
-  heddle/heddle run flow.json --tools-dir tools --chat
+  heddlerun/heddle run flow.json --tools-dir tools --chat
 ```
 
 Transcripts are written to `~/.heddle/conversations` inside the container and
@@ -83,7 +96,7 @@ usually the first login account, so files written into a bind mount come out
 owned by you. When it is not — a different uid, or a shared checkout — say so:
 
 ```bash
-docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/work" heddle/heddle init my-project
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/work" heddlerun/heddle init my-project
 ```
 
 A uid with no matching entry in the image's `/etc/passwd` has no home
@@ -115,10 +128,10 @@ Tools are executables, so what matters is whether the image can run yours. It
 has `bash`, `python3` and — being a Node image — `node`, which covers the
 shapes in `examples/` and most of what people write. A tool in some other
 language either has to be a self-contained binary you mount alongside it, or
-needs an image of its own built `FROM heddle/heddle`:
+needs an image of its own built `FROM heddlerun/heddle`:
 
 ```dockerfile
-FROM heddle/heddle
+FROM heddlerun/heddle
 USER root
 RUN apt-get update \
  && apt-get install --no-install-recommends -y ruby \
@@ -156,7 +169,7 @@ docker run --rm \
   -p 127.0.0.1:4319:4319 \
   -e OPENAI_API_KEY \
   -v "$PWD/tools:/srv/tools:ro" \
-  heddle/heddle-server
+  heddlerun/heddle-server
 ```
 
 Note `127.0.0.1:` in front of the port. **The server has no authentication**,
@@ -173,7 +186,7 @@ Turning that on means restating the command, because arguments after the image
 name replace it rather than extend it:
 
 ```bash
-docker run --rm -p 127.0.0.1:4319:4319 heddle/heddle-server \
+docker run --rm -p 127.0.0.1:4319:4319 heddlerun/heddle-server \
   --host 0.0.0.0 --port 4319 \
   --allow-request-code \
   --work-dir /var/heddle/runs \
@@ -193,8 +206,8 @@ Both build from the repository root; the server's Dockerfile reaches across to
 `packages/core` and `vendor/agentspec`.
 
 ```bash
-docker build -t heddle/heddle .
-docker build -f packages/server/Dockerfile -t heddle/heddle-server .
+docker build -t heddlerun/heddle .
+docker build -f packages/server/Dockerfile -t heddlerun/heddle-server .
 ```
 
 Each builds its own stage on the native platform and copies the result into the
@@ -210,15 +223,30 @@ pushes both images on a `v*` tag and on every push to `main`. It runs
 alongside `release.yml` rather than inside it: both take the tag as their
 input, and neither should be able to hold up the other.
 
-It needs two repository secrets, and takes an optional variable:
+**GHCR needs no configuration.** It authenticates with the workflow's own
+`GITHUB_TOKEN`, so that half publishes in a fresh checkout with nothing set up.
+One manual step, once per image: a package pushed to GHCR starts private, and
+`docker pull` from a logged-out machine will 404 until you open it at
+`github.com/orgs/heddle-run/packages`, choose the package, and set its
+visibility to public under Package settings.
+
+**Docker Hub needs two secrets**, and takes an optional variable:
 
 | | |
 |---|---|
 | `DOCKERHUB_USERNAME` | a Docker Hub account with push access to the namespace |
 | `DOCKERHUB_TOKEN` | an access token for it, with Read & Write scope — not the account password |
-| `DOCKERHUB_NAMESPACE` | variable, not secret; the org or user to publish under. Defaults to `heddle`. |
+| `DOCKERHUB_NAMESPACE` | variable, not secret; the account to publish under. Defaults to `heddlerun`. |
 
-Create the two repositories on Docker Hub before the first run, or push to them
-with an account that may create them. Docker Hub does not take a description
-from the image, so the summary and overview on each repository's page are set
-by hand.
+When they are absent the run does not fail — it publishes to GHCR and leaves a
+notice saying Docker Hub was skipped, which is the state this repository is in
+until someone sets them. Nothing needs creating on Docker Hub first: a push to
+a repository that does not exist creates it, public unless your account's
+default privacy says otherwise. Docker Hub does not take a description from the
+image, so the summary and overview on each repository's page are set by hand.
+
+A Docker Hub namespace is an account name, not something separate you create.
+Whatever `DOCKERHUB_USERNAME` names is the namespace, so publishing as
+`heddlerun/heddle` means the account itself is `heddlerun` — an organisation
+if you have paid for one, a plain free account otherwise. The two are
+indistinguishable to anyone pulling.

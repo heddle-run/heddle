@@ -52,7 +52,7 @@ spec:
           # Published for linux/amd64 and linux/arm64. Pin a version tag here
           # rather than shipping `latest`: with IfNotPresent, a floating tag
           # means a node keeps whichever image it happened to pull first.
-          image: heddle/heddle-server:latest
+          image: heddlerun/heddle-server:latest
           imagePullPolicy: IfNotPresent
 
           args:

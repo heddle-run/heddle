@@ -37,7 +37,7 @@ npm install -g @heddle/cli
 brew install spichen/tap/heddle
 
 # Docker — nothing to install
-docker run --rm heddle/heddle --help
+docker run --rm heddlerun/heddle --help
 ```
 
 ## Quick Start
@@ -88,22 +88,26 @@ Two images, `linux/amd64` and `linux/arm64`:
 
 | Image | Contains |
 |---|---|
-| [`heddle/heddle`](https://hub.docker.com/r/heddle/heddle) | the CLI |
-| [`heddle/heddle-server`](https://hub.docker.com/r/heddle/heddle-server) | the HTTP API |
+| [`heddlerun/heddle`](https://hub.docker.com/r/heddlerun/heddle) | the CLI |
+| [`heddlerun/heddle-server`](https://hub.docker.com/r/heddlerun/heddle-server) | the HTTP API |
+
+Both are also on GitHub Container Registry, as
+`ghcr.io/heddle-run/heddle` and `ghcr.io/heddle-run/heddle-server` — same
+build, same manifest, no pull limit.
 
 `/work` is the CLI image's working directory, so a mounted project keeps the
 paths you would have typed anyway:
 
 ```bash
 docker run --rm -e OPENAI_API_KEY -v "$PWD:/work" \
-  heddle/heddle run flow.json --tools-dir tools --input '{"query": "hello"}'
+  heddlerun/heddle run flow.json --tools-dir tools --input '{"query": "hello"}'
 ```
 
 The examples ship in the image, so there is something to run before you have
 written anything:
 
 ```bash
-docker run --rm -e OPENAI_API_KEY heddle/heddle run \
+docker run --rm -e OPENAI_API_KEY heddlerun/heddle run \
   /opt/heddle/examples/research-assistant/flow.json \
   --tools-dir /opt/heddle/examples/research-assistant/tools \
   --input '{"query": "what is a heddle"}'

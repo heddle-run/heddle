@@ -3,7 +3,7 @@
 # The point of this image is a flow that runs without installing Node, pnpm or
 # a tool interpreter first:
 #
-#   docker run --rm -e OPENAI_API_KEY -v "$PWD:/work" heddle/heddle \
+#   docker run --rm -e OPENAI_API_KEY -v "$PWD:/work" heddlerun/heddle \
 #     run flow.json --tools-dir tools --input '{"query": "hello"}'
 #
 # /work is the working directory, and the only place the image expects to find
@@ -16,7 +16,7 @@
 # machine that invoked it.
 #
 # Build from the repository root:
-#   docker build -t heddle/heddle .
+#   docker build -t heddlerun/heddle .
 
 # ---------------------------------------------------------------------------
 # Build
@@ -91,7 +91,7 @@ RUN chmod 0755 /app/dist/heddle.js \
 
 # The examples, so there is something to run before you have written anything:
 #
-#   docker run --rm -e OPENAI_API_KEY heddle/heddle run \
+#   docker run --rm -e OPENAI_API_KEY heddlerun/heddle run \
 #     /opt/heddle/examples/research-assistant/flow.json \
 #     --tools-dir /opt/heddle/examples/research-assistant/tools \
 #     --input '{"query": "what is a heddle"}'
@@ -122,6 +122,6 @@ LABEL org.opencontainers.image.title="heddle" \
 
 ENTRYPOINT ["node", "/app/dist/heddle.js"]
 
-# No default subcommand: `docker run heddle/heddle` with nothing after it
+# No default subcommand: `docker run heddlerun/heddle` with nothing after it
 # should describe the CLI, not start executing something.
 CMD ["--help"]
