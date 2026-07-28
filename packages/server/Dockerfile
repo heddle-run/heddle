@@ -55,8 +55,13 @@ FROM node:22-bookworm-slim AS runtime
 # depth, not the boundary: it does nothing about plugin modules, which run in
 # the server process. Kept because a tool that escapes into the container
 # should still not be able to read the server's own files.
+#
+# python3 is here because a submitted tool may declare it as its interpreter —
+# `python3` is one of the four the request schema accepts, and the base image
+# ships node and bash but no Python, so that choice produced a tool that could
+# not start. The engine's own code does not use it.
 RUN apt-get update \
- && apt-get install --no-install-recommends -y bubblewrap \
+ && apt-get install --no-install-recommends -y bubblewrap python3 \
  && rm -rf /var/lib/apt/lists/*
 
 # Per-run scratch, owned by the service account. Deliberately not under /tmp:
