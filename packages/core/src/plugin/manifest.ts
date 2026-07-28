@@ -18,6 +18,7 @@
  *   which is already the whole risk.
  */
 import { PluginError } from '../errors.js';
+import { isObject } from '../json.js';
 import {
   isPluginCapability,
   PLUGIN_CAPABILITIES,
@@ -105,19 +106,22 @@ function fail(message: string): never {
  * request, and the failure it produces is the first thing a plugin author sees.
  */
 export function validateManifest(raw: unknown): PluginManifest {
-  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+  if (!isObject(raw)) {
     fail('plugin manifest must be a JSON object');
   }
-  const manifest = raw as Record<string, unknown>;
+  const manifest = raw;
 
-  if (typeof manifest.name !== 'string' || !manifest.name) {
+  // Bound to a local as soon as it is checked, so every message below names the
+  // plugin without re-asserting the type the check already established.
+  const name = manifest.name;
+  if (typeof name !== 'string' || !name) {
     fail('plugin manifest is missing a "name"');
   }
   if (typeof manifest.version !== 'string' || !manifest.version) {
-    fail(`plugin "${manifest.name}" manifest is missing a "version"`);
+    fail(`plugin "${name}" manifest is missing a "version"`);
   }
   if (!Array.isArray(manifest.components) || manifest.components.length === 0) {
-    fail(`plugin "${manifest.name}" manifest declares no components`);
+    fail(`plugin "${name}" manifest declares no components`);
   }
 
   if (manifest.command !== undefined) {
@@ -126,57 +130,56 @@ export function validateManifest(raw: unknown): PluginManifest {
       manifest.command.length === 0 ||
       manifest.command.some((part) => typeof part !== 'string')
     ) {
-      fail(`plugin "${manifest.name}" has a "command" that is not a non-empty string array`);
+      fail(`plugin "${name}" has a "command" that is not a non-empty string array`);
     }
   }
 
-  const capabilities = asCapabilities(manifest.name, manifest.capabilities);
+  const capabilities = asCapabilities(name, manifest.capabilities);
 
   const seen = new Set<string>();
   const components = manifest.components.map((entry): ManifestComponent => {
-    if (typeof entry !== 'object' || entry === null) {
-      fail(`plugin "${manifest.name}": each component must be an object`);
+    if (!isObject(entry)) {
+      fail(`plugin "${name}": each component must be an object`);
     }
-    const component = entry as Record<string, unknown>;
-    const componentType = component.componentType;
+    const componentType = entry.componentType;
 
     if (typeof componentType !== 'string' || !NAME.test(componentType)) {
       fail(
-        `plugin "${manifest.name}": componentType must match ${NAME.source}, got ${JSON.stringify(componentType)}`,
+        `plugin "${name}": componentType must match ${NAME.source}, got ${JSON.stringify(componentType)}`,
       );
     }
     if (seen.has(componentType)) {
-      fail(`plugin "${manifest.name}" declares component type "${componentType}" twice`);
+      fail(`plugin "${name}" declares component type "${componentType}" twice`);
     }
     seen.add(componentType);
 
-    const kind = component.kind ?? 'node';
+    const kind = entry.kind ?? 'node';
     if (kind !== 'node' && kind !== 'transform' && kind !== 'component') {
       fail(
-        `plugin "${manifest.name}": component "${componentType}" has kind "${String(kind)}"; expected node, transform or component`,
+        `plugin "${name}": component "${componentType}" has kind "${String(kind)}"; expected node, transform or component`,
       );
     }
 
-    const phase = component.phase;
+    const phase = entry.phase;
     if (phase !== undefined && phase !== 'pre' && phase !== 'post' && phase !== 'both') {
       fail(
-        `plugin "${manifest.name}": component "${componentType}" has phase "${String(phase)}"; expected pre, post or both`,
+        `plugin "${name}": component "${componentType}" has phase "${String(phase)}"; expected pre, post or both`,
       );
     }
 
     return {
       componentType,
       kind,
-      inputs: asIo(manifest.name as string, componentType, 'inputs', component.inputs),
-      outputs: asIo(manifest.name as string, componentType, 'outputs', component.outputs),
-      branches: asBranches(manifest.name as string, componentType, component.branches),
-      schema: component.schema as JsonSchemaFragment | undefined,
-      phase: phase as ManifestComponent['phase'],
+      inputs: asIo(name, componentType, 'inputs', entry.inputs),
+      outputs: asIo(name, componentType, 'outputs', entry.outputs),
+      branches: asBranches(name, componentType, entry.branches),
+      schema: entry.schema as JsonSchemaFragment | undefined,
+      phase,
     };
   });
 
   return {
-    name: manifest.name,
+    name,
     version: manifest.version,
     command: manifest.command as string[] | undefined,
     capabilities,
@@ -220,10 +223,10 @@ function asIo(
     fail(`plugin "${plugin}": ${componentType}.${field} must be an array`);
   }
   return value.map((entry) => {
-    if (typeof entry !== 'object' || entry === null) {
+    if (!isObject(entry)) {
       fail(`plugin "${plugin}": each entry in ${componentType}.${field} must be an object`);
     }
-    const io = entry as Record<string, unknown>;
+    const io = entry;
     if (typeof io.title !== 'string' || !io.title) {
       fail(`plugin "${plugin}": an entry in ${componentType}.${field} has no "title"`);
     }

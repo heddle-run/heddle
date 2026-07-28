@@ -4,16 +4,17 @@ import { restoreAgentTransforms, toSpecFlow } from './adapter.js';
 import type { Agent, ParsedFlow } from './types.js';
 import { PluginRegistry } from '../plugin/registry.js';
 import { substitutePluginNodes } from '../plugin/flow-preprocess.js';
+import { isObject } from '../json.js';
 import { SpecError } from '../errors.js';
 
 /** Default when no plugins are configured. Shared so its deserializer is reused. */
 const NO_PLUGINS = PluginRegistry.empty();
 
 function asDoc(value: unknown, source: string): Record<string, unknown> {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+  if (!isObject(value)) {
     throw new SpecError(`${source} must contain a top-level object`);
   }
-  return value as Record<string, unknown>;
+  return value;
 }
 
 function toDoc(data: string | Buffer): Record<string, unknown> {
@@ -29,10 +30,15 @@ function toDoc(data: string | Buffer): Record<string, unknown> {
  * and returns it untouched when nothing needs swapping. Keeping one path means
  * there is no plugin-specific branch to drift out of sync with the plain one.
  */
+interface Deserialized {
+  component: ComponentBase;
+  substitution: ReturnType<typeof substitutePluginNodes>;
+}
+
 function deserialize(
   raw: Record<string, unknown>,
   registry: PluginRegistry,
-): { component: ComponentBase; substitution: ReturnType<typeof substitutePluginNodes> } {
+): Deserialized {
   const d = registry.deserializer();
   const substitution = substitutePluginNodes(raw, registry, (dict) =>
     d.fromJson(JSON.stringify(dict)) as Record<string, unknown>,
@@ -41,6 +47,18 @@ function deserialize(
     component: d.fromJson(JSON.stringify(substitution.doc)) as ComponentBase,
     substitution,
   };
+}
+
+/** The heddle-side flow, with the real plugin components back in place. */
+function asFlow(
+  { component, substitution }: Deserialized,
+  registry: PluginRegistry,
+): ParsedFlow {
+  return toSpecFlow(component, {
+    registry,
+    pluginNodes: substitution.pluginNodes,
+    pluginTransforms: substitution.pluginTransforms,
+  });
 }
 
 /**
@@ -63,12 +81,7 @@ function toFlow(
   raw: Record<string, unknown>,
   registry: PluginRegistry,
 ): ParsedFlow {
-  const { component, substitution } = deserialize(raw, registry);
-  return toSpecFlow(component, {
-    registry,
-    pluginNodes: substitution.pluginNodes,
-    pluginTransforms: substitution.pluginTransforms,
-  });
+  return asFlow(deserialize(raw, registry), registry);
 }
 
 /** ParseFlow parses a JSON string into a ParsedFlow. */
@@ -106,17 +119,13 @@ export function parseComponent(
   data: string | Buffer,
   registry: PluginRegistry = NO_PLUGINS,
 ): ParsedFlow | Agent {
-  const raw = toDoc(data);
-  const { component, substitution } = deserialize(raw, registry);
+  const deserialized = deserialize(toDoc(data), registry);
+  const { component, substitution } = deserialized;
   const ct = (component as unknown as { componentType: string }).componentType;
 
   switch (ct) {
     case 'Flow':
-      return toSpecFlow(component, {
-        registry,
-        pluginNodes: substitution.pluginNodes,
-        pluginTransforms: substitution.pluginTransforms,
-      });
+      return asFlow(deserialized, registry);
     case 'Agent':
       return restoreAgentTransforms(
         component,

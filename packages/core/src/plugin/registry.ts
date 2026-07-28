@@ -129,15 +129,26 @@ export class PluginRegistry {
   }
 
   nodeDef(componentType: string): PluginNodeDef | undefined {
-    const entry = this.defs.get(componentType);
-    return entry?.kind === 'node' ? (entry.def as PluginNodeDef) : undefined;
+    return this.defOf<PluginNodeDef>(componentType, 'node');
   }
 
   transformDef(componentType: string): PluginTransformDef | undefined {
+    return this.defOf<PluginTransformDef>(componentType, 'transform');
+  }
+
+  /**
+   * The def for a type, if it is the kind the caller expects.
+   *
+   * The kind check is not a formality: `kindOf` is what the compiler and the
+   * transform chain branch on, so handing back a transform to something asking
+   * for a node would build an executor around a component that has none.
+   */
+  private defOf<T extends PluginComponentDef>(
+    componentType: string,
+    kind: ComponentKind,
+  ): T | undefined {
     const entry = this.defs.get(componentType);
-    return entry?.kind === 'transform'
-      ? (entry.def as PluginTransformDef)
-      : undefined;
+    return entry?.kind === kind ? (entry.def as T) : undefined;
   }
 
   componentTypeNames(): string[] {

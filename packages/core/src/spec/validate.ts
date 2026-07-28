@@ -19,47 +19,38 @@ export function validateFlow(pf: ParsedFlow): void {
     errs.push('flow must have at least one node');
   }
 
-  // Check for duplicate node names
-  const nodeNames = new Map<string, number>();
+  const nodeNames = new Set<string>();
   for (const n of pf.parsedNodes) {
-    const name = n.name;
-    const count = (nodeNames.get(name) ?? 0) + 1;
-    nodeNames.set(name, count);
-    if (count > 1) {
-      errs.push(`duplicate node name "${name}"`);
+    if (nodeNames.has(n.name)) {
+      errs.push(`duplicate node name "${n.name}"`);
     }
+    nodeNames.add(n.name);
   }
 
-  // Validate control flow edges reference valid nodes
-  for (let i = 0; i < pf.controlFlowConnections.length; i++) {
-    const edge = pf.controlFlowConnections[i];
-    if (!nodeNames.has(edge.fromNode)) {
-      errs.push(
-        `controlFlowConnections[${i}]: fromNode "${edge.fromNode}" not found`,
-      );
-    }
-    if (!nodeNames.has(edge.toNode)) {
-      errs.push(
-        `controlFlowConnections[${i}]: toNode "${edge.toNode}" not found`,
-      );
-    }
-  }
+  /** Both edge kinds name two nodes; only the field names differ. */
+  const checkEndpoints = <E>(
+    field: string,
+    edges: E[],
+    ends: Array<keyof E & string>,
+  ): void => {
+    edges.forEach((edge, i) => {
+      for (const end of ends) {
+        const name = String(edge[end]);
+        if (!nodeNames.has(name)) {
+          errs.push(`${field}[${i}]: ${end} "${name}" not found`);
+        }
+      }
+    });
+  };
 
-  // Validate data flow edges reference valid nodes
-  const dataEdges = pf.dataFlowConnections ?? [];
-  for (let i = 0; i < dataEdges.length; i++) {
-    const edge = dataEdges[i];
-    if (!nodeNames.has(edge.sourceNode)) {
-      errs.push(
-        `dataFlowConnections[${i}]: sourceNode "${edge.sourceNode}" not found`,
-      );
-    }
-    if (!nodeNames.has(edge.destinationNode)) {
-      errs.push(
-        `dataFlowConnections[${i}]: destinationNode "${edge.destinationNode}" not found`,
-      );
-    }
-  }
+  checkEndpoints('controlFlowConnections', pf.controlFlowConnections, [
+    'fromNode',
+    'toNode',
+  ]);
+  checkEndpoints('dataFlowConnections', pf.dataFlowConnections ?? [], [
+    'sourceNode',
+    'destinationNode',
+  ]);
 
   if (errs.length > 0) {
     throw new SpecError(errs.join('; '));

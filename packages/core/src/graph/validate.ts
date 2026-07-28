@@ -22,32 +22,22 @@ export function validate(g: CompiledGraph): void {
   };
   walk(g.start);
 
-  // Check for orphan nodes (unreachable from start)
-  for (const name of g.nodes.keys()) {
-    if (!reachable.has(name)) {
-      errs.push(`node "${name}" is unreachable from start`);
-    }
-  }
-
-  // Check that at least one EndNode exists and is reachable
   let hasReachableEnd = false;
   for (const [name, cn] of g.nodes) {
-    if (cn.type === 'EndNode' && reachable.has(name)) {
+    if (!reachable.has(name)) {
+      errs.push(`node "${name}" is unreachable from start`);
+      continue;
+    }
+    if (cn.type === 'EndNode') {
       hasReachableEnd = true;
-      break;
+    } else if (cn.edges.length === 0) {
+      // Anything that is not an end has somewhere to go next, or the run stops
+      // in the middle of the graph.
+      errs.push(`node "${name}" has no outgoing edges`);
     }
   }
   if (!hasReachableEnd) {
     errs.push('no reachable EndNode from start');
-  }
-
-  // Check that non-end nodes have outgoing edges
-  for (const [name, cn] of g.nodes) {
-    if (cn.type === 'EndNode') continue;
-    if (!reachable.has(name)) continue;
-    if (cn.edges.length === 0) {
-      errs.push(`node "${name}" has no outgoing edges`);
-    }
   }
 
   if (errs.length > 0) {

@@ -23,11 +23,11 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import type { SandboxSession } from '../sandbox/types.js';
 import { PluginError } from '../errors.js';
+import { isObject } from '../json.js';
 import {
   encode,
   hostRequest,
   isLogLevel,
-  isObject,
   isPartial,
   isPluginMethod,
   isRequest,
@@ -137,6 +137,33 @@ type Respond = (response: Omit<RpcResponse, 'id'>) => void;
 /** An error frame, in the one shape every refusal below takes. */
 function refuse(message: string): Omit<RpcResponse, 'id'> {
   return { error: { name: 'PluginError', message } };
+}
+
+/**
+ * Serve one reverse call, and answer it however it ends.
+ *
+ * The catch is not defensive tidiness. `serve` runs from the stdout `data`
+ * handler, so anything thrown out of a handler is an uncaught exception naming
+ * neither the plugin nor the call — and what throws here is rarely heddle's own
+ * code: it is the tool the plugin asked for, or the event handler behind a
+ * report, which belongs to whoever is watching the run and may have gone away.
+ * Answered instead, it is the plugin's own call failing, which is exactly what
+ * an in-process plugin gets for the same mistake.
+ */
+async function answer(
+  respond: Respond,
+  work: () => unknown,
+): Promise<void> {
+  try {
+    respond({ result: (await work()) ?? {} });
+  } catch (err) {
+    respond({
+      error: {
+        name: err instanceof Error ? err.name : 'Error',
+        message: err instanceof Error ? err.message : String(err),
+      },
+    });
+  }
 }
 
 interface Pending {
@@ -683,10 +710,10 @@ export class PluginHost {
         await this.serveRunTool(request, respond);
         return;
       case 'emitEvent':
-        this.serveEmitEvent(request, respond);
+        await this.serveEmitEvent(request, respond);
         return;
       case 'log':
-        this.serveLog(request, respond);
+        await this.serveLog(request, respond);
         return;
     }
 
@@ -740,25 +767,15 @@ export class PluginHost {
       return;
     }
 
-    const params = (request.params ?? {}) as Partial<RunToolParams>;
-    if (typeof params.name !== 'string' || params.name.length === 0) {
+    const { name, input } = (request.params ?? {}) as Partial<RunToolParams>;
+    if (typeof name !== 'string' || name.length === 0) {
       respond(
         refuse('runTool needs a "name": the tool to run, as the flow registered it'),
       );
       return;
     }
 
-    try {
-      const result = await runner(params.name, params.input ?? {});
-      respond({ result });
-    } catch (err) {
-      respond({
-        error: {
-          name: err instanceof Error ? err.name : 'Error',
-          message: err instanceof Error ? err.message : String(err),
-        },
-      });
-    }
+    await answer(respond, () => runner(name, input ?? {}));
   }
 
   /**
@@ -838,12 +855,12 @@ export class PluginHost {
     return pending.reporter;
   }
 
-  private serveEmitEvent(request: RpcRequest, respond: Respond): void {
+  private async serveEmitEvent(request: RpcRequest, respond: Respond): Promise<void> {
     const reporter = this.reportingTo('emitEvent', request, respond);
     if (!reporter) return;
 
-    const params = (request.params ?? {}) as Partial<EmitEventParams>;
-    if (typeof params.name !== 'string') {
+    const { name, data } = (request.params ?? {}) as Partial<EmitEventParams>;
+    if (typeof name !== 'string') {
       respond(
         refuse(
           'emitEvent needs a "name": the plugin\'s half of the event type, which ' +
@@ -853,43 +870,29 @@ export class PluginHost {
       return;
     }
 
-    try {
-      // The very call an in-process plugin makes, so the name check, the
-      // namespacing and the published shape are one implementation instead of
-      // two that have to be kept identical. It is also where the plugin's half
-      // of the name is refused if it is not an identifier — the check that
-      // stops an event name from carrying a frame of its own.
-      reporter.emitEvent(params.name, params.data);
-      respond({ result: {} });
-    } catch (err) {
-      // Reported back rather than allowed to escape. `serve` runs from the
-      // stdout handler, so a throw here is an unhandled rejection naming
-      // neither the plugin nor the event; answered, it is the plugin's own call
-      // failing, which is what an in-process plugin gets for the same mistake.
-      respond({
-        error: {
-          name: err instanceof Error ? err.name : 'Error',
-          message: err instanceof Error ? err.message : String(err),
-        },
-      });
-    }
+    // The very call an in-process plugin makes, so the name check, the
+    // namespacing and the published shape are one implementation instead of two
+    // that have to be kept identical. It is also where the plugin's half of the
+    // name is refused if it is not an identifier — the check that stops an event
+    // name from carrying a frame of its own.
+    await answer(respond, () => reporter.emitEvent(name, data));
   }
 
-  private serveLog(request: RpcRequest, respond: Respond): void {
+  private async serveLog(request: RpcRequest, respond: Respond): Promise<void> {
     const reporter = this.reportingTo('log', request, respond);
     if (!reporter) return;
 
-    const params = (request.params ?? {}) as Partial<LogParams>;
-    if (!isLogLevel(params.level)) {
+    const { level, message } = (request.params ?? {}) as Partial<LogParams>;
+    if (!isLogLevel(level)) {
       respond(
         refuse(
           `log needs a "level", one of: ${LOG_LEVELS.join(', ')}. Got ` +
-            `${JSON.stringify(params.level)}.`,
+            `${JSON.stringify(level)}.`,
         ),
       );
       return;
     }
-    if (typeof params.message !== 'string') {
+    if (typeof message !== 'string') {
       respond(
         refuse(
           'log needs a "message": one line for a person watching the run. A ' +
@@ -900,20 +903,7 @@ export class PluginHost {
       return;
     }
 
-    try {
-      reporter.log(params.level, params.message);
-      respond({ result: {} });
-    } catch (err) {
-      // `log` cannot fail of itself, but the event handler behind it belongs to
-      // whoever is watching the run — an SSE stream that has gone away, say —
-      // and its failure must not become this process's uncaught exception.
-      respond({
-        error: {
-          name: err instanceof Error ? err.name : 'Error',
-          message: err instanceof Error ? err.message : String(err),
-        },
-      });
-    }
+    await answer(respond, () => reporter.log(level, message));
   }
 
   /** Match a response to the call that is waiting for it. */

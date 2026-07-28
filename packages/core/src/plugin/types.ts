@@ -175,10 +175,44 @@ export type TransformPhase = 'pre' | 'post';
  * heddle skips the model call entirely, so a blocked prompt costs nothing.
  */
 export interface TransformResult {
-  action: 'pass' | 'modify' | 'reject';
+  action: TransformAction;
   /** Replacement messages for `modify`, or the refusal to return for `reject`. */
   messages?: Message[];
   reason?: string;
+}
+
+export type TransformAction = 'pass' | 'modify' | 'reject';
+
+/**
+ * The closed set, as data.
+ *
+ * Both paths that take a transform's answer have to check it — an in-process
+ * plugin returns a JS object of its own making, a remote one returns parsed
+ * JSON — and a type checks neither. Keyed by the action type so an action added
+ * to {@link TransformAction} and forgotten here is a compile error, rather than
+ * one the checks quietly refuse.
+ */
+const ACTIONS: Record<TransformAction, true> = {
+  pass: true,
+  modify: true,
+  reject: true,
+};
+
+export const TRANSFORM_ACTIONS = Object.keys(ACTIONS) as TransformAction[];
+
+/**
+ * The set as an error message names it: "pass, modify or reject".
+ *
+ * Derived rather than written out, because both places that reject an action
+ * have to list what they would have accepted, and a list transcribed twice is a
+ * list that stops being true the day a fourth action exists.
+ */
+export const TRANSFORM_ACTIONS_PROSE = `${TRANSFORM_ACTIONS.slice(0, -1).join(
+  ', ',
+)} or ${TRANSFORM_ACTIONS.at(-1)}`;
+
+export function isTransformAction(value: unknown): value is TransformAction {
+  return typeof value === 'string' && Object.hasOwn(ACTIONS, value);
 }
 
 /**

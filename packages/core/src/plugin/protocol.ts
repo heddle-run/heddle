@@ -23,6 +23,7 @@
  * is surfaced verbatim when the process fails, which is where a plugin author
  * will look first.
  */
+import { isObject } from '../json.js';
 import type { LogLevel } from '../runner/events.js';
 
 /**
@@ -250,17 +251,11 @@ export type RpcMessage = RpcRequest | RpcResponse | RpcPartial;
  * Both discriminators take `unknown`, because what they are handed is whatever
  * `JSON.parse` made of a line a plugin wrote.
  *
- * `JSON.parse('null')` is `null`, and a plugin under `--allow-request-code` is
- * a stranger's program. Reading a property off that throws, on the stdout
- * `data` handler's stack, where nothing catches it — neither the server nor the
- * CLI installs an `uncaughtException` handler — so one malformed line from one
- * plugin would end the process and every concurrent run in it. A frame that is
- * not an object is simply not any of the three shapes.
+ * A plugin under `--allow-request-code` is a stranger's program, and a frame
+ * that is not an object is simply not any of the three shapes — so every test
+ * starts at {@link isObject}, which is also what keeps a `null` line from
+ * throwing on the stdout `data` handler's stack, where nothing catches it.
  */
-export function isObject(message: unknown): message is Record<string, unknown> {
-  return typeof message === 'object' && message !== null && !Array.isArray(message);
-}
-
 export function isRequest(message: unknown): message is RpcRequest {
   return isObject(message) && typeof message.method === 'string';
 }

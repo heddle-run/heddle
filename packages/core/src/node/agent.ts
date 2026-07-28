@@ -1,4 +1,4 @@
-import type { AgentNode, ToolSpec } from '../spec/types.js';
+import type { Agent, AgentNode, ToolSpec } from '../spec/types.js';
 import { propertyTitle } from '../spec/types.js';
 import { State } from '../state/state.js';
 import type {
@@ -14,6 +14,7 @@ import type {
 import type { NodeExecutor, Dependencies } from './types.js';
 import type { EventHandler } from '../runner/events.js';
 import type { Executor } from '../tool/types.js';
+import { runRegisteredTool } from '../tool/run.js';
 import { createProvider } from '../llm/provider.js';
 import { TransformChain } from '../plugin/transform.js';
 import { RunError, ToolError } from '../errors.js';
@@ -89,44 +90,15 @@ export class AgentExecutor implements NodeExecutor {
     executor: Executor | undefined,
   ): Promise<State> {
     const agent = this.node.agent!;
-
-    const systemPrompt = substituteTemplate(
-      agent.systemPrompt ?? '',
-      input,
-    );
-
-    const toolDefs: ToolDefinition[] = agent.tools?.map((t) => ({
-      name: t.name,
-      description: t.description ?? '',
-      parameters: buildToolSchema(t),
-    })) ?? [];
-
-    // Extract chat history if present (injected by chat mode)
-    const historyRaw = input.get('_chat_history');
-    const chatHistory = Array.isArray(historyRaw)
-      ? (historyRaw as Array<{ role: string; content: string }>)
-      : [];
-
-    // Build input data without the chat history for the user message
-    const inputData = input.toData();
-    delete inputData._chat_history;
-
-    let messages: Message[] = [
-      { role: 'system', content: systemPrompt },
-      ...chatHistory.map((m) => ({
-        role: m.role as Message['role'],
-        content: m.content,
-      })),
-      { role: 'user', content: JSON.stringify(inputData) },
-    ];
+    const toolDefs = toolDefinitions(agent);
 
     // Pre-transforms run before the model is called at all, so a rejected
     // prompt costs nothing.
-    const pre = await this.transforms.apply('pre', messages, signal);
+    const pre = await this.transforms.apply('pre', openingMessages(agent, input), signal);
     if (pre.rejected) {
       return rejectionState(pre.rejected);
     }
-    messages = pre.messages;
+    const messages = pre.messages;
 
     // One counter for the whole turn, not one per round — see ModelCallContext.
     const turn = { emitted: 0 };
@@ -153,32 +125,7 @@ export class AgentExecutor implements NodeExecutor {
       );
 
       if (!resp.tool_calls || resp.tool_calls.length === 0) {
-        // Post-transforms see the answer in the context of the conversation
-        // that produced it, with the reply as the last message.
-        const post = await this.transforms.apply(
-          'post',
-          [...messages, { role: 'assistant', content: resp.content }],
-          signal,
-        );
-        if (post.rejected) {
-          return rejectionState(post.rejected);
-        }
-        const content = post.messages.at(-1)?.content ?? resp.content;
-
-        const outputData: Record<string, unknown> = { result: content };
-        if (content) {
-          try {
-            Object.assign(outputData, JSON.parse(content));
-          } catch {
-            // Not JSON, that's fine
-          }
-        }
-        // Only when the agent has transforms, so an untransformed agent's output
-        // shape is unchanged. Set last: a model returning JSON cannot forge it.
-        if (!this.transforms.isEmpty()) {
-          outputData.transform_status = 'ok';
-        }
-        return new State(outputData);
+        return await this.answer(resp.content, messages, signal);
       }
 
       messages.push({
@@ -188,63 +135,7 @@ export class AgentExecutor implements NodeExecutor {
       });
 
       for (const tc of resp.tool_calls) {
-        // Parsed once, here, and used by everything downstream. This used to be
-        // parsed twice — leniently for the event, strictly for the call — so an
-        // observer saw `{}` for arguments the tool never ran with. Anything
-        // watching a tool call has to be looking at what the tool was given.
-        const parsed = parseToolArguments(tc);
-
-        const startedAt = Date.now();
-        this.deps.eventHandler?.({
-          type: 'tool_call',
-          nodeName: this.node.name,
-          toolName: tc.name,
-          toolArgs: parsed.args,
-          toolCallId: tc.id,
-          startedAt,
-        });
-
-        try {
-          // Thrown inside the try so an unusable arguments blob is reported the
-          // way any other tool failure is: a tool_result carrying the error,
-          // and a tool message telling the model what went wrong so it can
-          // correct itself on the next round.
-          if (parsed.error) throw parsed.error;
-          const toolResult = await this.executeTool(signal, tc, parsed.args, executor);
-          const resultJSON = JSON.stringify(toolResult);
-
-          this.deps.eventHandler?.({
-            type: 'tool_result',
-            nodeName: this.node.name,
-            toolName: tc.name,
-            toolResult: toolResult,
-            toolCallId: tc.id,
-            duration: Date.now() - startedAt,
-          });
-
-          messages.push({
-            role: 'tool',
-            tool_call_id: tc.id,
-            content: resultJSON,
-          });
-        } catch (err) {
-          const toolErr = err instanceof Error ? err : new Error(String(err));
-
-          this.deps.eventHandler?.({
-            type: 'tool_result',
-            nodeName: this.node.name,
-            toolName: tc.name,
-            toolCallId: tc.id,
-            duration: Date.now() - startedAt,
-            error: toolErr,
-          });
-
-          messages.push({
-            role: 'tool',
-            tool_call_id: tc.id,
-            content: `Error: ${err}`,
-          });
-        }
+        messages.push(await this.callTool(signal, tc, executor));
       }
     }
 
@@ -253,26 +144,145 @@ export class AgentExecutor implements NodeExecutor {
     );
   }
 
-  private async executeTool(
+  /**
+   * The node's output, once the model has stopped asking for tools.
+   *
+   * Post-transforms see the answer in the context of the conversation that
+   * produced it, with the reply as the last message, and may reject it or
+   * rewrite it — so nothing here reads `content` until they have run.
+   */
+  private async answer(
+    content: string,
+    messages: Message[],
+    signal: AbortSignal | undefined,
+  ): Promise<State> {
+    const post = await this.transforms.apply(
+      'post',
+      [...messages, { role: 'assistant', content }],
+      signal,
+    );
+    if (post.rejected) {
+      return rejectionState(post.rejected);
+    }
+    const final = post.messages.at(-1)?.content ?? content;
+
+    const outputData: Record<string, unknown> = { result: final };
+    if (final) {
+      try {
+        Object.assign(outputData, JSON.parse(final));
+      } catch {
+        // Not JSON, that's fine
+      }
+    }
+    // Only when the agent has transforms, so an untransformed agent's output
+    // shape is unchanged. Set last: a model returning JSON cannot forge it.
+    if (!this.transforms.isEmpty()) {
+      outputData.transform_status = 'ok';
+    }
+    return new State(outputData);
+  }
+
+  /**
+   * Run one tool the model asked for, and produce the message that reports it
+   * back to the model.
+   *
+   * Never throws: a tool that fails is a fact the model is told about, so it can
+   * correct itself on the next round, rather than a failure of the node.
+   */
+  private async callTool(
     signal: AbortSignal | undefined,
     tc: ToolCall,
-    args: Record<string, unknown>,
-    scoped: Executor | undefined,
-  ): Promise<Record<string, unknown>> {
-    const executor = scoped ?? this.deps.toolExecutor;
-    if (!this.deps.toolRegistry || !executor) {
-      throw new ToolError(`"${tc.name}": registry or executor not configured`);
+    executor: Executor | undefined,
+  ): Promise<Message> {
+    // Parsed once, here, and used by everything downstream. This used to be
+    // parsed twice — leniently for the event, strictly for the call — so an
+    // observer saw `{}` for arguments the tool never ran with. Anything
+    // watching a tool call has to be looking at what the tool was given.
+    const parsed = parseToolArguments(tc);
+
+    const startedAt = Date.now();
+    this.deps.eventHandler?.({
+      type: 'tool_call',
+      nodeName: this.node.name,
+      toolName: tc.name,
+      toolArgs: parsed.args,
+      toolCallId: tc.id,
+      startedAt,
+    });
+
+    try {
+      // Thrown inside the try so an unusable arguments blob is reported the
+      // way any other tool failure is: a tool_result carrying the error,
+      // and a tool message telling the model what went wrong so it can
+      // correct itself on the next round.
+      if (parsed.error) throw parsed.error;
+      const toolResult = await runRegisteredTool(
+        this.deps,
+        { executor, signal },
+        tc.name,
+        parsed.args,
+        `AgentNode "${this.node.name}"`,
+      );
+
+      this.deps.eventHandler?.({
+        type: 'tool_result',
+        nodeName: this.node.name,
+        toolName: tc.name,
+        toolResult: toolResult,
+        toolCallId: tc.id,
+        duration: Date.now() - startedAt,
+      });
+
+      return {
+        role: 'tool',
+        tool_call_id: tc.id,
+        content: JSON.stringify(toolResult),
+      };
+    } catch (err) {
+      this.deps.eventHandler?.({
+        type: 'tool_result',
+        nodeName: this.node.name,
+        toolName: tc.name,
+        toolCallId: tc.id,
+        duration: Date.now() - startedAt,
+        error: err instanceof Error ? err : new Error(String(err)),
+      });
+
+      return { role: 'tool', tool_call_id: tc.id, content: `Error: ${err}` };
     }
-
-    const toolDef = this.deps.toolRegistry.lookup(tc.name);
-    if (!toolDef) {
-      throw new ToolError(`"${tc.name}" not found in registry`);
-    }
-
-    const result = await executor.execute(signal, toolDef.path, args);
-
-    return result.output;
   }
+}
+
+/** The tools this agent offers the model, as the provider wants them. */
+function toolDefinitions(agent: Agent): ToolDefinition[] {
+  return (
+    agent.tools?.map((t) => ({
+      name: t.name,
+      description: t.description ?? '',
+      parameters: buildToolSchema(t),
+    })) ?? []
+  );
+}
+
+/** The conversation as it stands before the first model call. */
+function openingMessages(agent: Agent, input: State): Message[] {
+  // Chat history is injected by chat mode; it is not part of the node's input.
+  const historyRaw = input.get('_chat_history');
+  const chatHistory = Array.isArray(historyRaw)
+    ? (historyRaw as Array<{ role: string; content: string }>)
+    : [];
+
+  const inputData = input.toData();
+  delete inputData._chat_history;
+
+  return [
+    { role: 'system', content: substituteTemplate(agent.systemPrompt ?? '', input) },
+    ...chatHistory.map((m) => ({
+      role: m.role as Message['role'],
+      content: m.content,
+    })),
+    { role: 'user', content: JSON.stringify(inputData) },
+  ];
 }
 
 /** Who to tell about deltas, and which node they belong to. */

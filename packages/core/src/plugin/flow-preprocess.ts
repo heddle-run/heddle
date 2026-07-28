@@ -27,6 +27,7 @@ import { isBuiltinComponentType } from 'agentspec';
 import type { PluginRegistry } from './registry.js';
 import type { PluginComponent } from './types.js';
 import { PluginError } from '../errors.js';
+import { isObject } from '../json.js';
 
 /**
  * The stand-in node type. InputMessageNode is used because its factory passes
@@ -66,10 +67,6 @@ export type ComponentLoader = (
   dict: Record<string, unknown>,
 ) => Record<string, unknown>;
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
 function componentTypeOf(value: Record<string, unknown>): string | undefined {
   const ct = value.component_type ?? value.componentType;
   return typeof ct === 'string' ? ct : undefined;
@@ -100,7 +97,7 @@ export function substitutePluginNodes(
     if (Array.isArray(value)) {
       return value.map(walk);
     }
-    if (!isPlainObject(value)) {
+    if (!isObject(value)) {
       return value;
     }
 
@@ -197,7 +194,7 @@ function propertySchemas(properties: unknown): unknown[] {
   if (!Array.isArray(properties)) return [];
   return properties.map((p) => {
     const record = p as Record<string, unknown>;
-    return isPlainObject(record?.jsonSchema) ? record.jsonSchema : record;
+    return isObject(record?.jsonSchema) ? record.jsonSchema : record;
   });
 }
 
@@ -212,10 +209,10 @@ function collectReferencedComponents(
       value.forEach(visit);
       return;
     }
-    if (!isPlainObject(value)) return;
+    if (!isObject(value)) return;
 
     const refs = value.$referenced_components;
-    if (isPlainObject(refs)) {
+    if (isObject(refs)) {
       for (const [id, component] of Object.entries(refs)) {
         out[id] = component;
       }

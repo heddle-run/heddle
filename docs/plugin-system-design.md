@@ -214,20 +214,20 @@ self-imposed.
 
 ### 3.1 The three kinds
 
-`kind` is the only switch, declared at `packages/core/src/plugin/manifest.ts:31` and validated at
-`:123-128`; dispatched at `packages/core/src/plugin/remote-loader.ts:121-133`; grouped identically
+`kind` is the only switch, declared at `packages/core/src/plugin/manifest.ts:32` and validated at
+`:156-161`; dispatched at `packages/core/src/plugin/remote-loader.ts:121-133`; grouped identically
 for the in-process path at `packages/core/src/plugin/registry.ts:55-59`.
 
 | `kind` | Author writes | Manifest supplies | RPC | Engine wiring |
 |---|---|---|---|---|
-| `node` | `createExecutor(node, deps) -> { execute(input, ctx) }` (`plugin/types.ts`, `PluginNodeDef`) | `inputs`, `outputs`, `branches`, `schema` (`manifest.ts:32-48`) | `execute` (`plugin/remote.ts`, `remoteNodeDef`) | `graph/compile.ts:77-80` → `PluginNodeAdapter` (`plugin/executor.ts`, `PluginNodeAdapter`), result becomes the node's output `State` (`plugin/executor.ts`'s `runNode`) |
-| `transform` | `createTransform(component, deps) -> { apply(messages, ctx) }` (`plugin/types.ts`, `PluginTransformDef`) | `phase`, `schema` (`manifest.ts:48-50`) | `apply` (`plugin/remote.ts`, `remoteTransformDef`) | `TransformChain` (`plugin/transform.ts`, `TransformChain` / `apply`) around the model call at `node/agent.ts:125` (pre) and `:158-162` (post) |
+| `node` | `createExecutor(node, deps) -> { execute(input, ctx) }` (`plugin/types.ts`, `PluginNodeDef`) | `inputs`, `outputs`, `branches`, `schema` (`manifest.ts:33-49`) | `execute` (`plugin/remote.ts`, `remoteNodeDef`) | `graph/compile.ts:77-80` → `PluginNodeAdapter` (`plugin/executor.ts`, `PluginNodeAdapter`), result becomes the node's output `State` (`plugin/executor.ts`'s `runNode`) |
+| `transform` | `createTransform(component, deps) -> { apply(messages, ctx) }` (`plugin/types.ts`, `PluginTransformDef`) | `phase`, `schema` (`manifest.ts:49-51`) | `apply` (`plugin/remote.ts`, `remoteTransformDef`) | `TransformChain` (`plugin/transform.ts`, `TransformChain` / `apply`) around the model call at `node/agent.ts:97` (pre) and `:159-163` (post) |
 | `component` | `validate?(component)` only (`plugin/types.ts`, `PluginComponentDef`) | `schema` | **none** | **none** |
 
 **`kind: 'component'` does nothing at runtime.** `remoteComponentDef` returns `{ componentType }`
 plus at most a `validate` (`plugin/remote.ts`, `remoteComponentDef`). `nodeDef` and `transformDef` both return
 `undefined` unless the kind matches (`plugin/registry.ts`, `nodeDef` / `transformDef`), so a `component` is unreachable
-from `graph/compile.ts:77` and from `plugin/transform.ts`, `TransformChain.build`. `flow-preprocess.ts:128-130` leaves it
+from `graph/compile.ts:77` and from `plugin/transform.ts`, `TransformChain.build`. `flow-preprocess.ts:125-127` leaves it
 in the document with no stand-in, on the stated grounds that it is "deserialized with their parent".
 
 That is the whole contract, and it is narrower than it looks: a `component` survives *only* because
@@ -294,7 +294,7 @@ collapses them to constants (`plugin/remote.ts`'s `remoteNodeDef` / `remoteTrans
 configuration is not expressible out of process — including the shipped guardrails plugin, whose
 `phase` is read from a spec field (`examples/guardrails/plugin.js:136`).
 
-`manifest.command` (`manifest.ts:62`, resolved at `remote-loader.ts:90-98`) is one of two routes to
+`manifest.command` (`manifest.ts:63`, resolved at `remote-loader.ts:90-98`) is one of two routes to
 a non-JavaScript plugin — the other being an executable entry point with a shebang, invoked by path
 (`defaultCommand`, `remote-loader.ts:56-74`), which is the form the loader prefers under `--safe`
 (`remote-loader.ts:41-55`). `manifest.command` is needed only when the entry point cannot be made a
@@ -314,7 +314,7 @@ components back by id.
 
 | | Node | Transform |
 |---|---|---|
-| Stand-in type | `InputMessageNode` (`flow-preprocess.ts:32`) | `MessageSummarizationTransform` (`:39`) |
+| Stand-in type | `InputMessageNode` (`flow-preprocess.ts:33`) | `MessageSummarizationTransform` (`:40`) |
 | Synthesized fields | `component_type, id, name, inputs, outputs` (`:109-115`) | `component_type, id, name, llm` (`:120-125`), with `llm` a fake `OllamaConfig` (`:41-46`) |
 | Restore | `spec/adapter.ts:166-169`, one lookup by id | `spec/adapter.ts:131-160`, rebuilds the frozen `Agent` |
 | Identity key | `${componentType}:${name}` (`:165`) so an inlined component resolves to one id | same |
@@ -325,7 +325,7 @@ Covered: `Flow.nodes` and `Agent.transforms`. Not covered: `Agent.tools`, `Agent
 neither swapped nor reported.
 
 The walk is also where an unrecognised `component_type` is caught (`:130-137`), which is why every
-document takes this path whether or not plugins are configured (`spec/parser.ts:24-31`).
+document takes this path whether or not plugins are configured (`spec/parser.ts:25-32`).
 
 One real defect fell out of this, and Phase 0 fixed it. `parseAgent`, the `Agent` branch of
 `parseComponent`, and both `parseComponent*` functions discarded `substitution.pluginTransforms`,
@@ -377,7 +377,7 @@ submitted *tool scripts* run unsandboxed on that platform.
 
 ## 4. The ceiling
 
-Suppose you add `kind: 'provider'` to `manifest.ts:31` and let it through the validator at `:123-128`.
+Suppose you add `kind: 'provider'` to `manifest.ts:32` and let it through the validator at `:156-161`.
 What happens next:
 
 1. `remote-loader.ts:121-133` has a three-arm switch with nowhere to put it. Add a fourth arm — it
@@ -385,11 +385,11 @@ What happens next:
    (`plugin/types.ts`, `HeddlePlugin`).
 2. Add `providers?: PluginProviderDef[]`. Now `PluginRegistry.add` (`registry.ts:55-59`) groups it
    and `kindOf` reports it. Fine so far.
-3. `flow-preprocess.ts:107-127` has no arm for it, so the component has no stand-in and
+3. `flow-preprocess.ts:104-124` has no arm for it, so the component has no stand-in and
    `LlmConfigUnion` rejects the document (`vendor/agentspec/src/llms/index.ts:12-18`). Add a third
    placeholder — see §8.
 4. Now the component parses. `createProvider` is a free function imported directly at
-   `node/agent.ts:17` and `node/llm.ts:5`; it gates on a module-level `Set`
+   `node/agent.ts:18` and `node/llm.ts:5`; it gates on a module-level `Set`
    (`llm/provider.ts:10-15,122`) and returns `new OpenAIProvider(opts)` unconditionally (`:141`).
    Nothing consults a registry. Add the lookup.
 5. Now the plugin is asked for a provider. **`HostMethod` is `'execute' | 'apply'`
@@ -466,31 +466,36 @@ extension point of any kind.** `EventHandler` returns `void` (`runner/events.ts`
 `:66` cannot influence the throw. `grep -rn 'retry\|backoff' packages/core/src` finds nothing. A
 transient 429 from a tool ends the run.
 
-### 5.2 The agent loop fuses eight policies into one function
+### 5.2 The agent loop fuses eight policies into one executor
 
-`AgentExecutor.runAgent` (`node/agent.ts:86-254`) is a single 169-line method containing, in order:
+`AgentExecutor` names each of these in code — `runAgent` holds the round loop, `answer` the
+termination path, `callTool` one tool call, with `openingMessages` and `toolDefinitions` beside them
+— and that is a readability change, not a seam. Every policy below is still fixed at the call site
+that performs it, still unreachable from a spec, and still unwrappable by a plugin. Splitting a
+function does not create a position anything can occupy; it only makes the positions easier to point
+at, which is why each row now cites a symbol rather than a line.
 
-| Policy | Line | Currently |
+| Policy | Where | Currently |
 |---|---|---|
-| Round cap | `agent.ts:21,134` | Module const `MAX_TOOL_ROUNDS = 10`; not a `RunnerOption`, not a spec field, not per-agent |
-| Message construction | `:114-121` | system + history + one user turn that is `JSON.stringify(inputData)` |
-| Chat history ingress | `:105,112` | Magic `_chat_history` state key, produced only by `packages/cli/src/chat/ui.tsx` |
-| Termination | `:155` | "no `tool_calls`" only. `finish_reason` is captured (`llm/openai.ts:41`, and again in `collectStream`) and read nowhere — a `length`-truncated answer is silently accepted as final |
-| Tool dispatch | `:190` | Serial `for…of`, no concurrency, no per-call policy |
-| Tool result serialization | `:214` | `JSON.stringify`, no truncation or summarization |
-| Tool error feedback | `:242-246` | `content: \`Error: ${err}\`` — no retry, no structure |
-| Output shaping | `:168-175` | `{ result: content }` then `Object.assign(outputData, JSON.parse(content))` if it parses — a model answering the literal text `{"result":"no"}` overwrites the key just set |
+| Round cap | `agent.ts`, `MAX_TOOL_ROUNDS` | Module const `MAX_TOOL_ROUNDS = 10`; not a `RunnerOption`, not a spec field, not per-agent |
+| Message construction | `agent.ts`, `openingMessages` | system + history + one user turn that is `JSON.stringify(inputData)` |
+| Chat history ingress | `agent.ts`, `openingMessages` | Magic `_chat_history` state key, produced only by `packages/cli/src/chat/ui.tsx` |
+| Termination | `agent.ts`, `runAgent` | "no `tool_calls`" only. `finish_reason` is captured (`llm/openai.ts:41`, and again in `collectStream`) and read nowhere — a `length`-truncated answer is silently accepted as final |
+| Tool dispatch | `agent.ts`, `runAgent` | Serial `for…of`, no concurrency, no per-call policy |
+| Tool result serialization | `agent.ts`, `callTool` | `JSON.stringify`, no truncation or summarization |
+| Tool error feedback | `agent.ts`, `callTool` | `content: \`Error: ${err}\`` — no retry, no structure |
+| Output shaping | `agent.ts`, `answer` | `{ result: content }` then `Object.assign(outputData, JSON.parse(content))` if it parses — a model answering the literal text `{"result":"no"}` overwrites the key just set |
 
 None of these is a spec-named position. A plugin cannot occupy "the place where a tool result is
 serialized." It can only wrap the call.
 
 The double parse this section originally named here — `tc.arguments` read leniently for the event
-payload and again strictly inside `executeTool`, so a malformed blob left the observer's record
+payload and again strictly inside the tool call, so a malformed blob left the observer's record
 disagreeing with what executed — **landed as fixed in Phase 0**. There is now one reading,
-`parseToolArguments`, called at `agent.ts:194` and used by both. It is still worth knowing about,
-because the constraint it was named for survives the fix: a `toolCall` hook must receive that one
-authoritative parse (`agent.ts:195`), and anything that reintroduces a second reading breaks the hook
-rather than just the log.
+`parseToolArguments`, called once at the top of `callTool` and used by both the `tool_call` event and
+the call itself. It is still worth knowing about, because the constraint it was named for survives
+the fix: a `toolCall` hook must receive that one authoritative parse, and anything that reintroduces
+a second reading breaks the hook rather than just the log.
 
 ### 5.3 Provider construction is not even injectable
 
@@ -498,7 +503,7 @@ rather than just the log.
 Phase 2 added a second, *optional* method (`chatCompletionStream?`), which strengthens the argument
 rather than weakening it: the interface absorbed a whole new transport without a breaking change and
 without a second implementation existing yet. But `createProvider` is a free function imported
-directly (`node/agent.ts:17`, `node/llm.ts:5`), and `Dependencies` (`node/types.ts:12-49`) has no
+directly (`node/agent.ts:18`, `node/llm.ts:5`), and `Dependencies` (`node/types.ts:12-49`) has no
 provider or factory field. **Even a library embedder who controls `Dependencies` cannot substitute or
 wrap provider construction without patching source.** Retry, caching, rate limiting, token
 accounting, record/replay for CI — all unreachable.
@@ -507,11 +512,11 @@ accounting, record/replay for CI — all unreachable.
 
 `TransformChain.apply` (`plugin/transform.ts`, `TransformChain.apply`) returns `pass | modify | reject`
 (`plugin/types.ts`, `TransformResult`) and that return value genuinely changes control flow: a `pre` rejection
-skips the model call entirely (`node/agent.ts:125-128`), which is why the playground can demo
+skips the model call entirely (`node/agent.ts:97-100`), which is why the playground can demo
 guardrails with no credential.
 
 So the mechanism is proven in this codebase. Its limitation is the **number of taps**: exactly two,
-both outside the tool loop (`agent.ts:125`, `:158`). A transform never sees a tool call, a tool
+both outside the tool loop (`agent.ts:97`, `:159`). A transform never sees a tool call, a tool
 result, a tool error, or a round boundary. **Adding taps to a proven mechanism is a smaller change
 than inventing one**, and the verdict vocabulary should stay recognisably the same.
 
@@ -528,25 +533,25 @@ a handful of call sites; **L** = touches the protocol, the event system, or the 
 | 2 | Provider wrapping | `llm/provider.ts:141`; no `Dependencies` field (`node/types.ts:12-49`) | retry+backoff, response cache, rate limit, audit log, PII redaction | middleware | S |
 | 3 | Node dispatch | `runner/runner.ts:61-62` | per-node timeout, memoization, dry-run, approval gate | middleware | M |
 | 4 | Node error | `runner/runner.ts:63-73` | retry, route to a fallback node, degrade to a canned answer | middleware | S |
-| 5 | Tool call | `node/agent.ts:190-249` | deny, rewrite args, return cached result — this is `humanInTheLoop` | middleware | M |
-| 6 | Tool result | `node/agent.ts:214` | truncate/summarize a 2 MB blob before it eats the context window | middleware | S |
-| 7 | Tool error | `node/agent.ts:242-246` | retry a 429 instead of narrating it to the model | middleware | S |
-| 8 | Agent termination | `node/agent.ts:155`; `finish_reason` unread (`llm/openai.ts:41`, and in `collectStream`) | stop on truncation; stop when a `submit_answer` tool is called | middleware | S |
-| 9 | Output shaping | `node/agent.ts:168-175` | enforce declared `outputs` as a schema; repair non-conforming answers | middleware | S |
-| 10 | Round cap | `node/agent.ts:21` | a research agent needing 40 rounds; partial results instead of `:251` throwing | config, not a plugin | S |
+| 5 | Tool call | `node/agent.ts`, `callTool` | deny, rewrite args, return cached result — this is `humanInTheLoop` | middleware | M |
+| 6 | Tool result | `node/agent.ts:239` | truncate/summarize a 2 MB blob before it eats the context window | middleware | S |
+| 7 | Tool error | `node/agent.ts:241-251` | retry a 429 instead of narrating it to the model | middleware | S |
+| 8 | Agent termination | `node/agent.ts:127`; `finish_reason` unread (`llm/openai.ts:41`, and in `collectStream`) | stop on truncation; stop when a `submit_answer` tool is called | middleware | S |
+| 9 | Output shaping | `node/agent.ts:169-176` | enforce declared `outputs` as a schema; repair non-conforming answers | middleware | S |
+| 10 | Round cap | `node/agent.ts:22` | a research agent needing 40 rounds; partial results instead of `:142` throwing | config, not a plugin | S |
 | 11 | Tool registry | `tool/types.ts`, `Registry`; only `FileRegistry` | MCP discovery, HTTP tool catalogue, inline spec tools | component | S |
 | 12 | Tool executor / protocol | `tool/executor.ts:6,137,151,173` | wrap an existing CLI (argv in, exit code out) without a JSON shim | component | M |
 | 13 | Tool discovery metadata | `tool/registry.ts:35,46,52-56` | descriptions and schemas from the tool itself, not duplicated in the spec | component | S |
-| 14 | Tool JSON Schema | `buildToolSchema` (`node/agent.ts:527-551`), `:542` | optional parameters — today every input is `required` | middleware | S |
-| 15 | Message construction | `node/agent.ts:114-121`; `Message.content: string` (`llm/types.ts:10`) | few-shot exemplars, templated user turn, prompt-cache markers, multimodal | middleware | M |
+| 14 | Tool JSON Schema | `buildToolSchema` (`node/agent.ts:530-554`), `:545` | optional parameters — today every input is `required` | middleware | S |
+| 15 | Message construction | `node/agent.ts:278-285`; `Message.content: string` (`llm/types.ts:10`) | few-shot exemplars, templated user turn, prompt-cache markers, multimodal | middleware | M |
 | 16 | Chat history store | `node/agent.ts:105,112` | server-side threads in Redis/Postgres; sliding window | component | S |
 | 17 | State merge | `state/state.ts:36-38`, applied `runner.ts:89` | namespace by node, append, or error on collision instead of silent clobber | component | S |
 | 18 | Input resolution | `runner/runner.ts:107-126` | strict mode: a node sees only its declared `inputs`; fail loudly on a missing source | middleware | S |
 | 19 | Flow termination | `runner/runner.ts:84-87`; `branchName` unread (`spec/types.ts:88`) | a plugin `AbortNode`; reporting *which* exit a multi-exit flow took | capability flag | S |
-| 20 | Template engine | `substituteTemplate` (`node/agent.ts:498-504`); `getString` (`state/state.ts:27-30`) | dotted paths, loops, rendering objects instead of blanking them | component | S |
+| 20 | Template engine | `substituteTemplate` (`node/agent.ts:501-507`); `getString` (`state/state.ts:27-30`) | dotted paths, loops, rendering objects instead of blanking them | component | S |
 | 21 | Branch matcher | `node/branching.ts:6,25,28-34,42-48` | numeric ranges, regex, LLM-decided routing. Also fixes the order-dependent fallback at `:28-34` | component | S |
 | 22 | Graph rewrite | `graph/compile.ts:70` | wrap every `AgentNode` in a guardrail; insert checkpoints. The generic escape hatch | middleware | M |
-| 23 | Graph validation | `graph/validate.ts:5-56` | org policy rules; warnings that don't block | component | S |
+| 23 | Graph validation | `graph/validate.ts:5-46` | org policy rules; warnings that don't block | component | S |
 | 24 | Event emission | `runner/events.ts`, `EventHandler`, 9 emit sites | any two-way hook at all — a plugin that *observes* or intercepts the engine's events (Phase 6). ~~`EventType` is closed so a plugin cannot even emit~~ **emission landed, Phase 3**: `EventType = BuiltinEventType \| PluginEventType` (`runner/events.ts`), `pluginReporter` (`plugin/executor.ts`), the `emitEvent`/`log` verbs (`plugin/protocol.ts`'s `PluginMethods`, served in `plugin/host.ts`'s `serve`) | protocol | M |
 | 25 | Plugin context | `plugin/types.ts`, `PluginContext`; built at `plugin/executor.ts`'s `runNode` | ~~`emitEvent`, workspace handle~~ **landed, Phase 3** (`emitEvent`, `log`, `getWorkspace`); still wanted: `callModel` (Phase 4) and run-scoped state | protocol | S |
 | 26 | Generation params | `spec/types.ts:24` unread; `ChatRequest` (`llm/types.ts:30-34`) | temperature, max_tokens, JSON mode, seed. **No spec can set any of these today** | data widening | S |
@@ -568,7 +573,7 @@ a handful of call sites; **L** = touches the protocol, the event system, or the 
    routers and summarizers without each plugin shipping its own SDK *and its own credential*.
 3. **#1+#2 providers** (`llm/provider.ts:141`) — best leverage/cost ratio in the codebase; the
    interface is already one method. Needs #26 first or a provider plugin receives nothing to act on.
-4. **#5 tool call** (`agent.ts:190-249`) — this is the mechanism `Agent.humanInTheLoop`
+4. **#5 tool call** (`agent.ts`, `callTool`) — this is the mechanism `Agent.humanInTheLoop`
    (`spec/types.ts:46`) promises and nothing implements. Grep confirms the field is read nowhere.
 5. **#11 tool registry** (`tool/types.ts`, `Registry`) — two methods, and the demand is already proven:
    the server had to write `mergeRegistries` *outside* core (`packages/server/src/tools.ts:15-29`)
@@ -808,7 +813,7 @@ set derivable rather than maintained, and it holds only while every member is a 
 ```
 
 Validated in `validateManifest` (`packages/core/src/plugin/manifest.ts`, `validateManifest`) against a closed set,
-same treatment as `kind` at `:123-128`: an unknown capability is a load-time error naming the
+same treatment as `kind` at `:156-161`: an unknown capability is a load-time error naming the
 plugin, not a runtime surprise.
 
 **Grant/deny at load.** The manifest *requests*; the host *grants*.
@@ -965,7 +970,7 @@ order plugins were passed (`plugin/registry.ts:47,55-65`), and `buildPlugins` it
   its own attempt ceiling and stops honouring `retry` past it, so a miscounting or malicious
   middleware cannot loop a run indefinitely; the manifest's `maxAttempts` cap (§7.8a,
   `"maximum": 10`) is author-declared config and guarantees nothing on its own.
-- A middleware may **not** introduce a branch. `graph/validate.ts:26-51` checks reachability before
+- A middleware may **not** introduce a branch. `graph/validate.ts:26-41` checks reachability before
   anything executes, and `PluginNodeAdapter` already enforces declared branches for the same reason
   (`plugin/executor.ts`'s `runNode` branch check). A `replace` verdict on `node` supplies a `State`, never a route.
 
@@ -997,7 +1002,7 @@ this kind, not a follow-up:
    * Per-componentType configuration for host-configured components. Validated
    * against that component's manifest `schema` at load time, with the same
    * closed-set, load-time-error treatment `kind` already gets
-   * (`plugin/manifest.ts:123-128`) — a middleware whose required fields are
+   * (`plugin/manifest.ts:156-161`) — a middleware whose required fields are
    * missing fails to load, naming the field, rather than reading `undefined` on
    * the first node that errors.
    */
@@ -1112,7 +1117,7 @@ export interface PluginProviderDef extends PluginComponentDef {
 Three prerequisites. The first two are cheap; all three are mandatory:
 
 1. **`Dependencies` gains a factory.** `createProvider` must stop being a directly-imported free
-   function (`node/agent.ts:17`, `node/llm.ts:5`) and become reachable through `Dependencies`
+   function (`node/agent.ts:18`, `node/llm.ts:5`) and become reachable through `Dependencies`
    (`node/types.ts:12-49`). Without this, nothing — not a plugin, not an embedder — can substitute it.
 2. **`ChatRequest` must carry something worth acting on.** It is `{ model, messages, tools? }`
    (`llm/types.ts:30-34`) and the OpenAI adapter passes exactly those three. `defaultGenerationParameters`
@@ -1148,7 +1153,7 @@ Under placeholders, this is the most expensive stand-in yet:
 - `LlmConfigUnion` gates three distinct positions: `Agent.llmConfig` (`vendor/agentspec/src/agents/agent.ts:17`),
   `LlmNode.llmConfig`, and both transforms' `llm` (`vendor/agentspec/src/transforms/message-transform.ts:29,53`).
 - The stand-in must be a real member of that union with its required fields synthesized — exactly
-  what `PLACEHOLDER_LLM` already does (`plugin/flow-preprocess.ts:41-46`, an `OllamaConfig` with a
+  what `PLACEHOLDER_LLM` already does (`plugin/flow-preprocess.ts:42-47`, an `OllamaConfig` with a
   fake `url` and `model_id`).
 - Restoration is the expensive half. A node stand-in restores in one lookup (`spec/adapter.ts:166-169`)
   because it is a top-level element. A transform stand-in already costs ~30 lines because it must
@@ -1177,9 +1182,10 @@ work lands — but it is a stopgap with a migration, not a co-equal design.
 the list, and demand is proven: the server had to write registry composition *outside* core
 (`packages/server/src/tools.ts:15-29`) because none existed inside.
 
-The one real constraint: **`lookup` must stay synchronous.** It is called inside execution at
-`node/agent.ts:267` and `plugin/remote.ts`'s `toolRunner`, and at request-validation time by
-`assertToolsAvailable` (`packages/server/src/tools.ts:39`). A synchronous call cannot cross the pipe.
+The one real constraint: **`lookup` must stay synchronous.** Every caller inside execution now goes
+through one place — `runRegisteredTool` (`packages/core/src/tool/run.ts`) — and it is also called at
+request-validation time by `assertToolsAvailable` (`packages/server/src/tools.ts:39`). A synchronous
+call cannot cross the pipe.
 
 So a registry plugin is a **discovery** plugin, not a live registry:
 
@@ -1193,7 +1199,7 @@ So a registry plugin is a **discovery** plugin, not a live registry:
 This also fixes a smaller annoyance: `FileRegistry` gives every discovered tool
 `description: ''` (`packages/core/src/tool/registry.ts:52-56`) and never populates `inputSchema`
 (`tool/types.ts:8-9`), so a tool's description reaches the model only if the spec repeats it
-(`node/agent.ts:100`). A manifest-driven registry has one source of truth.
+(`node/agent.ts:261`). A manifest-driven registry has one source of truth.
 
 ### 7.8 Worked examples
 
@@ -1296,7 +1302,7 @@ serve({
 });
 ```
 
-`branches` is declared in the manifest because `graph/validate.ts:26-42` checks reachability before
+`branches` is declared in the manifest because `graph/validate.ts:26-41` checks reachability before
 anything runs, and `PluginNodeAdapter` rejects an undeclared branch with a message that names the
 declared set (`plugin/executor.ts`'s `runNode` branch check) rather than letting it surface as a confusing
 "no next node" from `runner.ts:94-97`.
@@ -1360,8 +1366,8 @@ agent↔UI interaction. heddle's runner events already carry most of its lifecyc
 | `flow_complete` (`runner.ts:85`) | `RunFinished { outcome?, result? }` |
 | `node_error` (`runner.ts:66`) | `RunError { message, code? }` |
 | `node_start` / `node_complete` (`runner.ts:47,77`) | `StepStarted` / `StepFinished { stepName }` |
-| `tool_call` (`node/agent.ts:199`) | `ToolCallStart` + `ToolCallArgs` + `ToolCallEnd` |
-| `tool_result` (`node/agent.ts:217`) | `ToolCallResult { messageId, toolCallId, content }` |
+| `tool_call` (`node/agent.ts:205`) | `ToolCallStart` + `ToolCallArgs` + `ToolCallEnd` |
+| `tool_result` (`node/agent.ts:228`) | `ToolCallResult { messageId, toolCallId, content }` |
 | `node_complete.state` | `StateSnapshot { snapshot }` |
 | `token_delta` (`node/agent.ts`, Phase 2) | `TextMessageContent { delta }` |
 
@@ -1441,7 +1447,7 @@ Phase 3, so an encoder written now sees the final shape — `BuiltinEventType | 
    because the reasoning inverts again if the SDK work is abandoned.
 2. **Does `retry` belong on `nodeError` only, or on every seam?** Universal retry is a much larger
    contract: the host must be able to re-invoke the underlying call idempotently, which is true at
-   `runner.ts:61` and emphatically not true partway through the tool loop at `agent.ts:190-249`,
+   `runner.ts:61` and emphatically not true partway through the tool loop at `agent.ts`, `callTool`,
    where earlier tool messages are already in `messages`.
 3. **Is a middleware failure fatal or skipped?** A middleware that throws at `runner.ts:61` fails
    runs it has nothing to do with (§10). Fatal is honest; skipped is survivable. The tempting split —
@@ -1476,7 +1482,7 @@ A placeholder is not one constant. It is four things:
 
 | Requirement | Node today | Transform today | An `LlmConfig` would need |
 |---|---|---|---|
-| A builtin inert enough to survive validation | `InputMessageNode`, chosen because its factory passes `inputs`/`outputs` through untouched (`flow-preprocess.ts:27-32`) | `MessageSummarizationTransform` (`:34-39`) | one of five `LlmConfigUnion` members |
+| A builtin inert enough to survive validation | `InputMessageNode`, chosen because its factory passes `inputs`/`outputs` through untouched (`flow-preprocess.ts:33-37`) | `MessageSummarizationTransform` (`:34-39`) | one of five `LlmConfigUnion` members |
 | Synthesized required fields | 5 (`:109-115`) | 4, including a whole fake `OllamaConfig` (`:41-46,120-125`) | at minimum `model_id` + `url` |
 | A restore path | 1 lookup, `spec/adapter.ts:166-169` | ~30 lines rebuilding the frozen `Agent`, `spec/adapter.ts:131-160` | a third path, rebuilding the same frozen ancestor for a different field, in three positions |
 | A guarantee it never serializes | holds because restore precedes any export | holds | would need checking — the placeholder points at `localhost:11434` |
@@ -1827,7 +1833,7 @@ Mitigations, all of which should ship *with* Phase 6 and not after:
 - Seams are declared per component in the manifest, so the blast radius is inspectable as data
   before anything runs — the same property `manifest.ts:1-19` already buys.
 - An error policy, decided rather than defaulted (§7.10 Q3).
-- A middleware may not introduce a branch: `graph/validate.ts:26-51` checks reachability before
+- A middleware may not introduce a branch: `graph/validate.ts:26-41` checks reachability before
   execution, and `plugin/executor.ts`'s `runNode` branch check already enforces the analogous rule for nodes.
 - A `replace` verdict is reported as a `warning` event, so "the flow returned something odd" is
   traceable to the middleware that did it.

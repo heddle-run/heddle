@@ -10,7 +10,8 @@ import { State } from '../state/state.js';
 import type { Dependencies, NodeExecutor } from '../node/types.js';
 import type { EventHandler } from '../runner/events.js';
 import { pluginEventType } from '../runner/events.js';
-import type { Executor, ExecutorScope } from '../tool/types.js';
+import type { ExecutorScope } from '../tool/types.js';
+import { runRegisteredTool } from '../tool/run.js';
 import { createWorkspace, removeDir } from '../sandbox/workspace.js';
 import type {
   PluginContext,
@@ -18,7 +19,7 @@ import type {
   PluginNodeDef,
   PluginReporter,
 } from './types.js';
-import { PluginError, RunError, ToolError } from '../errors.js';
+import { PluginError } from '../errors.js';
 
 /** Which component an event came from, and which graph node it happened under. */
 export interface EventSource {
@@ -172,7 +173,13 @@ export class PluginNodeAdapter implements NodeExecutor {
       signal,
       node: this.node,
       runTool: (name, toolInput) =>
-        this.runTool(signal, name, toolInput, scope?.executor),
+        runRegisteredTool(
+          this.deps,
+          { executor: scope?.executor, signal },
+          name,
+          toolInput,
+          `${this.node.componentType} "${this.node.name}"`,
+        ),
       getWorkspace: () => this.workspace(scope),
       ...pluginReporter(this.deps.eventHandler, {
         nodeName: this.node.name,
@@ -207,28 +214,5 @@ export class PluginNodeAdapter implements NodeExecutor {
     this._branch = branch;
 
     return new State(result.output);
-  }
-
-  private async runTool(
-    signal: AbortSignal | undefined,
-    name: string,
-    input: Record<string, unknown>,
-    scoped?: Executor,
-  ): Promise<Record<string, unknown>> {
-    const { toolRegistry } = this.deps;
-    const toolExecutor = scoped ?? this.deps.toolExecutor;
-    if (!toolRegistry || !toolExecutor) {
-      throw new RunError(
-        `${this.node.componentType} "${this.node.name}": no tool registry configured`,
-      );
-    }
-    const tool = toolRegistry.lookup(name);
-    if (!tool) {
-      throw new ToolError(
-        `${this.node.componentType} "${this.node.name}": tool "${name}" not found`,
-      );
-    }
-    const result = await toolExecutor.execute(signal, tool.path, input);
-    return result.output;
   }
 }

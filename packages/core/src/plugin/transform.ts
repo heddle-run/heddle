@@ -7,6 +7,7 @@
  */
 import type { Dependencies } from '../node/types.js';
 import type { TransformSpec } from '../spec/types.js';
+import { isTransformAction, TRANSFORM_ACTIONS_PROSE } from './types.js';
 import type {
   PluginComponent,
   PluginReporter,
@@ -22,8 +23,6 @@ const BUILTIN_TRANSFORMS = new Set([
   'MessageSummarizationTransform',
   'ConversationSummarizationTransform',
 ]);
-
-const VALID_ACTIONS = new Set(['pass', 'modify', 'reject']);
 
 export interface TransformOutcome {
   messages: Message[];
@@ -161,10 +160,10 @@ export class TransformChain {
         ...entry.reporter,
       });
 
-      if (!result || !VALID_ACTIONS.has(result.action)) {
+      if (!result || !isTransformAction(result.action)) {
         throw new PluginError(
           `transform "${entry.component.name}" returned an invalid action ` +
-            `"${result?.action}" (expected pass, modify or reject)`,
+            `"${result?.action}" (expected ${TRANSFORM_ACTIONS_PROSE})`,
         );
       }
 

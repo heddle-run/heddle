@@ -16,8 +16,11 @@
 import type { PluginManifest, ManifestComponent } from './manifest.js';
 import type { PluginHost, ToolRunner } from './host.js';
 import { checkSchema } from './schema.js';
-import { PluginError, RunError, ToolError } from '../errors.js';
+import { PluginError } from '../errors.js';
+import { isObject, typeName } from '../json.js';
 import type { Dependencies } from '../node/types.js';
+import { runRegisteredTool } from '../tool/run.js';
+import { isTransformAction, TRANSFORM_ACTIONS_PROSE } from './types.js';
 import type {
   PluginComponent,
   PluginComponentDef,
@@ -50,9 +53,19 @@ function serializable(value: unknown, what: string): Record<string, unknown> {
   }
 }
 
-function checkComponent(entry: ManifestComponent, component: PluginComponent): void {
-  if (!entry.schema) return;
-  checkSchema(component, entry.schema, `${entry.componentType} "${component.name}"`);
+/**
+ * Give a def the manifest's schema check, when the manifest declared one.
+ *
+ * Assigned rather than always present, because `validate` being absent is what
+ * tells the deserializer there is nothing to check — and all three kinds of
+ * remote def need it on exactly the same condition.
+ */
+function validating<D extends PluginComponentDef>(def: D, entry: ManifestComponent): D {
+  if (entry.schema) {
+    def.validate = (component) =>
+      checkSchema(component, entry.schema!, `${entry.componentType} "${component.name}"`);
+  }
+  return def;
 }
 
 /** The node half: a custom node type executed in the plugin's process. */
@@ -120,14 +133,11 @@ export function remoteNodeDef(
   // Assigned only when the manifest declares them, so a component that says
   // nothing about its inputs leaves them undefined rather than empty — the
   // deserializer treats those differently.
-  if (entry.schema) {
-    def.validate = (component) => checkComponent(entry, component);
-  }
   if (entry.inputs) def.inferInputs = () => entry.inputs!;
   if (entry.outputs) def.inferOutputs = () => entry.outputs!;
   if (entry.branches) def.branches = () => entry.branches!;
 
-  return def;
+  return validating(def, entry);
 }
 
 /** The transform half: a message transform executed in the plugin's process. */
@@ -178,20 +188,12 @@ export function remoteTransformDef(
     },
   };
 
-  if (entry.schema) {
-    def.validate = (component) => checkComponent(entry, component);
-  }
-
-  return def;
+  return validating(def, entry);
 }
 
 /** A component type that is neither node nor transform: validation only. */
 export function remoteComponentDef(entry: ManifestComponent): PluginComponentDef {
-  const def: PluginComponentDef = { componentType: entry.componentType };
-  if (entry.schema) {
-    def.validate = (component) => checkComponent(entry, component);
-  }
-  return def;
+  return validating({ componentType: entry.componentType }, entry);
 }
 
 /**
@@ -210,12 +212,12 @@ function asResult(
 ): PluginResult {
   const where = `plugin "${plugin}": ${componentType} "${nodeName}"`;
 
-  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
-    throw new PluginError(`${where} returned ${typeOf(raw)}, expected { output, branch? }`);
+  if (!isObject(raw)) {
+    throw new PluginError(`${where} returned ${typeName(raw)}, expected { output, branch? }`);
   }
-  const result = raw as Record<string, unknown>;
+  const result = raw;
 
-  if (typeof result.output !== 'object' || result.output === null || Array.isArray(result.output)) {
+  if (!isObject(result.output)) {
     throw new PluginError(`${where} returned no "output" object`);
   }
   if (result.branch !== undefined && typeof result.branch !== 'string') {
@@ -223,12 +225,10 @@ function asResult(
   }
 
   return {
-    output: result.output as Record<string, unknown>,
+    output: result.output,
     branch: result.branch as string | undefined,
   };
 }
-
-const ACTIONS = new Set(['pass', 'modify', 'reject']);
 
 function asTransformResult(
   plugin: string,
@@ -237,14 +237,15 @@ function asTransformResult(
 ): TransformResult {
   const where = `plugin "${plugin}": ${componentType}`;
 
-  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
-    throw new PluginError(`${where} returned ${typeOf(raw)}, expected { action, ... }`);
+  if (!isObject(raw)) {
+    throw new PluginError(`${where} returned ${typeName(raw)}, expected { action, ... }`);
   }
-  const result = raw as Record<string, unknown>;
+  const result = raw;
 
-  if (typeof result.action !== 'string' || !ACTIONS.has(result.action)) {
+  if (typeof result.action !== 'string' || !isTransformAction(result.action)) {
     throw new PluginError(
-      `${where} returned action ${JSON.stringify(result.action)}; expected pass, modify or reject`,
+      `${where} returned action ${JSON.stringify(result.action)}; expected ` +
+        `${TRANSFORM_ACTIONS_PROSE}`,
     );
   }
   if (result.action === 'modify' && !Array.isArray(result.messages)) {
@@ -252,15 +253,10 @@ function asTransformResult(
   }
 
   return {
-    action: result.action as TransformResult['action'],
+    action: result.action,
     messages: result.messages as Message[] | undefined,
     reason: typeof result.reason === 'string' ? result.reason : undefined,
   };
-}
-
-function typeOf(value: unknown): string {
-  if (value === null) return 'null';
-  return Array.isArray(value) ? 'array' : typeof value;
 }
 
 /**
@@ -284,20 +280,9 @@ function toolRunner(
   componentName: string,
   deps: Dependencies,
 ): ToolRunner {
-  return async (name, input) => {
-    const where = `plugin "${plugin}": ${componentType} "${componentName}"`;
-    const { toolRegistry, toolExecutor } = deps;
-
-    if (!toolRegistry || !toolExecutor) {
-      throw new RunError(`${where}: no tool registry configured`);
-    }
-    const tool = toolRegistry.lookup(name);
-    if (!tool) {
-      throw new ToolError(`${where}: tool "${name}" not found`);
-    }
-    const result = await toolExecutor.execute(undefined, tool.path, input);
-    return result.output;
-  };
+  const where = `plugin "${plugin}": ${componentType} "${componentName}"`;
+  return (name, input) =>
+    runRegisteredTool(deps, undefined, name, input, where);
 }
 
 export type { TransformPhase };

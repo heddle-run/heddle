@@ -59,8 +59,6 @@ export class LLMExecutor implements NodeExecutor {
       },
     );
 
-    let output = new State();
-    output = output.set('generated_text', resp.content);
-    return output;
+    return new State({ generated_text: resp.content });
   }
 }

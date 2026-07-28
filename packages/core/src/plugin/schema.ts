@@ -19,6 +19,7 @@
  * validator that silently under-checks is worth knowing about.
  */
 import { PluginError } from '../errors.js';
+import { isObject } from '../json.js';
 
 type Schema = Record<string, unknown>;
 
@@ -94,8 +95,8 @@ function walk(value: unknown, schema: Schema, path: string): void {
     value.forEach((entry, i) => walk(entry, schema.items as Schema, `${path}[${i}]`));
   }
 
-  if (isPlainObject(value)) {
-    const properties = isPlainObject(schema.properties) ? schema.properties : {};
+  if (isObject(value)) {
+    const properties = isObject(schema.properties) ? schema.properties : {};
 
     if (Array.isArray(schema.required)) {
       for (const key of schema.required) {
@@ -106,7 +107,7 @@ function walk(value: unknown, schema: Schema, path: string): void {
     }
 
     for (const [key, sub] of Object.entries(properties)) {
-      if (key in value && isPlainObject(sub)) {
+      if (key in value && isObject(sub)) {
         walk(value[key], sub, `${path}.${key}`);
       }
     }
@@ -120,10 +121,6 @@ function walk(value: unknown, schema: Schema, path: string): void {
       }
     }
   }
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function deepEqual(a: unknown, b: unknown): boolean {
