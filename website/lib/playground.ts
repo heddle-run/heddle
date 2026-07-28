@@ -299,10 +299,12 @@ export async function* streamRun(
 // ---------------------------------------------------------------------------
 // Examples
 //
-// Three of the four run without a model credential, which is deliberate: the
-// first thing a visitor does should work. The guardrail is free for a reason
-// worth knowing — a `pre` transform that rejects means heddle never calls the
-// model at all, so a blocked prompt costs nothing.
+// Three of the five call no model at all, which is deliberate: the first thing
+// a visitor does should work. The guardrail is free for a reason worth knowing
+// — a `pre` transform that rejects means heddle never calls the model at all,
+// so a blocked prompt costs nothing. The two that do call one are answered by
+// the free model the engine was configured with, so neither asks a visitor for
+// a credential either.
 // ---------------------------------------------------------------------------
 
 export interface Example {
@@ -799,11 +801,158 @@ $referenced_components:
   plugins: [],
 };
 
+/**
+ * One tool, and the model decides what to put in it.
+ *
+ * The other examples hand a tool its input from an edge. Here the argument is
+ * the model's own sentence, which is the whole point of an agent — and the
+ * reason the tool below reads `exit_code` back rather than trusting that a
+ * command it did not write worked.
+ *
+ * Python and Node are both on PATH inside the sandbox, so the agent can drop
+ * into a language when the shell is the wrong instrument.
+ */
+const BASH_TOOL: RequestTool = {
+  name: "bash",
+  interpreter: "python3",
+  source: `import json, os, subprocess, sys
+
+data = json.load(sys.stdin)
+command = (data.get("command") or "").strip()
+
+# $HEDDLE_WORKSPACE is the one writable directory, and it is shared by every
+# tool call this agent makes -- so a file one command writes is there for the
+# next. It is deleted when the run ends.
+workdir = os.environ.get("HEDDLE_WORKSPACE") or os.getcwd()
+
+try:
+    done = subprocess.run(
+        ["bash", "-c", command],
+        cwd=workdir,
+        # Nothing interactive can work here: this process's stdin was the JSON
+        # above, and a command that waits for a terminal would just time out.
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    stdout, stderr, code = done.stdout, done.stderr, done.returncode
+except subprocess.TimeoutExpired:
+    stdout, stderr, code = "", "command timed out after 20s", 124
+
+# Exit 0 whatever happened. A tool that exits non-zero is a broken tool and the
+# engine abandons the round -- which would take the error message away from the
+# one reader who can act on it.
+json.dump(
+    {"stdout": stdout[:4000], "stderr": stderr[:2000], "exit_code": code},
+    sys.stdout,
+)
+`,
+};
+
+const SHELL: Example = {
+  id: "shell",
+  title: "An agent with a shell",
+  blurb:
+    "One tool that runs any command, and a model deciding what to run. Python and Node are on PATH in the sandbox.",
+  flow: `component_type: Flow
+name: shell
+start_node: { $component_ref: start }
+
+nodes:
+  - $component_ref: start
+  - $component_ref: shell
+  - $component_ref: end
+
+control_flow_connections:
+  - component_type: ControlFlowEdge
+    name: start_to_shell
+    from_node: { $component_ref: start }
+    to_node: { $component_ref: shell }
+  - component_type: ControlFlowEdge
+    name: shell_to_end
+    from_node: { $component_ref: shell }
+    to_node: { $component_ref: end }
+
+$referenced_components:
+  start:
+    component_type: StartNode
+    id: start
+    name: start
+    outputs:
+      - title: task
+        type: string
+
+  shell:
+    component_type: AgentNode
+    id: shell
+    name: shell
+    agent:
+      component_type: Agent
+      id: inner
+      name: shell
+      system_prompt: |
+        You run shell commands to answer the task. python3 and node are both on
+        PATH; use whichever suits the work.
+
+        Each call is a fresh shell, so cd and exported variables do not survive
+        to the next one -- chain what depends on itself into a single command.
+        Read exit_code every time: a zero exit is the only evidence a command
+        did what you meant. Nothing interactive works, and a command is killed
+        after 20 seconds.
+
+        Answer in one or two sentences, saying what you ran and what came back.
+
+      # No api_key and no url, so the engine supplies the free model it was
+      # configured with -- see the agent example for why that pair is
+      # all-or-nothing.
+      llm_config:
+        component_type: OpenAiConfig
+        id: llm
+        name: model
+        model_id: openrouter/free
+
+      # Declaring the inputs is what gives the model a shape to fill in: they
+      # become the function's parameters, and a tool with none is a tool it can
+      # only call empty.
+      tools:
+        - component_type: ServerTool
+          id: bash_tool
+          name: bash
+          description: >-
+            Run a shell command and return its stdout, stderr and exit code.
+            Runs in $HEDDLE_WORKSPACE. python3 and node are on PATH. Each call
+            is a fresh shell and commands are killed after 20 seconds.
+          inputs:
+            - title: command
+              type: string
+          outputs:
+            - title: stdout
+              type: string
+            - title: stderr
+              type: string
+            - title: exit_code
+              type: integer
+
+  end:
+    component_type: EndNode
+    id: end
+    name: end
+`,
+  inputs: `{
+  "task": "count the vowels in \\"weave agents from spec\\" with python, then reverse the string with node"
+}
+`,
+  tools: [BASH_TOOL],
+  plugins: [],
+};
+
 export const EXAMPLES: Example[] = [
   TOOL_AND_PLUGIN,
   GUARDRAIL,
   BRANCHING,
   AGENT,
+  SHELL,
 ];
 
 export const DEFAULT_EXAMPLE = EXAMPLES[0];
