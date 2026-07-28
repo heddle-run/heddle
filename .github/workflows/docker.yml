@@ -1,0 +1,157 @@
+name: Publish images
+
+# The two published images: `heddle`, the CLI, and `heddle-server`.
+#
+# Each goes to two registries from one build — Docker Hub, where people look,
+# and GHCR, which needs no credentials and does not rate-limit pulls. The
+# manifests are identical; only the name in front differs.
+#
+# This runs alongside release.yml rather than inside it. Both fire on a `v*`
+# tag, and neither waits for the other: a broken npm publish should not
+# withhold an image that built, and a registry outage should not hold up a
+# release. The tag is the shared input, not one job's output.
+#
+# GHCR authenticates with the workflow's own token, so it works in a fresh
+# checkout with nothing configured. Docker Hub needs two secrets, and is
+# skipped with a notice when they are absent rather than failing the run:
+#
+#   DOCKERHUB_USERNAME    an account with push access to the namespace
+#   DOCKERHUB_TOKEN       an access token for it, not the password
+#   DOCKERHUB_NAMESPACE   variable, not secret. Defaults to salahpichen — a
+#                         namespace on Docker Hub is an account name, and the
+#                         project has no account of its own there. Point this
+#                         at one the day it does; the GHCR half already
+#                         carries the project's name.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+# One publish at a time per ref. Two runs pushing the same tag would race on
+# the manifest, and the loser is not always the older one.
+concurrency:
+  group: publish-images-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  NAMESPACE: ${{ vars.DOCKERHUB_NAMESPACE || 'salahpichen' }}
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    # A fork publishes nothing. GHCR would resolve to the fork's own owner and
+    # quietly populate a namespace nobody asked for.
+    if: github.repository == 'heddle-run/heddle'
+
+    permissions:
+      contents: read
+      packages: write
+
+    strategy:
+      # Independent images. One failing to build says nothing about the other,
+      # and cancelling its sibling only hides a second failure until the retry.
+      fail-fast: false
+      matrix:
+        include:
+          - name: heddle
+            dockerfile: Dockerfile
+            description: Run Open Agent Specification flows from the command line.
+          - name: heddle-server
+            dockerfile: packages/server/Dockerfile
+            description: HTTP API for the heddle Agent Spec execution engine.
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Both Dockerfiles build on the native platform and copy the result into
+      # the target's runtime stage, so emulation covers only the runtime
+      # stage's `apt-get` — seconds, not a full TypeScript build under QEMU.
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - uses: docker/setup-buildx-action@v3
+
+      # Absent credentials are a state this repository was in until someone
+      # registered the account, not a mistake. GHCR still publishes; the notice
+      # says what did not.
+      - name: Check Docker Hub credentials
+        id: dockerhub
+        env:
+          USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          if [ -n "$USERNAME" ] && [ -n "$TOKEN" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::DOCKERHUB_USERNAME and DOCKERHUB_TOKEN are unset; publishing to GHCR only."
+          fi
+
+      - name: Log in to Docker Hub
+        if: steps.dockerhub.outputs.enabled == 'true'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # `latest` comes from flavor=auto: it follows a release tag and is left
+      # alone by a prerelease, so `v0.2.0-beta.1` publishes 0.2.0-beta.1 and
+      # nothing else. main publishes `edge` and a sha tag — the sha is what
+      # makes an edge image identifiable after the tag has moved on.
+      #
+      # One tag set, both names. GHCR keeps the hyphen the repository has;
+      # Docker Hub cannot, because an account name there is alphanumeric.
+      - name: Derive tags and labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            name=${{ env.NAMESPACE }}/${{ matrix.name }},enable=${{ steps.dockerhub.outputs.enabled == 'true' }}
+            name=ghcr.io/${{ github.repository_owner }}/${{ matrix.name }}
+          flavor: latest=auto
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=edge,enable={{is_default_branch}}
+            type=sha,enable={{is_default_branch}}
+          labels: |
+            org.opencontainers.image.title=${{ matrix.name }}
+            org.opencontainers.image.description=${{ matrix.description }}
+            org.opencontainers.image.url=https://heddle.run
+            org.opencontainers.image.licenses=MIT
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          # The repository root for both: the server's Dockerfile reaches
+          # across to packages/core and vendor/agentspec.
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Scoped per image so the CLI's layers do not evict the server's.
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+      - name: Summarise
+        run: |
+          {
+            echo "### ${{ matrix.name }}"
+            echo
+            echo '```'
+            echo "${{ steps.meta.outputs.tags }}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
