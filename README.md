@@ -212,6 +212,12 @@ agent (a bare `ToolNode`) get a throwaway session of their own.
 - On macOS the shared `/tmp` and `/var/tmp` stay writable, because `/bin/sh`
   writes here-documents to a hardcoded path there. Linux gets a private tmpfs
   and has no such hole.
+- A confined tool gets a fixed `PATH` of system directories, not the one in your
+  shell. An interpreter installed under `$HOME` — nvm, pyenv, asdf — is neither
+  on that PATH nor readable, since `$HOME` is exactly what the sandbox hides. A
+  tool that needs one wants `--allow-read` on the install root and has to put the
+  `bin` directory on PATH itself; [examples/bash-agent](examples/bash-agent) is
+  one that does.
 - `--safe` requires Linux or macOS. On Linux, `bwrap` must be installed
   (`apt install bubblewrap`).
 
@@ -299,6 +305,7 @@ src/
 examples/
   research-assistant/   Example flow with web_search and calculator tools
   guardrails/           Custom Processor transform used as a pre/post guardrail
+  bash-agent/           Shell agent with Python and Node in the sandbox, and a way to hand files back
 testdata/               Test flow definitions and tool scripts
 ```
 
