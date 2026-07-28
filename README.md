@@ -93,7 +93,7 @@ Two images, `linux/amd64` and `linux/arm64`:
 
 Both are also on GitHub Container Registry, as
 `ghcr.io/heddle-run/heddle` and `ghcr.io/heddle-run/heddle-server` — same
-build, same manifest, no pull limit.
+build, same digests, and no per-IP cap on anonymous pulls to trip over in CI.
 
 `/work` is the CLI image's working directory, so a mounted project keeps the
 paths you would have typed anyway:
