@@ -18,6 +18,7 @@ import type {
   PluginNodeDef,
   PluginReporter,
 } from './types.js';
+import { PluginModel } from './services.js';
 import { PluginError, RunError, ToolError } from '../errors.js';
 
 /** Which component an event came from, and which graph node it happened under. */
@@ -110,12 +111,23 @@ export class PluginNodeAdapter implements NodeExecutor {
    * path of a directory that has already been removed.
    */
   private ownWorkspace?: string;
+  /**
+   * Held by the adapter rather than made per execution, so the provider behind
+   * it outlives one visit to this node — a loop that comes back keeps whatever
+   * the provider was carrying.
+   */
+  private model: PluginModel;
 
   constructor(node: PluginNode, def: PluginNodeDef, deps: Dependencies) {
     this.node = node;
     this.deps = deps;
     this.impl = def.createExecutor(node, deps);
     this.declaredBranches = new Set(node.branches ?? []);
+    this.model = new PluginModel(
+      `${node.componentType} "${node.name}"`,
+      node,
+      deps,
+    );
   }
 
   branch(): string {
@@ -173,6 +185,7 @@ export class PluginNodeAdapter implements NodeExecutor {
       node: this.node,
       runTool: (name, toolInput) =>
         this.runTool(signal, name, toolInput, scope?.executor),
+      callModel: this.model.bind(signal),
       getWorkspace: () => this.workspace(scope),
       ...pluginReporter(this.deps.eventHandler, {
         nodeName: this.node.name,

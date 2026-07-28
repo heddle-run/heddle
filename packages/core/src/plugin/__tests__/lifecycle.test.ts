@@ -108,8 +108,7 @@ function execute(
   return host.call(
     'execute',
     { componentType, node: { name: 'p' }, input, workspace: scratch },
-    undefined,
-    onPartial,
+    { onPartial },
   );
 }
 

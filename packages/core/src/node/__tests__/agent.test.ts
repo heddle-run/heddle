@@ -13,7 +13,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // No credentials: the provider is stubbed, so the loop can be driven through
 // tool rounds without a model.
 const { chatCompletion } = vi.hoisted(() => ({ chatCompletion: vi.fn() }));
-vi.mock('../../llm/provider.js', () => ({
+// Partial: only `createProvider` needs a stand-in. `generationParams` reads the
+// spec and returns a plain object, so replacing it would be replacing the thing
+// under test in the cases below that set generation parameters.
+vi.mock('../../llm/provider.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../llm/provider.js')>()),
   createProvider: () => ({ chatCompletion }),
 }));
 

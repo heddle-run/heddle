@@ -23,7 +23,8 @@ const { chatCompletion, chatCompletionStream } = vi.hoisted(() => ({
  * present-but-unused method would not exercise the fallback at all.
  */
 let streaming = true;
-vi.mock('../../llm/provider.js', () => ({
+vi.mock('../../llm/provider.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../llm/provider.js')>()),
   createProvider: () =>
     streaming ? { chatCompletion, chatCompletionStream } : { chatCompletion },
 }));

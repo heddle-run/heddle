@@ -39,6 +39,11 @@ export interface PluginManifest {
    * Reverse calls the plugin intends to make back into the engine, such as
    * `runTool`. Omitted means none, and a plugin gets only what it names here —
    * a call it did not declare is refused whatever the engine is willing to do.
+   *
+   * `runTool`, `emitEvent` and `log` are granted here. `callModel` is not: this
+   * playground supplies the model credential, and a plugin's calls are opaque
+   * to the flow that made them, so there is no bound on what a submitted one
+   * could spend. A manifest asking for it is refused at load with that reason.
    */
   capabilities?: string[];
   components: Array<{

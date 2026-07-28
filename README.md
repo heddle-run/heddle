@@ -300,6 +300,27 @@ A transform returning `reject` is what makes guardrails work. In the `pre` phase
 heddle skips the model call entirely, so a blocked prompt costs nothing; the agent
 returns `transform_status: "rejected"`, which a builtin `BranchingNode` can route on.
 
+Nodes and transforms are both handed a `ctx` with the same five things:
+`runTool`, `callModel`, `emitEvent`, `log`, and — for a node — `getWorkspace`.
+
+`ctx.callModel({ messages })` is how a plugin thinks: an LLM judge, a semantic
+router, a summarizer. **The plugin does not choose the model.** heddle calls the
+`llm_config` written on the plugin's own component in the spec, exactly as it
+would an agent's — so the plugin ships no SDK, holds no credential, and cannot
+send a request anywhere the flow does not say it will go:
+
+```yaml
+- component_type: LlmJudge
+  name: judge
+  rubric: "Is the answer supported by the sources?"
+  llm_config:
+    component_type: OpenAiConfig
+    model_id: gpt-4o-mini
+```
+
+Anything a spec sets under `default_generation_parameters` — `temperature`,
+`max_tokens`, `top_p` — is sent with the request, for agents and `LlmNode`s too.
+
 See [examples/guardrails](examples/guardrails) for a worked example: a `Processor`
 transform used as both a pre- and post-processor on an agent.
 

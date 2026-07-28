@@ -14,9 +14,10 @@
  * their answers, which is the reason the manifest exists.
  */
 import type { PluginManifest, ManifestComponent } from './manifest.js';
-import type { PluginHost, ToolRunner } from './host.js';
+import type { PluginHost } from './host.js';
+import { toolRunner } from './services.js';
 import { checkSchema } from './schema.js';
-import { PluginError, RunError, ToolError } from '../errors.js';
+import { PluginError } from '../errors.js';
 import type { Dependencies } from '../node/types.js';
 import type {
   PluginComponent,
@@ -68,7 +69,9 @@ export function remoteNodeDef(
       const wire = serializable(node, `${entry.componentType} "${node.name}"`);
       // The compiled graph's dependencies are the first place a tool registry
       // exists, so this is where the plugin's `runTool` gets something to call.
-      host().setToolRunner(toolRunner(manifest.name, entry.componentType, node.name, deps));
+      host().setToolRunner(
+        toolRunner(nameOf(manifest.name, entry.componentType, node.name), deps),
+      );
 
       return {
         async execute(input, ctx): Promise<PluginResult> {
@@ -96,20 +99,22 @@ export function remoteNodeDef(
                 ? { workspaceUnavailable: 'confined' as const }
                 : { workspace: ctx.getWorkspace() }),
             },
-            ctx.signal,
-            undefined,
-            // The context heddle built for this node, handed over whole. What
-            // a remote plugin's `emitEvent` reaches is therefore the same
-            // object an in-process one calls directly — the namespace, the
-            // attribution and the name check come from one place, and the two
-            // paths cannot drift into publishing different events.
-            ctx,
-            // The same trade for tools, and the half that was missing. This
-            // node's `runTool` is bound to the tool scope heddle opened for
-            // this execution, so a tool the plugin runs sees the workspace the
-            // plugin was told about — and gets the run's signal, which the
-            // host-wide runner below drops.
-            ctx.runTool,
+            {
+              signal: ctx.signal,
+              // The context heddle built for this node, handed over piece by
+              // piece. What a remote plugin's `emitEvent`, `runTool` and
+              // `callModel` reach are therefore the very functions an
+              // in-process one calls directly — the namespace, the attribution,
+              // the tool scope and the model config all come from one place,
+              // and the two paths cannot drift into doing different things.
+              reporter: ctx,
+              // Bound to the tool scope heddle opened for this execution, so a
+              // tool the plugin runs sees the workspace the plugin was told
+              // about — and gets the run's signal, which the host-wide runner
+              // drops.
+              runTool: ctx.runTool,
+              callModel: ctx.callModel,
+            },
           );
           return asResult(manifest.name, entry.componentType, node.name, raw);
         },
@@ -149,7 +154,7 @@ export function remoteTransformDef(
       // case, and without this it reached a host with no runner and was told it
       // had no tool access.
       host().setToolRunner(
-        toolRunner(manifest.name, entry.componentType, component.name, deps),
+        toolRunner(nameOf(manifest.name, entry.componentType, component.name), deps),
       );
 
       return {
@@ -164,13 +169,20 @@ export function remoteTransformDef(
               phase: ctx.phase,
               messages,
             },
-            ctx.signal,
-            undefined,
-            // As a node's, and carrying the same attribution decision: a
-            // transform's events name the agent it hangs off, because the
-            // chain built this context knowing which agent that is and a
-            // transform holds no position in the graph of its own.
-            ctx,
+            {
+              signal: ctx.signal,
+              // As a node's, and carrying the same attribution decision: a
+              // transform's events name the agent it hangs off, because the
+              // chain built this context knowing which agent that is and a
+              // transform holds no position in the graph of its own.
+              reporter: ctx,
+              // A transform's own, which is scopeless — the same throwaway
+              // session per call it gets in process. Passed rather than left to
+              // the host's fallback so that what a transform may do stops
+              // depending on whether an unrelated node compiled first.
+              runTool: ctx.runTool,
+              callModel: ctx.callModel,
+            },
           );
           return asTransformResult(manifest.name, entry.componentType, raw);
         },
@@ -264,40 +276,14 @@ function typeOf(value: unknown): string {
 }
 
 /**
- * The `runTool` a plugin's reverse calls fall back to.
+ * How a component is named in an error raised on its behalf.
  *
- * Scopeless, and that is what makes it a fallback rather than the path. The
- * executor's own confinement still applies to each tool, but a tool started
- * here gets a throwaway sandbox session, so it shares a workspace with nothing
- * — including the node that asked for it. A node's own `runTool` therefore goes
- * through {@link PluginHost.call}'s `runTool` argument instead, and this serves
- * the two cases that have no scope to offer: a transform, which owns none, and
- * a plugin hand-rolling the protocol that sends no `call` id.
- *
- * One host serves every component of one plugin, and the host keeps the first
- * runner it is given. The runners differ only in the component they name in an
- * error, so which one wins does not change what a plugin may do.
+ * The plugin as well as the component, because out of process the plugin is the
+ * unit an operator installed, killed or sandboxed — and two plugins are free to
+ * provide the same `componentType`.
  */
-function toolRunner(
-  plugin: string,
-  componentType: string,
-  componentName: string,
-  deps: Dependencies,
-): ToolRunner {
-  return async (name, input) => {
-    const where = `plugin "${plugin}": ${componentType} "${componentName}"`;
-    const { toolRegistry, toolExecutor } = deps;
-
-    if (!toolRegistry || !toolExecutor) {
-      throw new RunError(`${where}: no tool registry configured`);
-    }
-    const tool = toolRegistry.lookup(name);
-    if (!tool) {
-      throw new ToolError(`${where}: tool "${name}" not found`);
-    }
-    const result = await toolExecutor.execute(undefined, tool.path, input);
-    return result.output;
-  };
+function nameOf(plugin: string, componentType: string, componentName: string): string {
+  return `plugin "${plugin}": ${componentType} "${componentName}"`;
 }
 
 export type { TransformPhase };

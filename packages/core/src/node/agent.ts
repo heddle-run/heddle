@@ -14,7 +14,7 @@ import type {
 import type { NodeExecutor, Dependencies } from './types.js';
 import type { EventHandler } from '../runner/events.js';
 import type { Executor } from '../tool/types.js';
-import { createProvider } from '../llm/provider.js';
+import { createProvider, generationParams } from '../llm/provider.js';
 import { TransformChain } from '../plugin/transform.js';
 import { RunError, ToolError } from '../errors.js';
 
@@ -27,6 +27,13 @@ export class AgentExecutor implements NodeExecutor {
   private model: string;
   private provider?: Provider;
   private transforms: TransformChain;
+  /**
+   * The spec's generation settings, read once. Here rather than per round
+   * because they cannot change between rounds, and because a spec that sets
+   * them wrongly should say so when the flow is compiled — beside the transform
+   * check below, which fails for the same reason.
+   */
+  private generation: ReturnType<typeof generationParams>;
 
   constructor(node: AgentNode, deps: Dependencies) {
     this.node = node;
@@ -39,6 +46,7 @@ export class AgentExecutor implements NodeExecutor {
       );
     }
     this.model = agent.llmConfig.modelId;
+    this.generation = generationParams(agent.llmConfig);
     // Built here so a misconfigured transform fails at compile time.
     this.transforms = TransformChain.build(
       agent.transforms,
@@ -139,6 +147,7 @@ export class AgentExecutor implements NodeExecutor {
           model: this.model,
           messages,
           tools: toolDefs.length > 0 ? toolDefs : undefined,
+          ...this.generation,
         },
         {
           nodeName: this.node.name,
