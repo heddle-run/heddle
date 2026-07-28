@@ -37,7 +37,7 @@ npm install -g @heddle/cli
 brew install spichen/tap/heddle
 
 # Docker — nothing to install
-docker run --rm heddlerun/heddle --help
+docker run --rm salahpichen/heddle --help
 ```
 
 ## Quick Start
@@ -88,8 +88,8 @@ Two images, `linux/amd64` and `linux/arm64`:
 
 | Image | Contains |
 |---|---|
-| [`heddlerun/heddle`](https://hub.docker.com/r/heddlerun/heddle) | the CLI |
-| [`heddlerun/heddle-server`](https://hub.docker.com/r/heddlerun/heddle-server) | the HTTP API |
+| [`salahpichen/heddle`](https://hub.docker.com/r/salahpichen/heddle) | the CLI |
+| [`salahpichen/heddle-server`](https://hub.docker.com/r/salahpichen/heddle-server) | the HTTP API |
 
 Both are also on GitHub Container Registry, as
 `ghcr.io/heddle-run/heddle` and `ghcr.io/heddle-run/heddle-server` — same
@@ -100,14 +100,14 @@ paths you would have typed anyway:
 
 ```bash
 docker run --rm -e OPENAI_API_KEY -v "$PWD:/work" \
-  heddlerun/heddle run flow.json --tools-dir tools --input '{"query": "hello"}'
+  salahpichen/heddle run flow.json --tools-dir tools --input '{"query": "hello"}'
 ```
 
 The examples ship in the image, so there is something to run before you have
 written anything:
 
 ```bash
-docker run --rm -e OPENAI_API_KEY heddlerun/heddle run \
+docker run --rm -e OPENAI_API_KEY salahpichen/heddle run \
   /opt/heddle/examples/research-assistant/flow.json \
   --tools-dir /opt/heddle/examples/research-assistant/tools \
   --input '{"query": "what is a heddle"}'

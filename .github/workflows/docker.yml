@@ -17,7 +17,11 @@ name: Publish images
 #
 #   DOCKERHUB_USERNAME    an account with push access to the namespace
 #   DOCKERHUB_TOKEN       an access token for it, not the password
-#   DOCKERHUB_NAMESPACE   variable, not secret. Defaults to heddlerun.
+#   DOCKERHUB_NAMESPACE   variable, not secret. Defaults to salahpichen — a
+#                         namespace on Docker Hub is an account name, and the
+#                         project has no account of its own there. Point this
+#                         at one the day it does; the GHCR half already
+#                         carries the project's name.
 
 on:
   push:
@@ -32,7 +36,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  NAMESPACE: ${{ vars.DOCKERHUB_NAMESPACE || 'heddlerun' }}
+  NAMESPACE: ${{ vars.DOCKERHUB_NAMESPACE || 'salahpichen' }}
 
 jobs:
   publish:

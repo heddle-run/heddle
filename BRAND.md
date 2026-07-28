@@ -13,9 +13,12 @@ to sit alongside it.
 - **Tagline:** Weave agents from spec.
 - **Package:** `@heddle/cli` · **Binary:** `heddle` · **Tap:** `spichen/tap/heddle`
 - **Server:** `@heddle/server` · **Binary:** `heddle-server`
-- **Images:** `heddlerun/heddle` · `heddlerun/heddle-server` — also
-  `ghcr.io/heddle-run/…`. The Docker Hub namespace loses the hyphen because an
-  account name there is alphanumeric; `heddle` itself was taken in 2019.
+- **Images:** `salahpichen/heddle` · `salahpichen/heddle-server` on Docker Hub,
+  `ghcr.io/heddle-run/…` on GHCR. A Docker Hub namespace is an account name,
+  and `heddle` there has belonged to someone else since 2019, so the Hub name
+  carries a maintainer's. Use it where a reader is about to type it; use the
+  GHCR name where the name is doing brand work, since it is the one that says
+  heddle.
 
 **The name.** A heddle is the part of a loom that lifts individual warp threads
 to form the shed — the opening the weft passes through. It decides, thread by

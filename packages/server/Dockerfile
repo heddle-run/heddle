@@ -19,7 +19,7 @@
 # packages/server/DEPLOYMENT.md, which are what bound a busy caller's effect on
 # the host.
 #
-# Published as heddlerun/heddle-server and ghcr.io/heddle-run/heddle-server by
+# Published as salahpichen/heddle-server and ghcr.io/heddle-run/heddle-server by
 # .github/workflows/docker.yml. Build from the repository root:
 #   docker build -f packages/server/Dockerfile -t heddle-server .
 
