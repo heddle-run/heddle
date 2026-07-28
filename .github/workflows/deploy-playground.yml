@@ -1,6 +1,9 @@
 name: Deploy Playground Engine
 
-# The broker and the container image behind heddle.run/playground.
+# The engine behind heddle.run/playground: packages/server, running under podman
+# with the gVisor runtime on an Oracle Cloud VM that a Cloudflare tunnel fronts.
+# The host has no inbound port open — cloudflared dials out — so this deploys
+# over SSH rather than to an endpoint.
 #
 # What this deploys executes code that its callers wrote. The tests below are
 # not a formality on the way to the deploy step — they are what checks that
@@ -8,12 +11,18 @@ name: Deploy Playground Engine
 # names cannot traverse out of it, and that a server without
 # --allow-request-code still refuses both. A deploy that skipped them could
 # quietly widen an unauthenticated remote-code-execution surface.
+#
+# Every runtime flag that confines the engine — gVisor, the tmpfs run dir, the
+# pids and memory caps, --safe — lives in the host's heddle-engine.service unit,
+# not here. See packages/server/DEPLOYMENT.md. This workflow only changes which
+# image `localhost/heddle-engine:latest` resolves to, so no deploy can quietly
+# alter how the engine is confined, and a rollback is a retag of an older digest
+# rather than an edit to a unit file.
 
 on:
   push:
     branches: [main]
     paths:
-      - "packages/broker/**"
       - "packages/server/**"
       - "packages/core/**"
       - "vendor/agentspec/**"
@@ -21,24 +30,37 @@ on:
       - ".github/workflows/deploy-playground.yml"
   workflow_dispatch:
 
-# One deploy at a time. Overlapping runs would race on the same worker and the
-# same container image tag; in-progress runs are left to finish rather than
-# cancelled, so a half-applied deploy is not a possible outcome.
+# One deploy at a time. Overlapping runs would race on the same host and the
+# same image tag; in-progress runs are left to finish rather than cancelled,
+# because the stop half of a restart drains for up to 100 seconds and a
+# cancelled deploy could leave the unit down.
 concurrency:
   group: deploy-playground
   cancel-in-progress: false
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    # aarch64, matching the host's VM.Standard.A1.Flex shape. Building on an x86
+    # runner would mean qemu — slow, and one bad --platform flag away from
+    # pushing an image the host cannot execute. Free for public repositories.
+    runs-on: ubuntu-24.04-arm
 
     # Declared so branch protection can require a manual approval before this
     # runs. Nothing here depends on the environment existing — if it is not
     # configured, the job proceeds as normal.
     environment: playground
 
+    # The drain on restart can take 100 seconds with runs in flight, and the
+    # image build is not fast. Well above both, still short of a hung SSH.
+    timeout-minutes: 30
+
     permissions:
       contents: read
+
+    env:
+      # OCIR_REGION is the host's own region, so the pull never leaves the
+      # datacentre and is not subject to a public registry's rate limits.
+      IMAGE: ${{ vars.OCIR_REGION }}.ocir.io/${{ vars.OCIR_NAMESPACE }}/heddle-engine
 
     steps:
       - uses: actions/checkout@v4
@@ -47,8 +69,6 @@ jobs:
       # source of truth. Setting both makes action-setup v4 fail.
       - uses: pnpm/action-setup@v4
 
-      # 22, not the 20 the test workflow uses: wrangler declares
-      # engines.node >=22 and refuses to start on anything older.
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -62,47 +82,127 @@ jobs:
       - name: Test
         run: pnpm test
 
-      # wrangler shells out to `docker build --load`, which needs BuildKit.
-      # ubuntu-latest ships the buildx plugin, but the default builder is not
-      # always a BuildKit one, so make it explicit rather than depend on the
-      # image's defaults.
+      - name: Log in to OCIR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ vars.OCIR_REGION }}.ocir.io
+          # <namespace>/<user>, or <namespace>/<domain>/<user> on a tenancy with
+          # identity domains. The password is an OCI auth token, never the
+          # console password.
+          username: ${{ secrets.OCIR_USERNAME }}
+          password: ${{ secrets.OCIR_TOKEN }}
+
       - uses: docker/setup-buildx-action@v3
 
-      # Invoked directly rather than through cloudflare/wrangler-action, which
-      # installs a wrangler of its own choosing — 3.90.0 at time of writing.
-      # That version predates both jsonc config and Containers, so it never
-      # reads wrangler.jsonc and fails with "Missing entry-point" before it
-      # gets anywhere near the image. This runs the version pinned in the
-      # lockfile, which is the one the config was written against.
-      #
-      # Worker secrets are set once with `wrangler secret put`, not here: they
-      # outlive a deploy, and routing the model credential through this
-      # workflow's environment would gain nothing.
-      - name: Deploy broker and engine image
-        working-directory: packages/broker
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: pnpm exec wrangler deploy
+      # Tagged by commit, not `latest`. The host resolves a digest it was told,
+      # so a deploy is reproducible and the previous one is still addressable
+      # when it needs to be put back.
+      - name: Build and push the engine image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: packages/server/Dockerfile
+          platforms: linux/arm64
+          push: true
+          tags: ${{ env.IMAGE }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-      - name: Verify the deployment answers
+      # No registry credential crosses this boundary. The host holds its own
+      # pull token in root's containers auth file, the same way it holds the
+      # model key in /etc/heddle/llm.env — a token passed through `ssh` would
+      # sit in the remote process's argv, readable by anything that got as far
+      # as running `ps` on a box whose whole design assumes callers are hostile.
+      - name: Roll the engine on the host
+        env:
+          SSH_KEY: ${{ secrets.PLAYGROUND_SSH_KEY }}
+          # A secret, not a variable: this repository is public, and Cloudflare
+          # proxies the origin precisely so its address is not published.
+          SSH_HOST: ${{ secrets.PLAYGROUND_SSH_HOST }}
+          KNOWN_HOSTS: ${{ secrets.PLAYGROUND_SSH_KNOWN_HOSTS }}
+          IMAGE_REF: ${{ env.IMAGE }}:${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy
+          chmod 600 ~/.ssh/deploy
+          # Pinned, not scanned. `ssh-keyscan` at deploy time would accept
+          # whatever answers on the address, which is the attack the host key
+          # exists to detect.
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+          ssh -i ~/.ssh/deploy -o BatchMode=yes -o ConnectTimeout=15 \
+            "opc@$SSH_HOST" "IMAGE_REF='$IMAGE_REF' bash -euo pipefail -s" <<'REMOTE'
+          # The unit is a system unit with no User=, so it runs as root and
+          # resolves images out of root's storage. Pulling as opc would land the
+          # image in rootless storage the unit never reads, and the restart
+          # would silently bring back the old one.
+          sudo podman pull "$IMAGE_REF"
+
+          # Retagging is the whole deploy. The unit still says
+          # `localhost/heddle-engine:latest`, so the flags it was reviewed with
+          # are the flags that run.
+          sudo podman tag "$IMAGE_REF" localhost/heddle-engine:latest
+
+          # Blocks while ExecStop drains for up to 100s so runs in flight
+          # finish. TimeoutStopSec=120 is the ceiling.
+          sudo systemctl restart heddle-engine
+
+          # That the unit is active says systemd started podman, not that the
+          # engine is answering. Readiness is the switch that goes 503 while
+          # draining, so it is the one worth waiting on.
+          for i in $(seq 1 60); do
+            if curl -fsS --max-time 5 http://127.0.0.1:4319/readyz >/dev/null 2>&1; then
+              echo "engine ready after ${i}s"
+              break
+            fi
+            if [ "$i" = 60 ]; then
+              echo "engine did not become ready within 60s"
+              sudo systemctl status heddle-engine --no-pager | head -20
+              sudo journalctl -u heddle-engine -n 50 --no-pager
+              exit 1
+            fi
+            sleep 1
+          done
+
+          # Proves the restart actually picked up what was just pushed. Without
+          # this a failed pull that left the old image in place, or a restart
+          # that raced, would read as a green deploy.
+          running=$(sudo podman inspect heddle-engine --format '{{.Image}}')
+          wanted=$(sudo podman image inspect "$IMAGE_REF" --format '{{.Id}}')
+          if [ "$running" != "$wanted" ]; then
+            echo "::error::engine is running $running, expected $wanted"
+            exit 1
+          fi
+          echo "engine running $wanted"
+
+          # Each deploy leaves the previous image untagged. Dangling only, so
+          # the tagged image the unit resolves is never a candidate.
+          sudo podman image prune -f >/dev/null
+          REMOTE
+
+      # The step above proved the engine answers on the host's loopback. This
+      # proves the path in front of it — the tunnel, and Cloudflare — is still
+      # carrying traffic to the thing that was just deployed.
+      - name: Verify the deployment answers through the tunnel
         env:
           BROKER_URL: ${{ vars.HEDDLE_API_URL }}
         run: |
+          set -euo pipefail
+
           if [ -z "$BROKER_URL" ]; then
             echo "HEDDLE_API_URL is not set; skipping the post-deploy check."
-            echo "Set it to the deployed worker's URL so this step can run."
+            echo "Set it to the engine's public URL so this step can run."
             exit 0
           fi
 
-          # Only /healthz, which touches no container. A capabilities or run
-          # probe would start one on every deploy, and a smoke test should not
-          # be the thing that decides whether the engine is warm.
           echo "checking $BROKER_URL/healthz"
           status=$(curl -sS -o /tmp/health -w '%{http_code}' --max-time 30 "$BROKER_URL/healthz" || echo 000)
           cat /tmp/health || true
           echo
           if [ "$status" != "200" ]; then
-            echo "::error::broker returned $status from /healthz"
+            echo "::error::engine returned $status from /healthz"
             exit 1
           fi

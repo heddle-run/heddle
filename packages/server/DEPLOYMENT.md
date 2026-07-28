@@ -166,6 +166,65 @@ gVisor needs `--security-opt label=disable` where SELinux is enforcing, and
 | `--cors-origin` | your site | Exact origin. Constrains browsers only. |
 | `--drain-timeout` | `≥ --timeout` | So a run near its budget survives a rolling restart. |
 
+## Deploying from CI
+
+`.github/workflows/deploy-playground.yml` builds the image and rolls the host on
+pushes to `main` that touch the engine. It deploys by SSH, because the host runs
+`cloudflared` and has no inbound port open.
+
+The division of responsibility is the part worth keeping: **the systemd unit owns
+every flag in this document, and CI owns only which image `heddle-engine:latest`
+resolves to.** A deploy pulls a commit-tagged image, retags it, and restarts the
+unit. It cannot widen a memory cap or drop `--safe`, and a rollback is
+
+```bash
+sudo podman pull <registry>/heddle-engine:<older-sha>
+sudo podman tag  <registry>/heddle-engine:<older-sha> localhost/heddle-engine:latest
+sudo systemctl restart heddle-engine
+```
+
+The workflow verifies the running container's image ID against what it pushed,
+so a failed pull that leaves the old image in place fails the deploy instead of
+reading as a green one.
+
+### One-time host setup
+
+The host holds its own pull credential, the same way it already holds the model
+key in `/etc/heddle/llm.env`. A registry token passed over `ssh` would sit in the
+remote process's argv, readable by anything that got as far as running `ps` — on
+a box whose whole design assumes callers are hostile.
+
+```bash
+# On the host, as root. Username is <namespace>/<user>, or
+# <namespace>/<domain>/<user> with identity domains. The password is an OCI
+# auth token, not the console password.
+sudo podman login <region>.ocir.io
+```
+
+Then add a deploy key for CI — its own keypair, not a person's:
+
+```bash
+# On the host
+sudo -u opc tee -a ~opc/.ssh/authorized_keys < deploy-key.pub
+```
+
+The build runs on an `aarch64` runner to match the host's Ampere shape. An x86
+runner would need qemu, and one wrong `--platform` produces an image the host
+cannot execute.
+
+### Repository configuration
+
+| | Name | What |
+|---|---|---|
+| Variable | `OCIR_REGION` | e.g. `us-sanjose-1` — the host's own region, so pulls stay in the datacentre |
+| Variable | `OCIR_NAMESPACE` | the tenancy's object storage namespace (`oci os ns get`) |
+| Variable | `HEDDLE_API_URL` | the engine's public URL, for the post-deploy check |
+| Secret | `OCIR_USERNAME` | `<namespace>/<user>` |
+| Secret | `OCIR_TOKEN` | an OCI auth token |
+| Secret | `PLAYGROUND_SSH_KEY` | the deploy key's private half |
+| Secret | `PLAYGROUND_SSH_HOST` | the host's address — a secret, not a variable, because this repository is public and Cloudflare proxies the origin precisely so its address is not published |
+| Secret | `PLAYGROUND_SSH_KNOWN_HOSTS` | the host's public keys, pinned. `ssh-keyscan` at deploy time would accept whatever answers on the address, which is the attack a host key exists to detect |
+
 ## What this still does not give you
 
 - **No authentication.** Terminate it in front — the engine has none by design.

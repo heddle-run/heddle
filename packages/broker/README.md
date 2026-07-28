@@ -106,9 +106,13 @@ Then set `PROXY_HOST` / `PROXY_URL` to the real hostname, redeploy, and set the
 `HEDDLE_API_URL` repository variable so the Pages build points the playground
 at it.
 
-CI does the same on pushes to `main` that touch the engine or the broker — see
-`.github/workflows/deploy-playground.yml`. It needs `CLOUDFLARE_API_TOKEN` and
-`CLOUDFLARE_ACCOUNT_ID` as repository secrets.
+**CI does not deploy this.** `.github/workflows/deploy-playground.yml` deploys
+the engine to the Oracle Cloud host that currently serves `engine.heddle.run` —
+see [`../server/DEPLOYMENT.md`](../server/DEPLOYMENT.md). This broker has never
+been published; the playground reaches the engine through a Cloudflare tunnel
+instead, with no authentication and no rate limiting in front of it. Until that
+changes, everything below the diagram above describes a design, not a
+deployment.
 
 ## Local development
 
