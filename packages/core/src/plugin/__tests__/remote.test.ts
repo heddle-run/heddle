@@ -442,14 +442,18 @@ describe('reverse calls', () => {
     // that has them, run on one that does not, has to be able to tell that from
     // the error — "unknown method" alone does not distinguish a typo from a
     // version skew.
+    //
+    // The verb named here has to be one heddle does *not* serve, so it changes
+    // as the roadmap lands: this used to be `callModel`, which Phase 4 made
+    // real. `getState` is the next proposal in the design doc's §7.2 list.
     const entry = writePlugin(
       'wrongverb',
-      `try { await callHost('callModel', { prompt: 'hi' }); return { output: { err: 'none' } }; }
+      `try { await callHost('getState', { key: 'x' }); return { output: { err: 'none' } }; }
        catch (e) { return { output: { err: e.message } }; }`,
     );
 
     const state = await runWith('WrongVerbNode', entry, manifest('WrongVerbNode'));
-    expect(String(state.err)).toMatch(/does not serve "callModel"/);
+    expect(String(state.err)).toMatch(/does not serve "getState"/);
     expect(String(state.err)).toMatch(/It serves: runTool/);
   });
 
@@ -1148,7 +1152,7 @@ describe('aborting a run that is inside a plugin call', () => {
           input: {},
           workspace: scratch,
         },
-        AbortSignal.abort(),
+        { signal: AbortSignal.abort() },
       ),
     ).rejects.toThrow(/the run was already over/);
   });

@@ -42,6 +42,17 @@ export interface RemotePluginOptions {
    * how. Widening is a decision someone makes, and it looks like one here.
    */
   capabilities?: PluginCapability[];
+  /**
+   * Why a capability was withheld, in the words of whoever withheld it.
+   *
+   * A grant list says what is allowed; only its author knows why. "This host
+   * does not grant callModel" sends a plugin author to re-read their manifest,
+   * which is correct and useless when the real answer is that the server
+   * supplies a model credential and will not let submitted code spend it. Core
+   * has no business knowing that sentence, so the operator supplies it here and
+   * {@link checkGrant} appends it to the refusal.
+   */
+  refusedBecause?: Partial<Record<PluginCapability, string>>;
 }
 
 /** A loaded out-of-process plugin, and the process behind it. */
@@ -97,7 +108,7 @@ export function loadRemotePlugin(
   options: RemotePluginOptions = {},
 ): RemotePlugin {
   const manifest = validateManifest(rawManifest);
-  checkGrant(manifest, options.capabilities ?? []);
+  checkGrant(manifest, options.capabilities ?? [], options.refusedBecause ?? {});
   const entry = isAbsolute(entryPath) ? entryPath : resolve(process.cwd(), entryPath);
 
   const command = manifest.command
@@ -164,10 +175,21 @@ export function loadRemotePlugin(
  * does. It also leaves nowhere to report the mismatch except the middle of
  * someone's run.
  */
-function checkGrant(manifest: PluginManifest, granted: PluginCapability[]): void {
+function checkGrant(
+  manifest: PluginManifest,
+  granted: PluginCapability[],
+  reasons: Partial<Record<PluginCapability, string>>,
+): void {
   const allowed = new Set(granted);
   const refused = manifest.capabilities.filter((capability) => !allowed.has(capability));
   if (refused.length === 0) return;
+
+  // Only for the capabilities actually refused, and only where the host said
+  // something. A plugin asking for three and being told why one of them is out
+  // is more use than a paragraph of policy about verbs it never mentioned.
+  const why = refused
+    .map((capability) => reasons[capability])
+    .filter((reason): reason is string => reason !== undefined);
 
   throw new PluginError(
     `plugin "${manifest.name}" requests ${refused.map((c) => `"${c}"`).join(', ')}, ` +
@@ -175,7 +197,7 @@ function checkGrant(manifest: PluginManifest, granted: PluginCapability[]): void
       `${granted.length > 0 ? granted.join(', ') : 'nothing'}. ` +
       `A capability is the operator's to give, so the plugin cannot obtain it by ` +
       `asking differently — drop it from the manifest, or run the plugin somewhere ` +
-      `it is granted.`,
+      `it is granted.${why.length > 0 ? `\n\n${why.join('\n\n')}` : ''}`,
   );
 }
 

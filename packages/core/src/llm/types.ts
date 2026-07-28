@@ -26,12 +26,52 @@ export interface ToolDefinition {
   parameters: JsonSchema;
 }
 
-/** ChatRequest is a request to the LLM. */
+/**
+ * How a caller wants the answer shaped.
+ *
+ * Two values rather than OpenAI's `response_format` object, because this
+ * interface is the one every future provider implements and JSON mode is the
+ * one thing they all have — reached three different ways. OpenAI takes
+ * `{ type: 'json_object' }`, Ollama takes `format: 'json'`, and Anthropic has
+ * no field at all and does it with a tool. Encoding one vendor's shape here
+ * would make the other two translate *out* of a structure they do not have.
+ *
+ * Same rule as {@link ChatChunk}: this type says only what all of them can say.
+ */
+export type ResponseFormat = 'text' | 'json';
+
+/**
+ * ChatRequest is a request to the LLM.
+ *
+ * The generation parameters are spelled as the Agent Spec SDK spells them
+ * (`LlmGenerationConfig` is `{ maxTokens, temperature, topP }`), so a spec's
+ * `default_generation_parameters` maps onto them without a rename and the
+ * translation to a vendor's own spelling happens once, in that vendor's
+ * adapter. Every one is optional and an absent one is not sent at all — a
+ * `temperature: 0` a caller did not ask for is a different request from the one
+ * they wrote.
+ */
 export interface ChatRequest {
   model: string;
   messages: Message[];
   tools?: ToolDefinition[];
+  temperature?: number;
+  maxTokens?: number;
+  topP?: number;
+  responseFormat?: ResponseFormat;
 }
+
+/**
+ * A model call made by someone who does not choose the model.
+ *
+ * `model` is the one field a plugin cannot set, and the omission is the whole
+ * statement: which model answers, at which endpoint, on whose credential, is
+ * settled by the spec the caller submitted — a plugin composes the *request*,
+ * never its destination. Everything else about the call is a plugin's to
+ * decide, and deriving this from {@link ChatRequest} rather than restating it
+ * is what keeps that true of fields added later.
+ */
+export type ModelRequest = Omit<ChatRequest, 'model'>;
 
 /** ChatResponse is a response from the LLM. */
 export interface ChatResponse {

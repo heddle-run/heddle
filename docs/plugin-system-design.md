@@ -8,9 +8,9 @@ which is the only anchor that survives a phase landing. That rule is enforced, n
 `plugin/__tests__/design-doc-citations.test.ts` fails on a `file:line` citation into any of them.
 
 > **Status.** This document was written against the tree *before* Phase 0, and lands in the same
-> commit as the work it describes. Phases 0, 1, 2, 3 and V tier 1 are done; §9 marks what remains
+> commit as the work it describes. Phases 0, 1, 2, 3, 4 and V tier 1 are done; §9 marks what remains
 > inside each. The surveys in §3 and the "today" snippets in §7 have been brought forward to match, so
-> a passage in the present tense describes the tree as it now is. Everything from Phase 4 onward is
+> a passage in the present tense describes the tree as it now is. Everything from Phase 5 onward is
 > still a proposal — and where a phase landed differently from what §7 proposed, the proposal has
 > been replaced by what was built, not annotated alongside it.
 
@@ -403,17 +403,19 @@ protocol only widens on one of them at a time.
 | Axis | Type | Today | What widening buys |
 |---|---|---|---|
 | What a plugin can **be** | `HostMethod` — heddle calls the plugin | `execute`, `apply` | New kinds. Each new kind needs a verb, a dispatch arm, an engine call site, and (usually) a placeholder. |
-| What a plugin can **do** | `PluginMethod` — the plugin calls heddle | `runTool`, `emitEvent`, `log` | New *abilities* for kinds that already exist. A node that can `callModel` is a new class of node with no new kind, no placeholder, and no SDK involvement. |
+| What a plugin can **do** | `PluginMethod` — the plugin calls heddle | `runTool`, `emitEvent`, `log`, `callModel` | New *abilities* for kinds that already exist. A node that can `callModel` is a new class of node with no new kind, no placeholder, and no SDK involvement — which is exactly how Phase 4 landed. |
 
-The second axis is dramatically cheaper and is currently at three methods. A plugin node **cannot
-call a model and cannot read run-scoped state**; those two are what is left of the ceiling. Emitting,
-logging and the workspace handle all landed in Phase 3 — `PluginContext` (`plugin/types.ts`,
-`PluginContext`) is now `{ signal, node, runTool, getWorkspace, emitEvent, log }`, built at
-`plugin/executor.ts`'s `runNode`. So a plugin can compute, run a tool, report on itself, and write a
-file its tools can read; what it still cannot do is think. No number of manifest kinds relieves that,
-and `callModel` (§7.6, Phase 4) is the single change that does.
+The second axis is dramatically cheaper and is now at four methods. What a plugin still **cannot** do
+is read run-scoped state, and that is all that is left of this ceiling. The rest landed: emitting,
+logging and the workspace handle in Phase 3, and thinking in Phase 4. `PluginServices`
+(`plugin/types.ts`, `PluginServices`) is `{ signal, runTool, callModel, emitEvent, log }` and is
+shared by both context types, with `PluginContext` adding `node` and `getWorkspace` on top of it —
+built at `plugin/executor.ts`'s `runNode` for a node and at `plugin/transform.ts`'s `apply` for a
+transform. So a plugin can compute, run a tool, ask a model, report on itself, and write a file its
+tools can read. The prediction in the row above held exactly: `callModel` cost one entry in
+`PluginMethods`, one arm in `serve`, and no manifest kind, no placeholder and no SDK change at all.
 
-There is a second-order trap here, and it has been narrowed twice rather than removed.
+There is a second-order trap here, and it has been narrowed three times rather than removed.
 `PluginHost.setToolRunner` (`plugin/host.ts`, `setToolRunner`) is first-writer-wins and is called
 from both `createExecutor` and `createTransform` (`plugin/remote.ts`). Phase 0 added the second call:
 before it, a transform's `runTool` worked or failed depending on whether an unrelated plugin node
@@ -423,10 +425,20 @@ capability model meaningless.
 Phase 3 narrowed it again, for a different reason. A node's `runTool` no longer goes through that
 host-wide runner at all: `PluginHost.call` takes the node's own scoped runner and `serveRunTool`
 looks it up from the `call` id the frame names, so a node's tools run in the tool scope whose
-workspace the node was handed. What is left on `setToolRunner` is the fallback — a transform, which
-owns no scope, and a hand-rolled plugin that sends no `call`. The first-writer-wins comment justifies
-itself because every executor in one compile shares the same registry, which is true today and false
-the moment per-node registries or per-node policy exist.
+workspace the node was handed. What was left on `setToolRunner` was the fallback for a transform,
+which owns no scope, and for a hand-rolled plugin that sends no `call`.
+
+Phase 4 took the transform off that list too: a transform now passes its own runner through
+`CallOptions.runTool` like a node does, built by `toolRunner` (`plugin/services.ts`) — the same one
+its in-process twin gets. So the host-wide runner serves exactly one case now, a plugin hand-rolling
+the protocol without a `call` id, and `setToolRunner`'s first-writer-wins is no longer load-bearing
+for anything heddle itself emits. It still justifies itself on every executor in one compile sharing
+the same registry, which is true today and false the moment per-node registries or per-node policy
+exist — but the blast radius of that assumption is now one legacy shape rather than every transform.
+
+`callModel` was built to have no equivalent. `Pending.modelCaller` has no host-wide fallback at all,
+because a model config belongs to a component and "whichever one heddle happens to have" would be a
+request sent somewhere the flow's author did not ask for.
 
 ---
 
@@ -548,8 +560,8 @@ a handful of call sites; **L** = touches the protocol, the event system, or the 
 | 22 | Graph rewrite | `graph/compile.ts:70` | wrap every `AgentNode` in a guardrail; insert checkpoints. The generic escape hatch | middleware | M |
 | 23 | Graph validation | `graph/validate.ts:5-56` | org policy rules; warnings that don't block | component | S |
 | 24 | Event emission | `runner/events.ts`, `EventHandler`, 9 emit sites | any two-way hook at all — a plugin that *observes* or intercepts the engine's events (Phase 6). ~~`EventType` is closed so a plugin cannot even emit~~ **emission landed, Phase 3**: `EventType = BuiltinEventType \| PluginEventType` (`runner/events.ts`), `pluginReporter` (`plugin/executor.ts`), the `emitEvent`/`log` verbs (`plugin/protocol.ts`'s `PluginMethods`, served in `plugin/host.ts`'s `serve`) | protocol | M |
-| 25 | Plugin context | `plugin/types.ts`, `PluginContext`; built at `plugin/executor.ts`'s `runNode` | ~~`emitEvent`, workspace handle~~ **landed, Phase 3** (`emitEvent`, `log`, `getWorkspace`); still wanted: `callModel` (Phase 4) and run-scoped state | protocol | S |
-| 26 | Generation params | `spec/types.ts:24` unread; `ChatRequest` (`llm/types.ts:30-34`) | temperature, max_tokens, JSON mode, seed. **No spec can set any of these today** | data widening | S |
+| 25 | Plugin context | `plugin/types.ts`, `PluginServices`; built at `plugin/executor.ts`'s `runNode` and `plugin/transform.ts`'s `apply` | ~~`emitEvent`, workspace handle~~ **landed, Phase 3**; ~~`callModel`~~ **landed, Phase 4**, on both context types. Still wanted: run-scoped state | protocol | S |
+| 26 | Generation params | ~~`spec/types.ts:24` unread~~ **landed, Phase 4**: `generationParams` (`llm/provider.ts`) reads `defaultGenerationParameters` into `ChatRequest` (`llm/types.ts`), read by `AgentExecutor` and `LLMExecutor` | temperature, maxTokens, topP, JSON mode. Still absent: seed, stop | data widening | S |
 | 27 | Streaming | ~~absent from `Provider`~~ **landed, Phase 2**: `chatCompletionStream?` (`llm/types.ts`), `llm/openai.ts`, `token_delta` (`runner/events.ts`) | token-by-token rendering | protocol | L |
 | 28 | Sandbox backend | `sandbox/index.ts:7,50-68` | Docker/gVisor for the playground; a recording no-op for CI | component | S |
 | 29 | Sandbox policy | global at startup (`server/runs.ts:74-77`) | "fetch needs network, file-writer must not" — unexpressible | middleware | M |
@@ -563,11 +575,12 @@ a handful of call sites; **L** = touches the protocol, the event system, or the 
 1. **#4 node error** (`runner.ts:63-73`) — largest capability gap in the engine (heddle cannot
    recover from *any* failure), smallest diff, and it is the cleanest place to prove the middleware
    verdict vocabulary.
-2. **#25 plugin context** (`plugin/types.ts`, `PluginContext`) — the reporting and workspace half
-   landed in Phase 3. What is left is `callModel`, which alone unlocks LLM-as-judge nodes, semantic
-   routers and summarizers without each plugin shipping its own SDK *and its own credential*.
-3. **#1+#2 providers** (`llm/provider.ts:141`) — best leverage/cost ratio in the codebase; the
-   interface is already one method. Needs #26 first or a provider plugin receives nothing to act on.
+2. ~~**#25 plugin context**~~ **done.** The reporting and workspace half landed in Phase 3, and
+   `callModel` in Phase 4 — so LLM-as-judge nodes, semantic routers and summarizers are writable
+   today, and none of them ships an SDK or holds a credential.
+3. **#1+#2 providers** (`llm/provider.ts`, `createProvider`) — best leverage/cost ratio in the
+   codebase; the interface is already one method. #26 was its precondition and landed with Phase 4,
+   so a provider plugin now receives a request worth differing on.
 4. **#5 tool call** (`agent.ts:190-249`) — this is the mechanism `Agent.humanInTheLoop`
    (`spec/types.ts:46`) promises and nothing implements. Grep confirms the field is read nowhere.
 5. **#11 tool registry** (`tool/types.ts`, `Registry`) — two methods, and the demand is already proven:
@@ -749,25 +762,25 @@ alive. And the emitted runtime deliberately offers a plugin author **no way to s
 plugin's `execute` or `apply` — a frame whose only consumer would be `undefined` is not a progress
 channel. **Middleware progress in Phase 6 is therefore `emitEvent`, not a partial channel.**
 
-### 7.2 The widened `PluginMethod` set — **partly landed, Phase 3**
+### 7.2 The widened `PluginMethod` set — **mostly landed, Phases 3 and 4**
 
-This is the cheap axis, and the one that changes what people can build. `emitEvent` and `log` landed;
-`callModel` and `getState` are still proposals. `getWorkspace` landed as something other than a verb,
-which is recorded below the table.
+This is the cheap axis, and the one that changes what people can build. `emitEvent`, `log` and
+`callModel` landed; only `getState` is still a proposal. `getWorkspace` landed as something other
+than a verb, which is recorded below the table.
 
 ```ts
 export type PluginMethod =
   | 'runTool'      // exists
   | 'emitEvent'    // landed, Phase 3
   | 'log'          // landed, Phase 3
-  | 'callModel'    // §7.6
+  | 'callModel'    // landed, Phase 4
   | 'getState'     // read the run's accumulated State
   | 'callPlugin';  // deliberately NOT proposed — see Open questions
 ```
 
 | Method | Rationale | Serving code |
 |---|---|---|
-| `callModel` | The single highest-value addition. Without it, an LLM-as-judge node, a semantic router or a summarizer must ship its own SDK *and* obtain its own credential — and a submitted plugin has an empty environment (`PluginHost.resolveCommand`), so it cannot. The engine already holds a `Provider`. | New arm in `PluginHost.serve` (`host.ts`, `serve`), backed by a `ModelRunner` installed the way `setToolRunner` is (`host.ts`'s `setToolRunner`) — but per-node, not first-writer-wins. |
+| `callModel` | **Landed.** The single highest-value addition. Without it, an LLM-as-judge node, a semantic router or a summarizer must ship its own SDK *and* obtain its own credential — and a submitted plugin has an empty environment (`PluginHost.resolveCommand`), so it cannot. | `PluginModel` (`plugin/services.ts`), bound per execution and served in `plugin/host.ts`'s `serveCallModel` against the caller the call was dispatched with — per component, and with no host-wide fallback at all. See below for why. |
 | `emitEvent` | **Landed.** A plugin node was silent between `node_start` and `node_complete` (`runner.ts:47,77`). Required opening `EventType` (`runner/events.ts`) to a namespaced string plus a `data?: unknown` payload, which is what `PluginEventType` is. | `pluginReporter` (`plugin/executor.ts`), served in `plugin/host.ts`'s `serveEmitEvent` against the reporter the call was dispatched with. |
 | `log` | **Landed.** `console.log` is silently redirected to stderr (the generated runtime's `console` shim, `plugin/runtime-source.ts`) and stderr is bounded to 4096 bytes and only surfaced on failure (`host.ts`'s `STDERR_LIMIT`). There was no way for a working plugin to say anything. | Same reporter as `emitEvent`, published as `plugin_log` carrying `level` and `message`. |
 | `getState` | `execute` receives only the node's resolved input (`plugin/remote.ts`, `remoteNodeDef`), which after `resolveInputs` is *usually* the whole state (`runner.ts:112-114`) but is not guaranteed to be. Explicit beats incidental. | Requires the Runner to hand `currentState` to `Dependencies` per node — a real change, and the weakest item on this list. |
@@ -794,7 +807,45 @@ into heddle".
 That also keeps §7.3's invariant intact: `PluginCapability = PluginMethod` is what makes the grantable
 set derivable rather than maintained, and it holds only while every member is a verb.
 
-### 7.3 The capability model — and why it must land first
+**Which model a `callModel` reaches — the one decision Phase 4 had to get right.** This draft assumed
+the plugin would be handed the *run's* provider. It is handed the **component's**: `PluginModel`
+(`plugin/services.ts`) reads the `llm_config` on the plugin's own component in the spec — the same
+field an `Agent` and an `LlmNode` carry, deserialized by the same SDK path, camelCased into
+`llmConfig` with no extra plumbing. Four things follow, and the fourth is why the alternatives lose:
+
+- **A submitted document is readable as a statement of where a run sends things.** A plugin that
+  named its own endpoint would make that unknowable, which is the property `provider.ts`'s
+  `applyDefaultCredential` exists to protect and would have been undone from a direction it cannot
+  see.
+- **There is no fallback, deliberately.** A component with no `llm_config` fails at the call naming
+  the field. Borrowing the operator's default endpoint would let a plugin spend a credential nothing
+  in the flow asked it to spend.
+- **`createProvider` is the one door.** A plugin's call is built by the same function an agent's is,
+  with the same `allowEnvRefs`/`defaultKey`/`defaultUrl` from `Dependencies` — so `$VAR` refusal
+  under `--allow-request-code` and the operator-credential rule apply to it unchanged, rather than
+  being restated somewhere they could drift.
+- **"The run's provider" is not a thing that exists.** A flow has zero or many agents with different
+  configs, and one plugin process serves every component of that plugin — a judge node and a
+  summarizer transform, on two different models. That is why `Pending.modelCaller` has no host-wide
+  fallback where `Pending.toolRunner` does: a tool registry is one thing for the whole flow, so a
+  scopeless runner is a worse answer but *an* answer. There is no host-wide model that would be
+  merely worse.
+
+**Buffered, never streamed.** `Provider.chatCompletionStream` exists and `completeChat` would use it.
+It is not used here because heddle cannot tell a plugin's model call from its scratch work — the
+judge in §7.8(b) asks for `{"score":…}`, parses it and returns a number — so publishing those tokens
+would put a plugin's private reasoning into the same `token_delta` a client renders as the run's
+answer. A plugin that wants to be watched has `emitEvent`, which is namespaced and cannot be mistaken
+for one of heddle's own. This is the same argument as the `post`-transform veto in `completeChat`,
+reached from the other side.
+
+**The clock had to change with it.** A per-call timeout is a *silence* budget, and a plugin blocked
+on `callModel` is not silent — it is waiting on heddle, which knows exactly how long it has kept it
+waiting. Without a hold, the server's 30-second `--plugin-call-timeout` is really a 30-second ceiling
+on *heddle's own* model call, and a 45-second answer kills a plugin that did nothing wrong while
+reporting that it never answered. `Pending.serving` (`plugin/host.ts`) suspends the timer for exactly
+as long as heddle is inside a reverse call, nests, and is released in a `finally`. `runTool` takes
+one too: it had the same latent hazard and only ever paid it against slow tools.
 
 **Manifest declaration.**
 
@@ -872,18 +923,31 @@ The operator's key is attached only when the spec brought no credential *and* na
 `api_key` would have the operator's key posted to that host.
 
 Now add `callModel` with no gate. The plugin never sees the key — the host holds it — but it
-**spends** it, without limit, on a provider built with `defaultKey` at `provider.ts:111`. And unlike
-a spec's `llm_config`, the plugin's calls are not visible anywhere in the document the caller
-submitted: `execute` is opaque by construction (`plugin/remote.ts`, `remoteNodeDef`). That reopens the
-operator-credential exposure `applyDefaultCredential` closed, through a door the function cannot
-see. The same argument applied to `runTool`, which is why the gate in `serve()` was load-bearing and
-had to survive being generalized — it started life as an accidental side effect of only one method
-existing, and is now the deliberate two-stage check above.
+**spends** it, on a provider built with `defaultKey` at `provider.ts`'s `applyDefaultCredential`. The
+same argument applied to `runTool`, which is why the gate in `serve()` was load-bearing and had to
+survive being generalized — it started life as an accidental side effect of only one method existing,
+and is now the deliberate two-stage check above.
 
-Server default, given that `--allow-request-code` already refuses `$VAR` dereference for submitted
-specs: `callModel` is **denied by default whenever a default credential is configured**, and the
-denial message says so, because a caller whose plugin silently ran unauthenticated would have no
-idea why — the same reasoning as `provider.ts:88-90`.
+This draft said the exposure was that a plugin's calls are *invisible*. Phase 4 sharpened that and
+the sharper version is the one that stands. Because a `callModel` goes to the component's own
+`llm_config` (§7.2), the endpoint and the model **are** in the submitted document. What is not in it
+is the **volume**: `execute` is opaque by construction (`plugin/remote.ts`, `remoteNodeDef`), so a
+plugin is free to make a thousand calls inside one node while the flow shows one, and nothing in the
+engine bounds that — `MAX_TOOL_ROUNDS` bounds an agent's loop and has no equivalent here.
+
+**As landed.** `callModel` is withheld from submitted plugins whenever `--default-llm-key` is set
+(`grantedBy` in `packages/server/src/plugins.ts`), and the refusal carries the operator's own
+sentence rather than core's generic one: `RemotePluginOptions.refusedBecause` lets the server explain
+a policy core has no business knowing about, and `checkGrant` appends it only for the capabilities
+actually refused. Without that, a plugin author whose manifest is correct is told to go and fix their
+manifest — the same failure mode `provider.ts`'s "a caller whose flow suddenly ran unauthenticated
+would have no idea why" was written against.
+
+The coarseness is deliberate and worth stating as a loss: on a server with a default key — which is
+what the playground is — an LLM-judge plugin cannot be submitted at all, not even one bringing its
+own `api_key`. A per-component check would have to be right about every path `createProvider` can
+take to the operator's key; this one is right by not having the key in play. Covered in
+`packages/server/src/__tests__/plugin-capabilities.test.ts`.
 
 **The transform inconsistency was fixed in the same change.** `remoteTransformDef.createTransform`
 took one parameter and dropped the `deps` the interface declares (`plugin/types.ts`), so a
@@ -1114,10 +1178,26 @@ Three prerequisites. The first two are cheap; all three are mandatory:
 1. **`Dependencies` gains a factory.** `createProvider` must stop being a directly-imported free
    function (`node/agent.ts:17`, `node/llm.ts:5`) and become reachable through `Dependencies`
    (`node/types.ts:12-49`). Without this, nothing — not a plugin, not an embedder — can substitute it.
-2. **`ChatRequest` must carry something worth acting on.** It is `{ model, messages, tools? }`
-   (`llm/types.ts:30-34`) and the OpenAI adapter passes exactly those three. `defaultGenerationParameters`
-   is declared on `LLMConfig` (`spec/types.ts:24`) and — grep-confirmed — read nowhere. **No spec can
-   set temperature or request JSON mode today.** A provider plugin would receive nothing to differ on.
+2. ~~**`ChatRequest` must carry something worth acting on.**~~ **Landed with Phase 4.** It was
+   `{ model, messages, tools? }` and `defaultGenerationParameters` (`spec/types.ts`) was — grep-confirmed
+   — read nowhere, so no spec could set a temperature or request JSON mode. `ChatRequest`
+   (`llm/types.ts`) now also carries `temperature`, `maxTokens`, `topP` and `responseFormat`, and
+   `generationParams` (`llm/provider.ts`) reads the spec field into them for `AgentExecutor` and
+   `LLMExecutor` alike.
+
+   Two spellings settled here. The parameters use the SDK's own names — `LlmGenerationConfig` is
+   `{ maxTokens, temperature, topP }` — so the spec-to-request mapping is an identity rather than a
+   rename that can be got wrong in one direction, and the translation to `max_tokens`/`top_p` happens
+   once, in the vendor's adapter. `responseFormat` is `'text' | 'json'` rather than OpenAI's
+   `{ type: 'json_object' }`, on the same rule as `ChatChunk`: every provider can do JSON and each
+   does it differently — Ollama takes `format: 'json'`, Anthropic has no field and does it with a
+   tool — so encoding one vendor's structure here would make the others translate *out* of a shape
+   they do not have.
+
+   What is still absent from seam #26: `seed` and `stop`. Neither has a caller yet, and because
+   `LlmGenerationConfigSchema` is a passthrough, a spec that sets them today deserializes intact and
+   is dropped rather than refused — which is what lets a spec written for another engine's parameters
+   run here at all.
 3. **`Provider` already carries its streaming form** — settled in Phase 2, not here (§7.5).
    `chatCompletionStream?(signal, req): AsyncIterable<ChatChunk>` is on the interface, optional, with
    `llm/openai.ts` its only implementation so far. A provider contract published without it would have
@@ -1249,7 +1329,8 @@ is the only party that can count it correctly across re-invocations (§7.1); a m
 `--plugin-config RetryPolicy='{"maxAttempts":3}'`, validated against the manifest `schema` above at
 load time (§7.4), and the host's own ceiling still applies underneath it.
 
-**(b) An LLM-judge node, using `callModel`.**
+**(b) An LLM-judge node, using `callModel`.** This one is no longer a sketch — it is what Phase 4
+made writable, and `plugin/__tests__/model.test.ts` runs a plugin shaped exactly like it.
 
 ```json
 {
@@ -1272,6 +1353,17 @@ load time (§7.4), and the host's own ceiling still applies underneath it.
 }
 ```
 
+```yaml
+# The flow names the model. The plugin does not, and cannot.
+- component_type: LlmJudge
+  name: judge
+  rubric: "Is the answer supported by the sources?"
+  llm_config:
+    component_type: OpenAiConfig
+    model_id: gpt-4o-mini
+    default_generation_parameters: { max_tokens: 256 }
+```
+
 ```js
 serve({
   LlmJudge: {
@@ -1285,6 +1377,8 @@ serve({
           { role: 'user',   content: String(input.answer ?? '') },
         ],
         responseFormat: 'json',
+        // Overrides the spec's default for this call only; max_tokens above survives.
+        temperature: 0,
       });
       const { score = 0, why = '' } = JSON.parse(resp.content);
       return {
@@ -1439,6 +1533,13 @@ Phase 3, so an encoder written now sees the final shape — `BuiltinEventType | 
    SDK costs nothing per-provider, so spec-named wins and host-configured survives only as an interim
    answer if provider plugins are wanted before the SDK work lands. Kept here rather than deleted
    because the reasoning inverts again if the SDK work is abandoned.
+
+   Phase 4 narrowed what this question is *about*, and the narrowing is worth recording. A plugin
+   naming its model in the spec turned out to cost nothing at all: a plugin component's fields are
+   not checked against any union, so an ordinary `llm_config` on a `LlmJudge` deserializes through
+   the SDK's own path — camelCased, `defaultGenerationParameters` intact — and `PluginModel` reads it
+   directly. Only a plugin that *implements* a provider (a new `LlmConfig` **type**, Phase 5) needs
+   `LlmConfigUnion` opened. Consuming a model was never the expensive half.
 2. **Does `retry` belong on `nodeError` only, or on every seam?** Universal retry is a much larger
    contract: the host must be able to re-invoke the underlying call idempotently, which is true at
    `runner.ts:61` and emphatically not true partway through the tool loop at `agent.ts:190-249`,
@@ -1463,6 +1564,13 @@ Phase 3, so an encoder written now sees the final shape — `BuiltinEventType | 
    a plugin — the feature is impossible in both directions at once. Allowing it needs a precedence
    rule and an explicit `implements: "builtin"` opt-in so shadowing is visible, and the compiler's
    plugin-first lookup (`graph/compile.ts:74-80`) would need its comment corrected.
+8. **How does a plugin's model answer ever get streamed?** Phase 4 buffers `callModel`, because
+   heddle cannot tell a plugin's model call from its scratch work and streaming it would publish
+   scratch as the run's answer (§7.2). That is right for a judge and wrong for a summarizer plugin
+   whose model output *is* the node's output — and heddle has no way to be told which it is. The
+   candidates are a manifest flag on the component (declarative, checkable at load, and a plugin can
+   still lie about which calls are the answer), a distinct verb, or leaving it to seam #33's encoder
+   to decide what a client sees. None is obviously right, and nothing is blocked on it today.
 
 ---
 
@@ -1560,7 +1668,7 @@ numbering was left alone so cross-references stay valid. The actual order:
 | 1 Capabilities | 0 | landed; gates everything that widens `PluginMethod` |
 | 2 Lifecycle + streaming | 1 | landed |
 | 3 `PluginContext` | 1, 2 | landed |
-| 4 `callModel` | 1, 3 | |
+| 4 `callModel` | 1, 3 | landed; also carried seam #26 (`ChatRequest` widening) |
 | 5 Provider kind | 2, 4 | *strongly prefers* V |
 | 6 Middleware kind | 1, 2, 3 | |
 | 7 Registry | 1 | off the main line |
@@ -1689,21 +1797,50 @@ Two things deliberately did **not** land:
 plugin node was silent between `node_start` and `node_complete`.
 Cost: low.
 
-### Phase 4 — `callModel`
+### Phase 4 — `callModel` — **landed**
 
-**Depends on:** Phase 1 (mandatory — §7.3), Phase 3 (the serving path), and the `ChatRequest`
-widening from §7.6 item 2.
+| What | Where |
+|---|---|
+| `callModel` in `PluginMethods` and `SERVED`, with `CallModelParams` and `readModelRequest` — every message checked before it reaches `buildMessages`, because a `Message` interface says nothing about a value parsed out of a pipe | `packages/core/src/plugin/protocol.ts` |
+| `PluginModel`, which reads the component's own `llm_config`, memoizes the provider per compiled component, and binds the run's signal per execution; and `toolRunner`, moved here so a node and a transform get one implementation | `packages/core/src/plugin/services.ts` |
+| `serveCallModel` — per-component caller, no host-wide fallback; and `Pending.serving`, the clock hold, taken by `runTool` as well | `packages/core/src/plugin/host.ts` |
+| `PluginServices`, shared by `PluginContext` and `TransformContext`, so `runTool` and `callModel` are the same set for both | `packages/core/src/plugin/types.ts` |
+| `ctx.callModel` in the emitted runtime, and the author documentation for it | `packages/core/src/plugin/runtime-source.ts` |
+| The grant policy and the sentence explaining it; `RemotePluginOptions.refusedBecause` | `packages/server/src/plugins.ts`, `packages/core/src/plugin/remote-loader.ts` |
+| Seam #26: `ChatRequest` gains the generation parameters, `generationParams` reads the spec field, `buildGeneration` translates at the OpenAI boundary | `llm/types.ts`, `llm/provider.ts`, `llm/openai.ts`, `node/agent.ts`, `node/llm.ts` |
+
+Three things landed differently from this draft, each argued where it lives: the model comes from the
+**component's** `llm_config` rather than the run's provider (§7.2); the call is **buffered**, with the
+push/pull bridge §7.6 describes left to Phase 5 where it belongs; and the per-call timeout became a
+budget heddle **stops charging** while it is the one making the plugin wait.
+
+Two things deliberately did **not** land:
+
+- **`Message` was not widened.** This draft expected it to be. Nothing `callModel` needs is missing
+  from it, and adding speculative fields — a `name`, multimodal content — would have put shapes on
+  the wire that no caller produces and no adapter reads.
+- **A `callModel` cannot stream, and `emitEvent` is not a substitute for one.** A plugin that wants
+  to show a model's answer arriving has no way to; it can only report *that* it is working. The gap
+  is real and is the same one seam #33's encoder would close from the other end.
+
+One asymmetry was closed on the way past, because leaving it would have deepened it: in process,
+`TransformContext` had no `runTool` at all while a remote transform had one. Adding `callModel` to
+both and `runTool` to only one would have made "what a component may do" depend on which side of a
+process boundary it runs on for a second time — the same defect Phase 0 fixed in `setToolRunner`.
+
+**Depended on:** Phase 1 (mandatory — §7.3), Phase 3 (the serving path).
 **Unblocks:** LLM-as-judge, semantic routers, summarizers, self-critique — the largest single class
-of plugin people ask for.
-Cost: medium. Most of it is `ChatRequest`/`Message` widening, which touches `buildMessages` and
-`buildTools` (`llm/openai.ts:176-230`).
+of plugin people ask for. And Phase 5, whose second prerequisite this was.
+Cost: medium, as estimated.
 
 ### Phase 5 — Provider kind
 
-**Depends on:** Phase 2 (the settled `Provider` shape, including streaming); Phase 4's `ChatRequest`
-work; `createProvider` becoming injectable through `Dependencies`; and the `node/llm.ts:33`
-per-execute construction being fixed — a provider holding a token bucket or a response cache is
-silently defeated otherwise.
+**Depends on:** Phase 2 (the settled `Provider` shape, including streaming) — done; Phase 4's
+`ChatRequest` work — done; `createProvider` becoming injectable through `Dependencies` — **still
+open**, it is a directly-imported free function in `node/agent.ts`, `node/llm.ts` and now
+`plugin/services.ts`, so nothing can substitute it; and the `LLMExecutor` per-execute construction
+being fixed — **still open** for that node, though `PluginModel` and `AgentExecutor` both memoize, so
+the inconsistency is now two-against-one rather than one-against-one.
 
 **Strongly prefers Phase V.** With `LlmConfigUnion` extended, spec-named providers cost nothing extra
 and §7.10 Q1 resolves itself. Without it, this phase either pays the most expensive placeholder in

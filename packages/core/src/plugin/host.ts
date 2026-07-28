@@ -35,6 +35,7 @@ import {
   LOG_LEVELS,
   PLUGIN_METHODS,
   PROTOCOL_VERSION,
+  readModelRequest,
   spokenProtocol,
   type EmitEventParams,
   type HostMethod,
@@ -47,6 +48,7 @@ import {
   type RpcResponse,
   type RunToolParams,
 } from './protocol.js';
+import type { ModelCaller, ToolRunner } from './services.js';
 import type { PluginReporter } from './types.js';
 
 const DEFAULT_CALL_TIMEOUT = 30_000;
@@ -118,10 +120,7 @@ export interface PluginHostOptions {
   runTool?: ToolRunner;
 }
 
-export type ToolRunner = (
-  name: string,
-  input: Record<string, unknown>,
-) => Promise<Record<string, unknown>>;
+export type { ModelCaller, ToolRunner } from './services.js';
 
 /** Names a declared reverse call that has no implementation. See {@link PluginHost.serve}. */
 function unserved(method: never): string {
@@ -130,6 +129,21 @@ function unserved(method: never): string {
 
 /** A callback that consumes one `{ id, partial }` frame. See {@link PluginHost.call}. */
 export type PartialHandler = (partial: unknown) => void;
+
+/**
+ * Everything about one call that is not the call itself.
+ *
+ * All optional, and a call made with none of them still runs — the plugin is
+ * told, in each verb's own terms, what it has nowhere to reach. See
+ * {@link PluginHost.call} for what each one buys.
+ */
+export interface CallOptions {
+  signal?: AbortSignal;
+  onPartial?: PartialHandler;
+  reporter?: PluginReporter;
+  runTool?: ToolRunner;
+  callModel?: ModelCaller;
+}
 
 /** Answers one request the plugin made, on that request's own id. */
 type Respond = (response: Omit<RpcResponse, 'id'>) => void;
@@ -149,6 +163,23 @@ interface Pending {
    * which carry their own deadline or none at all.
    */
   extend?: () => void;
+  /**
+   * Suspends the call's timeout while heddle is serving a request the plugin
+   * made, returning the function that resumes it.
+   *
+   * The budget measures a plugin's silence, and a plugin blocked on `callModel`
+   * or `runTool` is not silent — it is waiting on heddle, which knows exactly
+   * how long it has kept it waiting. Without this, a plugin's deadline is
+   * really a deadline on heddle's own work: a 30-second per-call budget and a
+   * 45-second model call kill a plugin that did nothing wrong, and the error
+   * says it never answered.
+   *
+   * A hold cannot be gamed into forever. It is taken by the host around a call
+   * it is itself making, released in a `finally`, and nested holds count — so
+   * the timer restarts when the last one ends and a plugin firing ten `runTool`
+   * calls buys exactly the time those ten take.
+   */
+  serving?: () => () => void;
   onPartial?: PartialHandler;
   /**
    * Publishes what the plugin reports while this call is running.
@@ -171,6 +202,18 @@ interface Pending {
    * tool a path that is not there, and it would read as the tool being broken.
    */
   toolRunner?: ToolRunner;
+  /**
+   * Calls the model on this component's behalf, on the config its spec names.
+   *
+   * Per call and with no host-wide fallback, which is the difference from
+   * {@link toolRunner}. A tool registry is one thing for the whole flow, so a
+   * scopeless runner is a worse answer but an answer. A model config belongs to
+   * the *component* — one plugin's judge node and its summarizer transform can
+   * name different models, and a plugin serves both from one process — so there
+   * is no host-wide model that would be right, and a call that names no
+   * `execute` or `apply` is refused rather than sent somewhere plausible.
+   */
+  modelCaller?: ModelCaller;
   /**
    * Marks a frame heddle sent on its own behalf — `init` or `cancel` — rather
    * than a call anything is running under.
@@ -264,22 +307,27 @@ export class PluginHost {
    * without one still runs; the plugin is told there is nowhere to report to.
    *
    * `runTool` is the same trade for the plugin's tool calls, and it is what
-   * keeps this call's tools inside this call's scope. A caller that has one —
-   * a node, which opened a tool scope for its execution — hands over the very
-   * function an in-process plugin would have called, so the tool runs in the
-   * session whose workspace the plugin was told about. A caller that has none —
-   * a transform, which owns no scope — passes nothing and the plugin falls back
-   * to {@link setToolRunner}'s host-wide runner, which is all a transform ever
-   * had.
+   * keeps this call's tools inside this call's scope. Both callers have one now:
+   * a node hands over the runner bound to the tool scope it opened, so the tool
+   * runs in the session whose workspace the plugin was told about, and a
+   * transform hands over the scopeless one it would have used in process. What
+   * is left behind {@link setToolRunner} is the single case that can pass
+   * nothing — a plugin hand-rolling the protocol without a `call` id.
+   *
+   * `callModel` is the same trade again, with no fallback behind it at all: see
+   * `Pending.modelCaller`.
+   *
+   * The four of them arrive in an object rather than as trailing positional
+   * arguments. Two are callbacks and two are functions taking a name and an
+   * object, so a transposed pair is a plausible mistake with a plausible-
+   * looking type, and the roadmap has more of them coming.
    */
   async call<M extends HostMethod>(
     method: M,
     params: HostMethods[M],
-    signal?: AbortSignal,
-    onPartial?: PartialHandler,
-    reporter?: PluginReporter,
-    runTool?: ToolRunner,
+    options: CallOptions = {},
   ): Promise<unknown> {
+    const { signal, onPartial, reporter, runTool, callModel } = options;
     if (this.disposed) {
       throw new PluginError(`plugin "${this.name}" was disposed`);
     }
@@ -307,7 +355,23 @@ export class PluginHost {
           ),
         );
       };
-      let timer = setTimeout(expire, timeout);
+
+      // One place decides whether this call has a running clock, because there
+      // are now three inputs to that — the call ended, heddle is serving a
+      // request from inside it, or the plugin said something — and three
+      // separate `clearTimeout`/`setTimeout` pairs would eventually disagree.
+      // A hold that outlives its call is the specific failure: `over` is what
+      // stops a release arriving after the answer from arming a timer for a
+      // call nobody is waiting on, which would hold the event loop open for a
+      // whole timeout after the run finished.
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      let holds = 0;
+      let over = false;
+      const arm = (): void => {
+        clearTimeout(timer);
+        timer = over || holds > 0 ? undefined : setTimeout(expire, timeout);
+      };
+      arm();
 
       const onAbort = (): void => {
         this.abandon(
@@ -323,20 +387,33 @@ export class PluginHost {
         resolve,
         reject,
         release: () => {
-          clearTimeout(timer);
+          over = true;
+          arm();
           signal?.removeEventListener('abort', onAbort);
         },
         // The timeout is a silence budget, not a total budget. Measured from
         // the request it would kill a plugin that has been answering all along
         // — a token stream, a long tool loop reporting progress — and report it
         // as one that never answered.
-        extend: () => {
-          clearTimeout(timer);
-          timer = setTimeout(expire, timeout);
+        extend: arm,
+        serving: () => {
+          holds++;
+          arm();
+          let released = false;
+          return () => {
+            // Idempotent, because the caller releases in a `finally` and a
+            // second release would decrement a count it does not own — leaving
+            // a concurrent hold's call permanently unarmed.
+            if (released) return;
+            released = true;
+            holds--;
+            arm();
+          };
         },
         onPartial,
         reporter,
         toolRunner: runTool,
+        modelCaller: callModel,
       });
       this.write({ id, method, params });
     });
@@ -688,6 +765,9 @@ export class PluginHost {
       case 'log':
         this.serveLog(request, respond);
         return;
+      case 'callModel':
+        await this.serveCallModel(request, respond);
+        return;
     }
 
     // Unreachable: the guard above accepts exactly the methods this switch
@@ -719,6 +799,25 @@ export class PluginHost {
     return this.pending.get(idOf(call))?.toolRunner ?? this.toolRunner;
   }
 
+  /**
+   * Stop the clock on the call a reverse call was made inside, for as long as
+   * heddle is serving it.
+   *
+   * Every reverse call heddle *blocks* on takes one of these. `emitEvent` and
+   * `log` do not: they return immediately, and what they need is the opposite —
+   * a restart, because the plugin spoke. This is for the case where the plugin
+   * has stopped speaking precisely because it is waiting for heddle.
+   *
+   * Returns a no-op release when the frame names no call, or names one that has
+   * already ended. Both are served anyway — a hand-rolled plugin may send no
+   * `call` id — and neither has a clock left to hold.
+   */
+  private holdClockFor(request: RpcRequest): () => void {
+    const { call } = (request.params ?? {}) as { call?: unknown };
+    if (typeof call !== 'number' && typeof call !== 'string') return () => {};
+    return this.pending.get(idOf(call))?.serving?.() ?? (() => {});
+  }
+
   private async serveRunTool(request: RpcRequest, respond: Respond): Promise<void> {
     const runner = this.runningToolsFor(request);
 
@@ -748,6 +847,10 @@ export class PluginHost {
       return;
     }
 
+    // A tool can outlast the plugin's own per-call budget — that is what a tool
+    // that shells out to something slow *is* — and the plugin waiting on it has
+    // not gone quiet of its own accord.
+    const resume = this.holdClockFor(request);
     try {
       const result = await runner(params.name, params.input ?? {});
       respond({ result });
@@ -758,6 +861,81 @@ export class PluginHost {
           message: err instanceof Error ? err.message : String(err),
         },
       });
+    } finally {
+      resume();
+    }
+  }
+
+  /**
+   * Which model serves one `callModel`: the calling component's, or none.
+   *
+   * No fallback, unlike {@link runningToolsFor}. The config a model call goes
+   * to belongs to the component whose `execute` or `apply` is running, so
+   * "whichever one heddle happens to have" is not a worse answer here, it is a
+   * request sent somewhere the flow's author did not ask for. A frame naming no
+   * call, or one that has ended, gets an error saying which.
+   */
+  private async serveCallModel(request: RpcRequest, respond: Respond): Promise<void> {
+    const { call } = (request.params ?? {}) as { call?: unknown };
+    if (typeof call !== 'number' && typeof call !== 'string') {
+      respond(
+        refuse(
+          'callModel needs a "call": the id of the execute or apply request it was ' +
+            'made inside. The model a plugin reaches is the one its own component ' +
+            'names, so a call belonging to no component has no model to reach.',
+        ),
+      );
+      return;
+    }
+
+    const pending = this.pending.get(idOf(call));
+    if (!pending || pending.lifecycle) {
+      respond(
+        refuse(
+          `callModel named call ${String(call)}, which is not an execute or apply ` +
+            `heddle is waiting on. It has already been answered, timed out, been ` +
+            `cancelled, or is a lifecycle frame that nothing runs under.`,
+        ),
+      );
+      return;
+    }
+
+    if (!pending.modelCaller) {
+      // The same distinction `serveRunTool` draws, and it matters more here:
+      // the plugin declared the capability and the host allowed it, so the
+      // manifest is right and heddle's own wiring is what is missing.
+      respond(
+        refuse(
+          `callModel is granted to this plugin, but call ${String(call)} was made ` +
+            `with no model to call. A plugin reaches the model through the executor ` +
+            `built for its component, and nothing built one here.`,
+        ),
+      );
+      return;
+    }
+
+    // Taken before the request is even read, and held across the whole call:
+    // this is the reverse call that most needs it. A model that takes 45
+    // seconds against a 30-second per-call budget would otherwise kill a plugin
+    // that is doing nothing but waiting on heddle, and report it as one that
+    // never answered.
+    const resume = pending.serving?.() ?? ((): void => {});
+    try {
+      const response = await pending.modelCaller(readModelRequest(request.params));
+      respond({ result: response });
+    } catch (err) {
+      // Everything from here comes back as the plugin's own failed call: a
+      // malformed frame, a missing `llm_config`, a refused credential, a 429.
+      // The plugin decides what to do about it, exactly as an in-process one
+      // decides what to do about the same throw.
+      respond({
+        error: {
+          name: err instanceof Error ? err.name : 'Error',
+          message: err instanceof Error ? err.message : String(err),
+        },
+      });
+    } finally {
+      resume();
     }
   }
 

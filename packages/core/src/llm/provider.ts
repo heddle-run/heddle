@@ -1,5 +1,5 @@
 import type { LLMConfig } from '../spec/types.js';
-import type { Provider } from './types.js';
+import type { ChatRequest, Provider } from './types.js';
 import { OpenAIProvider } from './openai.js';
 import { LLMError } from '../errors.js';
 
@@ -110,6 +110,50 @@ function applyDefaultCredential(
 
   opts.apiKey = defaultKey;
   if (defaultUrl) opts.baseURL = defaultUrl;
+}
+
+/** What a spec may set on `default_generation_parameters`, and what it means here. */
+type Generation = Pick<ChatRequest, 'temperature' | 'maxTokens' | 'topP'>;
+
+/**
+ * Read a spec's `default_generation_parameters` into a request.
+ *
+ * The field has been on `LLMConfig` since the type was written and was read
+ * nowhere, so until now no spec could set a temperature or a token ceiling on
+ * anything. Nothing about that was intentional; the request simply had no
+ * fields to put them in.
+ *
+ * "Default" is the operative word: these are the settings for every call this
+ * config makes, and a caller with a reason to differ on one call — a plugin
+ * asking for a deterministic classification — overrides them per call. The
+ * merge is in the caller's favour and lives at the merge site, not here.
+ *
+ * A value of the wrong type is refused rather than dropped. `LlmGenerationConfig`
+ * is a passthrough schema, so `temperature: "0.7"` survives deserialization
+ * intact, and dropping it silently would run the flow at the endpoint's default
+ * while the spec plainly says otherwise. Unknown keys *are* dropped, because
+ * passthrough is exactly how a spec written for another engine's parameters
+ * reaches this one, and refusing those would make heddle the only engine that
+ * cannot read such a spec at all.
+ */
+export function generationParams(config: LLMConfig): Generation {
+  const raw = config.defaultGenerationParameters;
+  if (!raw) return {};
+
+  const params: Generation = {};
+  for (const key of ['temperature', 'maxTokens', 'topP'] as const) {
+    const value = raw[key];
+    if (value === undefined || value === null) continue;
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+      throw new LLMError(
+        `default_generation_parameters.${key} is ${JSON.stringify(value)}, which is ` +
+          `not a number. These are sent to the model as written, so a string here ` +
+          `is either rejected by the endpoint or silently ignored by it.`,
+      );
+    }
+    params[key] = value;
+  }
+  return params;
 }
 
 export function createProvider(

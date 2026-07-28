@@ -8,7 +8,7 @@
  * deserialization plugin, plus the runtime executor that makes the node do something.
  */
 import type { Property } from 'agentspec';
-import type { Message } from '../llm/types.js';
+import type { ChatResponse, Message, ModelRequest } from '../llm/types.js';
 import type { Dependencies } from '../node/types.js';
 import type { LogLevel } from '../runner/events.js';
 
@@ -100,16 +100,61 @@ export interface PluginReporter {
   log(level: LogLevel, message: string): void;
 }
 
-/** Runtime services handed to a plugin node on every execution. */
-export interface PluginContext extends PluginReporter {
+/**
+ * Everything a plugin may ask heddle to do while it runs.
+ *
+ * Shared by nodes and transforms for the reason {@link PluginReporter} is: what
+ * a component may do has to follow from the component, not from where in the
+ * spec it was written. A guardrail that consults a classifier tool, or asks a
+ * model whether a prompt is an injection attempt, is the ordinary case for a
+ * transform — and for a while it was a case that worked out of process and not
+ * in it, which is not a capability model but an accident.
+ *
+ * Every method here is a {@link import('./protocol.js').PluginCapability}, so a
+ * plugin gets each one only by declaring it and only where the host allows it.
+ * {@link PluginContext.getWorkspace} is the exception that proves the shape: it
+ * is not a call into heddle, so it is not here.
+ */
+export interface PluginServices extends PluginReporter {
   signal: AbortSignal | undefined;
-  /** The node instance being executed, with its spec fields. */
-  node: PluginNode;
-  /** Run one of the flow's registered tools by name. */
+  /**
+   * Run one of the flow's registered tools by name.
+   *
+   * A node's tools run in the scope heddle opened for its execution, so they
+   * share the directory {@link PluginContext.getWorkspace} names and can be
+   * handed a file by path. A transform owns no scope, so each of its tool calls
+   * gets a throwaway sandbox session and shares a workspace with nothing —
+   * which is why a transform has no `getWorkspace` to offer.
+   */
   runTool(
     name: string,
     input: Record<string, unknown>,
   ): Promise<Record<string, unknown>>;
+  /**
+   * Ask the model one question, and get the whole answer back.
+   *
+   * **The plugin composes the request; the spec chooses the model.** The call
+   * goes to the `llm_config` on this component — the same field an agent
+   * carries — so a plugin ships no SDK, holds no credential, and cannot send a
+   * request anywhere the submitted document does not say it will go. A
+   * component with no `llm_config` gets an error naming the field, never a
+   * silent fallback to whatever endpoint the operator configured.
+   *
+   * Buffered. There is no streamed form and there will not be one at this
+   * level: heddle cannot tell a plugin's model call from its scratch work — a
+   * judge asks for `{"score":…}` and returns a number — so publishing the
+   * tokens would put a plugin's private reasoning into the same `token_delta`
+   * a client renders as the run's answer. Report progress with
+   * {@link PluginReporter.emitEvent}, which is namespaced and cannot be
+   * mistaken for one of heddle's own events.
+   */
+  callModel(request: ModelRequest): Promise<ChatResponse>;
+}
+
+/** Runtime services handed to a plugin node on every execution. */
+export interface PluginContext extends PluginServices {
+  /** The node instance being executed, with its spec fields. */
+  node: PluginNode;
   /**
    * A directory this execution may write to, shared with the tools it runs.
    *
@@ -184,18 +229,17 @@ export interface TransformResult {
 /**
  * What a transform is handed on every application.
  *
- * The reporting half is {@link PluginReporter}, the same one a node gets. What
- * a transform does *not* get is {@link PluginContext.getWorkspace}, and that is
- * a property of where it runs rather than a judgement about transforms: a node
- * opens a tool scope of its own, so the tools it runs share one workspace and a
- * path into it means something. A transform runs inside an agent's turn and
- * owns no scope, so its tool calls each get a throwaway sandbox session that is
- * destroyed when the call returns. There is no directory here that two calls
- * would agree on, and handing over one that only the transform can see would be
- * a `mkdtemp` with heddle's name on it.
+ * The same {@link PluginServices} a node gets, and the one thing missing from
+ * it is {@link PluginContext.getWorkspace} — a property of where a transform
+ * runs rather than a judgement about transforms. A node opens a tool scope of
+ * its own, so the tools it runs share one workspace and a path into it means
+ * something. A transform runs inside an agent's turn and owns no scope, so its
+ * tool calls each get a throwaway sandbox session that is destroyed when the
+ * call returns. There is no directory here that two calls would agree on, and
+ * handing over one that only the transform can see would be a `mkdtemp` with
+ * heddle's name on it.
  */
-export interface TransformContext extends PluginReporter {
-  signal: AbortSignal | undefined;
+export interface TransformContext extends PluginServices {
   phase: TransformPhase;
   component: PluginComponent;
 }

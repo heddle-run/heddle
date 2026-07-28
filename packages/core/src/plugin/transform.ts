@@ -15,6 +15,7 @@ import type {
 } from './types.js';
 import type { Message } from '../llm/types.js';
 import { pluginReporter } from './executor.js';
+import { PluginModel, toolRunner, type ToolRunner } from './services.js';
 import { PluginError } from '../errors.js';
 
 /** Transforms the SDK defines but heddle does not execute yet. */
@@ -49,6 +50,18 @@ interface Entry {
    * chain already knows which agent it belongs to.
    */
   reporter: PluginReporter;
+  /**
+   * The two verbs a transform shares with a node, built here for the same
+   * reason the reporter is: they close over the dependencies, which `apply` is
+   * not given.
+   *
+   * A transform reached these out of process and not in it, which is how a
+   * guardrail that consults a classifier worked from the playground and failed
+   * from `heddle run --plugin`. The capability is the plugin's, so it cannot
+   * depend on which side of the process boundary the component runs on.
+   */
+  runTool: ToolRunner;
+  model: PluginModel;
   phases: Set<TransformPhase>;
 }
 
@@ -103,9 +116,12 @@ export class TransformChain {
 
       const component = spec as unknown as PluginComponent;
       const phase = def.phase?.(component) ?? 'pre';
+      const where = `${spec.componentType} "${spec.name}"`;
       entries.push({
         component,
         impl: def.createTransform(component, deps),
+        runTool: toolRunner(where, deps),
+        model: new PluginModel(where, component, deps),
         // Attributed to the agent, not to the transform's own name: a transform
         // is not a node, and the agent is the only position in the graph a
         // consumer can hang its events off. Which transform spoke is in
@@ -158,6 +174,8 @@ export class TransformChain {
         signal,
         phase,
         component: entry.component,
+        runTool: entry.runTool,
+        callModel: entry.model.bind(signal),
         ...entry.reporter,
       });
 

@@ -33,10 +33,11 @@
  * ```
  *
  * `execute` and `apply` receive a `ctx` with the component's own spec fields and
- * four things to call:
+ * five things to call:
  *
  * ```js
- * await ctx.runTool('grep', { pattern: 'TODO' });   // run a flow tool
+ * await ctx.runTool('grep', { pattern: 'TODO' });    // run a flow tool
+ * await ctx.callModel({ messages });                 // ask the model
  * ctx.emitEvent('progress', { done: 3, total: 10 }); // tell the run's watchers
  * ctx.log('warn', 'retrying after a 429');           // say something for a person
  * const dir = ctx.getWorkspace();                    // a directory tools can see
@@ -54,6 +55,39 @@
  * never be read as one of heddle's own. `name` has to be an identifier
  * (`[A-Za-z_][A-Za-z0-9_]*`) and `data` has to be plain JSON; both are checked
  * here, in your process, so a mistake throws at the call that made it.
+ *
+ * `ctx.callModel({ messages, responseFormat, temperature, maxTokens, topP })`
+ * asks a model and returns `{ content, tool_calls?, finish_reason }` — the same
+ * answer an agent node gets. **You do not choose the model.** It comes from the
+ * `llm_config` on your own component in the spec, exactly as an agent's does:
+ *
+ * ```yaml
+ * - component_type: LlmJudge
+ *   name: judge
+ *   rubric: "Is the answer supported by the sources?"
+ *   llm_config:
+ *     component_type: OpenAiConfig
+ *     model_id: gpt-4o-mini
+ * ```
+ *
+ * So you ship no SDK and hold no credential — your process has an empty
+ * environment and could not use one — and whoever runs your plugin can read
+ * their own spec and see every model it will reach. A component with no
+ * `llm_config` gets an error naming the field; heddle never quietly borrows
+ * whatever endpoint the operator configured for something else.
+ *
+ * `messages` is `[{ role, content }]` with roles `system`, `user`, `assistant`
+ * or `tool`. `responseFormat: 'json'` asks for a JSON object back. The three
+ * generation settings override whatever the spec's
+ * `default_generation_parameters` set, and anything you leave out keeps the
+ * spec's value.
+ *
+ * The answer arrives whole; there is no streamed form. heddle cannot tell your
+ * model call from your scratch work — a judge asks for a score and returns a
+ * number — so streaming it would publish your reasoning as the run's answer.
+ * Say what you want said with `emitEvent`. And the call does not spend your
+ * deadline: heddle stops your per-call clock for as long as it is the one
+ * making you wait.
  *
  * `ctx.log(level, message)` — `debug`, `info`, `warn` or `error` — is for a
  * person rather than a program. It is not the same as writing to stderr: heddle
@@ -139,6 +173,18 @@ function serve(handlers, options) {
       const id = 't' + nextId++;
       pending.set(id, { resolve, reject });
       send({ id, method: 'runTool', params: { call, name, input: input ?? {} } });
+    });
+
+  // Bound to the call for a third reason on top of scope and the clock: which
+  // model answers comes from the component this call is running, so the id is
+  // how heddle knows which llm_config to use. There is no needs() check here
+  // for the same reason runTool has none — this promise is awaited, so heddle's
+  // own refusal arrives at the call that made it.
+  const callModel = (call, request) =>
+    new Promise((resolve, reject) => {
+      const id = 'm' + nextId++;
+      pending.set(id, { resolve, reject });
+      send({ id, method: 'callModel', params: Object.assign({ call: call }, request || {}) });
     });
 
   // What heddle's init said this plugin was granted.
@@ -301,6 +347,7 @@ function serve(handlers, options) {
     try {
       const ctx = {
         runTool: (name, input) => runTool(request.id, name, input),
+        callModel: (modelRequest) => callModel(request.id, modelRequest),
         node: params.node || params.component || {},
         phase: params.phase,
         signal: controller.signal,

@@ -16,7 +16,8 @@ import type { HeddlePlugin } from '../types.js';
 // The agent's LLM is stubbed so the guardrails can be tested without a key —
 // and so a pre-phase rejection can be proven to skip the call entirely.
 const { chatCompletion } = vi.hoisted(() => ({ chatCompletion: vi.fn() }));
-vi.mock('../../llm/provider.js', () => ({
+vi.mock('../../llm/provider.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../llm/provider.js')>()),
   createProvider: () => ({ chatCompletion }),
 }));
 

@@ -71,12 +71,52 @@ import type { MaterializedCode } from './request-code.js';
  */
 const GRANTED: PluginCapability[] = ['runTool', 'emitEvent', 'log'];
 
+/**
+ * Why `callModel` is withheld, when it is.
+ *
+ * A submitted plugin's model calls go to the `llm_config` on its own component,
+ * so the *endpoint* is in the document the caller submitted and visible to
+ * whoever reads it. What is not visible is the volume: `execute` is opaque by
+ * construction, and a plugin is free to make a thousand calls inside one node
+ * while the flow shows one. Nothing in the engine bounds that — `MAX_TOOL_ROUNDS`
+ * bounds an agent's loop and has no equivalent here.
+ *
+ * That is survivable when the credential is the caller's own, and is not when
+ * it is the operator's. `applyDefaultCredential` attaches `--default-llm-key`
+ * to any config that names neither a key nor a URL, so a submitted component
+ * writing `llm_config: { model_id: gpt-4o }` and looping spends the operator's
+ * money at whatever rate it likes. So the capability goes away entirely the
+ * moment there is an operator credential to spend, rather than being metered by
+ * something this server does not have.
+ *
+ * The consequence, stated because it is a real loss: on a server configured
+ * with a default key — which is what the playground is — an LLM-judge plugin
+ * cannot be submitted at all, not even one bringing its own `api_key`. The
+ * coarseness is the point; a per-component check would have to be right about
+ * every path `createProvider` can take to the operator's key, and this one is
+ * right by not having the key in play.
+ */
+const NO_CALL_MODEL =
+  'callModel is not granted on this server because it supplies a default model ' +
+  'credential, and a submitted plugin can call the model as many times as it ' +
+  'likes inside a single node — nothing in a flow shows how often. Run this ' +
+  'plugin against a heddle started without --default-llm-key, where the only ' +
+  'credential in play is the one your own spec brings.';
+
+/** What this server grants a submitted plugin, given how it is configured. */
+function grantedBy(config: ServerConfig): PluginCapability[] {
+  if (config.defaultLlmKey) return GRANTED;
+  return [...GRANTED, 'callModel'];
+}
+
 export function buildPlugins(
   config: ServerConfig,
   code: MaterializedCode,
 ): PluginRegistry {
   const registry = PluginRegistry.empty();
   if (code.plugins.length === 0) return registry;
+
+  const capabilities = grantedBy(config);
 
   try {
     for (const plugin of code.plugins) {
@@ -103,7 +143,8 @@ export function buildPlugins(
           // TMPDIR, PWD, HEDDLE_WORKSPACE, HEDDLE_SANDBOX — all synthesized,
           // and none of them the server's.
           env: {},
-          capabilities: GRANTED,
+          capabilities,
+          refusedBecause: { callModel: NO_CALL_MODEL },
           session: config.sandbox?.session(`plugin-${plugin.name}`),
         }),
       );

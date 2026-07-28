@@ -455,13 +455,17 @@ describe('request-submitted plugins', () => {
   it('rejects a manifest asking for a capability heddle does not serve', async () => {
     // At load, so the caller is told before anything runs, and by name — a
     // misspelling is the likeliest way to end up here.
+    //
+    // The name has to be one heddle genuinely does not serve, so it moves as
+    // the roadmap lands: this was `callModel` until Phase 4 made it real, and
+    // `getState` is the next proposal on the same list.
     const res = await post('/v1/runs', {
       flow: pluginFlow(),
       inputs: { text: 'hello' },
       plugins: [
         {
           name: 'greedy',
-          manifest: { ...SHOUT_MANIFEST, capabilities: ['callModel'] },
+          manifest: { ...SHOUT_MANIFEST, capabilities: ['getState'] },
           source: SHOUT_SOURCE,
         },
       ],
@@ -469,7 +473,7 @@ describe('request-submitted plugins', () => {
 
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: { message: string } };
-    expect(body.error.message).toMatch(/"callModel", which heddle does not serve/);
+    expect(body.error.message).toMatch(/"getState", which heddle does not serve/);
     expect(body.error.message).toMatch(/It serves: runTool/);
   });
 });

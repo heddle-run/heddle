@@ -46,6 +46,7 @@ function pluginContext(): PluginContext {
     signal: undefined,
     node: hangNode(),
     runTool: async () => ({}),
+    callModel: async () => ({ content: '', finish_reason: 'stop' }),
     getWorkspace: () => tmpdir(),
     emitEvent: () => {},
     log: () => {},

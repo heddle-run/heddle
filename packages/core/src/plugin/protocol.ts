@@ -23,6 +23,8 @@
  * is surfaced verbatim when the process fails, which is where a plugin author
  * will look first.
  */
+import { PluginError } from '../errors.js';
+import type { Message, ModelRequest, Role, ToolDefinition } from '../llm/types.js';
 import type { LogLevel } from '../runner/events.js';
 
 /**
@@ -141,6 +143,8 @@ export interface PluginMethods {
   emitEvent: EmitEventParams;
   /** Say one thing, at a level, for whoever is watching the run. */
   log: LogParams;
+  /** Ask the model this component's spec names for one answer. */
+  callModel: CallModelParams;
 }
 
 export type PluginMethod = keyof PluginMethods;
@@ -169,6 +173,7 @@ const SERVED: Record<PluginMethod, true> = {
   runTool: true,
   emitEvent: true,
   log: true,
+  callModel: true,
 };
 
 export const PLUGIN_METHODS = Object.keys(SERVED) as PluginMethod[];
@@ -450,6 +455,176 @@ export interface EmitEventParams extends InFlight {
 export interface LogParams extends InFlight {
   level: LogLevel;
   message: string;
+}
+
+/**
+ * Params for `callModel`: one model call, on the component's own `llm_config`.
+ *
+ * {@link ModelRequest} is `ChatRequest` without `model`, and the missing field
+ * is the design. A plugin says what to ask; the spec says who to ask, at which
+ * endpoint, on whose credential — so a flow's author can read the document they
+ * submitted and know every model their run will reach, which is exactly what
+ * they could *not* know if the plugin named its own.
+ *
+ * The answer is a {@link ChatResponse} verbatim, so a plugin sees the same
+ * object an `AgentNode` sees, and buffered: see `PluginModel.call` for why a
+ * plugin's model call does not stream.
+ */
+export interface CallModelParams extends InFlight, ModelRequest {}
+
+const ROLES: Record<Role, true> = {
+  system: true,
+  user: true,
+  assistant: true,
+  tool: true,
+};
+
+/** Named for an error message, since "the second message" is what an author counts. */
+function at(index: number): string {
+  return `messages[${index}]`;
+}
+
+/** `typeof` with the two answers it gets wrong spelled out. */
+function typeName(value: unknown): string {
+  if (value === null) return 'null';
+  return Array.isArray(value) ? 'an array' : `a ${typeof value}`;
+}
+
+/**
+ * Read one message that arrived from a plugin's process.
+ *
+ * `Message` is a TypeScript interface, which says nothing about a value parsed
+ * out of a pipe. Every field checked here has a specific way of failing further
+ * away if it is not: an unknown `role` falls off the end of `buildMessages`'s
+ * switch and reaches the endpoint as `undefined`; a `tool` message without
+ * `tool_call_id` is sent with the field literally absent, which OpenAI rejects
+ * with a message naming neither the plugin nor the call. Checked here, each is
+ * the plugin's own `callModel` failing and saying which message was wrong.
+ */
+function readMessage(raw: unknown, index: number): Message {
+  if (!isObject(raw)) {
+    throw new PluginError(`callModel: ${at(index)} is ${typeName(raw)}, not a message object`);
+  }
+  const { role, content, tool_calls: toolCalls, tool_call_id: toolCallId } = raw;
+
+  if (typeof role !== 'string' || !Object.hasOwn(ROLES, role)) {
+    throw new PluginError(
+      `callModel: ${at(index)} has role ${JSON.stringify(role)}; expected one of ` +
+        `${Object.keys(ROLES).join(', ')}.`,
+    );
+  }
+  if (typeof content !== 'string') {
+    throw new PluginError(
+      `callModel: ${at(index)} has no "content" string. A message with nothing to ` +
+        `say is still written as "".`,
+    );
+  }
+
+  const message: Message = { role: role as Role, content };
+
+  if (role === 'tool') {
+    if (typeof toolCallId !== 'string') {
+      throw new PluginError(
+        `callModel: ${at(index)} is a tool message with no "tool_call_id". A tool ` +
+          `result answers a specific call, and the model matches them by that id.`,
+      );
+    }
+    message.tool_call_id = toolCallId;
+  }
+
+  if (toolCalls !== undefined) {
+    if (!Array.isArray(toolCalls)) {
+      throw new PluginError(`callModel: ${at(index)} has a "tool_calls" that is not an array`);
+    }
+    message.tool_calls = toolCalls.map((call, i) => {
+      if (
+        !isObject(call) ||
+        typeof call.id !== 'string' ||
+        typeof call.name !== 'string' ||
+        typeof call.arguments !== 'string'
+      ) {
+        throw new PluginError(
+          `callModel: ${at(index)}.tool_calls[${i}] needs a string "id", "name" and ` +
+            `"arguments". "arguments" is the JSON the model wrote, as text — not the ` +
+            `parsed object.`,
+        );
+      }
+      return { id: call.id, name: call.name, arguments: call.arguments };
+    });
+  }
+
+  return message;
+}
+
+function readNumber(raw: Record<string, unknown>, key: string): number | undefined {
+  const value = raw[key];
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new PluginError(
+      `callModel: "${key}" is ${JSON.stringify(value)}, which is not a number.`,
+    );
+  }
+  return value;
+}
+
+/**
+ * Read a `callModel` frame into the request heddle will send.
+ *
+ * Rebuilt field by field rather than cast, and absent fields left absent rather
+ * than set to `undefined`: the caller merges this over the spec's
+ * `default_generation_parameters`, so an `undefined` present in the object
+ * would erase a default the plugin never mentioned.
+ */
+export function readModelRequest(params: Record<string, unknown> | undefined): ModelRequest {
+  const raw = params ?? {};
+
+  if (!Array.isArray(raw.messages) || raw.messages.length === 0) {
+    throw new PluginError(
+      'callModel needs a non-empty "messages" array: the conversation to send. A ' +
+        'call with nothing to say has no answer to return.',
+    );
+  }
+
+  const request: ModelRequest = { messages: raw.messages.map(readMessage) };
+
+  if (raw.tools !== undefined) {
+    if (!Array.isArray(raw.tools)) {
+      throw new PluginError('callModel: "tools" is not an array');
+    }
+    request.tools = raw.tools.map((tool, i): ToolDefinition => {
+      if (!isObject(tool) || typeof tool.name !== 'string' || !isObject(tool.parameters)) {
+        throw new PluginError(
+          `callModel: tools[${i}] needs a string "name" and a "parameters" JSON ` +
+            `Schema object. Describing a tool to the model does not run it — that is ` +
+            `runTool, and it is granted separately.`,
+        );
+      }
+      return {
+        name: tool.name,
+        description: typeof tool.description === 'string' ? tool.description : '',
+        parameters: tool.parameters,
+      };
+    });
+  }
+
+  const temperature = readNumber(raw, 'temperature');
+  if (temperature !== undefined) request.temperature = temperature;
+  const maxTokens = readNumber(raw, 'maxTokens');
+  if (maxTokens !== undefined) request.maxTokens = maxTokens;
+  const topP = readNumber(raw, 'topP');
+  if (topP !== undefined) request.topP = topP;
+
+  if (raw.responseFormat !== undefined) {
+    if (raw.responseFormat !== 'text' && raw.responseFormat !== 'json') {
+      throw new PluginError(
+        `callModel: "responseFormat" is ${JSON.stringify(raw.responseFormat)}; ` +
+          `expected "text" or "json".`,
+      );
+    }
+    request.responseFormat = raw.responseFormat;
+  }
+
+  return request;
 }
 
 /**

@@ -27,6 +27,7 @@ export class OpenAIProvider implements Provider {
           model: req.model,
           messages: buildMessages(req),
           tools: buildTools(req),
+          ...buildGeneration(req),
         },
         { signal },
       );
@@ -74,6 +75,7 @@ export class OpenAIProvider implements Provider {
           model: req.model,
           messages: buildMessages(req),
           tools: buildTools(req),
+          ...buildGeneration(req),
           stream: true,
         },
         { signal },
@@ -171,6 +173,43 @@ function toChunk(
   }
 
   return chunk;
+}
+
+/**
+ * Spelled out rather than `Partial<ChatCompletionCreateParams>`, which would
+ * carry an optional `stream` into the spread — and the SDK picks between its
+ * buffered and streaming overloads on exactly that field's literal type, so a
+ * `stream?: boolean` arriving from anywhere makes both calls below ambiguous.
+ */
+interface GenerationParams {
+  temperature?: number;
+  max_tokens?: number;
+  top_p?: number;
+  response_format?: { type: 'json_object' };
+}
+
+/**
+ * The generation parameters, under the names this endpoint knows them by.
+ *
+ * Spread into the request rather than assigned, so a parameter the caller did
+ * not set is *absent* rather than `undefined`. The OpenAI SDK serializes an
+ * explicit `undefined` out of the body, but an OpenAI-*compatible* endpoint is
+ * reached through the same client and several of them reject a null-valued
+ * field they would have defaulted happily.
+ *
+ * `json` becomes `{ type: 'json_object' }`, which OpenAI only honours when the
+ * word "JSON" appears somewhere in the messages — a prompt asking for a shape
+ * usually says so, and a request that does not is rejected by the endpoint with
+ * that exact complaint, which is a better teacher than anything this line could
+ * do about it.
+ */
+function buildGeneration(req: ChatRequest): GenerationParams {
+  const params: GenerationParams = {};
+  if (req.temperature !== undefined) params.temperature = req.temperature;
+  if (req.maxTokens !== undefined) params.max_tokens = req.maxTokens;
+  if (req.topP !== undefined) params.top_p = req.topP;
+  if (req.responseFormat === 'json') params.response_format = { type: 'json_object' };
+  return params;
 }
 
 function buildMessages(
