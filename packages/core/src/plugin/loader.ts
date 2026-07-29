@@ -41,7 +41,8 @@ export async function loadPlugin(specifier: string): Promise<HeddlePlugin> {
   const declared =
     (plugin.nodes?.length ?? 0) +
     (plugin.transforms?.length ?? 0) +
-    (plugin.components?.length ?? 0);
+    (plugin.components?.length ?? 0) +
+    (plugin.middleware?.length ?? 0);
   if (declared === 0) {
     throw new PluginError(
       `plugin "${specifier}" declares no nodes, transforms or components`,

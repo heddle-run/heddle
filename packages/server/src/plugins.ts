@@ -109,6 +109,37 @@ function grantedBy(config: ServerConfig): PluginCapability[] {
   return [...GRANTED, 'callModel'];
 }
 
+/**
+ * Refuse a submitted plugin that ships a middleware.
+ *
+ * Middleware is host-configured by design: it runs on every node of every flow,
+ * whether that flow asked or not, which is precisely why it is the operator's
+ * to install and not the caller's. A caller who could submit one would be
+ * installing an error handler — or a retry loop, or a result substituter — on
+ * runs whose specs say nothing about it.
+ *
+ * Refused rather than ignored, and refused here rather than left to fail at the
+ * first node error. Silently dropping it would leave a caller believing their
+ * retry policy was running; leaving it to load would leave them believing it
+ * until something failed.
+ */
+function refuseMiddleware(rawManifest: unknown): void {
+  const manifest = rawManifest as { components?: Array<{ kind?: string; componentType?: string }> };
+  const middleware = (manifest?.components ?? []).filter((c) => c?.kind === 'middleware');
+  if (middleware.length === 0) return;
+
+  throw new HttpError(
+    400,
+    `this plugin declares middleware (${middleware
+      .map((c) => `"${c.componentType}"`)
+      .join(', ')}), which cannot be submitted with a request. Middleware runs on ` +
+      `every node of every flow, so it is installed by whoever runs this server ` +
+      `rather than chosen per request. A component your own flow selects is a node ` +
+      `or a transform.`,
+    'PluginError',
+  );
+}
+
 export function buildPlugins(
   config: ServerConfig,
   code: MaterializedCode,
@@ -120,6 +151,7 @@ export function buildPlugins(
 
   try {
     for (const plugin of code.plugins) {
+      refuseMiddleware(plugin.manifest);
       registry.addRemote(
         loadRemotePlugin(plugin.manifest, plugin.path, {
           // Per call, not per run. This used to pass the run's whole

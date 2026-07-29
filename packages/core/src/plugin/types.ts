@@ -11,6 +11,8 @@ import type { Property } from 'agentspec';
 import type { ChatResponse, Message, ModelRequest } from '../llm/types.js';
 import type { Dependencies } from '../node/types.js';
 import type { LogLevel } from '../runner/events.js';
+import type { AfterVerdict } from './protocol.js';
+import type { Seam, SeamSubscription } from './seams.js';
 
 /**
  * A lightweight input/output declaration. heddle converts these into Agent Spec
@@ -279,6 +281,94 @@ export interface PluginNodeDef extends PluginComponentDef {
   createExecutor(node: PluginNode, deps: Dependencies): PluginNodeExecutor;
 }
 
+/**
+ * What a middleware is handed when a seam consults it.
+ *
+ * The reporting half is {@link PluginReporter}, as every other kind gets, and
+ * `runTool`/`callModel` are here for the same reason they are on a transform: a
+ * retry policy that consults a health endpoint, or a fallback that asks a model
+ * for a canned apology, is the ordinary case rather than the exotic one.
+ *
+ * What is absent is the node's state. A middleware is installed by the operator
+ * and named nowhere in the caller's document, so handing it the run's data
+ * would disclose one caller's information to code they never asked for — see
+ * `AfterParams`. `subject` names which node failed and `outcome` says how; a
+ * component that needs the data itself is a plugin node, which the flow names.
+ */
+export interface MiddlewareContext extends PluginServices {
+  /** Which seam is asking, so one handler table can serve several. */
+  seam: Seam;
+  /**
+   * The operator's configuration for this component type.
+   *
+   * `{}` when the operator supplied none, never undefined — a middleware is
+   * host-configured, so this is the only channel its settings can arrive on and
+   * a handler should not have to guard the object before reading a field.
+   */
+  component: Record<string, unknown>;
+  /** Which attempt this is, and the ceiling heddle will enforce. Both 1-based. */
+  attempt: number;
+  maxAttempts: number;
+}
+
+/** What a seam's call site produced, as a middleware sees it. */
+export type SeamOutcome =
+  | { ok: true; value: unknown }
+  | { ok: false; error: { name: string; message: string } };
+
+/** What the call site was working on. For the node position, which node ran. */
+export interface MiddlewareSubject {
+  nodeName?: string;
+  nodeType?: string;
+}
+
+/** The runtime half of a middleware: one `after` handler serving every seam it declared. */
+export interface PluginMiddlewareExecutor {
+  after(
+    input: { subject: MiddlewareSubject; outcome: SeamOutcome },
+    ctx: MiddlewareContext,
+  ): AfterVerdict | Promise<AfterVerdict>;
+}
+
+/**
+ * A middleware: a component that intercepts a call site rather than occupying a
+ * slot in the spec.
+ *
+ * **Host-configured, never spec-named.** The operator loads it and a flow does
+ * not mention it, which is the honest arrangement for something that runs on
+ * every node whether the flow asked or not — and it keeps `loader.ts`'s rule
+ * that sharing a spec can never cause code to run. A middleware a flow *does*
+ * select is a transform, which already exists.
+ *
+ * There is therefore no `validate` worth having: `PluginComponentDef.validate`
+ * checks a component out of a document, and there is no document here. What
+ * takes its place is the manifest's `schema`, checked against the operator's
+ * configuration when the plugin loads.
+ */
+export interface PluginMiddlewareDef {
+  componentType: string;
+  /** Which seams this subscribes to, and which halves of each. */
+  seams: SeamSubscription;
+  /**
+   * Check the operator's configuration before anything is built from it.
+   *
+   * Throw to refuse it. This is where a manifest's `schema` is applied for an
+   * out-of-process middleware, and where an in-process one may bring its own
+   * validator — the same trade `PluginComponentDef.validate` offers, moved to
+   * the only input a middleware has.
+   *
+   * Called even when the operator supplied nothing, because that is the case
+   * that matters: a middleware declaring `maxAttempts` as required and
+   * receiving `{}` is exactly the one that would otherwise read `undefined` on
+   * the first node that failed.
+   */
+  validateConfig?(config: Record<string, unknown>): void;
+  createMiddleware(
+    config: Record<string, unknown>,
+    deps: Dependencies,
+  ): PluginMiddlewareExecutor;
+}
+
 /** A heddle plugin. Default-export one of these from a plugin module. */
 export interface HeddlePlugin {
   /** Written to `component_plugin_name` when a spec is serialized. */
@@ -288,6 +378,12 @@ export interface HeddlePlugin {
   components?: PluginComponentDef[];
   nodes?: PluginNodeDef[];
   transforms?: PluginTransformDef[];
+  /**
+   * Middleware, which unlike the other three is not registered by component
+   * type for lookup — nothing looks a middleware up, because no document names
+   * one. The registry keeps them in load order and hands the whole list over.
+   */
+  middleware?: PluginMiddlewareDef[];
 }
 
 /** Identity helper that gives plugin authors type checking and completion. */

@@ -86,7 +86,14 @@ export class PluginModel {
 
   constructor(
     private readonly where: string,
-    private readonly component: PluginComponent,
+    /**
+     * Whatever holds the `llm_config`, which is not always a spec component.
+     * For a node or a transform it is the component the document wrote; for a
+     * middleware, which no document names, it is the configuration the operator
+     * supplied. Typed as the one field this class reads so that both are
+     * expressible without either pretending to be the other.
+     */
+    private readonly component: { llmConfig?: unknown; [key: string]: unknown },
     private readonly deps: Dependencies,
   ) {}
 

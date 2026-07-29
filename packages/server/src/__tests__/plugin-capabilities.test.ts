@@ -108,3 +108,64 @@ describe('callModel and the operator credential', () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Middleware, which is not a capability but is refused on the same principle:
+// what a caller may install is not the same question as what a caller may do.
+// ---------------------------------------------------------------------------
+
+describe('a submitted plugin that ships middleware', () => {
+  /** The same load path, with a manifest that declares a middleware. */
+  function loadMiddleware(): void {
+    const workDir = mkdtempSync(join(tmpdir(), 'heddle-plugin-mw-'));
+    cleanups.push(() => rmSync(workDir, { recursive: true, force: true }));
+
+    const config = resolveConfig({ allowRequestCode: true, workDir });
+    const code: MaterializedCode = materializeRequestCode(
+      {
+        plugins: [
+          {
+            name: 'resilience',
+            manifest: {
+              name: 'resilience',
+              version: '1.0.0',
+              capabilities: [],
+              components: [
+                {
+                  componentType: 'RetryPolicy',
+                  kind: 'middleware',
+                  seams: { nodeError: ['after'] },
+                },
+              ],
+            },
+            source: `serve({ RetryPolicy: { nodeError: { after: () => ({ action: 'retry' }) } } });`,
+          },
+        ],
+      },
+      config,
+    );
+    cleanups.push(() => code.dispose());
+
+    const registry = buildPlugins(config, code);
+    cleanups.push(() => registry.dispose());
+  }
+
+  it('is refused, because middleware runs on flows that never named it', () => {
+    expect(() => loadMiddleware()).toThrow(HttpError);
+  });
+
+  it('says the middleware is the operator’s to install, and names it', () => {
+    try {
+      loadMiddleware();
+      expect.unreachable('the load should have failed');
+    } catch (err) {
+      const message = (err as HttpError).message;
+      expect(message).toMatch(/"RetryPolicy"/);
+      expect(message).toMatch(/runs on every node of every flow/);
+      // And points at what a caller *can* submit, so the message ends
+      // somewhere useful rather than at a refusal.
+      expect(message).toMatch(/is a node or a transform/);
+      expect((err as HttpError).status).toBe(400);
+    }
+  });
+});

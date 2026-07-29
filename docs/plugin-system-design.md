@@ -8,11 +8,12 @@ which is the only anchor that survives a phase landing. That rule is enforced, n
 `plugin/__tests__/design-doc-citations.test.ts` fails on a `file:line` citation into any of them.
 
 > **Status.** This document was written against the tree *before* Phase 0, and lands in the same
-> commit as the work it describes. Phases 0, 1, 2, 3, 4 and V tier 1 are done; §9 marks what remains
-> inside each. The surveys in §3 and the "today" snippets in §7 have been brought forward to match, so
-> a passage in the present tense describes the tree as it now is. Everything from Phase 5 onward is
-> still a proposal — and where a phase landed differently from what §7 proposed, the proposal has
-> been replaced by what was built, not annotated alongside it.
+> commit as the work it describes. Phases 0, 1, 2, 3, 4, 6 and V tier 1 are done; §9 marks what
+> remains inside each. Phase 6 landed at one seam of six, which is what its own entry advised. The
+> surveys in §3 and the "today" snippets in §7 have been brought forward to match, so a passage in
+> the present tense describes the tree as it now is. Phases 5, 7, 9 and V tier 2 are still proposals
+> — and where a phase landed differently from what §7 proposed, the proposal has been replaced by
+> what was built, not annotated alongside it.
 
 ---
 
@@ -26,8 +27,12 @@ Concretely, "any part of the agent" means the list the engine currently hardcode
 answers a model call, what happens when a node throws, whether a tool call is allowed to proceed,
 how a tool's result is serialized back into the conversation, how state merges between nodes, how
 a prompt template renders, which tools exist at all, and what the run looks like on the wire. Today
-none of these are reachable from a plugin — the plugin surface is three component kinds, two verbs
-heddle calls (`execute`, `apply`) and three a plugin may call back (`runTool`, `emitEvent`, `log`).
+none of these were reachable from a plugin — the plugin surface was three component kinds, two verbs
+heddle calls (`execute`, `apply`) and one a plugin could call back (`runTool`). It is now four kinds,
+three verbs (`after` joined them in Phase 6) and four reverse calls (`emitEvent` and `log` from Phase
+3, `callModel` from Phase 4). Of the list above, exactly one has been reached: **what happens when a
+node throws**, in Phase 6. A plugin can now *call* a model (Phase 4) but not *be* the provider that
+answers one, which is Phase 5 and a different question.
 
 What the goal does **not** mean:
 
@@ -402,7 +407,7 @@ protocol only widens on one of them at a time.
 
 | Axis | Type | Today | What widening buys |
 |---|---|---|---|
-| What a plugin can **be** | `HostMethod` — heddle calls the plugin | `execute`, `apply` | New kinds. Each new kind needs a verb, a dispatch arm, an engine call site, and (usually) a placeholder. |
+| What a plugin can **be** | `HostMethod` — heddle calls the plugin | `execute`, `apply`, `after` | New kinds. Each new kind needs a verb, a dispatch arm, an engine call site, and (usually) a placeholder. **Phase 6's `middleware` is the exception that shows what the placeholder is for**: it cost a verb, a dispatch arm and a call site, and no placeholder at all — because no document names one, so nothing has to survive the SDK's closed unions. |
 | What a plugin can **do** | `PluginMethod` — the plugin calls heddle | `runTool`, `emitEvent`, `log`, `callModel` | New *abilities* for kinds that already exist. A node that can `callModel` is a new class of node with no new kind, no placeholder, and no SDK involvement — which is exactly how Phase 4 landed. |
 
 The second axis is dramatically cheaper and is now at four methods. What a plugin still **cannot** do
@@ -473,10 +478,17 @@ only intercept it. Everything blocked by this one un-wrappable await: per-node r
 timeout (the only timeout is whole-run, `runner.ts:17`), node-result caching, dry-run substitution,
 approval gates, checkpointing.
 
-And line 72 is unconditional: **every node error is fatal, and heddle has no error-handling
-extension point of any kind.** `EventHandler` returns `void` (`runner/events.ts`, `EventHandler`) and the emit at
-`:66` cannot influence the throw. `grep -rn 'retry\|backoff' packages/core/src` finds nothing. A
-transient 429 from a tool ends the run.
+And line 72 was unconditional: **every node error was fatal, and heddle had no error-handling
+extension point of any kind.** `EventHandler` returns `void` (`runner/events.ts`, `EventHandler`), so
+the emit beside the throw could not influence it, and `grep -rn 'retry\|backoff' packages/core/src`
+found nothing. A transient 429 from a tool ended the run.
+
+**Phase 6 opened exactly this one.** The catch clause is now the `nodeError` seam: the chain is
+consulted, and a middleware can retry the node, substitute a result, fail with a different reason, or
+let the error stand (§7.4). The rest of this section is unchanged and still true — there is still no
+position in the spec that means "around every node", which is why the answer was interception rather
+than a slot, and per-node timeout, memoization, dry-run and approval gates are still blocked on the
+`node` seam that Phase 6 declared and did not wire.
 
 ### 5.2 The agent loop fuses eight policies into one function
 
@@ -527,6 +539,12 @@ both outside the tool loop (`agent.ts:125`, `:158`). A transform never sees a to
 result, a tool error, or a round boundary. **Adding taps to a proven mechanism is a smaller change
 than inventing one**, and the verdict vocabulary should stay recognisably the same.
 
+That is what Phase 6 did, and the prediction held on both counts. `MiddlewareChain.consult`
+(`plugin/middleware.ts`) is the same three lines of logic as `TransformChain.apply` — entries in
+order, a verdict each, the first non-neutral one wins — and `AfterVerdict` is `TransformResult`'s
+shape with the verbs the new call site can honour. The third tap is `runner.ts`'s catch clause; five
+more are named in `SEAMS` and unwired.
+
 ---
 
 ## 6. Seam inventory
@@ -539,7 +557,7 @@ a handful of call sites; **L** = touches the protocol, the event system, or the 
 | 1 | Provider selection | `llm/provider.ts:10-15,122,141` | Anthropic/Bedrock provider; record-replay provider for free deterministic CI | component | S |
 | 2 | Provider wrapping | `llm/provider.ts:141`; no `Dependencies` field (`node/types.ts:12-49`) | retry+backoff, response cache, rate limit, audit log, PII redaction | middleware | S |
 | 3 | Node dispatch | `runner/runner.ts:61-62` | per-node timeout, memoization, dry-run, approval gate | middleware | M |
-| 4 | Node error | `runner/runner.ts:63-73` | retry, route to a fallback node, degrade to a canned answer | middleware | S |
+| 4 | Node error | `runner/runner.ts:63-73` | ~~retry, degrade to a canned answer~~ **landed, Phase 6** — the `nodeError` seam. Routing to a *fallback node* did not: a middleware supplies a result, never a route | middleware | S |
 | 5 | Tool call | `node/agent.ts:190-249` | deny, rewrite args, return cached result — this is `humanInTheLoop` | middleware | M |
 | 6 | Tool result | `node/agent.ts:214` | truncate/summarize a 2 MB blob before it eats the context window | middleware | S |
 | 7 | Tool error | `node/agent.ts:242-246` | retry a 429 instead of narrating it to the model | middleware | S |
@@ -957,7 +975,118 @@ worked. Capability that depends on unrelated graph structure is not a capability
 installs its own runner, covered by "runs a tool on the transform behalf" in
 `plugin/__tests__/remote.test.ts`.
 
-### 7.4 The `middleware` kind
+### 7.4 The `middleware` kind — **landed, Phase 6, at one seam**
+
+`nodeError` is wired; the other five are declared and refused. What follows describes the shape as
+built, with the draft's proposals corrected where the implementation went a different way.
+
+**Seams are a table, not an enum.** The draft proposed a closed union of names. What landed is
+`plugin/seams.ts`, a `Record<Seam, SeamDef>` carrying, per seam, its call-site position, which halves
+it has, whether its subscribers join always or only on failure, which verdicts each half admits, and
+whether heddle consults it yet. The reason is that three separate things have to agree about a seam
+and none can be trusted to remember: the manifest validator refuses a subscription heddle will never
+honour, `readAfterVerdict` refuses a verdict the call site cannot obey, and `init` tells the plugin
+both before it is mid-run. All three read one table.
+
+Listing the five unimplemented seams is the point rather than a courtesy. A manifest naming
+`toolCall` today is refused with *"which heddle does not consult yet"* instead of loading into a
+silence its author reads as a broken middleware. And the table is where `retry`'s absence at
+`toolCall` is written down — not as a limitation to be discovered, but as a property of that call
+site: by the time a tool call fails, the assistant message requesting it is already in `messages`, so
+there is no clean state to re-enter. At `node` there is, because `runner.ts` writes `nodeOutputs` and
+merges state only *after* the `try`.
+
+**`nodeError` is not a hook shape of its own.** It is the node position's `after` chain filtered to
+failures — `{ position: 'node', hooks: ['after'], when: 'error' }`. Nothing precedes an error, so it
+has no `before`; when the `node` seam lands it joins the same reverse-registration chain and nothing
+written today changes meaning. One `after` verb serves every seam, because a chain is one thing: one
+order, one short-circuit, one handler table. A verb per seam would have made that ordering a property
+of which verb heddle happened to send.
+
+**Verdicts as landed**, checked against the seam rather than the union:
+
+```ts
+export type AfterVerdict =
+  | { action: 'pass' }                                  // neutral; the chain continues
+  | { action: 'replace'; value: Record<string, unknown> }
+  | { action: 'retry'; delayMs?: number }
+  | { action: 'fail'; reason: string };
+```
+
+`fail` requires a non-empty `reason`, because it replaces the only diagnosis anybody had.
+
+**The retry ceiling is heddle's, and it is defence in depth rather than the bound.** `retry` is a
+`continue` in the runner's existing `for`, so a retried node **spends an iteration** — which makes
+`maxIterations` the real bound on how many times anything executes, and the run timeout the bound on
+how long. `RunnerOptions.maxNodeAttempts` (default 3, `--max-node-attempts`) adds only that the limit
+is reported *at the node*, naming the middleware, rather than at the graph as "exceeded max
+iterations" — a message that sends whoever reads it to inspect a graph that is fine. The iteration
+message now says how many of them were retries, for the same reason.
+
+At the ceiling the chain is **still consulted** and only `retry` is refused: a policy whose last
+resort is a canned answer has to get that last chance. A refused retry is a warning and never a
+`MiddlewareError`, which would blame a plugin for heddle's ceiling.
+
+**The ceiling is handed *into* the chain, not applied to what comes out of it**, and the difference
+is the whole of whether two plugins compose. `MiddlewareChain.consult` returns at the first entry
+answering anything but `pass`. So a ceiling applied to the result reads "retry" from the retry policy,
+turns it into `pass`, and the fallback behind it — installed for exactly this attempt, with a canned
+answer ready — is never asked, because the consult was already over. Handed in as `allowRetry`, the
+refusal lands on the one entry that asked and the chain carries on. A retry policy and a fallback are
+the natural two-plugin arrangement and the first thing anyone will install; the version that broke it
+passed its own test, which used a single middleware inspecting `ctx.attempt` itself.
+
+**A replaced node routes on the unbranched edge**, and this is the subtlest thing in the phase.
+`executor.branch()` reads state the executor wrote on its last *successful* run and never resets —
+`PluginNodeAdapter._branch` and `SwitchNode`'s both — so consulting it after a failure returns the
+branch from a previous visit, and a substituted node inside a loop would follow an edge that has
+nothing to do with this visit. It is also the honest answer: a middleware supplies a result, never a
+route, because `graph/validate.ts` checked reachability before anything ran.
+
+**Open question 3 is answered: fatal, on every seam, with no opt-out.** A middleware that throws,
+dies, times out or answers with nonsense fails the run as a `MiddlewareError` naming the plugin, the
+component type and the seam.
+
+The draft called the tempting split — fatal for `reject`-capable seams, skipped for observe-only —
+undermined because failing open is a *security* failure for a guardrail and a *reliability* failure
+for everything else. Read again, both halves say failing open is wrong; what the objection actually
+shows is that the split has no survivable side. And the observe-only category it presumes does not
+exist here: every middleware returns a verdict, and a verdict is authority. A component that only
+wants to watch has `emitEvent` and `log`, which return nothing to anybody and cannot fail a run. The
+only way to populate that category would be to let the plugin declare its own failure survivable, and
+a policy the untrusted party opts out of is not a policy.
+
+Fatal is also the only *observable* answer — a skipped guardrail yields a successful run and a
+warning nobody reads, on a component no flow mentions, which is invisible by construction — and it is
+the rule every other kind already runs under: a transform that throws fails the run, and so does a
+plugin node.
+
+**The reporting carries both failures, and this draft had it backwards.** It said the run should fail
+with the original node error and attach the middleware's as `cause` — "the run dies either way and the
+diagnosis the operator needs is the node's". That reasoning defeats the paragraph above it: burying a
+dead middleware inside a `cause` is the same silence the skipped policy was rejected for. But
+reporting the middleware's error *alone* is no better, because the flow's author did not install the
+middleware and may not know it exists, and the node failed first. So the `MiddlewareError` is the
+run's error, and its message carries the node's failure and a sentence saying a middleware is the
+operator's and is removed the way it was loaded. The node's error is the `cause`.
+
+One consequence lands outside core. `MiddlewareError extends PluginError`, and the server maps
+`PluginError` to **400** on the reasoning that every plugin it loads arrived with the request — true
+of every kind except this one, which is refused with a 400 if a caller submits it. A middleware
+failure is therefore a 500: charging it to the caller would tell the one person who cannot fix it
+that it is theirs to fix.
+
+The kill switch already exists and needs no design: middleware is host-configured, so unloading it is
+the same flag that loaded it, and no flow changes.
+
+**What the draft proposed and did not land.** `BeforeVerdict`, `modify` and `reject` are unbuilt —
+nothing subscribes to a `before` yet, and shipping a verdict vocabulary with no call site would have
+been a contract nobody could test. The seam names and admitted actions are reserved in `SEAMS` so
+that when `node` arrives the shape is already fixed.
+
+---
+
+The draft's own text follows, kept because the ordering and composition rules landed verbatim.
 
 **Seams.** A closed enum, because each name is a real call site with a real contract:
 
@@ -1055,23 +1184,40 @@ middleware has no document, so `schema` above would describe something nothing c
 `ctx.component.maxAttempts` would read `undefined`. The configuration channel is therefore part of
 this kind, not a follow-up:
 
+The draft put that channel on the loader's options, as `RemotePluginOptions.componentConfig`,
+validated at load against the manifest's `schema`. **It landed in one place instead, and the reason
+is worth recording, because the draft's version was built first and was wrong in a way a green test
+suite could not see.**
+
+Configuration arrives at `MiddlewareChain.build` — that is where `--plugin-config` lands, and the
+only object a middleware is ever constructed from. A `componentConfig` on the loader was therefore a
+*second* channel: it was validated and then dropped, while the one that delivered was checked against
+nothing. Each half was tested on its own — one test asserted that a bad `componentConfig` fails to
+load, another asserted that `ctx.component` carries what `build` was given — so neither test ever
+asked one object to do both, and the gap survived.
+
 ```ts
-// packages/core/src/plugin/remote-loader.ts — RemotePluginOptions, continued from §7.3
-  /**
-   * Per-componentType configuration for host-configured components. Validated
-   * against that component's manifest `schema` at load time, with the same
-   * closed-set, load-time-error treatment `kind` already gets
-   * (`plugin/manifest.ts:123-128`) — a middleware whose required fields are
-   * missing fails to load, naming the field, rather than reading `undefined` on
-   * the first node that errors.
-   */
-  componentConfig?: Record<string, unknown>;
+// packages/core/src/plugin/types.ts — PluginMiddlewareDef
+  /** Check the operator's configuration before anything is built from it. */
+  validateConfig?(config: Record<string, unknown>): void;
 ```
 
-with `--plugin-config <componentType>=<json>` on the CLI and the equivalent key in the server config.
-`ctx.component` for a middleware is exactly that validated object, delivered on every call as
-`BeforeParams.component` / `AfterParams.component` (§7.1) — the protocol carries no component payload
-today, and middleware is what makes it necessary.
+The check travels on the def and runs where the configuration arrives. `remoteMiddlewareDef` fills it
+in from the manifest's `schema`; an in-process middleware may bring its own. `MiddlewareChain.build`
+is also the only vantage point from which the *other* half of the check is possible at all — a
+configuration key that no loaded middleware claims. One typed character in
+`--plugin-config RetryPolicee=…` otherwise passes every syntactic check there is and leaves the
+operator watching `--verbose` print the middleware's name while it runs unconfigured.
+
+`--plugin-config <componentType>=<json|@file>` on the CLI, `@file` for the same reason a server reads
+a credential from one. `ctx.component` is exactly that validated object, delivered on every call as
+`AfterParams.component` — the protocol carried no component payload before, and middleware is what
+made it necessary.
+
+One key in it is heddle's rather than the author's: `llm_config` is normalized to the camelCase
+spelling `PluginModel` reads. An operator's configuration never meets the SDK's deserializer, so
+without that step the spelling heddle's own error message asks for would be invisible to the code
+that reads it.
 
 ### 7.5 Streaming and lifecycle — **landed, Phase 2**
 
@@ -1326,8 +1472,8 @@ The middleware holds no state at all. `attempt` comes from the host, which owns 
 is the only party that can count it correctly across re-invocations (§7.1); a module-scope
 `Map` keyed by `callId` would count 1 forever, since `retry` re-enters with a fresh `callId` (§7.4).
 `maxAttempts` is host-configured — the operator supplies it as
-`--plugin-config RetryPolicy='{"maxAttempts":3}'`, validated against the manifest `schema` above at
-load time (§7.4), and the host's own ceiling still applies underneath it.
+`--plugin-config RetryPolicy='{"maxAttempts":3}'`, checked against the manifest `schema` above when
+the chain is built (§7.4), and the host's own ceiling still applies underneath it.
 
 **(b) An LLM-judge node, using `callModel`.** This one is no longer a sketch — it is what Phase 4
 made writable, and `plugin/__tests__/model.test.ts` runs a plugin shaped exactly like it.
@@ -1540,15 +1686,21 @@ Phase 3, so an encoder written now sees the final shape — `BuiltinEventType | 
    the SDK's own path — camelCased, `defaultGenerationParameters` intact — and `PluginModel` reads it
    directly. Only a plugin that *implements* a provider (a new `LlmConfig` **type**, Phase 5) needs
    `LlmConfigUnion` opened. Consuming a model was never the expensive half.
-2. **Does `retry` belong on `nodeError` only, or on every seam?** Universal retry is a much larger
-   contract: the host must be able to re-invoke the underlying call idempotently, which is true at
-   `runner.ts:61` and emphatically not true partway through the tool loop at `agent.ts:190-249`,
-   where earlier tool messages are already in `messages`.
-3. **Is a middleware failure fatal or skipped?** A middleware that throws at `runner.ts:61` fails
-   runs it has nothing to do with (§10). Fatal is honest; skipped is survivable. The tempting split —
-   fatal for seams with `reject` power, skipped for observe-only — is undermined by the fact that a
-   `reject`-capable middleware failing open is a *security* failure for a guardrail and a
-   *reliability* failure for everything else. Unresolved.
+2. **~~Does `retry` belong on `nodeError` only, or on every seam?~~ Resolved in Phase 6: per seam,
+   declared as data.** The question was right about the asymmetry and wrong to treat it as one
+   decision. `SEAMS[seam].after` names the verdicts each call site can honour, so `retry` is
+   admissible at the node position and absent at `toolCall`, and `readAfterVerdict` refuses it there
+   rather than honouring it into a corrupted message array. The plugin learns the same set at `init`,
+   so a middleware that wants to work at both seams can fall back to `replace` instead of being
+   refused mid-run — which, under the fatal policy, would cost the run.
+3. **~~Is a middleware failure fatal or skipped?~~ Resolved in Phase 6: fatal, on every seam, with no
+   opt-out.** The argument is in §7.4 and turns on two things the question did not state. The
+   objection against the tempting split is not that both halves are wrong — it is that the split has
+   no survivable side, since both halves say failing open is wrong. And the observe-only category the
+   split presumes does not exist: every middleware returns a verdict, and a component that only wants
+   to watch already has `emitEvent` and `log`, which cannot fail a run. The carve-out that makes it
+   affordable is in the reporting: on `nodeError` the run fails with the node's own error and the
+   middleware failure as `cause`.
 4. **Network policy for plugins.** The current model denies the environment and (optionally) the
    filesystem; it says nothing about the network. Example (c) needs it, guardrails plugins must not
    have it. Neither `SandboxPolicy` nor the proposed capability list expresses it today.
@@ -1849,18 +2001,46 @@ the codebase or ships the host-configured stopgap and carries a migration later.
 **Unblocks:** Anthropic/Bedrock, record-replay CI, retry and caching wrappers (seam #2).
 Cost: medium after Phase V; high before it.
 
-### Phase 6 — Middleware kind
+### Phase 6 — Middleware kind — **landed at `nodeError`; five seams reserved**
 
-Start with **`nodeError` only** — one seam, the largest gap, the smallest diff, and the cheapest
-place to discover that the verdict vocabulary is wrong. Then `toolCall` (which is what
-`humanInTheLoop` at `spec/types.ts:46` has been promising), then `node`, then the rest.
+The advice held: `nodeError` alone, and the cost estimate held too — restructuring `runner.ts:61-73`
+was the easy part, and the policy questions were the phase.
+
+| Landed | Where |
+|---|---|
+| `middleware` as a fourth `ComponentKind`, kept out of `componentTypeNames()` because no spec may name one | `plugin/registry.ts` |
+| The `SEAMS` table: position, halves, `when`, admitted verdicts, `implemented` — read by the manifest validator, the verdict reader and `init` | `plugin/seams.ts` |
+| `MiddlewareChain`: reverse registration order, first non-`pass` wins, `MiddlewareError`, the 30 s delay clamp | `plugin/middleware.ts` |
+| The seam itself: an attempt loop via `continue`, `maxNodeAttempts`, `Event.attempt`, `warning` per granted retry and per substituted result | `runner/runner.ts`, `runner/options.ts`, `runner/events.ts` |
+| The `after` verb, `AfterParams`, `readAfterVerdict` checked against the seam | `plugin/protocol.ts` |
+| `seams` declared in the manifest, refused four different ways | `plugin/manifest.ts` |
+| `remoteMiddlewareDef`, with its own tool runner so capability does not depend on load order | `plugin/remote.ts` |
+| One configuration channel: `--plugin-config <Type>=<json\|@file>` into `MiddlewareChain.build`, checked there by the def's own `validateConfig`, with a key no middleware claims refused | `cli/run.ts`, `plugin/middleware.ts`, `plugin/remote.ts` |
+| `readSubscription` shared by the manifest and the in-process path, so an author cannot subscribe to an unconsulted seam or a half that does not exist on either | `plugin/seams.ts` |
+| Seam-keyed handlers and `ctx.component` in the emitted runtime | `plugin/runtime-source.ts` |
+| A spec naming a middleware refused with the reason; a *submitted* middleware refused 400 | `plugin/flow-preprocess.ts`, `server/plugins.ts` |
+
+**What deliberately did not land.** `before` — with `modify` and `reject` — is unbuilt, because
+nothing subscribes to one yet and a verdict vocabulary with no call site is a contract nobody can
+test. The names are reserved in `SEAMS` so `node`'s arrival changes no meaning.
+
+**And what an operator cannot do yet, stated rather than papered over: the server installs no
+middleware.** It has no operator-plugin path at all — `buildPlugins` loads only what a request
+submitted — so building one is its own change (startup manifest loading, per-run instantiation,
+sandbox sessions, disposal) and is not this phase. What the server does today is refuse a *submitted*
+middleware, which is the half that had to land with the kind rather than after it. Middleware is
+therefore reachable from the CLI and from an embedder holding `RunnerOptions`, and not from
+engine.heddle.run.
+
+One smaller gap worth knowing about. `heddle chat` builds its own `Runner`
+(`packages/cli/src/chat/ui.tsx`) from the same options object, so the chain *is* installed there and
+a retry works — but the TUI reads four event types and has no `warning` arm, so the retry happens
+silently. `heddle run` renders it, via `cli/progress.ts:55`. Recorded for the same reason Phase 3
+recorded the TUI's silence about `plugin_log`: a contract nothing draws is not yet a feature.
 
 **Depends on:** Phases 1, 2, 3.
-**Unblocks:** retry, approval gates, caching, dry-run, result truncation, policy enforcement.
-Cost: **high, and higher than it looks.** Restructuring `runner.ts:61-73` is easy. Deciding whether a
-middleware failure is fatal (§7.10 Q3), keeping ordering comprehensible when three plugins register
-on one seam, and paying an IPC round trip per node per middleware (§10) are all real. Budget for the
-policy, not the plumbing.
+**Unblocks:** retry and fallback today; approval gates, caching, dry-run and result truncation when
+`toolCall` and `node` land against the shape this phase fixed.
 
 ### Phase 7 — Registry / tool-source
 

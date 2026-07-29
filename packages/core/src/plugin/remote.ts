@@ -8,7 +8,7 @@
  * where each hook's answer comes from:
  *
  *   validate, inferInputs, inferOutputs, branches   →  the manifest (data)
- *   execute, apply                                  →  an RPC call
+ *   execute, apply, after                           →  an RPC call
  *
  * The synchronous hooks stay synchronous because the manifest already holds
  * their answers, which is the reason the manifest exists.
@@ -22,6 +22,8 @@ import type { Dependencies } from '../node/types.js';
 import type {
   PluginComponent,
   PluginComponentDef,
+  PluginMiddlewareDef,
+  PluginMiddlewareExecutor,
   PluginNode,
   PluginNodeDef,
   PluginNodeExecutor,
@@ -31,6 +33,7 @@ import type {
   TransformPhase,
   TransformResult,
 } from './types.js';
+import { readAfterVerdict, type AfterVerdict } from './protocol.js';
 import type { Message } from '../llm/types.js';
 
 /**
@@ -195,6 +198,81 @@ export function remoteTransformDef(
   }
 
   return def;
+}
+
+/**
+ * The middleware half: a seam hook executed in the plugin's process.
+ *
+ * The one kind with no spec component behind it. `createMiddleware` therefore
+ * takes the operator's configuration where the others take a document's
+ * component, and `validate` becomes `validateConfig` — the manifest's `schema`
+ * describes that configuration, because there is no document for it to
+ * describe. The check runs where the configuration arrives, in
+ * `MiddlewareChain.build`, and not here: this function is handed a manifest,
+ * and the operator's answer to it turns up later.
+ */
+export function remoteMiddlewareDef(
+  manifest: PluginManifest,
+  entry: ManifestComponent,
+  host: () => PluginHost,
+): PluginMiddlewareDef {
+  return {
+    componentType: entry.componentType,
+    seams: entry.seams ?? {},
+
+    validateConfig(config): void {
+      if (!entry.schema) return;
+      checkSchema(
+        config,
+        entry.schema,
+        `plugin "${manifest.name}": configuration for "${entry.componentType}"`,
+      );
+    },
+
+    createMiddleware(config, deps): PluginMiddlewareExecutor {
+      const wire = serializable(config, `${entry.componentType} configuration`);
+      // The same wiring a transform gets, and for the same reason: what a
+      // component may do has to follow from the component, not from which other
+      // component of the same plugin happened to compile first. Without this a
+      // middleware's `runTool` would work only when the plugin also shipped a
+      // node that had already run — `setToolRunner` is first-writer-wins.
+      host().setToolRunner(
+        toolRunner(`plugin "${manifest.name}": middleware "${entry.componentType}"`, deps),
+      );
+
+      return {
+        async after({ subject, outcome }, ctx): Promise<AfterVerdict> {
+          const raw = await host().call(
+            'after',
+            {
+              seam: ctx.seam,
+              componentType: entry.componentType,
+              component: wire,
+              subject,
+              outcome,
+              attempt: ctx.attempt,
+              maxAttempts: ctx.maxAttempts,
+            },
+            {
+              signal: ctx.signal,
+              // Handed over whole, exactly as a node's is, so a remote
+              // middleware's events, logs, tools and model calls are the ones
+              // heddle built for this consult rather than a second set that has
+              // to be kept identical to them.
+              reporter: ctx,
+              runTool: ctx.runTool,
+              callModel: ctx.callModel,
+            },
+          );
+          return readAfterVerdict(
+            ctx.seam,
+            raw,
+            `middleware "${entry.componentType}" (plugin "${manifest.name}")`,
+          );
+        },
+      };
+    },
+  };
 }
 
 /** A component type that is neither node nor transform: validation only. */

@@ -90,8 +90,28 @@ export type { Dependencies, NodeExecutor } from './node/types.js';
 
 export { definePlugin } from './plugin/types.js';
 export { PluginRegistry } from './plugin/registry.js';
-export type { ComponentKind } from './plugin/registry.js';
+export type { ComponentKind, RegisteredMiddleware } from './plugin/registry.js';
 export { loadPlugin, loadPlugins } from './plugin/loader.js';
+
+// ---------------------------------------------------------------------------
+// Middleware: interception rather than a slot
+//
+// The one kind a spec cannot name. Whoever runs heddle installs it and it is
+// consulted at a seam — a call site the engine has, which no document could
+// have pointed at. `nodeError` is the seam wired today.
+// ---------------------------------------------------------------------------
+
+export { MiddlewareChain, MiddlewareError, MAX_RETRY_DELAY } from './plugin/middleware.js';
+export type { ChainVerdict } from './plugin/middleware.js';
+export { SEAMS, SEAM_NAMES, IMPLEMENTED_SEAMS, isSeam } from './plugin/seams.js';
+export type {
+  AfterAction,
+  BeforeAction,
+  Half,
+  Seam,
+  SeamDef,
+  SeamSubscription,
+} from './plugin/seams.js';
 
 // ---------------------------------------------------------------------------
 // Out-of-process plugins
@@ -132,10 +152,13 @@ export {
   PLUGIN_CAPABILITIES,
   PLUGIN_METHODS,
   PROTOCOL_VERSION,
+  readAfterVerdict,
   readModelRequest,
   spokenProtocol,
 } from './plugin/protocol.js';
 export type {
+  AfterParams,
+  AfterVerdict,
   ApplyParams,
   CallModelParams,
   CancelParams,
@@ -169,10 +192,14 @@ export type {
 export { checkSchema } from './plugin/schema.js';
 export type {
   HeddlePlugin,
+  MiddlewareContext,
+  MiddlewareSubject,
   PluginComponent,
   PluginComponentDef,
   PluginContext,
   PluginIO,
+  PluginMiddlewareDef,
+  PluginMiddlewareExecutor,
   PluginNode,
   PluginNodeDef,
   PluginNodeExecutor,
@@ -181,6 +208,7 @@ export type {
   PluginServices,
   PluginTransformDef,
   PluginTransformExecutor,
+  SeamOutcome,
   TransformContext,
   TransformPhase,
   TransformResult,

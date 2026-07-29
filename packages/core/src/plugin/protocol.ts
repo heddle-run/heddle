@@ -26,6 +26,7 @@
 import { PluginError } from '../errors.js';
 import type { Message, ModelRequest, Role, ToolDefinition } from '../llm/types.js';
 import type { LogLevel } from '../runner/events.js';
+import { SEAMS, type AfterAction, type Seam } from './seams.js';
 
 /**
  * The protocol's version, as an integer rather than a semver string.
@@ -85,6 +86,8 @@ export interface HostMethods {
   execute: ExecuteParams;
   /** Run one message transform. */
   apply: ApplyParams;
+  /** Consult one middleware after a seam's call site produced its outcome. */
+  after: AfterParams;
 }
 
 export type HostMethod = keyof HostMethods;
@@ -294,6 +297,19 @@ export interface InitParams extends Record<string, unknown> {
    * them by making a call and being refused mid-run.
    */
   capabilities: PluginCapability[];
+  /**
+   * For each seam this plugin subscribed to, the verdicts that seam admits.
+   *
+   * The same reason `capabilities` is sent, applied to the other axis. `retry`
+   * is honoured at the node position and cannot be at `toolCall`, and a
+   * middleware that wants to work at both should be able to read that and fall
+   * back to `replace` — rather than write one verdict, be refused at one seam,
+   * and take the run down with it under the fatal policy.
+   *
+   * Absent when the plugin subscribes to no seam, which is every plugin that
+   * provides no middleware.
+   */
+  seams?: Record<string, AfterAction[]>;
 }
 
 /** What a plugin answers `init` with. Anything else is read as {@link UNVERSIONED}. */
@@ -375,6 +391,145 @@ export interface ApplyParams extends Record<string, unknown> {
   component: Record<string, unknown>;
   phase: 'pre' | 'post';
   messages: unknown[];
+}
+
+/** What a seam's call site was working on, as the middleware sees it. */
+export interface SeamSubject {
+  /** For the `node` position: the graph node that ran. */
+  nodeName?: string;
+  nodeType?: string;
+}
+
+/**
+ * Params for `after`: one middleware consulted on one seam's outcome.
+ *
+ * One verb for every seam rather than a verb per seam, because a middleware
+ * chain is one thing: the entries are evaluated in one order, the first
+ * non-neutral verdict wins, and a plugin that subscribes to two seams answers
+ * both through the same handler table. A verb per seam would make that
+ * ordering a property of which verb heddle happened to send.
+ *
+ * The failing node's **input does not cross this boundary**, and that is a
+ * decision rather than an omission. A middleware is installed by the operator
+ * and named nowhere in the caller's document, so sending it the node's state
+ * would disclose one caller's run data to code they never asked for — and it
+ * would do so on every failure, for a value no verdict needs: `retry` re-runs
+ * the node from the state heddle still holds, and `replace` supplies an output
+ * rather than deriving one. A middleware that genuinely needs the data is a
+ * plugin node, which the flow names.
+ */
+export interface AfterParams extends Record<string, unknown> {
+  /** Which seam this is, so one handler table can serve several. */
+  seam: Seam;
+  componentType: string;
+  /**
+   * The operator's configuration for this component type, validated against the
+   * manifest's `schema` when the plugin loaded.
+   *
+   * Middleware is host-configured — a flow never names it — so unlike every
+   * other kind there is no document to read fields from. This is that document's
+   * replacement, and it is `{}` rather than absent when the operator supplied
+   * none, so a handler reading `component.maxAttempts` gets `undefined` and not
+   * a crash.
+   */
+  component: Record<string, unknown>;
+  subject: SeamSubject;
+  /**
+   * What the call site produced. `ok: false` carries the error's name and
+   * message and **never its stack**: a stack is full of host paths, and the
+   * process on the other end of this pipe is, under `--allow-request-code`, a
+   * stranger's program.
+   */
+  outcome: { ok: true; value: unknown } | { ok: false; error: { name: string; message: string } };
+  /**
+   * Which attempt this is, 1-based, and the ceiling heddle will enforce.
+   *
+   * Always present, and `1`/`1` on a seam that does not admit `retry`, so a
+   * handler never has to test for the field. heddle counts, because a middleware
+   * re-invoked with a fresh call has nothing durable to count with — a module
+   * -scope counter in the plugin would see attempt 1 forever, or would leak
+   * across the runs that share its process.
+   */
+  attempt: number;
+  maxAttempts: number;
+}
+
+/**
+ * What a middleware answers an `after` with.
+ *
+ * `pass` is the neutral verdict and the only one that lets the chain continue;
+ * the first entry to answer anything else wins and the rest are not consulted.
+ * That is the rule `TransformChain.apply` already runs under, and it is what
+ * makes retry-versus-fail conflicts unreachable rather than ranked.
+ */
+export type AfterVerdict =
+  | { action: 'pass' }
+  | { action: 'replace'; value: Record<string, unknown> }
+  | { action: 'retry'; delayMs?: number }
+  | { action: 'fail'; reason: string };
+
+/**
+ * Read a verdict that arrived from a plugin's process.
+ *
+ * Checked against the seam rather than against the union, so a `retry` sent to
+ * a seam whose call site cannot re-issue anything is refused here — naming what
+ * that seam does admit — instead of being honoured somewhere it corrupts the
+ * call it re-enters. The list comes from {@link SEAMS}, so the check and the
+ * handshake that told the plugin its limits cannot disagree.
+ */
+export function readAfterVerdict(seam: Seam, raw: unknown, where: string): AfterVerdict {
+  if (!isObject(raw)) {
+    throw new PluginError(`${where}: returned ${typeName(raw)}, expected { action }`);
+  }
+
+  const admitted = SEAMS[seam].after;
+  const { action } = raw;
+  if (typeof action !== 'string' || !admitted.includes(action as AfterAction)) {
+    throw new PluginError(
+      `${where}: returned action ${JSON.stringify(action)}. The "${seam}" seam ` +
+        `admits: ${admitted.join(', ')}.`,
+    );
+  }
+
+  switch (action as AfterAction) {
+    case 'pass':
+      return { action: 'pass' };
+
+    case 'replace': {
+      if (!isObject(raw.value)) {
+        throw new PluginError(
+          `${where}: returned "replace" without a "value" object. A replaced node ` +
+            `produces a state, so the value is the output object that node would ` +
+            `have returned.`,
+        );
+      }
+      return { action: 'replace', value: raw.value };
+    }
+
+    case 'retry': {
+      const { delayMs } = raw;
+      if (delayMs !== undefined && (typeof delayMs !== 'number' || !Number.isFinite(delayMs))) {
+        throw new PluginError(
+          `${where}: returned "retry" with a delayMs of ${JSON.stringify(delayMs)}, ` +
+            `which is not a number of milliseconds.`,
+        );
+      }
+      return delayMs === undefined
+        ? { action: 'retry' }
+        : { action: 'retry', delayMs };
+    }
+
+    case 'fail': {
+      if (typeof raw.reason !== 'string' || raw.reason.length === 0) {
+        throw new PluginError(
+          `${where}: returned "fail" without a "reason". The reason replaces the ` +
+            `error the run would otherwise have reported, so an empty one loses the ` +
+            `only diagnosis anybody had.`,
+        );
+      }
+      return { action: 'fail', reason: raw.reason };
+    }
+  }
 }
 
 /**
