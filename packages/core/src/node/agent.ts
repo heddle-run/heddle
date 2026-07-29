@@ -15,7 +15,7 @@ import type { NodeExecutor, Dependencies } from './types.js';
 import type { EventHandler } from '../runner/events.js';
 import type { Executor, Registry } from '../tool/types.js';
 import { invokeTool } from '../tool/invoke.js';
-import { createProvider, generationParams } from '../llm/provider.js';
+import { generationParams, providerFor } from '../llm/provider.js';
 import { TransformChain } from '../plugin/transform.js';
 import { RunError, ToolError } from '../errors.js';
 
@@ -65,11 +65,7 @@ export class AgentExecutor implements NodeExecutor {
    * impossible without credentials.
    */
   private getProvider(): Provider {
-    this.provider ??= createProvider(this.node.agent!.llmConfig!, {
-      allowEnvRefs: this.deps.allowEnvRefs,
-      defaultKey: this.deps.defaultLlmKey,
-      defaultUrl: this.deps.defaultLlmUrl,
-    });
+    this.provider ??= providerFor(this.node.agent!.llmConfig!, this.deps);
     return this.provider;
   }
 

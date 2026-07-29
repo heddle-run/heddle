@@ -37,7 +37,7 @@ export interface ManifestComponent {
   /** The `component_type` string as it appears in a spec file. */
   componentType: string;
   /** What this is, which decides how heddle treats it. Defaults to `node`. */
-  kind?: 'node' | 'transform' | 'component' | 'middleware';
+  kind?: 'node' | 'transform' | 'component' | 'provider' | 'middleware';
   /** Inputs to advertise when the spec file does not declare them. */
   inputs?: PluginIO[];
   /** Outputs to advertise when the spec file does not declare them. */
@@ -57,6 +57,20 @@ export interface ManifestComponent {
   schema?: JsonSchemaFragment;
   /** For transforms: which phase(s) of an agent's turn this runs in. */
   phase?: 'pre' | 'post' | 'both';
+  /**
+   * For providers: whether this one can deliver an answer as it arrives.
+   *
+   * Declared rather than negotiated, for the reason every other manifest field
+   * is: `completeChat` decides whether to stream by checking for
+   * `Provider.chatCompletionStream`, synchronously, before the process is
+   * necessarily even running. So the answer has to be data, and it is this.
+   *
+   * Off by default, which is the safe direction. A provider that says nothing
+   * is only ever sent `stream: false` and never has to handle a mode it did not
+   * implement; one that declares it and then buffers internally is killed by
+   * its own silence budget, since only a partial restarts the clock.
+   */
+  stream?: boolean;
   /**
    * For middleware: which seams this subscribes to, and which halves of each.
    *
@@ -232,9 +246,15 @@ export function validateManifest(raw: unknown): PluginManifest {
     seen.add(componentType);
 
     const kind = component.kind ?? 'node';
-    if (kind !== 'node' && kind !== 'transform' && kind !== 'component' && kind !== 'middleware') {
+    if (
+      kind !== 'node' &&
+      kind !== 'transform' &&
+      kind !== 'component' &&
+      kind !== 'provider' &&
+      kind !== 'middleware'
+    ) {
       fail(
-        `plugin "${manifest.name}": component "${componentType}" has kind "${String(kind)}"; expected node, transform, component or middleware`,
+        `plugin "${manifest.name}": component "${componentType}" has kind "${String(kind)}"; expected node, transform, component, provider or middleware`,
       );
     }
 
@@ -242,6 +262,12 @@ export function validateManifest(raw: unknown): PluginManifest {
     if (phase !== undefined && phase !== 'pre' && phase !== 'post' && phase !== 'both') {
       fail(
         `plugin "${manifest.name}": component "${componentType}" has phase "${String(phase)}"; expected pre, post or both`,
+      );
+    }
+
+    if (component.stream !== undefined && typeof component.stream !== 'boolean') {
+      fail(
+        `plugin "${manifest.name}": component "${componentType}" has a "stream" that is not a boolean`,
       );
     }
 
@@ -255,6 +281,7 @@ export function validateManifest(raw: unknown): PluginManifest {
       branches: asBranches(manifest.name as string, componentType, component.branches),
       schema: component.schema as JsonSchemaFragment | undefined,
       phase: phase as ManifestComponent['phase'],
+      stream: component.stream === true,
       seams,
     };
   });

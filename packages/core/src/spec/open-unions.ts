@@ -36,10 +36,12 @@
  * **What this gives up is slot discipline.** The union was checking, for free,
  * that a transform is not written into `Flow.nodes`. It no longer can, because
  * it cannot tell a plugin's node from a plugin's transform without knowing the
- * plugin. Three checks downstream take that over, and each names the kind:
+ * plugin. Four checks downstream take that over, and each names the kind:
  * `toSpecNode` (`spec/adapter.ts`), `TransformChain.build`
- * (`plugin/transform.ts`) and the compiler's default branch
- * (`graph/compile.ts`). All three run before anything executes.
+ * (`plugin/transform.ts`), `providerFor` (`llm/provider.ts`) and the compiler's
+ * default branch (`graph/compile.ts`). The first three run before anything
+ * executes; `providerFor` runs at the first model call, because that is when a
+ * provider is built at all.
  *
  * **What it does not give up is anything about builtins.** A builtin
  * `componentType` goes to the original union with its issues and its parsed
@@ -55,8 +57,10 @@
 import { z } from 'zod';
 import {
   isBuiltinComponentType,
+  LlmConfigUnion,
   MessageTransformUnion,
   NodeUnion,
+  registerLlmConfigSchema,
   registerMessageTransformSchema,
   registerNodeUnionSchema,
 } from 'agentspec';
@@ -130,4 +134,9 @@ export function installWidenedUnions(): void {
   installed = true;
   registerNodeUnionSchema(widen(NodeUnion, 'node'));
   registerMessageTransformSchema(widen(MessageTransformUnion, 'transform'));
+  // One call, four slots — `Agent.llmConfig`, `LlmNode.llmConfig` and the `llm`
+  // on both message transforms all read this union. That breadth is why paying
+  // for a stand-in here would have cost three restore paths rebuilding a frozen
+  // ancestor apiece, and it is why this registration buys the most.
+  registerLlmConfigSchema(widen(LlmConfigUnion, 'llm config'));
 }

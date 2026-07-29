@@ -275,6 +275,13 @@ export {
   registerMessageTransformSchema,
 } from "./transforms/lazy-schemas.js";
 
+// One registration, four slots: `LlmConfigUnion` backs `Agent.llmConfig`,
+// `LlmNode.llmConfig` and the `llm` on both message transforms, so unlike the
+// pair above there is nothing here a host can rebind by halves.
+export {
+  registerLlmConfigSchema,
+} from "./llms/lazy-schemas.js";
+
 export {
   registerNodeUnionSchema,
   registerFlowSchema,

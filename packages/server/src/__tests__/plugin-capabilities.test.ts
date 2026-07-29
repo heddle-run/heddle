@@ -164,8 +164,60 @@ describe('a submitted plugin that ships middleware', () => {
       expect(message).toMatch(/runs on every node of every flow/);
       // And points at what a caller *can* submit, so the message ends
       // somewhere useful rather than at a refusal.
-      expect(message).toMatch(/is a node or a transform/);
+      expect(message).toMatch(/is a node, a transform or a provider/);
       expect((err as HttpError).status).toBe(400);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Providers, which are the other side of that principle and therefore allowed.
+// ---------------------------------------------------------------------------
+
+describe('a submitted plugin that ships a provider', () => {
+  /** The same load path, with a manifest declaring a custom `llm_config` type. */
+  function loadProvider(serverOptions: Record<string, unknown> = {}): void {
+    const workDir = mkdtempSync(join(tmpdir(), 'heddle-plugin-provider-'));
+    cleanups.push(() => rmSync(workDir, { recursive: true, force: true }));
+
+    const config = resolveConfig({ allowRequestCode: true, workDir, ...serverOptions });
+    const code: MaterializedCode = materializeRequestCode(
+      {
+        plugins: [
+          {
+            name: 'anthropic',
+            manifest: {
+              name: 'anthropic',
+              version: '1.0.0',
+              capabilities: [],
+              components: [{ componentType: 'AnthropicConfig', kind: 'provider' }],
+            },
+            source: `serve({ AnthropicConfig: { chat: () => ({ content: 'hi', finish_reason: 'stop' }) } });`,
+          },
+        ],
+      },
+      config,
+    );
+    cleanups.push(() => code.dispose());
+
+    const registry = buildPlugins(config, code);
+    cleanups.push(() => registry.dispose());
+  }
+
+  it('is accepted, because a flow has to name it before it runs at all', () => {
+    // The distinction that decides both cases: a middleware runs on flows that
+    // never mentioned it, and a provider runs only where the caller's own
+    // `llm_config` writes its component type. Submitting one is choosing where
+    // your own run sends its requests, which is what a spec is for.
+    expect(() => loadProvider()).not.toThrow();
+  });
+
+  it('is still accepted on a server that supplies a credential', () => {
+    // Unlike `callModel`, which goes away the moment there is an operator key
+    // to spend. A provider cannot reach that key — it never crosses the pipe,
+    // and `applyDefaultCredential` only ever attaches it to a builtin config,
+    // which a plugin is refused from claiming — and heddle bounds how often a
+    // provider is called, because heddle is the one calling it.
+    expect(() => loadProvider({ defaultLlmKey: 'operator-key' })).not.toThrow();
   });
 });

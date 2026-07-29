@@ -15,11 +15,7 @@ import type { HeddlePlugin } from '../types.js';
 
 // The agent's LLM is stubbed so the guardrails can be tested without a key —
 // and so a pre-phase rejection can be proven to skip the call entirely.
-const { chatCompletion } = vi.hoisted(() => ({ chatCompletion: vi.fn() }));
-vi.mock('../../llm/provider.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../llm/provider.js')>()),
-  createProvider: () => ({ chatCompletion }),
-}));
+const chatCompletion = vi.fn();
 
 // packages/core/src/plugin/__tests__ -> plugin -> src -> core -> packages -> root
 const repoRoot = join(import.meta.dirname, '../../../../../');
@@ -208,6 +204,7 @@ async function runGuarded(
   validateFlow(pf);
   const cg = compile(pf, {
     plugins: registry,
+    createProvider: () => ({ chatCompletion }),
     eventHandler: (e) => events.push(e),
   });
   validate(cg);

@@ -26,6 +26,7 @@ import {
   remoteComponentDef,
   remoteMiddlewareDef,
   remoteNodeDef,
+  remoteProviderDef,
   remoteToolDef,
   remoteTransformDef,
 } from './remote.js';
@@ -191,6 +192,7 @@ export function loadRemotePlugin(
     nodes: [],
     transforms: [],
     components: [],
+    providers: [],
     middleware: [],
   };
 
@@ -204,6 +206,9 @@ export function loadRemotePlugin(
         break;
       case 'component':
         plugin.components!.push(remoteComponentDef(entryComponent));
+        break;
+      case 'provider':
+        plugin.providers!.push(remoteProviderDef(manifest, entryComponent, getHost));
         break;
       case 'middleware':
         plugin.middleware!.push(remoteMiddlewareDef(manifest, entryComponent, getHost));

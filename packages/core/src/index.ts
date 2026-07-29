@@ -153,6 +153,8 @@ export {
   PLUGIN_METHODS,
   PROTOCOL_VERSION,
   readAfterVerdict,
+  readChatChunk,
+  readChatResponse,
   readModelRequest,
   spokenProtocol,
 } from './plugin/protocol.js';
@@ -162,6 +164,7 @@ export type {
   ApplyParams,
   CallModelParams,
   CancelParams,
+  ChatParams,
   EmitEventParams,
   ExecuteParams,
   HostLifecycleMethods,
@@ -203,6 +206,7 @@ export type {
   PluginNode,
   PluginNodeDef,
   PluginNodeExecutor,
+  PluginProviderDef,
   PluginReporter,
   PluginResult,
   PluginServices,
@@ -261,7 +265,12 @@ export type {
 // real one.
 // ---------------------------------------------------------------------------
 
-export { createProvider, generationParams } from './llm/provider.js';
+export {
+  createProvider,
+  generationParams,
+  isBuiltinConfigType,
+  providerFor,
+} from './llm/provider.js';
 export type {
   ChatChunk,
   ChatRequest,

@@ -4,14 +4,14 @@
 import { z } from "zod";
 import { stringProperty, type Property } from "../../property.js";
 import { getPlaceholderPropertiesFromJsonObject } from "../../templating.js";
-import { LlmConfigUnion, type LlmConfig } from "../../llms/index.js";
+import { LazyLlmConfigRef, type LlmConfig } from "../../llms/index.js";
 import { NodeBaseSchema, DEFAULT_NEXT_BRANCH } from "../node.js";
 
 export const DEFAULT_LLM_OUTPUT = "generated_text";
 
 export const LlmNodeSchema = NodeBaseSchema.extend({
   componentType: z.literal("LlmNode"),
-  llmConfig: LlmConfigUnion,
+  llmConfig: LazyLlmConfigRef,
   promptTemplate: z.string(),
 });
 

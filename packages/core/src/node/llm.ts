@@ -1,18 +1,47 @@
 import type { LLMNode } from '../spec/types.js';
 import { State } from '../state/state.js';
 import type { NodeExecutor, Dependencies } from './types.js';
+import type { Provider } from '../llm/types.js';
 import { completeChat, substituteTemplate } from './agent.js';
-import { createProvider, generationParams } from '../llm/provider.js';
+import { generationParams, providerFor } from '../llm/provider.js';
 import { RunError } from '../errors.js';
 
 /** LLMExecutor executes an LlmNode by running a prompt template through the LLM. */
 export class LLMExecutor implements NodeExecutor {
   private node: LLMNode;
   private deps: Dependencies;
+  private provider?: Provider;
+  /** The spec's generation settings, read once — see {@link AgentExecutor}. */
+  private generation: ReturnType<typeof generationParams>;
 
   constructor(node: LLMNode, deps: Dependencies) {
     this.node = node;
     this.deps = deps;
+
+    if (!node.llmConfig) {
+      throw new RunError(`LlmNode "${node.name}": node has no llmConfig`);
+    }
+    this.generation = generationParams(node.llmConfig);
+  }
+
+  /**
+   * One provider for the life of the compiled graph, built on first use.
+   *
+   * This node used to build a fresh one on every execution, and the difference
+   * only became visible when a provider could be a plugin: one holding a
+   * connection pool, a token bucket or a response cache would have had it
+   * discarded and rebuilt each time a flow reached this node, so the state it
+   * existed to keep would have been silently dropped. `AgentExecutor` memoized
+   * from the start; this is the same lifetime, arrived at late.
+   *
+   * Lazy for `AgentExecutor.getProvider`'s reason: executors are constructed by
+   * `compile()`, and building a provider can throw when no credential is
+   * configured — so an eager one would make validating any flow with an
+   * `LlmNode` impossible without a key.
+   */
+  private getProvider(): Provider {
+    this.provider ??= providerFor(this.node.llmConfig!, this.deps);
+    return this.provider;
   }
 
   branch(): string {
@@ -23,19 +52,8 @@ export class LLMExecutor implements NodeExecutor {
     signal: AbortSignal | undefined,
     input: State,
   ): Promise<State> {
-    if (!this.node.llmConfig) {
-      throw new RunError(
-        `LlmNode "${this.node.name}": node has no llmConfig`,
-      );
-    }
-
-    // Resolve LLM provider from the spec's llmConfig
-    const provider = createProvider(this.node.llmConfig, {
-      allowEnvRefs: this.deps.allowEnvRefs,
-      defaultKey: this.deps.defaultLlmKey,
-      defaultUrl: this.deps.defaultLlmUrl,
-    });
-    const model = this.node.llmConfig.modelId;
+    const provider = this.getProvider();
+    const model = this.node.llmConfig!.modelId;
 
     const prompt = substituteTemplate(this.node.promptTemplate, input);
 
@@ -49,7 +67,7 @@ export class LLMExecutor implements NodeExecutor {
       {
         model,
         messages: [{ role: 'user', content: prompt }],
-        ...generationParams(this.node.llmConfig),
+        ...this.generation,
       },
       {
         nodeName: this.node.name,

@@ -108,14 +108,89 @@
  * none rather than a path that would fail at your first write. Under `--safe` a
  * plugin node hands a tool its input through `runTool` and nothing else.
  *
- * **There is one way to report progress and this is it.** The protocol also has
- * a `{ id, partial }` frame, and it is not a second one: a partial is a piece of
- * *one call's answer*, delivered only to whatever inside heddle is awaiting that
- * call — and nothing awaits a plugin's yet, so this helper deliberately gives
- * you no way to send one. An event is a report *about the run*, and it reaches
- * the client. Neither costs you your deadline: heddle's per-call timeout is a
- * silence budget, and anything you report resets it, so a plugin that works for
- * ten minutes and says so throughout is not killed for taking ten minutes.
+ * **For everything except a streamed answer, `emitEvent` is how you report.**
+ * The protocol also has a `{ id, partial }` frame, and it is not a second
+ * progress channel: a partial is a piece of *one call's answer*, delivered only
+ * to whatever inside heddle is awaiting that call, so it means nothing outside
+ * the one call that has a consumer. That call is `chat` — see below — and
+ * `ctx.partial` throws anywhere else rather than sending a frame heddle would
+ * drop. An event is a report *about the run*, and it reaches the client.
+ * Neither costs you your deadline: heddle's per-call timeout is a silence
+ * budget, and anything you send resets it, so a plugin that works for ten
+ * minutes and says so throughout is not killed for taking ten minutes.
+ *
+ * ---
+ *
+ * **A provider** is the one kind heddle calls to *get* a model answer rather
+ * than to do something with one. Declare it `"kind": "provider"` in the
+ * manifest and a spec writes your component type where it would write
+ * `OpenAiConfig`:
+ *
+ * ```yaml
+ * llm_config:
+ *   component_type: AnthropicConfig
+ *   name: claude
+ *   model_id: claude-sonnet-4-5
+ *   api_key: sk-ant-…
+ * ```
+ *
+ * ```js
+ * serve({
+ *   AnthropicConfig: {
+ *     chat: async (request, ctx) => {
+ *       const res = await fetch(URL, { … , signal: ctx.signal });
+ *       const body = await res.json();
+ *       return { content: body.content[0].text, finish_reason: body.stop_reason };
+ *     },
+ *   },
+ * });
+ * ```
+ *
+ * `request` is `{ model, messages, tools?, temperature?, maxTokens?, topP?,
+ * responseFormat? }` — the whole request, `model` included, because here you
+ * *are* the endpoint. `ctx.component` is the `llm_config` the spec wrote, which
+ * is where a key or a url the flow brought will be. **heddle does not resolve
+ * `$VAR` for you**: it will not read its own environment on your behalf, least
+ * of all when `--safe` has confined you precisely so you cannot read it either.
+ * Take a credential from your own component's fields, or from the environment
+ * the operator granted your process.
+ *
+ * Return `{ content, tool_calls?, finish_reason? }`. `content` is required —
+ * an answer with nothing in it is `""` — and `tool_calls` is
+ * `[{ id, name, arguments }]` with `arguments` as the JSON text the model
+ * wrote, not the parsed object.
+ *
+ * To stream, add `"stream": true` to the component in your manifest and send
+ * each piece with `ctx.partial`:
+ *
+ * ```js
+ * chat: async (request, ctx) => {
+ *   if (!ctx.stream) return await whole(request);
+ *   for await (const piece of pieces(request)) ctx.partial({ content: piece });
+ *   return { finish_reason: 'stop' };
+ * }
+ * ```
+ *
+ * Three rules, and they are the protocol's rather than this helper's. Each
+ * partial is one chunk — `{ content?, tool_calls?, finish_reason? }`, all
+ * optional, and chunks accumulate. **What you return is the last chunk**, not a
+ * summary of the ones you sent, so returning `{}` is fine and returning the
+ * whole answer again would append it twice. And your silence budget only
+ * restarts when you send something: a provider that declares streaming, then
+ * buffers the whole answer internally and says nothing, is killed exactly like
+ * one that hung. Declare `stream` only if you are going to stream.
+ *
+ * A provider that does not declare it is never asked for one — `ctx.stream` is
+ * always `false` — so serving only the buffered form is a complete provider,
+ * not a partial one.
+ *
+ * **Mind the clock on a buffered provider.** Your per-call budget is a silence
+ * budget, and answering a model call is the one job where you are legitimately
+ * silent for a long time — heddle stops your clock while *it* is making you
+ * wait, on `runTool` and `callModel`, but here it is waiting on you. A long
+ * generation can outlast the operator's `--plugin-call-timeout` and be killed as
+ * a hang. Streaming is the fix and not just a nicety: every partial restarts the
+ * clock, so a provider that streams is bounded by the run, not by one call.
  *
  * `ctx.signal` is an `AbortSignal` that fires when heddle cancels the call or
  * stops the plugin. Cancellation is cooperative, exactly as it is anywhere else
@@ -394,16 +469,36 @@ function serve(handlers, options) {
     const controller = new AbortController();
     inflight.set(key, { controller, cancelId: undefined });
     try {
+      // The only place a plugin may send a partial, and only when heddle asked
+      // for a stream. A partial is a piece of *this call's* answer — nothing
+      // else in heddle awaits one — so offering it anywhere else would be
+      // offering a call whose only effect is that heddle drops the frame.
+      const partial = (chunk) => {
+        if (request.method !== 'chat' || !params.stream) {
+          throw new Error(
+            'ctx.partial is only available to a provider serving a streamed chat. ' +
+              'To report progress from a node or a transform, use ctx.emitEvent — ' +
+              'a partial goes to the one call awaiting it, an event goes to the run.',
+          );
+        }
+        send({ id: request.id, partial: chunk });
+      };
       const ctx = {
+        partial,
         runTool: (name, input) => runTool(request.id, name, input),
         callModel: (modelRequest) => callModel(request.id, modelRequest),
         node: params.node || params.component || {},
         // The same object as ctx.node wherever both apply, named for what it is.
         // A middleware has no node — nothing in a document names it — so this is
         // the only sensible name for the configuration its operator supplied,
-        // and giving it to every kind means one word for "my own fields".
-        component: params.component || params.node || {},
+        // and giving it to every kind means one word for "my own fields". For a
+        // provider it is the llm_config the spec wrote, which is where its
+        // model id, its url and any credential the flow brought all live.
+        component: params.component || params.node || params.config || {},
         phase: params.phase,
+        // Whether heddle wants this chat streamed. A provider that declared
+        // "stream" in its manifest sees both values and has to serve both.
+        stream: params.stream === true,
         seam: params.seam,
         attempt: params.attempt,
         maxAttempts: params.maxAttempts,
@@ -423,6 +518,21 @@ function serve(handlers, options) {
       let result;
       if (request.method === 'apply') {
         result = await handler.apply(params.messages || [], ctx);
+      } else if (request.method === 'chat') {
+        if (!handler.chat) {
+          send({
+            id: request.id,
+            error: {
+              message:
+                '"' + params.componentType + '" is declared as a provider in this ' +
+                "plugin's manifest but serves no chat handler. Write serve({ " +
+                params.componentType + ': { chat(request, ctx) { … } } }).',
+            },
+          });
+          inflight.delete(key);
+          return;
+        }
+        result = await handler.chat(params.request || {}, ctx);
       } else if (request.method === 'after') {
         // Seam-keyed, so one component can subscribe to several and each gets
         // its own function — rather than one handler opening with a switch on

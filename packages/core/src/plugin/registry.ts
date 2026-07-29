@@ -11,6 +11,7 @@ import type {
   PluginComponentDef,
   PluginMiddlewareDef,
   PluginNodeDef,
+  PluginProviderDef,
   PluginTransformDef,
 } from './types.js';
 import { HeddleDeserializationPlugin } from './deserializer.js';
@@ -19,7 +20,12 @@ import type { Registry, ToolDef } from '../tool/types.js';
 import { PluginError } from '../errors.js';
 
 /** What a custom component type is, which decides how heddle handles it. */
-export type ComponentKind = 'node' | 'transform' | 'component' | 'middleware';
+export type ComponentKind =
+  | 'node'
+  | 'transform'
+  | 'component'
+  | 'provider'
+  | 'middleware';
 
 interface Registered {
   kind: ComponentKind;
@@ -86,6 +92,7 @@ export class PluginRegistry {
       ['node', plugin.nodes ?? []],
       ['transform', plugin.transforms ?? []],
       ['component', plugin.components ?? []],
+      ['provider', plugin.providers ?? []],
     ];
     for (const [kind, defs] of groups) {
       for (const def of defs) {
@@ -201,6 +208,20 @@ export class PluginRegistry {
     const entry = this.defs.get(componentType);
     return entry?.kind === 'transform'
       ? (entry.def as PluginTransformDef)
+      : undefined;
+  }
+
+  /**
+   * The provider for a custom `llm_config` type, if a plugin supplies one.
+   *
+   * Read only by `providerFor`, and only after it has established the type is
+   * not a builtin — so this is never consulted for `OpenAiConfig` even though
+   * {@link claim} would already have refused a plugin that named it.
+   */
+  providerDef(componentType: string): PluginProviderDef | undefined {
+    const entry = this.defs.get(componentType);
+    return entry?.kind === 'provider'
+      ? (entry.def as PluginProviderDef)
       : undefined;
   }
 
