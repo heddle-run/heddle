@@ -69,7 +69,7 @@ function harness(args: unknown): Harness {
     eventHandler: (e) => events.push(e),
     toolRegistry: {
       lookup: (name) =>
-        name === 'echo' ? { name, description: 'echoes', path: '/echo' } : undefined,
+        name === 'echo' ? { name, description: 'echoes', impl: { kind: 'path' as const, path: '/echo' } } : undefined,
       all: () => [],
     },
     toolExecutor: {

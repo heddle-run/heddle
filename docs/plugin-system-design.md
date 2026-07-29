@@ -2042,13 +2042,58 @@ recorded the TUI's silence about `plugin_log`: a contract nothing draws is not y
 **Unblocks:** retry and fallback today; approval gates, caching, dry-run and result truncation when
 `toolCall` and `node` land against the shape this phase fixed.
 
-### Phase 7 — Registry / tool-source
+### Phase 7 — Registry / tool-source — **landed**
 
-Independent of 4–6, needs only Phase 1. Manifest-declared tools first; `listTools` only if §7.10 Q6
-resolves in its favour.
+A plugin contributes tools two ways, and exactly one per entry: `path`, an executable it ships beside
+itself, or `componentType`, a tool it implements behind the `callTool` verb. The first runs through
+`SubprocessExecutor` indistinguishably from a `--tools-dir` tool; the second needs no tools
+directory, no subprocess and no execute bit at all.
 
-**Unblocks:** MCP tool discovery, HTTP tool catalogues, single-source-of-truth tool descriptions.
-Cost: low.
+**`ToolDef.path` became `ToolDef.impl`**, a discriminated union, and that was the load-bearing
+change. Four call sites each spelled `executor.execute(signal, toolDef.path, input)` — `node/agent.ts`,
+`node/tool.ts`, `plugin/executor.ts`, `plugin/services.ts` — and four copies of a decision are
+survivable only while there is one answer. They now call `invokeTool` (`tool/invoke.ts`), which
+branches once. The obvious repair, an optional `path` beside an optional `call`, was rejected: two
+fields both claiming how a tool runs leave every consumer to rediscover the precedence.
+
+**Dynamic `listTools` deliberately did not land, and open question 6 is answered no for now.** The
+property `remote-loader.ts` protects is that nothing executes to learn what a plugin provides, and
+`Registry.lookup` is synchronous at three call sites including the server's request check. Declared
+tools keep both. An MCP proxy writes its tool list into the manifest with a build step, which costs a
+rerun when a tool is added upstream and buys a `heddle validate` that still starts nobody's process.
+
+| Landed | Where |
+|---|---|
+| `ToolImpl` union and the single `invokeTool` dispatch | `tool/types.ts`, `tool/invoke.ts` |
+| Manifest `tools[]`: name rule, `path` xor `componentType`, schema byte/depth/type caps | `plugin/manifest.ts` |
+| A tools-only manifest loads; `--plugin ./mcp.json` reads one on the CLI | `plugin/manifest.ts`, `plugin/loader.ts` |
+| `PluginRegistry.toolRegistry()`, and a load error when two plugins claim one name | `plugin/registry.ts` |
+| `composeRegistries` and `missingTools` moved into core; a plugin-vs-other collision is refused unless the manifest declared `shadows` | `tool/registry.ts` |
+| The registry fills a description or schema the spec left blank; the spec wins, with a warning on disagreement | `node/agent.ts` |
+| An input with a `default` is no longer required — and the default is applied when the model omits it | `node/agent.ts` |
+| Plugin tool directories join the sandbox `readPaths`; `run` and `validate` check the merged registry | `cli/run.ts`, `cli/validate.ts` |
+| A submitted manifest declaring `shadows` refused 400 | `server/plugins.ts` |
+
+**What the adversarial review changed.** Eight defects, three of them found independently by three or
+four reviewers. The two that mattered: `entryFor` derived the plugin's root from `command[0]`, so a
+manifest saying `["/usr/bin/python3", "server.py"]` — the ordinary shape — put the spawn cwd and the
+tool-containment root under `/usr/bin`, refusing the plugin's own tools and admitting any system
+binary; and the CLI never disposed the plugin registry, so `heddle run --plugin x.json` printed its
+result and then hung forever, because `loadPlugins` was a new `addRemote` caller and only the server
+had ever had something to dispose.
+
+Also from it: `shadows` was validated, documented and never consulted, so the rule three comments
+described did not exist — it is enforced in `composeRegistries` now, in both directions, because
+losing a name matters as much as taking it. A directory passed the executable check, since a
+directory carries the execute bit for being traversable. The tool-name collision guard had an escape
+hatch two plugins could walk through by reporting the same manifest name. `heddle validate`'s new
+tool check sat inside a `catch` that downgrades everything to a printed note, so it could not fail
+the command. And `ctx.log` was offered to a tool handler that has no reporter, so it would have been
+refused every single time — removed rather than half-wired.
+
+**Unblocks:** MCP tool discovery through a proxy plugin, HTTP tool catalogues, single-source-of-truth
+tool descriptions.
+Cost: low as predicted for the manifest half; the union refactor was the real work.
 
 ### Phase V — Vendored SDK extension (formerly Phase 8) — **tier 1 landed, tier 2 open**
 

@@ -15,6 +15,7 @@ import type {
 } from './types.js';
 import { HeddleDeserializationPlugin } from './deserializer.js';
 import type { PluginHost } from './host.js';
+import type { Registry, ToolDef } from '../tool/types.js';
 import { PluginError } from '../errors.js';
 
 /** What a custom component type is, which decides how heddle handles it. */
@@ -49,6 +50,16 @@ export class PluginRegistry {
    * something they could write.
    */
   private middlewares: RegisteredMiddleware[] = [];
+  /** Which plugin claimed each tool name, so a collision names both. */
+  private toolNames = new Map<string, string>();
+
+  /**
+   * Tools contributed by plugins, in load order, kept out of `defs` for the
+   * same reason middleware is: `defs` exists to be looked up by a component
+   * type a document wrote, and a tool name is a different namespace entirely.
+   * Putting one in `defs` would offer it to a spec author as a `component_type`.
+   */
+  private toolDefs: ToolDef[] = [];
 
   /** An empty registry — the default when no plugins are configured. */
   static empty(): PluginRegistry {
@@ -91,6 +102,30 @@ export class PluginRegistry {
       this.claim(def.componentType, plugin.name);
       this.defs.set(def.componentType, { kind: 'middleware', def });
       this.middlewares.push({ plugin: plugin.name, def });
+    }
+
+    for (const tool of plugin.tools ?? []) {
+      const claimed = this.toolNames.get(tool.name);
+      // Any second claim, including one from a plugin reporting the same name.
+      // A manifest's `name` is self-reported and nothing makes it unique, so
+      // `claimed !== plugin.name` was an escape hatch two plugins could walk
+      // through by agreeing on a string — after which the later tool silently
+      // won. The same plugin object is never added twice, so the condition was
+      // guarding nothing it was meant to.
+      if (claimed !== undefined) {
+        // Two plugins, one tool name. A load error rather than last-wins,
+        // because load order is `--plugin` order and nothing about typing two
+        // flags says which MCP proxy should own `search`. The operator picks by
+        // dropping one, which is a decision they can see having made.
+        throw new PluginError(
+          `plugins "${claimed}" and "${plugin.name}" both provide the tool ` +
+            `"${tool.name}". A tool name is what a spec writes and what runTool ` +
+            `resolves, so heddle will not guess which one a flow meant. Load one of ` +
+            `them, or rename the tool in its manifest.`,
+        );
+      }
+      this.toolNames.set(tool.name, plugin.name);
+      this.toolDefs.push(tool);
     }
 
     this.sdkPlugins.push(new HeddleDeserializationPlugin(plugin));
@@ -189,6 +224,27 @@ export class PluginRegistry {
    * something they can name — suggesting one would send them to write a
    * `component_type` the deserializer will reject.
    */
+  /**
+   * The tools every loaded plugin contributes, as a Registry.
+   *
+   * Synchronous by construction: everything in it came out of a manifest, which
+   * is data, so nothing here starts a process or crosses a pipe. That is the
+   * property `Registry.lookup` needs and the reason tools are declared rather
+   * than discovered.
+   */
+  toolRegistry(): Registry {
+    const tools = new Map(this.toolDefs.map((tool) => [tool.name, tool]));
+    return {
+      lookup: (name) => tools.get(name),
+      all: () => [...tools.values()],
+    };
+  }
+
+  /** Whether any loaded plugin contributes a tool at all. */
+  hasTools(): boolean {
+    return this.toolDefs.length > 0;
+  }
+
   componentTypeNames(): string[] {
     return [...this.defs]
       .filter(([, entry]) => entry.kind !== 'middleware')

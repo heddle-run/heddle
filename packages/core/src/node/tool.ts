@@ -1,6 +1,7 @@
 import type { ToolNode } from '../spec/types.js';
 import { State } from '../state/state.js';
 import type { NodeExecutor, Dependencies } from './types.js';
+import { invokeTool } from '../tool/invoke.js';
 import { RunError, ToolError } from '../errors.js';
 
 /** ToolNodeExecutor executes a ToolNode by running an external tool. */
@@ -38,16 +39,15 @@ export class ToolNodeExecutor implements NodeExecutor {
       );
     }
 
-    if (!this.deps.toolExecutor) {
-      throw new RunError(
-        `ToolNode "${this.node.name}": no tool executor configured`,
-      );
-    }
-
-    const result = await this.deps.toolExecutor.execute(
+    // No executor check here any more: a plugin-implemented tool needs none,
+    // and refusing before the branch would fail a flow whose tools all come
+    // from plugins for want of something it never uses. `invokeTool` asks only
+    // when the tool turns out to be a path.
+    const result = await invokeTool(
       signal,
-      toolDef.path,
+      toolDef,
       input.toData() as Record<string, unknown>,
+      this.deps.toolExecutor,
     );
 
     return new State(result.output);

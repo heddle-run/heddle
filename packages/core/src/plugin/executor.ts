@@ -11,6 +11,7 @@ import type { Dependencies, NodeExecutor } from '../node/types.js';
 import type { EventHandler } from '../runner/events.js';
 import { pluginEventType } from '../runner/events.js';
 import type { Executor, ExecutorScope } from '../tool/types.js';
+import { invokeTool } from '../tool/invoke.js';
 import { createWorkspace, removeDir } from '../sandbox/workspace.js';
 import type {
   PluginContext,
@@ -229,8 +230,7 @@ export class PluginNodeAdapter implements NodeExecutor {
     scoped?: Executor,
   ): Promise<Record<string, unknown>> {
     const { toolRegistry } = this.deps;
-    const toolExecutor = scoped ?? this.deps.toolExecutor;
-    if (!toolRegistry || !toolExecutor) {
+    if (!toolRegistry) {
       throw new RunError(
         `${this.node.componentType} "${this.node.name}": no tool registry configured`,
       );
@@ -241,7 +241,12 @@ export class PluginNodeAdapter implements NodeExecutor {
         `${this.node.componentType} "${this.node.name}": tool "${name}" not found`,
       );
     }
-    const result = await toolExecutor.execute(signal, tool.path, input);
+    const result = await invokeTool(
+      signal,
+      tool,
+      input,
+      scoped ?? this.deps.toolExecutor,
+    );
     return result.output;
   }
 }

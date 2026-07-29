@@ -17,6 +17,7 @@ import { createProvider, generationParams } from '../llm/provider.js';
 import type { ChatResponse, ModelRequest, Provider } from '../llm/types.js';
 import type { LLMConfig } from '../spec/types.js';
 import type { Dependencies } from '../node/types.js';
+import { invokeTool } from '../tool/invoke.js';
 import { PluginError, RunError, ToolError } from '../errors.js';
 import type { PluginComponent } from './types.js';
 
@@ -47,15 +48,14 @@ export function toolRunner(where: string, deps: Dependencies): ToolRunner {
   return async (name, input) => {
     const { toolRegistry, toolExecutor } = deps;
 
-    if (!toolRegistry || !toolExecutor) {
+    if (!toolRegistry) {
       throw new RunError(`${where}: no tool registry configured`);
     }
     const tool = toolRegistry.lookup(name);
     if (!tool) {
       throw new ToolError(`${where}: tool "${name}" not found`);
     }
-    const result = await toolExecutor.execute(undefined, tool.path, input);
-    return result.output;
+    return (await invokeTool(undefined, tool, input, toolExecutor)).output;
   };
 }
 

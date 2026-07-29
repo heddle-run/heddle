@@ -408,7 +408,7 @@ describe('reverse calls', () => {
     const state = await runWith('ToolNode2', entry, manifest('ToolNode2', {}, ['runTool']), { text: 'ping' }, {
       toolRegistry: {
         lookup: (name: string) =>
-          name === 'echo' ? { name, description: '', path: '/echo' } : undefined,
+          name === 'echo' ? { name, description: '', impl: { kind: 'path' as const, path: '/echo' } } : undefined,
         all: () => [],
       },
       toolExecutor: {
@@ -534,7 +534,7 @@ describe('where a plugin node tools run', () => {
       {},
       {
         toolRegistry: {
-          lookup: (name: string) => ({ name, description: '', path: '/where' }),
+          lookup: (name: string) => ({ name, description: '', impl: { kind: 'path' as const, path: '/where' } }),
           all: () => [],
         },
         toolExecutor: scopedExecutor(),
@@ -568,7 +568,7 @@ describe('where a plugin node tools run', () => {
       {},
       {
         toolRegistry: {
-          lookup: (name: string) => ({ name, description: '', path: '/where' }),
+          lookup: (name: string) => ({ name, description: '', impl: { kind: 'path' as const, path: '/where' } }),
           all: () => [],
         },
         toolExecutor: scopedExecutor(),
@@ -594,7 +594,7 @@ describe('where a plugin node tools run', () => {
       {},
       {
         toolRegistry: {
-          lookup: (name: string) => ({ name, description: '', path: '/where' }),
+          lookup: (name: string) => ({ name, description: '', impl: { kind: 'path' as const, path: '/where' } }),
           all: () => [],
         },
         toolExecutor: scopedExecutor(),
@@ -629,7 +629,7 @@ describe('capabilities', () => {
     let toolRuns = 0;
     const state = await runWith('UndeclaredNode', entry, manifest('UndeclaredNode'), {}, {
       toolRegistry: {
-        lookup: (name: string) => ({ name, description: '', path: '/echo' }),
+        lookup: (name: string) => ({ name, description: '', impl: { kind: 'path' as const, path: '/echo' } }),
         all: () => [],
       },
       toolExecutor: {
@@ -660,7 +660,7 @@ describe('capabilities', () => {
       {},
       {
         toolRegistry: {
-          lookup: (name: string) => ({ name, description: '', path: '/echo' }),
+          lookup: (name: string) => ({ name, description: '', impl: { kind: 'path' as const, path: '/echo' } }),
           all: () => [],
         },
         toolExecutor: { execute: async () => ({ output: { echoed: 'ran' }, stderr: '' }) },
@@ -1662,7 +1662,7 @@ describe('transforms out of process', () => {
       {
         toolRegistry: {
           lookup: (name: string) =>
-            name === 'classify' ? { name, description: '', path: '/classify' } : undefined,
+            name === 'classify' ? { name, description: '', impl: { kind: 'path' as const, path: '/classify' } } : undefined,
           all: () => [],
         },
         toolExecutor: {

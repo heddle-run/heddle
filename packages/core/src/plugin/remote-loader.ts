@@ -10,17 +10,23 @@
  * What comes back is an ordinary {@link HeddlePlugin}, so `PluginRegistry`,
  * the deserializer and `compile()` treat it exactly like an in-process one.
  */
-import { readFileSync, statSync } from 'node:fs';
-import { dirname, isAbsolute, resolve } from 'node:path';
+import { readFileSync, realpathSync, statSync } from 'node:fs';
+import { dirname, isAbsolute, resolve, sep } from 'node:path';
 import type { SandboxSession } from '../sandbox/types.js';
 import { PluginError } from '../errors.js';
 import { PluginHost, type PluginHostOptions } from './host.js';
-import { validateManifest, type PluginManifest } from './manifest.js';
+import {
+  validateManifest,
+  type ManifestTool,
+  type PluginManifest,
+} from './manifest.js';
+import type { ToolDef } from '../tool/types.js';
 import type { PluginCapability } from './protocol.js';
 import {
   remoteComponentDef,
   remoteMiddlewareDef,
   remoteNodeDef,
+  remoteToolDef,
   remoteTransformDef,
 } from './remote.js';
 import { SEAMS, type AfterAction, type Seam } from './seams.js';
@@ -72,6 +78,20 @@ export interface RemotePluginOptions {
    * {@link checkGrant} appends it to the refusal.
    */
   refusedBecause?: Partial<Record<PluginCapability, string>>;
+  /**
+   * The plugin's own directory, when it is not the entry point's.
+   *
+   * Everything a manifest names relatively is resolved against this: the
+   * program in `command`, the process's cwd, and the executables its tools
+   * declare. `dirname(entry)` is the right answer whenever the entry point sits
+   * beside the manifest, which is why it is the default — and the wrong one the
+   * moment a manifest says `"command": ["/usr/bin/python3", "server.py"]`,
+   * where the entry is an interpreter somewhere else entirely. Taken from there,
+   * the containment check that keeps a plugin's tools inside its own directory
+   * would be enforcing `/usr/bin`, which inverts it: the plugin's real tools are
+   * refused and any system binary passes.
+   */
+  root?: string;
 }
 
 /** A loaded out-of-process plugin, and the process behind it. */
@@ -129,20 +149,21 @@ export function loadRemotePlugin(
   const manifest = validateManifest(rawManifest);
   checkGrant(manifest, options.capabilities ?? [], options.refusedBecause ?? {});
   const entry = isAbsolute(entryPath) ? entryPath : resolve(process.cwd(), entryPath);
+  const root = options.root ?? dirname(entry);
 
   const command = manifest.command
     ? // Resolved against the plugin's own directory, so a manifest can name a
       // helper shipped beside it without knowing where it was installed.
       manifest.command.map((part, i) =>
         i === 0 && !isAbsolute(part) && part.includes('/')
-          ? resolve(dirname(entry), part)
+          ? resolve(root, part)
           : part,
       )
     : defaultCommand(entry);
 
   const hostOptions: PluginHostOptions = {
     command,
-    cwd: dirname(entry),
+    cwd: root,
     timeout: options.timeout,
     session: options.session,
     env: options.env,
@@ -190,7 +211,85 @@ export function loadRemotePlugin(
     }
   }
 
+  plugin.tools = manifest.tools.map((tool) => toolDefFor(manifest, tool, root, getHost));
+
   return { plugin, host };
+}
+
+/**
+ * One manifest tool, as the registry will hold it.
+ *
+ * The path form is resolved and checked here, at load, and that is what keeps
+ * `assertToolsAvailable` meaning what it has always meant. Before this a tool
+ * existing meant an executable existed; a manifest that merely *says* a tool
+ * exists would quietly weaken that to "somebody claimed so", and the failure
+ * would move from a 400 before the run to a spawn error partway through it.
+ *
+ * Containment is checked with `realpath` rather than string arithmetic, because
+ * the thing being defended against is a symlink: `../../../usr/bin/curl` is
+ * caught by either, and a link inside the plugin directory pointing out of it is
+ * caught only by resolving it. A plugin naming a program outside its own
+ * directory is not obviously an attack — but it is indistinguishable from one,
+ * and a plugin that needs a system binary can ship a two-line wrapper.
+ */
+function toolDefFor(
+  manifest: PluginManifest,
+  tool: ManifestTool,
+  root: string,
+  getHost: () => PluginHost,
+): ToolDef {
+  if (tool.componentType !== undefined) {
+    return remoteToolDef(manifest, tool, getHost);
+  }
+
+  const target = resolve(root, tool.path!);
+
+  let real: string;
+  let realRoot: string;
+  try {
+    real = realpathSync(target);
+    realRoot = realpathSync(root);
+  } catch (err) {
+    throw new PluginError(
+      `plugin "${manifest.name}": tool "${tool.name}" names "${tool.path}", which is ` +
+        `not there beside the plugin.`,
+      { cause: err },
+    );
+  }
+
+  if (real !== realRoot && !real.startsWith(realRoot + sep)) {
+    throw new PluginError(
+      `plugin "${manifest.name}": tool "${tool.name}" resolves to "${real}", outside ` +
+        `the plugin's own directory. A plugin ships the executables it declares; to ` +
+        `reach a program elsewhere, ship a wrapper that calls it.`,
+    );
+  }
+
+  const info = statSync(real);
+  if (!info.isFile()) {
+    throw new PluginError(
+      `plugin "${manifest.name}": tool "${tool.name}" names "${tool.path}", which is ` +
+        `a directory. A tool is a program heddle runs, and a directory carries the ` +
+        `execute bit for being traversable rather than for being runnable.`,
+    );
+  }
+  if ((info.mode & 0o111) === 0) {
+    throw new PluginError(
+      `plugin "${manifest.name}": tool "${tool.name}" names "${tool.path}", which is ` +
+        `not executable. heddle runs a tool as a program, so it needs the execute bit ` +
+        `and a shebang.`,
+    );
+  }
+
+  return {
+    name: tool.name,
+    description: tool.description ?? '',
+    origin: `plugin:${manifest.name}`,
+    inputSchema: tool.inputSchema,
+    outputSchema: tool.outputSchema,
+    shadows: tool.shadows,
+    impl: { kind: 'path', path: real },
+  };
 }
 
 /**

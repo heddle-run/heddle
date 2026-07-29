@@ -66,9 +66,26 @@ function rejectServerSideFields(body: Record<string, unknown>): void {
   }
 }
 
-/** The tools this run can reach: the server's, plus any the request submitted. */
-function buildRegistry(config: ServerConfig, code: MaterializedCode): Registry {
-  const registries: Registry[] = [FileRegistry.create(config.toolsDir ?? '')];
+/**
+ * The tools this run can reach: the server's, plus any the request submitted —
+ * as scripts, and now as a plugin's manifest.
+ *
+ * Plugin tools go *first*, weakest, and that is deliberate. Later wins here, so
+ * putting them first means a name the operator provides and a name the caller
+ * typed into their own `tools` both beat a name a manifest bound in bulk.
+ * `buildPlugins` already refuses a plugin tool that collides at all unless the
+ * manifest asked to shadow, which submitted plugins may not do — so this
+ * ordering is the second lock rather than the first.
+ */
+function buildRegistry(
+  config: ServerConfig,
+  code: MaterializedCode,
+  plugins: PluginRegistry,
+): Registry {
+  const registries: Registry[] = [
+    plugins.toolRegistry(),
+    FileRegistry.create(config.toolsDir ?? ''),
+  ];
   if (code.toolsDir) registries.push(FileRegistry.create(code.toolsDir));
   return mergeRegistries(...registries);
 }
@@ -80,7 +97,7 @@ function buildDependencies(
   plugins: PluginRegistry,
   eventHandler: (e: Event) => void,
 ): Dependencies {
-  const registry = buildRegistry(config, code);
+  const registry = buildRegistry(config, code, plugins);
 
   const toolNames = collectToolNames(pf);
   if (toolNames.length > 0) assertToolsAvailable(registry, toolNames);

@@ -7,6 +7,9 @@ import {
   collectToolNames,
   loadPlugins,
   FileRegistry,
+  composeRegistries,
+  missingTools,
+  ToolError,
 } from '@heddle/core';
 
 export const validateCommand = new Command('validate')
@@ -33,25 +36,12 @@ export const validateCommand = new Command('validate')
 
     // For Flows, also run graph compilation + validation if possible
     if (ct === 'Flow') {
-      try {
-        const pf = loadFlow(specPath, plugins);
+      const pf = loadFlow(specPath, plugins);
 
+      try {
         const cg = compile(pf, { plugins });
         validate(cg);
         console.log('  Graph validation passed');
-
-        if (options.toolsDir) {
-          const reg = FileRegistry.create(options.toolsDir);
-          const toolNames = collectToolNames(pf);
-          if (toolNames.length > 0) {
-            reg.validateTools(toolNames);
-            console.log(
-              `  Tool validation passed (${toolNames.length} tools found)`,
-            );
-          } else {
-            console.log('  No tools to validate');
-          }
-        }
       } catch (err) {
         // Flow parsed via SDK but graph compilation failed (unsupported node
         // types, missing API keys, a plugin that was not loaded).  SDK-level
@@ -59,6 +49,27 @@ export const validateCommand = new Command('validate')
         // reason is reported, because a forgotten --plugin lands here too.
         const reason = err instanceof Error ? err.message : String(err);
         console.log(`  Graph validation skipped: ${reason}`);
+      }
+
+      // Outside that catch, deliberately. It exists to tolerate a compile that
+      // could not run; a tool this flow names and nothing provides is a fact
+      // about the flow, and swallowing it would make `heddle validate` exit 0
+      // while printing the problem — the one outcome a validator must not have.
+      if (options.toolsDir || plugins.hasTools()) {
+        const reg = composeRegistries([
+          plugins.toolRegistry(),
+          FileRegistry.create(options.toolsDir ?? ''),
+        ]);
+        const toolNames = collectToolNames(pf);
+        if (toolNames.length === 0) {
+          console.log('  No tools to validate');
+        } else {
+          const missing = missingTools(reg, toolNames);
+          if (missing.length > 0) {
+            throw new ToolError(`missing executables for tools: ${missing.join(', ')}`);
+          }
+          console.log(`  Tool validation passed (${toolNames.length} tools found)`);
+        }
       }
     }
 

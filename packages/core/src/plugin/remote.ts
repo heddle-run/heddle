@@ -13,7 +13,8 @@
  * The synchronous hooks stay synchronous because the manifest already holds
  * their answers, which is the reason the manifest exists.
  */
-import type { PluginManifest, ManifestComponent } from './manifest.js';
+import type { ManifestComponent, ManifestTool, PluginManifest } from './manifest.js';
+import type { ToolDef } from '../tool/types.js';
 import type { PluginHost } from './host.js';
 import { toolRunner } from './services.js';
 import { checkSchema } from './schema.js';
@@ -33,7 +34,7 @@ import type {
   TransformPhase,
   TransformResult,
 } from './types.js';
-import { readAfterVerdict, type AfterVerdict } from './protocol.js';
+import { readAfterVerdict, readToolResult, type AfterVerdict } from './protocol.js';
 import type { Message } from '../llm/types.js';
 
 /**
@@ -362,6 +363,53 @@ function typeOf(value: unknown): string {
  */
 function nameOf(plugin: string, componentType: string, componentName: string): string {
   return `plugin "${plugin}": ${componentType} "${componentName}"`;
+}
+
+/**
+ * A tool the plugin itself implements, as a {@link ToolDef} the registry holds.
+ *
+ * The whole of what makes this work is that nothing downstream can tell it from
+ * a file. `invokeTool` branches once, and after that the agent loop, `ToolNode`
+ * and a plugin's own `runTool` all treat it as the tool it is.
+ *
+ * No `signal` is threaded from the caller into the host call, and that is not an
+ * oversight: `PluginHost.call` refuses a call whose signal has already aborted
+ * and cancels one whose signal fires, so passing the run's signal is exactly
+ * right — it is passed. What is *not* passed is a timeout of this call's own,
+ * because the plugin's per-call budget already bounds it and a second clock
+ * would race the first to report the same thing less usefully.
+ */
+export function remoteToolDef(
+  manifest: PluginManifest,
+  tool: ManifestTool,
+  host: () => PluginHost,
+): ToolDef {
+  const where = `plugin "${manifest.name}": tool "${tool.name}"`;
+
+  return {
+    name: tool.name,
+    description: tool.description ?? '',
+    origin: `plugin:${manifest.name}`,
+    inputSchema: tool.inputSchema,
+    outputSchema: tool.outputSchema,
+    shadows: tool.shadows,
+    impl: {
+      kind: 'plugin',
+      plugin: manifest.name,
+      call: async (signal, input) => {
+        const raw = await host().call(
+          'callTool',
+          {
+            componentType: tool.componentType!,
+            tool: tool.name,
+            input,
+          },
+          { signal },
+        );
+        return readToolResult(raw, where);
+      },
+    },
+  };
 }
 
 export type { TransformPhase };

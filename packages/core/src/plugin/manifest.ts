@@ -106,6 +106,58 @@ export interface PluginManifest {
    */
   capabilities: PluginCapability[];
   components: ManifestComponent[];
+  /**
+   * Tools this plugin contributes to the flow's registry.
+   *
+   * Declared, never discovered — the same trick as `inputs` and `seams`, and
+   * here it buys the property the whole tool layer rests on: `Registry.lookup`
+   * is synchronous, called during execution and again when the server checks a
+   * request, and a synchronous call cannot cross a pipe. Data in the manifest
+   * is the only shape that answers "does this tool exist" without starting
+   * anything.
+   *
+   * A tool an MCP proxy fronts is therefore written down too, by a build step
+   * that talks to the server once and commits the result. That is a real cost —
+   * a tool added upstream is invisible until someone reruns it — and it is the
+   * one that keeps `heddle validate` honest and free.
+   *
+   * Always an array once validated, empty where the manifest said nothing.
+   */
+  tools: ManifestTool[];
+}
+
+/**
+ * One tool a plugin contributes.
+ *
+ * `path` and `componentType` are the two ways a tool can exist and exactly one
+ * must be given. `path` is an executable the plugin ships beside itself, and
+ * from there nothing is different — the subprocess executor spawns it, the
+ * sandbox binds it, and no consumer can tell it from a `--tools-dir` tool.
+ * `componentType` means the plugin implements it, and running it is a call back
+ * into the plugin's own process.
+ */
+export interface ManifestTool {
+  name: string;
+  description?: string;
+  /** An executable shipped with the plugin, resolved against its directory. */
+  path?: string;
+  /** The component in this plugin that implements it. */
+  componentType?: string;
+  inputSchema?: JsonSchemaFragment;
+  outputSchema?: JsonSchemaFragment;
+  /**
+   * Whether this tool may take a name another source already provides.
+   *
+   * Off by default, and the default is the point. Today's shadowing rule was
+   * written about tool *scripts* a caller submits alongside their flow — one
+   * person overriding a name they typed themselves, in a document they can read
+   * back. A manifest is bulk, and a name a caller never wrote can capture calls
+   * made by code they did not write either: an operator's middleware resolves
+   * `runTool` against the registry and never against the spec. So a collision
+   * is a load error unless somebody says otherwise in writing, and the server
+   * refuses to let a submitted plugin be that somebody.
+   */
+  shadows?: boolean;
 }
 
 const NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -133,9 +185,21 @@ export function validateManifest(raw: unknown): PluginManifest {
   if (typeof manifest.version !== 'string' || !manifest.version) {
     fail(`plugin "${manifest.name}" manifest is missing a "version"`);
   }
-  if (!Array.isArray(manifest.components) || manifest.components.length === 0) {
-    fail(`plugin "${manifest.name}" manifest declares no components`);
+  const declaresTools = Array.isArray(manifest.tools) && manifest.tools.length > 0;
+  // A tools-only plugin is a real shape and the point of the kind: an MCP proxy
+  // contributes no node, no transform and no middleware — it contributes tools.
+  // Refusing it for declaring no components would make the manifest half of
+  // this feature unreachable.
+  if (
+    !declaresTools &&
+    (!Array.isArray(manifest.components) || manifest.components.length === 0)
+  ) {
+    fail(`plugin "${manifest.name}" manifest declares no components and no tools`);
   }
+  if (manifest.components !== undefined && !Array.isArray(manifest.components)) {
+    fail(`plugin "${manifest.name}" manifest has a "components" that is not an array`);
+  }
+  const rawComponents = (manifest.components ?? []) as unknown[];
 
   if (manifest.command !== undefined) {
     if (
@@ -150,7 +214,7 @@ export function validateManifest(raw: unknown): PluginManifest {
   const capabilities = asCapabilities(manifest.name, manifest.capabilities);
 
   const seen = new Set<string>();
-  const components = manifest.components.map((entry): ManifestComponent => {
+  const components = rawComponents.map((entry): ManifestComponent => {
     if (typeof entry !== 'object' || entry === null) {
       fail(`plugin "${manifest.name}": each component must be an object`);
     }
@@ -201,7 +265,161 @@ export function validateManifest(raw: unknown): PluginManifest {
     command: manifest.command as string[] | undefined,
     capabilities,
     components,
+    tools: asTools(manifest.name, manifest.tools, seen),
   };
+}
+
+/**
+ * Read a manifest's `tools`, refusing what would fail later or silently.
+ *
+ * The name rule is the strictest thing here and it is not arbitrary: a tool's
+ * name is what a spec writes, what the model is told, and what `runTool`
+ * resolves — so it lives in the same namespace `collectToolNames` reads and has
+ * to be as ordinary as a filename was. `path` and `componentType` are exclusive
+ * because they are two different answers to "how does this run", and a tool
+ * carrying both would leave the precedence to whoever wrote the dispatch.
+ *
+ * A `componentType` is checked against the components this same manifest
+ * declares, which is why `seen` is threaded in — a tool naming a component the
+ * plugin does not provide is a typo that would otherwise surface as a failed
+ * call, mid-run, from another process.
+ */
+function asTools(
+  plugin: string,
+  value: unknown,
+  components: Set<string>,
+): ManifestTool[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) {
+    fail(`plugin "${plugin}": "tools" must be an array`);
+  }
+
+  const seen = new Set<string>();
+  return value.map((entry): ManifestTool => {
+    if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
+      fail(`plugin "${plugin}": each entry in "tools" must be an object`);
+    }
+    const tool = entry as Record<string, unknown>;
+
+    if (typeof tool.name !== 'string' || !NAME.test(tool.name)) {
+      fail(
+        `plugin "${plugin}": a tool's "name" must match ${NAME.source}, got ` +
+          `${JSON.stringify(tool.name)}. It is what a spec writes and what the model ` +
+          `is told, so it lives in the same namespace a tool file's name does.`,
+      );
+    }
+    if (seen.has(tool.name)) {
+      fail(`plugin "${plugin}" declares the tool "${tool.name}" twice`);
+    }
+    seen.add(tool.name);
+
+    const hasPath = tool.path !== undefined;
+    const hasComponent = tool.componentType !== undefined;
+    if (hasPath === hasComponent) {
+      fail(
+        `plugin "${plugin}": tool "${tool.name}" must have exactly one of "path" — an ` +
+          `executable shipped beside the plugin — or "componentType", naming the ` +
+          `component in this plugin that implements it. ` +
+          `${hasPath ? 'It has both.' : 'It has neither.'}`,
+      );
+    }
+    if (hasPath && (typeof tool.path !== 'string' || tool.path.length === 0)) {
+      fail(`plugin "${plugin}": tool "${tool.name}" has a "path" that is not a string`);
+    }
+    if (hasComponent) {
+      if (typeof tool.componentType !== 'string' || !components.has(tool.componentType)) {
+        fail(
+          `plugin "${plugin}": tool "${tool.name}" names componentType ` +
+            `${JSON.stringify(tool.componentType)}, which this plugin does not declare. ` +
+            `It declares: ${components.size > 0 ? [...components].join(', ') : 'nothing'}.`,
+        );
+      }
+    }
+    if (tool.description !== undefined && typeof tool.description !== 'string') {
+      fail(`plugin "${plugin}": tool "${tool.name}" has a "description" that is not a string`);
+    }
+    if (tool.shadows !== undefined && typeof tool.shadows !== 'boolean') {
+      fail(`plugin "${plugin}": tool "${tool.name}" has a "shadows" that is not a boolean`);
+    }
+    checkToolSchema(plugin, tool.name, 'inputSchema', tool.inputSchema);
+    checkToolSchema(plugin, tool.name, 'outputSchema', tool.outputSchema);
+
+    return {
+      name: tool.name,
+      description: typeof tool.description === 'string' ? tool.description : undefined,
+      path: hasPath ? (tool.path as string) : undefined,
+      componentType: hasComponent ? (tool.componentType as string) : undefined,
+      inputSchema: tool.inputSchema as JsonSchemaFragment | undefined,
+      outputSchema: tool.outputSchema as JsonSchemaFragment | undefined,
+      shadows: tool.shadows === true,
+    };
+  });
+}
+
+/**
+ * The bytes and the depth of a schema a plugin wrote.
+ *
+ * An `inputSchema` is the one thing a plugin supplies that reaches the model's
+ * own tool block verbatim, in the position a model trusts most. The cap is not
+ * about the model, though — it is about the two things in between: this whole
+ * object is serialized into every request of every round, and `checkSchema`
+ * walks it. A schema nobody bounded is a plugin choosing how large heddle's
+ * requests are.
+ */
+const MAX_SCHEMA_BYTES = 64 * 1024;
+const MAX_SCHEMA_DEPTH = 16;
+
+function checkToolSchema(
+  plugin: string,
+  tool: string,
+  field: string,
+  value: unknown,
+): void {
+  if (value === undefined) return;
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    fail(`plugin "${plugin}": tool "${tool}" has a "${field}" that is not a JSON Schema object`);
+  }
+
+  let json: string;
+  try {
+    json = JSON.stringify(value);
+  } catch (err) {
+    fail(`plugin "${plugin}": tool "${tool}" has a "${field}" that is not JSON: ${String(err)}`);
+  }
+  if (json.length > MAX_SCHEMA_BYTES) {
+    fail(
+      `plugin "${plugin}": tool "${tool}" has a "${field}" of ${json.length} bytes, over ` +
+        `heddle's ${MAX_SCHEMA_BYTES}. It is sent to the model on every round of every ` +
+        `turn, so its size is a cost the flow pays repeatedly.`,
+    );
+  }
+  // A tool's parameters are an object of named arguments — that is what the
+  // model's tool block means and what `parseToolArguments` refuses anything
+  // else for. A schema saying otherwise describes a call heddle would reject
+  // after the model made it.
+  const declared = (value as Record<string, unknown>).type;
+  if (declared !== undefined && declared !== 'object') {
+    fail(
+      `plugin "${plugin}": tool "${tool}" has a "${field}" of type ` +
+        `${JSON.stringify(declared)}. A tool takes an object of named arguments, so ` +
+        `its schema has to describe one.`,
+    );
+  }
+  if (depthOf(value) > MAX_SCHEMA_DEPTH) {
+    fail(
+      `plugin "${plugin}": tool "${tool}" has a "${field}" nested deeper than ` +
+        `${MAX_SCHEMA_DEPTH} levels.`,
+    );
+  }
+}
+
+function depthOf(value: unknown, depth = 1): number {
+  if (typeof value !== 'object' || value === null) return depth;
+  let deepest = depth;
+  for (const nested of Object.values(value as Record<string, unknown>)) {
+    deepest = Math.max(deepest, depthOf(nested, depth + 1));
+  }
+  return deepest;
 }
 
 /**

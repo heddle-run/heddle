@@ -10,6 +10,7 @@
 import type { Property } from 'agentspec';
 import type { ChatResponse, Message, ModelRequest } from '../llm/types.js';
 import type { Dependencies } from '../node/types.js';
+import type { ToolDef } from '../tool/types.js';
 import type { LogLevel } from '../runner/events.js';
 import type { AfterVerdict } from './protocol.js';
 import type { Seam, SeamSubscription } from './seams.js';
@@ -384,6 +385,18 @@ export interface HeddlePlugin {
    * one. The registry keeps them in load order and hands the whole list over.
    */
   middleware?: PluginMiddlewareDef[];
+  /**
+   * Tools this plugin contributes to the flow's registry.
+   *
+   * Not a component kind, and that is the decision worth recording. A tool is
+   * already a first-class thing in heddle with its own interface, its own
+   * executor and its own namespace that a spec writes into — so making a plugin
+   * a *source* of them needs no fifth kind, only a way to put entries in the
+   * registry. Keeping tools out of `ComponentKind` also keeps them out of
+   * `componentTypeNames()`, which is what heddle offers a spec author as things
+   * they may write as a `component_type`. A tool is not one of those.
+   */
+  tools?: ToolDef[];
 }
 
 /** Identity helper that gives plugin authors type checking and completion. */
