@@ -1,6 +1,9 @@
 import type { State } from '../state/state.js';
 import type { Executor, Registry } from '../tool/types.js';
 import type { EventHandler } from '../runner/events.js';
+import type { LLMConfig } from '../spec/types.js';
+import type { Provider } from '../llm/types.js';
+import type { ProviderOptions } from '../llm/provider.js';
 
 /** NodeExecutor executes a node and returns the output state. */
 export interface NodeExecutor {
@@ -29,6 +32,25 @@ export interface Dependencies {
    */
   defaultLlmKey?: string;
   defaultLlmUrl?: string;
+  /**
+   * How to build a provider for one of the config types the SDK ships.
+   *
+   * Defaults to `createProvider`, which is the OpenAI-compatible client every
+   * builtin config resolves to. Present so that construction is substitutable
+   * at all: it used to be a directly-imported free function called from three
+   * places, so an embedder wanting to route model calls through their own
+   * client — or a test wanting a stub — had no choice but to mock the module,
+   * which substitutes it for code that never asked.
+   *
+   * **This does not cover plugin providers, deliberately.** `providerFor`
+   * consults the registry first and only falls through to here for a builtin
+   * type, so overriding this replaces heddle's own construction without also
+   * disabling every `llm_config` type a plugin supplies. The two are different
+   * questions — "how does heddle build an OpenAI client" and "who answers for
+   * `AnthropicConfig`" — and one field answering both would mean an embedder
+   * silently turned off a feature the operator loaded.
+   */
+  createProvider?: (config: LLMConfig, options: ProviderOptions) => Provider;
 
   /**
    * Whether a model call may stream when the provider offers a streamed form.

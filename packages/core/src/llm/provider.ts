@@ -1,5 +1,8 @@
+import { isBuiltinComponentType } from 'agentspec';
 import type { LLMConfig } from '../spec/types.js';
 import type { ChatRequest, Provider } from './types.js';
+import type { Dependencies } from '../node/types.js';
+import type { PluginComponent } from '../plugin/types.js';
 import { OpenAIProvider } from './openai.js';
 import { LLMError } from '../errors.js';
 
@@ -13,6 +16,19 @@ const OPENAI_COMPATIBLE_TYPES = new Set([
   'VllmConfig',
   'OllamaConfig',
 ]);
+
+/**
+ * Whether this config type is one {@link createProvider} can build itself.
+ *
+ * Exported for {@link providerFor}, which has to know before it consults the
+ * plugin registry: a builtin type never reaches a plugin, and that is the
+ * property that keeps a plugin from capturing traffic a spec addressed to
+ * `OpenAiConfig`. `PluginRegistry.claim` enforces the same thing from the other
+ * side, at load — this is the half that holds even if a registry is not in play.
+ */
+export function isBuiltinConfigType(componentType: string): boolean {
+  return OPENAI_COMPATIBLE_TYPES.has(componentType);
+}
 
 /**
  * If the value starts with `$`, treat it as an environment variable reference
@@ -116,6 +132,27 @@ function applyDefaultCredential(
 type Generation = Pick<ChatRequest, 'temperature' | 'maxTokens' | 'topP'>;
 
 /**
+ * The three settings, in both spellings a document can deliver them in.
+ *
+ * Not a convenience. `default_generation_parameters` holds a plain object, and
+ * which case its *keys* arrive in depends on who deserialized the config around
+ * it: the SDK camelCases the fields of a schema it knows, so a builtin
+ * `OpenAiConfig` yields `maxTokens`; heddle's own plugin deserializer
+ * camelCases a component's top-level fields and hands nested plain objects
+ * through untouched — `loadField` treats them as user data — so a plugin
+ * provider's config yields `max_tokens`.
+ *
+ * That difference is invisible to the person writing the spec, who wrote
+ * `max_tokens` either way. Reading one spelling would silently drop a token
+ * ceiling on exactly the configs heddle knows least about, so both are read.
+ */
+const GENERATION_KEYS: Array<[keyof Generation, string]> = [
+  ['temperature', 'temperature'],
+  ['maxTokens', 'max_tokens'],
+  ['topP', 'top_p'],
+];
+
+/**
  * Read a spec's `default_generation_parameters` into a request.
  *
  * The field has been on `LLMConfig` since the type was written and was read
@@ -141,12 +178,15 @@ export function generationParams(config: LLMConfig): Generation {
   if (!raw) return {};
 
   const params: Generation = {};
-  for (const key of ['temperature', 'maxTokens', 'topP'] as const) {
-    const value = raw[key];
+  for (const [key, alias] of GENERATION_KEYS) {
+    // camelCase first: where both are present the SDK's own spelling wins,
+    // rather than leaving it to key order in an object heddle did not build.
+    const written = raw[key] !== undefined && raw[key] !== null ? key : alias;
+    const value = raw[written];
     if (value === undefined || value === null) continue;
     if (typeof value !== 'number' || !Number.isFinite(value)) {
       throw new LLMError(
-        `default_generation_parameters.${key} is ${JSON.stringify(value)}, which is ` +
+        `default_generation_parameters.${written} is ${JSON.stringify(value)}, which is ` +
           `not a number. These are sent to the model as written, so a string here ` +
           `is either rejected by the endpoint or silently ignored by it.`,
       );
@@ -154,6 +194,115 @@ export function generationParams(config: LLMConfig): Generation {
     params[key] = value;
   }
   return params;
+}
+
+/**
+ * The one way anything in heddle gets a {@link Provider} from a spec's config.
+ *
+ * There used to be three call sites, each rebuilding the same options object
+ * from the same three `Dependencies` fields — `AgentExecutor.getProvider`,
+ * `LLMExecutor.execute` and `PluginModel.call`. Collapsing them is the whole of
+ * what makes a provider plugin one change rather than three, and it is what the
+ * roadmap means by `createProvider` becoming reachable through `Dependencies`
+ * instead of being imported directly wherever a model is called.
+ *
+ * Two routes out, in this order and never the other: a plugin that claims the
+ * config type, or `Dependencies.createProvider` — which defaults to
+ * {@link createProvider} and covers only the types the SDK ships. The order is
+ * what stops an embedder's stub from silently disabling every provider plugin
+ * the operator loaded.
+ *
+ * **A plugin can only ever answer for a type the SDK does not ship**, and the
+ * check that guarantees it is `isBuiltinComponentType` — the SDK's own, the same
+ * one `PluginRegistry.claim` refuses a registration with. Two sets are in play
+ * and they are not the same: `OPENAI_COMPATIBLE_TYPES` is what heddle can *build*
+ * (four types), and the SDK's builtin map is what a plugin may not *claim*
+ * (everything, including `OciGenAiConfig`). Gating the registry on the narrower
+ * set would leave the invariant resting on the two happening to overlap, so both
+ * are consulted and the SDK's comes first. Without that order a submitted plugin
+ * could quietly become the endpoint for every flow on the server that never
+ * named one.
+ *
+ * **What the plugin is given is the config, not the credential.** `deps` is
+ * passed so a provider can reach the tool registry and the event handler; the
+ * operator's `defaultLlmKey` is in it, and in process that is no new exposure —
+ * a plugin loaded with `import()` is the same program as heddle and can read
+ * anything. Out of process it is: `remoteProviderDef` sends the component and
+ * the request and nothing else, so the operator's key never crosses the pipe.
+ * A provider plugin that needs a credential takes it from its own component's
+ * fields, which the flow's author wrote, or from the environment the operator
+ * granted it.
+ *
+ * **`$VAR` is not resolved on the way.** `resolveEnvVar` exists because heddle
+ * is the one sending the request to an endpoint the spec chose; here heddle
+ * sends nothing. Resolving host-side would read the host's environment on a
+ * plugin's behalf and hand the value to a process that is, under `--safe`,
+ * confined precisely so it cannot see that environment — the same mistake
+ * `ExecuteParams.workspace` refuses to make with a path. The config crosses as
+ * written.
+ */
+export function providerFor(config: LLMConfig, deps: Dependencies): Provider {
+  const componentType = config.componentType;
+
+  if (componentType && !isBuiltinConfigType(componentType)) {
+    // An Agent Spec builtin heddle has no client for — `OciGenAiConfig` is the
+    // only one today, a member of `LlmConfigUnion` that `OPENAI_COMPATIBLE_TYPES`
+    // does not list. Checked here rather than left to fall through, because the
+    // two sets not agreeing is exactly what makes the fall-through wrong: a
+    // plugin can never supply this type (`claim` refuses a builtin component
+    // type), so the registry has nothing to say and "load it with --plugin"
+    // would send an operator looking for something that cannot be built.
+    //
+    // It also makes the double lock a real one. Every SDK builtin now stops
+    // before the registry lookup, whether or not heddle can build it, so the
+    // guarantee no longer rests on the two sets happening to overlap where it
+    // matters.
+    if (isBuiltinComponentType(componentType)) {
+      throw new LLMError(
+        `llm_config has type "${componentType}", which Agent Spec defines but heddle ` +
+          `has no client for. heddle speaks: ${[...OPENAI_COMPATIBLE_TYPES].join(', ')}. ` +
+          `No plugin can supply it either — a plugin may not claim a builtin component ` +
+          `type — so this flow needs one of those, or an endpoint reached through ` +
+          `OpenAiCompatibleConfig.`,
+      );
+    }
+  }
+
+  const registry = deps.plugins;
+
+  if (componentType && registry && !isBuiltinConfigType(componentType)) {
+    const def = registry.providerDef(componentType);
+    if (def) {
+      return def.createProvider(config as unknown as PluginComponent, deps);
+    }
+
+    // The slot discipline the widened `LlmConfigUnion` gave up, recovered here
+    // and named. Before widening this was `Invalid discriminator value`; a
+    // plugin's transform written as an `llm_config` now parses, and this is
+    // where it stops — saying what the type actually is rather than what it is
+    // not.
+    const kind = registry.kindOf(componentType);
+    if (kind) {
+      throw new LLMError(
+        `llm_config has type "${componentType}", which a plugin provides as a ` +
+          `${kind} rather than a provider. Only a "provider" component supplies a ` +
+          `model endpoint; a ${kind} is written somewhere else in the spec.`,
+      );
+    }
+
+    throw new LLMError(
+      `unsupported config type "${componentType}". Builtin: ` +
+        `${[...OPENAI_COMPATIBLE_TYPES].join(', ')}.\n` +
+        `  Loaded plugins: ${registry.describe()}\n` +
+        `  If it comes from a plugin, load it with: --plugin <module>`,
+    );
+  }
+
+  return (deps.createProvider ?? createProvider)(config, {
+    allowEnvRefs: deps.allowEnvRefs,
+    defaultKey: deps.defaultLlmKey,
+    defaultUrl: deps.defaultLlmUrl,
+  });
 }
 
 export function createProvider(

@@ -9,10 +9,10 @@
  * node for no reason an author could see, or a per-call setting silently
  * erasing the spec's default.
  *
- * The provider is stubbed. `createProvider` is the seam between "which config"
- * and "which network call", so replacing it leaves everything this file is
- * about — reading the config, merging the parameters, routing the reverse call
- * — running for real.
+ * The provider is stubbed through `Dependencies.createProvider`, which is the
+ * seam between "which config" and "which network call", so replacing it leaves
+ * everything this file is about — reading the config, merging the parameters,
+ * routing the reverse call — running for real.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -22,20 +22,15 @@ import { join } from 'node:path';
 import type { ChatRequest, ChatResponse } from '../../llm/types.js';
 import type { LLMConfig } from '../../spec/types.js';
 
-const { chatCompletion, built } = vi.hoisted(() => ({
-  chatCompletion: vi.fn(),
-  built: [] as Array<{ config: LLMConfig; options: Record<string, unknown> }>,
-}));
+const chatCompletion = vi.fn();
+const built: Array<{ config: LLMConfig; options: Record<string, unknown> }> = [];
 
-vi.mock('../../llm/provider.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../llm/provider.js')>()),
-  // Records the config it was asked for, which is the whole question: a plugin
-  // must not be able to reach a model its own component did not name.
-  createProvider: (config: LLMConfig, options: Record<string, unknown>) => {
-    built.push({ config, options });
-    return { chatCompletion };
-  },
-}));
+// Records the config it was asked for, which is the whole question: a plugin
+// must not be able to reach a model its own component did not name.
+const stubProvider = (config: LLMConfig, options: Record<string, unknown>) => {
+  built.push({ config, options });
+  return { chatCompletion };
+};
 
 import { PluginRegistry } from '../registry.js';
 import { TransformChain } from '../transform.js';
@@ -129,7 +124,11 @@ async function run(
   deps: Partial<Dependencies> = {},
 ): Promise<Record<string, unknown>> {
   open.push(registry);
-  const graph = compile(parseFlow(flow, registry), { plugins: registry, ...deps });
+  const graph = compile(parseFlow(flow, registry), {
+    plugins: registry,
+    createProvider: stubProvider,
+    ...deps,
+  });
   validate(graph);
   const runner = new Runner(graph, { ...DEFAULT_RUNNER_OPTIONS, verbose: false });
   const state = await runner.run(undefined, { text: 'hello' });
@@ -315,7 +314,7 @@ describe('a plugin transform', () => {
 
     return TransformChain.build(
       [{ componentType: 'LlmGuard', name: 'guard', ...component } as never],
-      { plugins: registry },
+      { plugins: registry, createProvider: stubProvider },
       'agent',
     );
   }

@@ -60,12 +60,12 @@ A numbered patch series. Each entry says what it changes and what breaks in
 heddle if a refresh drops it — the refresh procedure below overwrites `src/`
 wholesale, so anything not listed here is lost silently.
 
-Patch 1 is purely additive. Patch 2 is not — it rewrites one line of
-`src/agents/agent.ts` — and that is the first time this series has changed a
-type upstream owns, so the general claim that a rebase never resolves a semantic
-conflict no longer holds unqualified. What still holds is that upstream's
-*behaviour* is unchanged: with nobody registering a widened schema, the lazy
-reference resolves to exactly the union it replaced.
+Patch 1 is purely additive. Patches 2 and 3 are not — between them they rewrite
+five lines across four files upstream owns — so the general claim that a rebase
+never resolves a semantic conflict does not hold for this series. What does hold
+is that upstream's *behaviour* is unchanged: each patch registers the real union
+behind its own lazy reference at module scope, so with nobody widening anything
+every reference resolves to exactly the union it replaced.
 
 **1. Export the flow schema registration functions.**
 `src/index.ts` re-exports `registerNodeUnionSchema` and `registerFlowSchema`
@@ -103,6 +103,26 @@ resolves to `FlowSchema`, whose `startNode` and `nodes` are already
 `LazyNodeRef`, so every subflow position widens through the node registration
 transitively.
 
+**3. Lazy indirection for `LlmConfigUnion`.**
+New `src/llms/lazy-schemas.ts`, the third mirror of `src/flows/lazy-schemas.ts`:
+`LazyLlmConfigRef` plus `registerLlmConfigSchema`. `src/llms/index.ts`
+self-registers the real union immediately after defining it and re-exports the
+lazy ref, so every consumer importing the ref from the barrel necessarily
+evaluates the registration — the same load-bearing import path patch 2 relies
+on. Three files change `LlmConfigUnion` to `LazyLlmConfigRef` in a schema field:
+`src/agents/agent.ts` (`llmConfig`), `src/flows/nodes/llm-node.ts` (`llmConfig`)
+and `src/transforms/message-transform.ts` (`llm`, on both transforms — two
+lines). `src/index.ts` re-exports `registerLlmConfigSchema`.
+
+Four slots, one registration, which is why this was the most expensive union to
+work around and the cheapest to open. The default is `z.never()`, as patch 2's:
+a half-applied patch should refuse every model configuration loudly rather than
+accept any object as one — including an object naming no model at all.
+
+Without this, `llm_config` is closed to a plugin-supplied provider and the
+`provider` component kind (`packages/core/src/plugin/types.ts`,
+`PluginProviderDef`) cannot be named by a spec at all.
+
 `package.json` also differs from upstream, and predates the series: it is marked
 `private`, and the test/lint/example scripts and their devDependencies are
 dropped, since upstream's `tests/` and `examples/` are not vendored.
@@ -124,15 +144,19 @@ then update the commit in the table and run `pnpm -w build && pnpm -w test`.
 
 A refresh that drops a patch does not fail loudly: the SDK still builds and its
 own behaviour is unchanged, and what breaks is heddle, somewhere downstream of a
-missing export. Diffing `src/index.ts` alone is no longer enough — patch 2
-touches four files, three of which upstream owns. After the rsync, diff:
+missing export. Diffing `src/index.ts` alone is nowhere near enough — the series
+now touches eight files, six of which upstream owns. After the rsync, diff:
 
     src/index.ts
-    src/agents/agent.ts
+    src/agents/agent.ts                   (both patch 2 and patch 3)
     src/transforms/index.ts
-    src/transforms/message-transform.ts
+    src/transforms/message-transform.ts   (both patch 2 and patch 3)
     src/transforms/lazy-schemas.ts        (deleted outright by --delete)
+    src/llms/index.ts
+    src/llms/lazy-schemas.ts              (deleted outright by --delete)
+    src/flows/nodes/llm-node.ts
 
-`packages/core/src/plugin/__tests__/vendor-schema-registration.test.ts` pins the
-exports, so `pnpm -w test` catches a dropped patch — but it catches it as a
-heddle test failure, which is why the list above is here.
+`packages/core/src/plugin/__tests__/vendor-schema-registration.test.ts` pins all
+four exports and rebinds each seam to prove it is live, so `pnpm -w test` catches
+a dropped patch — but it catches it as a heddle test failure, which is why the
+list above is here.

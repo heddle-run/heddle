@@ -134,8 +134,8 @@ function refuseMiddleware(rawManifest: unknown): void {
       .map((c) => `"${c.componentType}"`)
       .join(', ')}), which cannot be submitted with a request. Middleware runs on ` +
       `every node of every flow, so it is installed by whoever runs this server ` +
-      `rather than chosen per request. A component your own flow selects is a node ` +
-      `or a transform.`,
+      `rather than chosen per request. A component your own flow selects is a node, ` +
+      `a transform or a provider.`,
     'PluginError',
   );
 }

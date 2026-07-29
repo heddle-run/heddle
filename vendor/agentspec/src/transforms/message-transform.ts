@@ -4,7 +4,7 @@
 import { z } from "zod";
 import { registerMessageTransformSchema } from "./lazy-schemas.js";
 import { ComponentBaseSchema } from "../component.js";
-import { LlmConfigUnion, type LlmConfig } from "../llms/index.js";
+import { LazyLlmConfigRef, type LlmConfig } from "../llms/index.js";
 import {
   InMemoryCollectionDatastoreSchema,
   OracleDatabaseDatastoreSchema,
@@ -27,7 +27,7 @@ export type SupportedDatastores =
 
 export const MessageSummarizationTransformSchema = ComponentBaseSchema.extend({
   componentType: z.literal("MessageSummarizationTransform"),
-  llm: LlmConfigUnion,
+  llm: LazyLlmConfigRef,
   maxMessageSize: z.number().int().default(20000),
   summarizationInstructions: z.string().default(
     "Please make a summary of this message. Include relevant information and keep it short. " +
@@ -51,7 +51,7 @@ export type MessageSummarizationTransform = z.infer<
 export const ConversationSummarizationTransformSchema =
   ComponentBaseSchema.extend({
     componentType: z.literal("ConversationSummarizationTransform"),
-    llm: LlmConfigUnion,
+    llm: LazyLlmConfigRef,
     maxNumMessages: z.number().int().default(50),
     minNumMessages: z.number().int().default(10),
     summarizationInstructions: z.string().default(

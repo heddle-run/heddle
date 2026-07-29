@@ -28,11 +28,13 @@ answers a model call, what happens when a node throws, whether a tool call is al
 how a tool's result is serialized back into the conversation, how state merges between nodes, how
 a prompt template renders, which tools exist at all, and what the run looks like on the wire. Today
 none of these were reachable from a plugin — the plugin surface was three component kinds, two verbs
-heddle calls (`execute`, `apply`) and one a plugin could call back (`runTool`). It is now four kinds,
-three verbs (`after` joined them in Phase 6) and four reverse calls (`emitEvent` and `log` from Phase
-3, `callModel` from Phase 4). Of the list above, exactly one has been reached: **what happens when a
-node throws**, in Phase 6. A plugin can now *call* a model (Phase 4) but not *be* the provider that
-answers one, which is Phase 5 and a different question.
+heddle calls (`execute`, `apply`) and one a plugin could call back (`runTool`). It is now five kinds,
+five verbs (`after` joined them in Phase 6, `callTool` in Phase 7, `chat` in Phase 5) and four
+reverse calls (`emitEvent` and `log` from Phase 3, `callModel` from Phase 4). Of the list above,
+three have been reached: **what happens when a node throws** (Phase 6), **which tools exist at all**
+(Phase 7), and **which provider answers a model call** (Phase 5). A plugin can both *call* a model
+and *be* the thing that answers one — two different questions, settled in opposite directions: a
+plugin composing a request never chooses the model, and a plugin answering one is chosen by the spec.
 
 What the goal does **not** mean:
 
@@ -241,6 +243,12 @@ SDK validates. Put one in a builtin slot — `Agent.tools`, `Agent.llmConfig` �
 rejects it before any plugin code runs. Nothing documents that constraint, and there is no test for
 `kind: 'component'` end to end.
 
+> Two of those three sentences have since stopped being true, and the section is kept as the
+> baseline the redesign was argued against rather than rewritten. The stand-in machinery is gone
+> (Phase V), so a `component` survives because the widened unions admit it in place; and
+> `Agent.llmConfig` is no longer a closed slot (Phase 5), which is what a `provider` is written
+> into. `Agent.tools` is still closed — `ToolUnion` was deliberately left alone, see §7.7.
+
 ### 3.2 The RPC verbs
 
 ```ts
@@ -373,7 +381,7 @@ submitted *tool scripts* run unsandboxed on that platform.
 | Custom transform | yes | yes | yes | `plugin/transform.ts`, `TransformChain.build` |
 | Custom sub-component | nominal | only under a plugin parent | n/a — never executed | `plugin/remote.ts`, `remoteComponentDef` |
 | Custom tool *type* | no | — | — | `ToolUnion` closed; `registry.claim` forbids builtin names (`plugin/registry.ts:77-83`) |
-| Custom LLM provider | no | — | — | `llm/provider.ts:10-15,122,141` |
+| Custom LLM provider | yes — Phase 5 | yes, as an `llm_config` | yes, verb `chat`, streaming optional | `llm/provider.ts`, `providerFor`; `plugin/remote.ts`, `remoteProviderDef` |
 | Custom tool source / registry | no | — | — | `Registry` is an interface (`tool/types.ts`, `Registry`) with no plugin route |
 | Custom wire protocol / encoder | no | — | — | `serializeEvent` (`packages/server/src/sse.ts`, `serializeEvent`) is a free function with one hardcoded rendering |
 | Any interception | no | — | — | §5 |
@@ -1303,27 +1311,34 @@ Two protocol gaps that are not lifecycle but rode along:
   `--plugin-timeout`, clamped to the run budget. Phase 2 changes what that budget measures: a partial
   frame restarts it, so it bounds *silence* rather than total time.
 
-### 7.6 Provider plugins
+### 7.6 Provider plugins — **landed, Phase 5**
 
 ```ts
-// packages/core/src/plugin/types.ts — proposed
+// packages/core/src/plugin/types.ts
 export interface PluginProviderDef extends PluginComponentDef {
   /**
-   * Lifetime is per compiled graph, not per execute. AgentExecutor memoizes
-   * (node/agent.ts:58-65) but LLMExecutor rebuilds on every execution
-   * (node/llm.ts:33-37) — a provider holding a token bucket or a response cache
-   * would be silently defeated by the second. Fixing llm.ts is a precondition,
-   * not a follow-up.
+   * Lifetime is per compiled graph, not per execute. All three callers memoize
+   * now — `AgentExecutor`, `PluginModel` and, since this phase, `LLMExecutor`,
+   * which rebuilt on every execution and would have silently defeated a
+   * provider holding a token bucket or a response cache.
    */
   createProvider(config: PluginComponent, deps: Dependencies): Provider;
 }
 ```
 
-Three prerequisites. The first two are cheap; all three are mandatory:
+Three prerequisites, all discharged:
 
-1. **`Dependencies` gains a factory.** `createProvider` must stop being a directly-imported free
-   function (`node/agent.ts:17`, `node/llm.ts:5`) and become reachable through `Dependencies`
-   (`node/types.ts:12-49`). Without this, nothing — not a plugin, not an embedder — can substitute it.
+1. ~~**`Dependencies` gains a factory.**~~ **Landed.** `createProvider` was a directly-imported free
+   function called from `node/agent.ts`, `node/llm.ts` and `plugin/services.ts`, each rebuilding the
+   same options object from the same three `Dependencies` fields. All three now call `providerFor`
+   (`llm/provider.ts`), which is the single seam: it consults the plugin registry for a non-builtin
+   config type, and otherwise defers to `Dependencies.createProvider ?? createProvider`.
+
+   The ordering is the load-bearing part. A builtin type never reaches the registry, so a plugin
+   cannot become the endpoint for a flow that wrote `OpenAiConfig` — and an embedder's override
+   replaces heddle's own construction *without* disabling providers an operator loaded, because
+   those two are different questions and one field answering both would make a stub into a silent
+   feature switch.
 2. ~~**`ChatRequest` must carry something worth acting on.**~~ **Landed with Phase 4.** It was
    `{ model, messages, tools? }` and `defaultGenerationParameters` (`spec/types.ts`) was — grep-confirmed
    — read nowhere, so no spec could set a temperature or request JSON mode. `ChatRequest`
@@ -1349,27 +1364,36 @@ Three prerequisites. The first two are cheap; all three are mandatory:
    `llm/openai.ts` its only implementation so far. A provider contract published without it would have
    been a contract that breaks later.
 
-   **What this phase still owes is the bridge between two shapes of stream, and it is not free.** A
+   **The bridge between two shapes of stream landed with the rest, and it was not free.** A
    `Provider` streams by *pull*: an `AsyncIterable` the consumer drives, which ends by returning and
    fails by throwing, so back-pressure and mid-stream failure both have somewhere to live. A plugin
    streams by *push*: `{ id, partial }` frames the host receives whenever they arrive, delivered to
    an `onPartial` callback (`PluginHost.call`) that has no way to say "slower", no end marker, and no
-   failure channel except the call's own response. A `chat` verb has to present the second as the
-   first. Three rules make that work, and all three have to be stated before the first provider
-   plugin exists rather than discovered by it: each partial's payload is one `ChatChunk`; the call's
-   response is the end of the stream, so a stream that ends without one is a failed call and not an
+   failure channel except the call's own response. `pullFrom` (`plugin/remote.ts`) presents the
+   second as the first, under three rules stated in the protocol rather than discovered by the first
+   plugin: each partial's payload is one `ChatChunk`; **the call's response is itself the final
+   chunk** and the end of the stream, so a call that ends without one is a failed call and not an
    empty answer; and a plugin that streams for longer than the per-call timeout stays alive only
-   because each partial resets it (§7.1), which means a provider plugin that buffers internally and
-   emits nothing is killed exactly like one that hung.
+   because each partial resets it (§7.1), which means a provider that buffers internally and emits
+   nothing is killed exactly like one that hung.
 
-**The placeholder-`LLMConfig` problem — and why it is now a scheduling question, not a design one.**
+   Two consequences worth recording. There is **no back-pressure and cannot be** — the plugin writes
+   to a pipe heddle drains, so a slow consumer grows a queue rather than slowing the producer; in
+   practice the consumer is `collectStream`, which appends and emits an event. And **whether a
+   component streams is a manifest field**, not a per-call negotiation: `completeChat` decides by
+   whether `chatCompletionStream` exists, synchronously, so `remoteProviderDef` defines that method
+   only when the manifest declared `stream`. A provider that never implemented streaming is
+   therefore never sent `stream: true` and never has to answer a mode it has no handler for.
+
+**The placeholder-`LLMConfig` problem — resolved, and kept as the record of what was avoided.**
 Everything below describes the cost of making a provider *spec-named* (a flow writing
-`component_type: AnthropicConfig`) **under the placeholder mechanism**. Since `vendor/agentspec` is
-ours to patch (§8), that cost is avoidable: extend `LlmConfigUnion` in the SDK and there is no
-placeholder to pay for. The analysis is kept because it is the sharpest illustration of why the
-placeholder approach does not scale, and because it prices the fallback if the SDK work slips.
+`component_type: AnthropicConfig`) **under the placeholder mechanism**. None of it was paid: vendor
+patch 3 opened `LlmConfigUnion` behind a lazy reference, `spec/open-unions.ts` widens it with the
+same plugin-independent schema the other two use, and a plugin config now deserializes in place. The
+analysis stays because it is the sharpest illustration of why the placeholder approach did not scale
+— one registration replaced all four restore paths described below.
 
-Under placeholders, this is the most expensive stand-in yet:
+Under placeholders, this would have been the most expensive stand-in yet:
 
 - `LlmConfigUnion` gates three distinct positions: `Agent.llmConfig` (`vendor/agentspec/src/agents/agent.ts:17`),
   `LlmNode.llmConfig`, and both transforms' `llm` (`vendor/agentspec/src/transforms/message-transform.ts:29,53`).
@@ -1391,11 +1415,11 @@ involvement, and it matches the current stance that plugins are named by the ope
 is the ability for a spec to *say* which provider it wants — which is arguably the point of a spec
 format.
 
-That fork was genuinely balanced only while the placeholder was the sole route. It is not:
-**extend `LlmConfigUnion` in the vendored SDK and spec-named providers cost nothing extra**, so the
-spec keeps the ability to name its own provider and heddle keeps one mechanism instead of two. The
-host-configured form survives as the interim answer if provider plugins are wanted before the SDK
-work lands — but it is a stopgap with a migration, not a co-equal design.
+That fork was genuinely balanced only while the placeholder was the sole route, and it was not:
+**`LlmConfigUnion` was extended in the vendored SDK and spec-named providers cost nothing extra**, so
+the spec keeps the ability to name its own provider and heddle keeps one mechanism instead of two.
+The host-configured form was never built, and there is now nothing it would buy — a middleware is
+the kind for something the operator installs and a flow does not mention, and it already exists.
 
 ### 7.7 Registry / tool-source plugins
 
@@ -1674,11 +1698,12 @@ Phase 3, so an encoder written now sees the final shape — `BuiltinEventType | 
 
 ### 7.10 Open questions
 
-1. **~~Spec-named or host-configured providers?~~ Resolved by §8.** This was balanced only while the
-   placeholder was the only route to a custom `LlmConfig`. Extending `LlmConfigUnion` in the vendored
-   SDK costs nothing per-provider, so spec-named wins and host-configured survives only as an interim
-   answer if provider plugins are wanted before the SDK work lands. Kept here rather than deleted
-   because the reasoning inverts again if the SDK work is abandoned.
+1. **~~Spec-named or host-configured providers?~~ Resolved by §8, and shipped spec-named in Phase 5.**
+   This was balanced only while the placeholder was the only route to a custom `LlmConfig`. Vendor
+   patch 3 extended `LlmConfigUnion`, which costs nothing per-provider, so spec-named won and the
+   host-configured form was never built. Kept here rather than deleted because the reasoning inverts
+   again if the SDK work is ever abandoned — and because it names the thing that decided it, which is
+   that a spec saying where its run sends requests is the point of a spec format.
 
    Phase 4 narrowed what this question is *about*, and the narrowing is worth recording. A plugin
    naming its model in the spec turned out to cost nothing at all: a plugin component's fields are
@@ -1703,7 +1728,15 @@ Phase 3, so an encoder written now sees the final shape — `BuiltinEventType | 
    middleware failure as `cause`.
 4. **Network policy for plugins.** The current model denies the environment and (optionally) the
    filesystem; it says nothing about the network. Example (c) needs it, guardrails plugins must not
-   have it. Neither `SandboxPolicy` nor the proposed capability list expresses it today.
+   have it. Neither `SandboxPolicy` nor the capability list expresses it today.
+
+   **Phase 5 made this concrete rather than hypothetical.** A provider plugin's whole job is an
+   outbound request, so it is the first kind that is useless without network and the first whose
+   network access an operator would obviously want to scope — to the one host its config names. The
+   capability model cannot express that, because a capability gates a *reverse call* and this is not
+   one: the plugin reaches the network on its own, through its own runtime, and heddle never sees it.
+   Whatever answers this will be a sandbox policy, not a `PluginCapability`. This is now the largest
+   open item in the security model.
 5. **Should `getState` exist at all?** It requires threading `currentState` through `Dependencies`,
    and the value it adds over the node's resolved input is small in practice, since `resolveInputs`
    returns the whole accumulated state whenever a node has no mappings (`runner.ts:112-114`). Weakest
@@ -1711,7 +1744,11 @@ Phase 3, so an encoder written now sees the final shape — `BuiltinEventType | 
 6. **Does `listTools` justify starting a process during load?** It breaks the one property that makes
    `/v1/validate` cheap (`remote-loader.ts:109-111`). Manifest-declared tools cover most real cases;
    MCP discovery is the case that does not, and it is the case people will ask for.
-7. **Should a plugin ever be allowed to claim a builtin type?** `plugin/registry.ts:77-83` forbids it,
+7. **Should a plugin ever be allowed to claim a builtin type?** Phase 5 answered this for one kind
+   and left it open for the rest: a *provider* must never claim one, because a flow writing
+   `OpenAiConfig` and reaching a stranger's code is a capture rather than an extension — so
+   `providerFor` checks builtins before the registry as well as `claim` refusing the registration.
+   Any future opt-in has to carve providers out. `plugin/registry.ts` forbids it generally,
    which means the two transforms heddle skips (`plugin/transform.ts`, `BUILTIN_TRANSFORMS`) can never be supplied by
    a plugin — the feature is impossible in both directions at once. Allowing it needs a precedence
    rule and an explicit `implements: "builtin"` opt-in so shadowing is visible, and the compiler's
@@ -1726,11 +1763,16 @@ Phase 3, so an encoder written now sees the final shape — `BuiltinEventType | 
 
 ---
 
-## 8. The agentspec placeholder tax — and how to stop paying it
+## 8. The agentspec placeholder tax — and how to stop paying it — **paid off**
 
-Every new **component** kind — as opposed to a middleware or a `PluginMethod` — needs a hand-picked
-placeholder, because the SDK's unions are closed (§2.4) and heddle's only tool is substitution
-(`plugin/flow-preprocess.ts:1-21`).
+> **Historical.** Phase V opened `NodeUnion` and `MessageTransformUnion`; Phase 5 opened
+> `LlmConfigUnion`, which is the row this section prices as the worst of them. No placeholder was
+> ever built for a config, and the substitution machinery for the other two is deleted. The section
+> is kept because it is the argument that decided the approach, and because the last row —
+> `ToolUnion` — is the one case still unpriced.
+
+Every new **component** kind — as opposed to a middleware or a `PluginMethod` — needed a hand-picked
+placeholder, because the SDK's unions were closed (§2.4) and heddle's only tool was substitution.
 
 A placeholder is not one constant. It is four things:
 
@@ -1985,21 +2027,86 @@ process boundary it runs on for a second time — the same defect Phase 0 fixed 
 of plugin people ask for. And Phase 5, whose second prerequisite this was.
 Cost: medium, as estimated.
 
-### Phase 5 — Provider kind
+### Phase 5 — Provider kind — **landed**
 
-**Depends on:** Phase 2 (the settled `Provider` shape, including streaming) — done; Phase 4's
-`ChatRequest` work — done; `createProvider` becoming injectable through `Dependencies` — **still
-open**, it is a directly-imported free function in `node/agent.ts`, `node/llm.ts` and now
-`plugin/services.ts`, so nothing can substitute it; and the `LLMExecutor` per-execute construction
-being fixed — **still open** for that node, though `PluginModel` and `AgentExecutor` both memoize, so
-the inconsistency is now two-against-one rather than one-against-one.
+`kind: 'provider'` — a plugin supplying a custom `llm_config` type, so a spec writes
+`component_type: AnthropicConfig` where it would write `OpenAiConfig` and every position that takes a
+model configuration takes this one too.
 
-**Strongly prefers Phase V.** With `LlmConfigUnion` extended, spec-named providers cost nothing extra
-and §7.10 Q1 resolves itself. Without it, this phase either pays the most expensive placeholder in
-the codebase or ships the host-configured stopgap and carries a migration later.
+**All three prerequisites are discharged, and two of them were the phase.** `createProvider` was a
+directly-imported free function called from three places; every one now goes through `providerFor`
+(`llm/provider.ts`), which is the only way anything in heddle turns a config into a `Provider`. That
+collapse is what makes a provider plugin one change rather than three, and `Dependencies.createProvider`
+is the substitution point the roadmap asked for — it replaces heddle's *own* construction and
+deliberately not the registry lookup, so an embedder installing a stub cannot silently switch off
+every provider an operator loaded. `LLMExecutor` now memoizes: it used to build a provider per
+execution, which would have discarded a plugin's connection pool, token bucket or response cache
+between visits to the same node. That was a precondition, not a follow-up, and it is pinned by a
+test that runs one executor twice.
+
+**A plugin cannot take a name the SDK ships**, enforced twice on purpose. `PluginRegistry.claim`
+refuses a builtin component type at load — that is the message an author gets — and `providerFor`
+checks the SDK's `isBuiltinComponentType` *before* it consults the registry, so there is no lookup
+for a plugin to win. Either alone would be a rule that holds until someone reorders something.
+
+Two sets are in play and they are not the same, which the review caught: `OPENAI_COMPATIBLE_TYPES`
+is what heddle can *build* (four types) and the SDK's builtin map is what a plugin may not *claim*
+(everything, including `OciGenAiConfig` — a fifth member of `LlmConfigUnion` heddle has no client
+for). Gating the registry on the narrower one left the invariant resting on the two happening to
+overlap, and produced an error telling an operator to `--plugin` a type `claim` refuses outright.
+Both are consulted now, the SDK's first, and an Agent Spec builtin heddle cannot build is refused as
+what it is.
+
+**A provider gets the scopeless `runTool` a transform gets, passed explicitly.** It owns no tool
+scope — it is not a node and opened nothing — so a throwaway sandbox session per call is the honest
+answer. Passing it rather than leaving `PluginHost`'s host-wide fallback to supply one is the point:
+that fallback is whatever `setToolRunner` was first given, so a plugin shipping both a node and a
+provider would have run the provider's tools inside *the node's* session and workspace, and the same
+provider loaded alone would have got a throwaway one. `callModel` is deliberately absent — a
+provider *is* the model, and the config it would call on is itself.
+
+**What crosses to a provider is the config, never the credential.** `deps` holds the operator's
+`defaultLlmKey`; `remoteProviderDef` sends the component and the request and nothing else, so it
+never reaches an out-of-process plugin. `$VAR` is deliberately *not* resolved on the way either: a
+`$VAR` in an `llm_config` means "read heddle's environment", and heddle will not do that on behalf of
+a process that `--safe` confined precisely so it could not — the same mistake `ExecuteParams.workspace`
+refuses to make with a path.
+
+**The streaming bridge, which this phase owed.** A `Provider` streams by pull; a plugin streams by
+push. Three rules make the second presentable as the first, and all three are the protocol's:
+each partial is one `ChatChunk`; the call's response *is* the final chunk, so a call that ends
+without one is a failed call and never an empty answer; and only a partial restarts the silence
+budget, so a provider that declares streaming and then buffers internally is killed exactly like one
+that hung. Whether a component streams at all is a manifest field, not a negotiation — `completeChat`
+decides by whether `chatCompletionStream` exists, synchronously, before the process is necessarily
+running.
+
+| Landed | Where |
+|---|---|
+| `providerFor`, the single seam; `isBuiltinConfigType`; `Dependencies.createProvider` | `llm/provider.ts`, `node/types.ts` |
+| `PluginProviderDef`, the `provider` kind, `registry.providerDef` | `plugin/types.ts`, `plugin/registry.ts` |
+| The `chat` verb, `readChatResponse`, `readChatChunk` | `plugin/protocol.ts` |
+| `remoteProviderDef` and `pullFrom`, the push-to-pull bridge | `plugin/remote.ts` |
+| `kind: 'provider'` and `stream` in a manifest; `ctx.partial` in the inlined runtime | `plugin/manifest.ts`, `plugin/runtime-source.ts` |
+| Vendor patch 3: lazy indirection for `LlmConfigUnion` — one registration, four slots | `vendor/agentspec/src/llms/lazy-schemas.ts` and four files it touches |
+| `LLMExecutor` memoizes its provider and reads generation params once | `node/llm.ts` |
+| Four test files off `vi.mock('llm/provider.js')` and onto `Dependencies` | `node/__tests__`, `plugin/__tests__` |
+
+**One inconsistency this surfaced and fixed.** `default_generation_parameters` holds a plain object,
+and which case its *keys* arrive in depends on who deserialized the config around it: the SDK
+camelCases the fields of a schema it knows, so a builtin yields `maxTokens`; heddle's plugin
+deserializer hands nested plain objects through untouched — `loadField` treats them as user data — so
+a plugin provider's config yields `max_tokens`. The author wrote `max_tokens` either way, so
+`generationParams` now reads both spellings. Reading one would have silently dropped a token ceiling
+on exactly the configs heddle knows least about.
 
 **Unblocks:** Anthropic/Bedrock, record-replay CI, retry and caching wrappers (seam #2).
-Cost: medium after Phase V; high before it.
+
+**Not done, and deliberately.** A provider plugin's network access is still ungoverned — §7.10 Q4 —
+and this phase makes that question concrete rather than hypothetical, since a provider is the one
+kind whose whole job is an outbound request. A submitted provider is *not* refused by the server the
+way middleware is: it runs only when the caller's own spec names it, it cannot capture a builtin
+type, and heddle bounds how often it is called — which is more than can be said for `callModel`.
 
 ### Phase 6 — Middleware kind — **landed at `nodeError`; five seams reserved**
 

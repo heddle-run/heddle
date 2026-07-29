@@ -28,14 +28,27 @@ import type {
   PluginNode,
   PluginNodeDef,
   PluginNodeExecutor,
+  PluginProviderDef,
   PluginResult,
   PluginTransformDef,
   PluginTransformExecutor,
   TransformPhase,
   TransformResult,
 } from './types.js';
-import { readAfterVerdict, readToolResult, type AfterVerdict } from './protocol.js';
-import type { Message } from '../llm/types.js';
+import {
+  readAfterVerdict,
+  readChatChunk,
+  readChatResponse,
+  readToolResult,
+  type AfterVerdict,
+} from './protocol.js';
+import type {
+  ChatChunk,
+  ChatRequest,
+  ChatResponse,
+  Message,
+  Provider,
+} from '../llm/types.js';
 
 /**
  * Strip a component to what can cross a pipe.
@@ -274,6 +287,212 @@ export function remoteMiddlewareDef(
       };
     },
   };
+}
+
+/**
+ * The provider half: a custom `llm_config` type served from the plugin's
+ * process.
+ *
+ * The one kind whose remote form has to bridge two *shapes* of stream rather
+ * than just two processes, and the bridge is {@link pullFrom} below. A
+ * `Provider` streams by pull — an `AsyncIterable` the consumer drives, which
+ * ends by returning and fails by throwing. A plugin streams by push — frames
+ * arriving whenever they arrive, delivered to a callback with no way to say
+ * "slower". Three rules make the second presentable as the first, and all three
+ * are the protocol's rather than this function's:
+ *
+ * 1. Each partial's payload is one {@link ChatChunk}.
+ * 2. The call's response is the last chunk and the end of the stream — so a call
+ *    that ends without one is a failed call, not an empty answer.
+ * 3. A partial restarts the call's silence budget (`PluginHost.call`), which
+ *    means a provider that buffers internally and emits nothing for longer than
+ *    the budget is killed exactly like one that hung. Streaming providers have
+ *    to actually stream.
+ *
+ * There is no back-pressure and there cannot be: the plugin writes to a pipe
+ * heddle drains, so a consumer that falls behind grows the queue rather than
+ * slowing the producer. In practice the consumer is `collectStream`, which does
+ * nothing per chunk but append and emit an event.
+ *
+ * `chatCompletionStream` is present only when the manifest declared `stream`.
+ * That is what makes the decision static: `completeChat` checks for the method
+ * and falls back to the buffered call when it is absent, so a provider that
+ * cannot stream is never asked to and never has to answer a `stream: true`
+ * frame it has no handler for.
+ *
+ * **The per-call budget bites hardest on this verb, and rule 3 is why.** Every
+ * other host call is work the plugin does locally; this one is a plugin waiting
+ * on somebody else's model, and a long generation routinely outlasts
+ * `DEFAULT_CALL_TIMEOUT`. There is no `serving()` hold to take — that mechanism
+ * is for a plugin blocked on *heddle*, and here heddle is the one waiting — so a
+ * buffered provider genuinely has to answer within whatever
+ * `--plugin-call-timeout` allows. A streaming one does not, because each partial
+ * restarts the clock. That is the practical argument for declaring `stream`,
+ * over and above what a client sees.
+ */
+export function remoteProviderDef(
+  manifest: PluginManifest,
+  entry: ManifestComponent,
+  host: () => PluginHost,
+): PluginProviderDef {
+  const def: PluginProviderDef = {
+    componentType: entry.componentType,
+
+    createProvider(component: PluginComponent, deps): Provider {
+      const where = nameOf(manifest.name, entry.componentType, component.name);
+      // Once per compiled graph, not once per call: this is the same component
+      // for every request that reaches it, and JSON round-tripping a config on
+      // every model call would be a cost paid per token-producing request.
+      const config = serializable(
+        component,
+        `${entry.componentType} "${component.name}"`,
+      );
+
+      // A transform's, and for a transform's reason twice over. A provider owns
+      // no tool scope — it is not a node, it opened nothing — so a throwaway
+      // sandbox session per call is the honest answer. And it is passed
+      // explicitly rather than left to `PluginHost`'s host-wide fallback,
+      // because that fallback is whatever `setToolRunner` was first given: a
+      // provider whose plugin also ships a node would otherwise run its tools
+      // in *that node's* session and workspace, and the same provider loaded
+      // without the node would get a throwaway one. What a component may do
+      // must not depend on which sibling compiled first.
+      //
+      // `callModel` is deliberately absent, and so `PluginHost.serveCallModel`
+      // refuses it. A provider *is* the model; the config it would call on is
+      // itself, which is a loop heddle would have no way to bound.
+      const runTool = toolRunner(where, deps);
+
+      const provider: Provider = {
+        async chatCompletion(signal, request: ChatRequest): Promise<ChatResponse> {
+          const raw = await host().call(
+            'chat',
+            { componentType: entry.componentType, config, request, stream: false },
+            { signal, runTool },
+          );
+          return readChatResponse(raw, where);
+        },
+      };
+
+      if (entry.stream) {
+        provider.chatCompletionStream = (signal, request): AsyncIterable<ChatChunk> =>
+          pullFrom(
+            (onPartial) =>
+              host().call(
+                'chat',
+                { componentType: entry.componentType, config, request, stream: true },
+                { signal, onPartial, runTool },
+              ),
+            where,
+          );
+      }
+
+      return provider;
+    },
+  };
+
+  if (entry.schema) {
+    def.validate = (component) => checkComponent(entry, component);
+  }
+
+  return def;
+}
+
+/**
+ * Turn a pushed sequence of frames into a stream a consumer drives.
+ *
+ * A queue and one waiter, which is all this needs: `PluginHost` delivers
+ * partials from a single stdout handler, so there is exactly one producer, and
+ * `for await` gives exactly one consumer. The waiter is woken on every event
+ * that could unblock it — a chunk arrived, the call answered, the call failed —
+ * so the loop never parks on a queue that will not fill. Setting `wake` cannot
+ * race the producer: `new Promise`'s executor runs synchronously, and there is
+ * no `await` between the checks above it and the assignment.
+ *
+ * An `async function*`, so calling it returns a *generator* rather than a
+ * re-iterable object — which is what `OpenAIProvider.chatCompletionStream` is,
+ * and the difference is not cosmetic. A plain iterable would start a fresh
+ * `chat` call every time something iterated it, so a consumer that looped twice
+ * would quietly make two model calls and be billed for both.
+ *
+ * The queue is drained before the failure check on each turn, deliberately: a
+ * stream that produced ten chunks and then died delivers all ten, and the
+ * consumer's own `try` decides what a partial answer is worth. Throwing early
+ * would discard chunks heddle had already accepted, and `completeChat` is the
+ * place that knows a half-answer must not become a node's output.
+ */
+async function* pullFrom(
+  start: (onPartial: (partial: unknown) => void) => Promise<unknown>,
+  where: string,
+): AsyncGenerator<ChatChunk> {
+  const queue: ChatChunk[] = [];
+  let wake: (() => void) | undefined;
+  let done = false;
+  // A flag rather than `failure !== undefined`, because rule 2 turns on telling
+  // "the call failed" from "the call ended". A rejection carrying a falsy value
+  // read as no failure would end the iteration cleanly, and `collectStream`
+  // would hand the node an empty answer — the exact outcome the rule exists to
+  // make impossible.
+  let failed = false;
+  let failure: unknown;
+
+  const nudge = (): void => {
+    wake?.();
+    wake = undefined;
+  };
+
+  // A chunk that does not parse ends the call rather than the process:
+  // `PluginHost.progress` catches a throw from `onPartial` and abandons the
+  // call with it, so the rejection below carries this very error.
+  const call = start((partial) => {
+    queue.push(readChatChunk(partial, where));
+    nudge();
+  }).then(
+    (result) => {
+      try {
+        // Rule 2: the response is the final chunk — typically the one carrying
+        // `finish_reason`. A provider that said everything in its partials
+        // answers with `{}`, or with nothing at all, and neither is an error:
+        // what makes a stream complete is that the response *arrived*, not what
+        // was in it.
+        if (result !== undefined && result !== null) {
+          queue.push(readChatChunk(result, where));
+        }
+      } catch (err) {
+        // A malformed final frame is a failed call, not a stream that ended.
+        // Unlike a partial's, this throw is on a `.then` callback with nothing
+        // above it to catch — uncaught, it would be an unhandled rejection and
+        // the iterator would simply finish.
+        failed = true;
+        failure = err;
+      }
+      done = true;
+      nudge();
+    },
+    (err: unknown) => {
+      failed = true;
+      failure = err;
+      done = true;
+      nudge();
+    },
+  );
+
+  try {
+    for (;;) {
+      while (queue.length > 0) yield queue.shift()!;
+      if (failed) throw failure;
+      if (done) return;
+      await new Promise<void>((resolve) => {
+        wake = resolve;
+      });
+    }
+  } finally {
+    // A consumer that breaks out early — `completeChat` throwing mid-stream —
+    // leaves this promise unobserved, and an unobserved rejection here is an
+    // unhandled rejection on the host's stack. The call itself is already
+    // cancelled by the signal the caller passed.
+    void call.catch(() => {});
+  }
 }
 
 /** A component type that is neither node nor transform: validation only. */

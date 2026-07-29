@@ -5,7 +5,7 @@ import { z } from "zod";
 import { ComponentWithIOSchema } from "../component.js";
 import type { Property } from "../property.js";
 import { getPlaceholderPropertiesFromJsonObject } from "../templating.js";
-import { LlmConfigUnion, type LlmConfig } from "../llms/index.js";
+import { LazyLlmConfigRef, type LlmConfig } from "../llms/index.js";
 import { ToolUnion, ToolBoxUnion, type Tool, type ToolBox } from "../tools/index.js";
 import {
   LazyMessageTransformRef,
@@ -14,7 +14,7 @@ import {
 
 export const AgentSchema = ComponentWithIOSchema.extend({
   componentType: z.literal("Agent"),
-  llmConfig: LlmConfigUnion,
+  llmConfig: LazyLlmConfigRef,
   systemPrompt: z.string(),
   tools: z.array(ToolUnion).default([]),
   toolboxes: z.array(ToolBoxUnion).default([]),

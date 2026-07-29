@@ -24,7 +24,17 @@
  * will look first.
  */
 import { PluginError } from '../errors.js';
-import type { Message, ModelRequest, Role, ToolDefinition } from '../llm/types.js';
+import type {
+  ChatChunk,
+  ChatRequest,
+  ChatResponse,
+  Message,
+  ModelRequest,
+  Role,
+  ToolCall,
+  ToolCallDelta,
+  ToolDefinition,
+} from '../llm/types.js';
 import type { LogLevel } from '../runner/events.js';
 import { SEAMS, type AfterAction, type Seam } from './seams.js';
 
@@ -88,6 +98,8 @@ export interface HostMethods {
   apply: ApplyParams;
   /** Run one tool this plugin declared and implements. */
   callTool: CallToolParams;
+  /** Ask one provider component for a model answer. */
+  chat: ChatParams;
   /** Consult one middleware after a seam's call site produced its outcome. */
   after: AfterParams;
 }
@@ -209,18 +221,24 @@ export interface RpcResponse {
 /**
  * Progress on a call that has not finished: `{ id, partial }`.
  *
- * A third frame shape, and the reason it exists before anything emits one. The
- * two rules that make it useful both live in the host's routing, not in the
- * data: a partial does not settle the call, and it *does* restart the call's
- * timeout, because a plugin streaming steadily for ten minutes is working and a
- * timer measuring only time-since-request cannot tell it from one that hung.
+ * A third frame shape, landed in Phase 2 before anything emitted one and first
+ * used by `chat` (Phase 5), where it carries one {@link ChatChunk} of a
+ * streamed model answer. The two rules that make it work both live in the
+ * host's routing, not in the data: a partial does not settle the call, and it
+ * *does* restart the call's timeout, because a plugin streaming steadily for
+ * ten minutes is working and a timer measuring only time-since-request cannot
+ * tell it from one that hung.
  *
- * Landing the shape now is the whole point. A host that does not know this
+ * Landing the shape early was the whole point. A host that does not know this
  * frame routes it to the response handler, where `{ id, partial }` has no
  * `error` and no `result` — so it resolves the call with `undefined` and the
  * caller gets a plugin that "returned nothing". Adding the shape after
- * third-party plugins exist is therefore a flag day; adding it now costs a
- * branch nobody takes yet.
+ * third-party plugins existed would have been a flag day.
+ *
+ * **A streamed call's `result` is its last chunk, not a summary of them.** That
+ * is what makes the end of a stream unambiguous: a `chat` that ends without a
+ * response is a failed call, never an empty answer, and there is exactly one
+ * reader (`readChatChunk`) for every frame the plugin sends.
  *
  * ---
  *
@@ -230,11 +248,11 @@ export interface RpcResponse {
  * A partial is *a piece of one call's answer*. It is delivered to whatever
  * inside heddle is awaiting that call and to nothing else — `PluginHost.call`
  * hands it to the `onPartial` its own caller passed — so what it means is
- * decided by that call site, not by the plugin. Nothing in heddle passes an
- * `onPartial` for a plugin's `execute` or `apply` today, which is why the
- * inlined runtime offers a plugin author no way to send one: a frame whose only
- * consumer would be `undefined` is not a progress channel, and offering it as
- * one would be handing authors a choice whose wrong answer is silence.
+ * decided by that call site, not by the plugin. Only `chat` passes one, which
+ * is why the inlined runtime offers `ctx.partial` to a provider serving a
+ * streamed call and to nobody else: a frame whose only consumer would be
+ * `undefined` is not a progress channel, and offering it as one would be
+ * handing authors a choice whose wrong answer is silence.
  *
  * An {@link EmitEventParams} event is *a report about the run*. It is published
  * on the run's event stream, reaches every client watching it, is namespaced so
@@ -437,6 +455,164 @@ export function readToolResult(raw: unknown, where: string): {
     output,
     stderr: typeof stderr === 'string' ? stderr : '',
   };
+}
+
+/**
+ * Params for `chat`: one model call, answered by the plugin's own provider.
+ *
+ * **The mirror image of {@link CallModelParams}, and the asymmetry is the
+ * point.** There, a plugin composes a request and heddle chooses the
+ * destination, so `model` is the one field the plugin cannot set. Here the
+ * plugin *is* the destination — the spec named its component type as the
+ * `llm_config` — so it gets the whole {@link ChatRequest}, `model` included,
+ * and it is heddle that is asking.
+ *
+ * What does not cross is everything else on `Dependencies`. The operator's
+ * default credential in particular stays on this side: a provider plugin takes
+ * its credential from `config`, which the flow's author wrote, or from the
+ * environment the operator granted its process. See `providerFor`.
+ */
+export interface ChatParams extends Record<string, unknown> {
+  componentType: string;
+  /**
+   * The `llm_config` component as the document wrote it, camelCased by the
+   * deserializer. `$VAR` references in it are **not** resolved — heddle does not
+   * read its own environment on a plugin's behalf, least of all for a process
+   * confined so it cannot read that environment itself.
+   */
+  config: Record<string, unknown>;
+  request: ChatRequest;
+  /**
+   * Whether to answer as the answer arrives.
+   *
+   * `true` only when the caller wanted a stream *and* the manifest said this
+   * component can deliver one, so a plugin that never declared streaming is
+   * never asked for it. Sent on every call rather than left implicit, because a
+   * provider serving both forms has to branch on something, and the alternative
+   * — a second verb — would make one component's two modes look like two
+   * components.
+   */
+  stream: boolean;
+}
+
+/**
+ * Read a plugin's whole answer to a buffered `chat`.
+ *
+ * `content` is required and `finish_reason` is not, because the two fail
+ * differently. A response with no `content` reaches the agent loop as
+ * `undefined` where a string is expected and surfaces as the *node's* output
+ * being wrong, several frames from the plugin that caused it. A missing
+ * `finish_reason` costs nothing: heddle reads it to decide whether to run
+ * another tool round, and `''` means "no reason to loop", which is the right
+ * reading of a provider that did not say.
+ */
+export function readChatResponse(raw: unknown, where: string): ChatResponse {
+  if (!isObject(raw)) {
+    throw new PluginError(
+      `${where} returned ${typeName(raw)}, expected { content, finish_reason }`,
+    );
+  }
+  if (typeof raw.content !== 'string') {
+    throw new PluginError(
+      `${where} returned no "content" string. A model answer with nothing in it is ` +
+        `still written as "" — an absent content is a provider that failed without ` +
+        `saying so.`,
+    );
+  }
+
+  const response: ChatResponse = {
+    content: raw.content,
+    finish_reason: typeof raw.finish_reason === 'string' ? raw.finish_reason : '',
+  };
+  const calls = readToolCalls(raw.tool_calls, where);
+  if (calls) response.tool_calls = calls;
+  return response;
+}
+
+/** The `tool_calls` on a `chat` answer, which a provider need not send at all. */
+function readToolCalls(raw: unknown, where: string): ToolCall[] | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  if (!Array.isArray(raw)) {
+    throw new PluginError(`${where} returned a "tool_calls" that is not an array`);
+  }
+  return raw.map((call, i) => {
+    if (
+      !isObject(call) ||
+      typeof call.id !== 'string' ||
+      typeof call.name !== 'string' ||
+      typeof call.arguments !== 'string'
+    ) {
+      throw new PluginError(
+        `${where}: tool_calls[${i}] needs a string "id", "name" and "arguments". ` +
+          `"arguments" is the JSON the model wrote, as text — not the parsed object.`,
+      );
+    }
+    return { id: call.id, name: call.name, arguments: call.arguments };
+  });
+}
+
+/**
+ * Read one increment of a streamed `chat`.
+ *
+ * Every field is optional, exactly as {@link ChatChunk} says, so this checks
+ * types rather than presence — an empty chunk is a legitimate thing for a
+ * provider to send and `collectStream` accumulates nothing from it. What it will
+ * not accept is a *wrongly typed* field, because those accumulate: a numeric
+ * `content` becomes `"" + 42` in the answer, and a `tool_calls` entry with no
+ * `index` merges every fragment of every call into one unparseable blob — see
+ * {@link ToolCallDelta} for why position is the identity.
+ */
+export function readChatChunk(raw: unknown, where: string): ChatChunk {
+  if (!isObject(raw)) {
+    throw new PluginError(
+      `${where} sent ${typeName(raw)} as a stream chunk, expected an object with ` +
+        `any of "content", "tool_calls" or "finish_reason".`,
+    );
+  }
+
+  const chunk: ChatChunk = {};
+
+  if (raw.content !== undefined && raw.content !== null) {
+    if (typeof raw.content !== 'string') {
+      throw new PluginError(
+        `${where} sent a chunk whose "content" is ${typeName(raw.content)}, not a ` +
+          `string. Chunks are concatenated, so anything else corrupts the answer.`,
+      );
+    }
+    chunk.content = raw.content;
+  }
+
+  if (raw.finish_reason !== undefined && raw.finish_reason !== null) {
+    if (typeof raw.finish_reason !== 'string') {
+      throw new PluginError(
+        `${where} sent a chunk whose "finish_reason" is ${typeName(raw.finish_reason)}, ` +
+          `not a string.`,
+      );
+    }
+    chunk.finish_reason = raw.finish_reason;
+  }
+
+  if (raw.tool_calls !== undefined && raw.tool_calls !== null) {
+    if (!Array.isArray(raw.tool_calls)) {
+      throw new PluginError(`${where} sent a chunk whose "tool_calls" is not an array`);
+    }
+    chunk.tool_calls = raw.tool_calls.map((call, i): ToolCallDelta => {
+      if (!isObject(call) || typeof call.index !== 'number') {
+        throw new PluginError(
+          `${where}: stream chunk tool_calls[${i}] needs a numeric "index". Fragments ` +
+            `of one call are joined by position — only the first carries "id" and ` +
+            `"name" — so a fragment with no index cannot be matched to its call.`,
+        );
+      }
+      const delta: ToolCallDelta = { index: call.index };
+      if (typeof call.id === 'string') delta.id = call.id;
+      if (typeof call.name === 'string') delta.name = call.name;
+      if (typeof call.arguments === 'string') delta.arguments = call.arguments;
+      return delta;
+    });
+  }
+
+  return chunk;
 }
 
 /** Params for `apply`: run one message transform. */

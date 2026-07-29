@@ -11,15 +11,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // No credentials: the provider is stubbed, so the loop can be driven through
-// tool rounds without a model.
-const { chatCompletion } = vi.hoisted(() => ({ chatCompletion: vi.fn() }));
-// Partial: only `createProvider` needs a stand-in. `generationParams` reads the
-// spec and returns a plain object, so replacing it would be replacing the thing
-// under test in the cases below that set generation parameters.
-vi.mock('../../llm/provider.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../llm/provider.js')>()),
-  createProvider: () => ({ chatCompletion }),
-}));
+// tool rounds without a model. Handed over on `Dependencies` rather than by
+// mocking the module — `generationParams` lives there too, and it reads the
+// spec into the request, which is the thing under test in the cases below that
+// set generation parameters.
+const chatCompletion = vi.fn();
 
 import { AgentExecutor } from '../agent.js';
 import { State } from '../../state/state.js';
@@ -66,6 +62,7 @@ function harness(args: unknown): Harness {
     .mockResolvedValueOnce({ content: 'all done', tool_calls: [] });
 
   const deps: Dependencies = {
+    createProvider: () => ({ chatCompletion }),
     eventHandler: (e) => events.push(e),
     toolRegistry: {
       lookup: (name) =>

@@ -13,7 +13,7 @@
  * The rule this module exists to keep is one sentence: **what a component may
  * do follows from the component, never from where in the spec it was written.**
  */
-import { createProvider, generationParams } from '../llm/provider.js';
+import { generationParams, providerFor } from '../llm/provider.js';
 import type { ChatResponse, ModelRequest, Provider } from '../llm/types.js';
 import type { LLMConfig } from '../spec/types.js';
 import type { Dependencies } from '../node/types.js';
@@ -136,11 +136,11 @@ export class PluginModel {
     // throws when no credential is configured, and components are constructed
     // by `compile()` — so an eager provider would make validating any flow
     // containing a plugin that *might* call a model impossible without a key.
-    this.provider ??= createProvider(config, {
-      allowEnvRefs: this.deps.allowEnvRefs,
-      defaultKey: this.deps.defaultLlmKey,
-      defaultUrl: this.deps.defaultLlmUrl,
-    });
+    // Through the same seam an agent's goes through, which is what lets a
+    // plugin component's `llm_config` name a provider another plugin supplies —
+    // the config type is the spec's decision either way, and nothing here needs
+    // to know which kind of thing answers it.
+    this.provider ??= providerFor(config, this.deps);
 
     return this.provider.chatCompletion(signal, {
       // The spec's settings first, the plugin's over them. "Default" is the

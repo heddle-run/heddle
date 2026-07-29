@@ -2,6 +2,7 @@
  * LLM config types barrel export.
  */
 import { z } from "zod";
+import { registerLlmConfigSchema } from "./lazy-schemas.js";
 import { OpenAiCompatibleConfigSchema } from "./openai-compatible-config.js";
 import { OllamaConfigSchema } from "./ollama-config.js";
 import { VllmConfigSchema } from "./vllm-config.js";
@@ -18,6 +19,18 @@ export const LlmConfigUnion = z.discriminatedUnion("componentType", [
 ]);
 
 export type LlmConfig = z.infer<typeof LlmConfigUnion>;
+
+// Self-registers the way flows/nodes/index.ts, flows/flow.ts and
+// transforms/message-transform.ts do, so the lazy reference resolves to the
+// real union for any consumer that has loaded this module. Every consumer of
+// LazyLlmConfigRef imports it from here rather than from lazy-schemas.js
+// directly, which is what guarantees that.
+registerLlmConfigSchema(LlmConfigUnion);
+
+export {
+  LazyLlmConfigRef,
+  registerLlmConfigSchema,
+} from "./lazy-schemas.js";
 
 export {
   LlmGenerationConfigSchema,

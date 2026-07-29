@@ -8,7 +8,12 @@
  * deserialization plugin, plus the runtime executor that makes the node do something.
  */
 import type { Property } from 'agentspec';
-import type { ChatResponse, Message, ModelRequest } from '../llm/types.js';
+import type {
+  ChatResponse,
+  Message,
+  ModelRequest,
+  Provider,
+} from '../llm/types.js';
 import type { Dependencies } from '../node/types.js';
 import type { ToolDef } from '../tool/types.js';
 import type { LogLevel } from '../runner/events.js';
@@ -332,6 +337,44 @@ export interface PluginMiddlewareExecutor {
 }
 
 /**
+ * A custom `llm_config` type: a component that answers model calls itself.
+ *
+ * **The one kind that is written where a spec already had a field.** A node
+ * occupies a slot in `Flow.nodes` that only nodes occupy, and a transform hangs
+ * off `Agent.transforms`; a provider is written as an `llm_config`, beside
+ * `OpenAiConfig` and the rest — so `AnthropicConfig` reads as the ordinary
+ * thing it is, and every position that takes a model configuration takes this
+ * one too, without any of them learning that plugins exist.
+ *
+ * **It cannot take a name the SDK ships.** `PluginRegistry.claim` refuses a
+ * builtin component type at load, and `providerFor` checks builtins before it
+ * consults the registry, so a plugin cannot become the endpoint for a flow that
+ * wrote `OpenAiConfig`. Both halves are deliberate: the load-time refusal is the
+ * message an author gets, and the lookup order is the guarantee.
+ *
+ * **Built once per compiled graph, never per execution.** `AgentExecutor`,
+ * `LLMExecutor` and `PluginModel` all memoize what this returns, which is what
+ * lets a provider hold a connection pool, a token bucket or a response cache
+ * and have any of them mean something. `LLMExecutor` did not memoize until this
+ * kind existed, and a provider counting requests would have been silently
+ * defeated by it — so fixing that was a precondition rather than a follow-up.
+ *
+ * Streaming is optional and lives where it already lived: return a `Provider`
+ * with `chatCompletionStream` and `completeChat` will use it, return one without
+ * and every caller falls back to the buffered form. Nothing about this kind adds
+ * a second way to say that.
+ */
+export interface PluginProviderDef extends PluginComponentDef {
+  /**
+   * `config` is the `llm_config` component as the document wrote it, `deps` the
+   * compiled graph's dependencies. The operator's default credential is in
+   * `deps` and is not sent to an out-of-process plugin — see `providerFor` for
+   * what does and does not cross that boundary.
+   */
+  createProvider(config: PluginComponent, deps: Dependencies): Provider;
+}
+
+/**
  * A middleware: a component that intercepts a call site rather than occupying a
  * slot in the spec.
  *
@@ -379,6 +422,8 @@ export interface HeddlePlugin {
   components?: PluginComponentDef[];
   nodes?: PluginNodeDef[];
   transforms?: PluginTransformDef[];
+  /** Custom `llm_config` types, each answering model calls for itself. */
+  providers?: PluginProviderDef[];
   /**
    * Middleware, which unlike the other three is not registered by component
    * type for lookup — nothing looks a middleware up, because no document names

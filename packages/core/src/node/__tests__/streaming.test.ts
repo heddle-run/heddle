@@ -18,16 +18,13 @@ const { chatCompletion, chatCompletionStream } = vi.hoisted(() => ({
 }));
 
 /**
- * Streaming is opt-in per provider, so the mock has to be able to *not* have
+ * Streaming is opt-in per provider, so the stub has to be able to *not* have
  * the method — `streams(false)` deletes it rather than stubbing it, because a
  * present-but-unused method would not exercise the fallback at all.
  */
 let streaming = true;
-vi.mock('../../llm/provider.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../llm/provider.js')>()),
-  createProvider: () =>
-    streaming ? { chatCompletion, chatCompletionStream } : { chatCompletion },
-}));
+const stubProvider = (): Provider =>
+  streaming ? { chatCompletion, chatCompletionStream } : { chatCompletion };
 
 import { AgentExecutor, collectStream, completeChat } from '../agent.js';
 import { TransformChain } from '../../plugin/transform.js';
@@ -83,6 +80,7 @@ function harness(): Harness {
   const received: Record<string, unknown>[] = [];
 
   const deps: Dependencies = {
+    createProvider: stubProvider,
     eventHandler: (e) => events.push(e),
     toolRegistry: {
       lookup: (name) =>
@@ -268,7 +266,10 @@ describe('a streamed agent turn', () => {
     chatCompletionStream.mockReturnValueOnce(chunks(words('a poem about hi')));
 
     const events: Event[] = [];
-    const executor = new LLMExecutor(LLM_NODE, { eventHandler: (e) => events.push(e) });
+    const executor = new LLMExecutor(LLM_NODE, {
+      createProvider: stubProvider,
+      eventHandler: (e) => events.push(e),
+    });
     const out = await executor.execute(undefined, new State({ q: 'hi' }));
 
     expect(out.toData()).toEqual({ generated_text: 'a poem about hi' });

@@ -88,10 +88,14 @@ export class HeddleDeserializationPlugin
     this.pluginName = plugin.name;
     this.pluginVersion = plugin.version;
     this.defs = new Map();
+    // Every kind a document can name. Middleware is absent because no document
+    // names one — see `PluginMiddlewareDef` — and a type the SDK cannot
+    // deserialize is exactly right for a component nobody writes.
     for (const def of [
       ...(plugin.components ?? []),
       ...(plugin.nodes ?? []),
       ...(plugin.transforms ?? []),
+      ...(plugin.providers ?? []),
     ]) {
       if (this.defs.has(def.componentType)) {
         throw new PluginError(
