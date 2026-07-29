@@ -58,7 +58,7 @@ export default function Playground() {
     DEFAULT_EXAMPLE.plugins,
   );
 
-  const [tab, setTab] = useState("flow");
+  const [tab, setTab] = useState("spec");
   const [events, setEvents] = useState<RunEvent[]>([]);
   const [status, setStatus] = useState<Status>("idle");
   const [result, setResult] = useState<Record<string, unknown>>();
@@ -194,7 +194,7 @@ export default function Playground() {
     setInputs(next.inputs);
     setTools(next.tools);
     setPlugins(next.plugins);
-    setTab("flow");
+    setTab("spec");
     reset();
     setStatus("idle");
   };
@@ -304,7 +304,7 @@ export default function Playground() {
           >
             <Tabs
               tabs={[
-                { id: "flow", label: "Flow" },
+                { id: "spec", label: "Spec" },
                 { id: "inputs", label: "Inputs" },
                 { id: "tools", label: "Tools", badge: tools.length },
                 { id: "plugins", label: "Plugins", badge: plugins.length },
@@ -347,14 +347,16 @@ export default function Playground() {
               overflowY: "auto",
             }}
           >
-            {tab === "flow" && (
+            {/* The tab names the document; the placeholder names its root,
+                which the engine requires to be a Flow. */}
+            {tab === "spec" && (
               <Editor
                 fill
-                label="Flow specification"
+                label="Spec"
                 value={flow}
                 onChange={setFlow}
                 rows={30}
-                placeholder="An Agent Spec flow, as YAML or JSON"
+                placeholder="An Agent Spec document, rooted at a Flow, as YAML or JSON"
               />
             )}
 
