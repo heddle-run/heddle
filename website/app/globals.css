@@ -183,6 +183,69 @@ body {
   }
 }
 
+/* --------------------------------------------------------------------------
+   Playground. The one page that is an application rather than a document: it
+   fills the viewport, its two panes scroll independently, and the page itself
+   does not scroll at all. Below the split it stacks into a scrolling column,
+   where a viewport-height lock would leave each pane too short to work in.
+   -------------------------------------------------------------------------- */
+.hd-playground {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+}
+
+/* The work surface. Full-bleed now, so it carries the panel fill the window
+   chrome used to give it — without one, the backdrop swirls read straight
+   through the run log. */
+.hd-playground-body {
+  display: grid;
+  grid-template-columns: 1fr;
+  flex: 1;
+  min-height: 0;
+  background: var(--surface-panel);
+  backdrop-filter: blur(var(--blur-panel));
+}
+
+.hd-playground-pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 24rem;
+}
+.hd-playground-pane:first-child {
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+@media (min-width: 900px) {
+  .hd-playground {
+    height: 100dvh;
+  }
+  .hd-playground-body {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .hd-playground-pane {
+    min-height: 0;
+  }
+  .hd-playground-pane:first-child {
+    border-bottom: 0;
+    border-right: 1px solid var(--border-hairline);
+  }
+}
+
+/* The selected example's one-line description. It rides in the bar beside the
+   example dropdown, so it appears at a fixed width, and only where the bar has
+   the room to keep everything else on one row. */
+.hd-playground-blurb {
+  display: none;
+}
+@media (min-width: 1250px) {
+  .hd-playground-blurb {
+    display: block;
+    width: 18rem;
+  }
+}
+
 /* Nav links collapse on small screens */
 .hd-nav-links {
   display: none;

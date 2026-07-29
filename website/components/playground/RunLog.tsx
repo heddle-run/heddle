@@ -116,7 +116,6 @@ export default function RunLog({
         style={{
           display: "flex",
           height: "100%",
-          minHeight: "24rem",
           alignItems: "center",
           justifyContent: "center",
           padding: "var(--space-16) var(--space-8)",

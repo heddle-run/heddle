@@ -173,12 +173,20 @@ one bespoke drawing, and it is a diagram, not an icon.
 12. **CTA** — boxed frame, install commands
 13. **Footer** — four columns under a hairline
 
-`/playground` continues the numbering at 007 and 008. Copy and data live in
-`lib/constants.ts`; sections read from it rather than hard-coding strings.
+Copy and data live in `lib/constants.ts`; sections read from it rather than
+hard-coding strings.
 
 The section numbers are contiguous by hand, not computed. Adding or removing a
-section means renumbering the ones after it, the `/playground` pair, and any
-nav link that points at the anchor.
+section means renumbering the ones after it, and any nav link that points at
+the anchor.
+
+`/playground` is not composed this way, and is the one page that is not. It is
+an application: it fills the viewport, carries its own bar and status bar
+instead of the site's nav and footer, and has no numbered sections, no prose
+and no marketing copy. The wordmark in its bar is the way back to the site. Its
+two panes scroll independently and the page itself does not scroll; below 900px
+they stack and it does. The security paragraph about submitted code and API
+keys is the one piece of prose it keeps — verbatim, in the status bar.
 
 ## Theme
 
