@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 import { Command } from 'commander';
 import {
   compile,
@@ -11,6 +12,9 @@ import {
   Runner,
   loadPlugins,
   createSandbox,
+  composeRegistries,
+  missingTools,
+  PluginRegistry,
   MiddlewareChain,
   SandboxError,
   DEFAULT_RUNNER_OPTIONS,
@@ -108,9 +112,28 @@ const SANDBOX_BACKENDS = new Set(['auto', 'bubblewrap', 'seatbelt']);
  * The --allow-* and --deny-net flags only shape a sandbox, so using one
  * without --safe is a mistake worth reporting rather than ignoring.
  */
+/**
+ * Where a plugin's own tools live, so the sandbox can bind them.
+ *
+ * A plugin tool is an ordinary executable and gets the ordinary treatment —
+ * `session.wrap` binds the program it is given. What it does not bind is
+ * anything beside that program, so a script with a `#!/usr/bin/env python`
+ * shebang, or one that reads a data file next to itself, needs its directory
+ * readable. A tools directory has always been given that; a plugin's had
+ * nowhere to be named until it could contribute tools.
+ */
+function pluginPaths(plugins: PluginRegistry): string[] {
+  const dirs = new Set<string>();
+  for (const tool of plugins.toolRegistry().all()) {
+    if (tool.impl.kind === 'path') dirs.add(dirname(tool.impl.path));
+  }
+  return [...dirs];
+}
+
 function buildSandbox(
   options: SafeOptions,
   toolsDir: string | undefined,
+  pluginDirs: string[] = [],
 ): Sandbox | undefined {
   const tuning = [
     options.sandbox !== undefined && '--sandbox',
@@ -137,7 +160,11 @@ function buildSandbox(
   return createSandbox(backend as SandboxBackend, {
     // The tools directory is read-only inside the sandbox: a tool can be run,
     // but cannot rewrite itself or its siblings.
-    readPaths: [...(toolsDir ? [toolsDir] : []), ...options.allowRead],
+    readPaths: [
+      ...(toolsDir ? [toolsDir] : []),
+      ...pluginDirs,
+      ...options.allowRead,
+    ],
     writePaths: options.allowWrite,
     network: !options.denyNet,
     passEnv: options.allowEnv,
@@ -215,22 +242,91 @@ export const runCommand = new Command('run')
     ) => {
       const verbose = command.parent?.opts().verbose ?? false;
 
-      // Built before anything else so a bad sandbox setup fails before the
-      // run has a chance to execute an unconfined tool.
-      const sandbox = buildSandbox(options, options.toolsDir);
+      // Plugins first, because a plugin can ship the executables its tools
+      // name and the sandbox binds only what it is told about. Built the other
+      // way round — as this was — a plugin tool with a `#!/usr/bin/env python`
+      // shebang, or a data file beside the script, is outside the confined
+      // filesystem and fails at first use, under --safe only.
+      const plugins = await loadPlugins(options.plugin);
+      let interactive = false;
+      try {
+        interactive = await runFlow(flowPath, options, plugins, verbose);
+      } finally {
+        // Every path, including the throwing ones. A `--plugin <manifest>.json`
+        // now starts a real process, and this is the only thing that stops it:
+        // the child holds a ref'd handle with piped stdio and its read loop
+        // never sees stdin close, so without this `heddle run` prints its result
+        // and then hangs. The server has always disposed in a `finally`; the CLI
+        // had nothing to dispose until a manifest could be named here.
+        //
+        // Except in chat, which returns with its UI still running: the ink
+        // app owns the process from now until the user quits, so disposing on
+        // the way out of this function would stop every plugin before the first
+        // message. Chat hands the same teardown to process exit instead.
+        if (!interactive) plugins.dispose();
+      }
+    },
+  );
+
+function disposeOnExit(plugins: PluginRegistry): void {
+  let done = false;
+  const stop = (): void => {
+    if (done) return;
+    done = true;
+    plugins.dispose();
+  };
+  process.on('exit', stop);
+  // SIGINT is how a chat session actually ends, and it does not run `exit`
+  // handlers on its own.
+  process.on('SIGINT', () => {
+    stop();
+    process.exit(0);
+  });
+}
+
+interface RunOptions extends SafeOptions {
+  toolsDir?: string;
+  input?: string;
+  chat?: boolean;
+  plugin?: string[];
+  pluginConfig?: string[];
+  maxNodeAttempts?: string;
+  stream?: boolean;
+}
+
+/**
+ * Everything between loading the plugins and the run's result.
+ *
+ * Extracted for one reason: whatever happens in here, the plugin processes have
+ * to be stopped, and a `finally` around a hundred lines of inline action body
+ * is a `finally` somebody adds a `return` above.
+ */
+async function runFlow(
+  flowPath: string,
+  options: RunOptions,
+  plugins: PluginRegistry,
+  verbose: boolean,
+): Promise<boolean> {
+      const pf = loadFlow(flowPath, plugins);
+
+      const sandbox = buildSandbox(options, options.toolsDir, pluginPaths(plugins));
       if (sandbox && verbose) {
         console.error(
           `Sandbox: ${sandbox.name}, network ${options.denyNet ? 'denied' : 'allowed'}`,
         );
       }
 
-      const plugins = await loadPlugins(options.plugin);
-      const pf = loadFlow(flowPath, plugins);
-
-      const reg = FileRegistry.create(options.toolsDir ?? '');
+      // The merged registry, not the directory alone. A flow naming a tool a
+      // plugin provides used to be reported missing here — before the run that
+      // would have found it — because this checked FileRegistry by itself.
+      const reg = composeRegistries([
+        plugins.toolRegistry(),
+        FileRegistry.create(options.toolsDir ?? ''),
+      ]);
       const toolNames = collectToolNames(pf);
-      if (toolNames.length > 0) {
-        reg.validateTools(toolNames);
+      const missing = missingTools(reg, toolNames);
+      if (missing.length > 0) {
+        throw new Error(`missing executables for tools: ${missing.join(', ')}`);
       }
 
       const isChat = options.chat ?? false;
@@ -277,8 +373,9 @@ export const runCommand = new Command('run')
         const inputKey = detectInputKey(pf);
 
         console.error(`Conversation saved to: ~/.heddle/conversations/${session.id}.json`);
+        disposeOnExit(plugins);
         startChat({ graph: cg, opts, session, inputKey });
-        return;
+        return true;
       }
 
       let inputs: Record<string, unknown>;
@@ -295,5 +392,5 @@ export const runCommand = new Command('run')
       const runner = new Runner(cg, opts);
       const result = await runner.run(undefined, inputs);
       console.log(JSON.stringify(result.toData(), null, 2));
-    },
-  );
+      return false;
+}

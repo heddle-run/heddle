@@ -218,7 +218,12 @@ export type {
 // Tools
 // ---------------------------------------------------------------------------
 
-export { FileRegistry } from './tool/registry.js';
+export {
+  composeRegistries,
+  FileRegistry,
+  missingTools,
+} from './tool/registry.js';
+export { invokeTool } from './tool/invoke.js';
 export { SubprocessExecutor } from './tool/executor.js';
 export type { SubprocessExecutorOptions } from './tool/executor.js';
 export type {
@@ -227,6 +232,8 @@ export type {
   ExecutorScope,
   Registry,
   ToolDef,
+  ToolHandler,
+  ToolImpl,
 } from './tool/types.js';
 
 // ---------------------------------------------------------------------------

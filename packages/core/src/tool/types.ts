@@ -1,12 +1,56 @@
 import type { JsonSchema } from '../llm/types.js';
 
+/**
+ * Runs one tool that a plugin implements, rather than the filesystem.
+ *
+ * Not `ToolCall` — that name is taken, by the model's request to call a tool
+ * (`llm/types.ts`). The two would sit in the same import block often enough
+ * that one of them has to say which end it is.
+ */
+export type ToolHandler = (
+  signal: AbortSignal | undefined,
+  input: Record<string, unknown>,
+) => Promise<ExecResult>;
+
+/**
+ * How a tool runs, as a closed union rather than a set of optional fields.
+ *
+ * `ToolDef.path` used to be a required string, and every consumer read it and
+ * handed it to `Executor.execute`. That is a fine description of a directory of
+ * executables and no description at all of a tool an MCP proxy provides, which
+ * exists nowhere on the filesystem. The obvious repair — make `path` optional
+ * and add a `call` beside it — produces a type where two fields both claim to
+ * say how a tool runs and nothing says which, so every consumer has to
+ * rediscover the precedence. A union makes the answer singular and makes the
+ * compiler name every place that has to know.
+ */
+export type ToolImpl =
+  /** An executable on disk, spawned by an {@link Executor}. */
+  | { kind: 'path'; path: string }
+  /** Implemented by the plugin that declared it, reached over its own channel. */
+  | { kind: 'plugin'; plugin: string; call: ToolHandler };
+
+
 /** ToolDef represents a discovered external tool. */
 export interface ToolDef {
   name: string;
   description: string;
-  path: string;
+  impl: ToolImpl;
+  /**
+   * Where this tool came from, for a message that has to tell two of them
+   * apart: `dir:/opt/tools`, `plugin:mcp-github`. Only ever read by humans —
+   * nothing routes on it.
+   */
+  origin?: string;
   inputSchema?: JsonSchema;
   outputSchema?: JsonSchema;
+  /**
+   * Whether this tool may share a name with one from another source.
+   *
+   * Only a plugin's tools set it, and only a manifest can ask for it. It is
+   * read by {@link composeRegistries}, which is the one place two sources meet.
+   */
+  shadows?: boolean;
 }
 
 /** ExecResult holds the result of executing an external tool. */

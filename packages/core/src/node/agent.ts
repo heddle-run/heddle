@@ -13,7 +13,8 @@ import type {
 } from '../llm/types.js';
 import type { NodeExecutor, Dependencies } from './types.js';
 import type { EventHandler } from '../runner/events.js';
-import type { Executor } from '../tool/types.js';
+import type { Executor, Registry } from '../tool/types.js';
+import { invokeTool } from '../tool/invoke.js';
 import { createProvider, generationParams } from '../llm/provider.js';
 import { TransformChain } from '../plugin/transform.js';
 import { RunError, ToolError } from '../errors.js';
@@ -103,11 +104,17 @@ export class AgentExecutor implements NodeExecutor {
       input,
     );
 
-    const toolDefs: ToolDefinition[] = agent.tools?.map((t) => ({
-      name: t.name,
-      description: t.description ?? '',
-      parameters: buildToolSchema(t),
-    })) ?? [];
+    const toolDefs = buildToolDefinitions(
+      agent.tools,
+      this.deps.toolRegistry,
+      (message) =>
+        this.deps.eventHandler?.({
+          type: 'warning',
+          nodeName: this.node.name,
+          nodeType: this.node.componentType,
+          message,
+        }),
+    );
 
     // Extract chat history if present (injected by chat mode)
     const historyRaw = input.get('_chat_history');
@@ -202,13 +209,17 @@ export class AgentExecutor implements NodeExecutor {
         // observer saw `{}` for arguments the tool never ran with. Anything
         // watching a tool call has to be looking at what the tool was given.
         const parsed = parseToolArguments(tc);
+        // Defaults applied before the event, not after. An observer has to be
+        // looking at what the tool was actually given — that is the whole
+        // reason there is one parse here rather than two.
+        const args = withDefaults(parsed.args, agent.tools, tc.name);
 
         const startedAt = Date.now();
         this.deps.eventHandler?.({
           type: 'tool_call',
           nodeName: this.node.name,
           toolName: tc.name,
-          toolArgs: parsed.args,
+          toolArgs: args,
           toolCallId: tc.id,
           startedAt,
         });
@@ -219,7 +230,7 @@ export class AgentExecutor implements NodeExecutor {
           // and a tool message telling the model what went wrong so it can
           // correct itself on the next round.
           if (parsed.error) throw parsed.error;
-          const toolResult = await this.executeTool(signal, tc, parsed.args, executor);
+          const toolResult = await this.executeTool(signal, tc, args, executor);
           const resultJSON = JSON.stringify(toolResult);
 
           this.deps.eventHandler?.({
@@ -268,9 +279,8 @@ export class AgentExecutor implements NodeExecutor {
     args: Record<string, unknown>,
     scoped: Executor | undefined,
   ): Promise<Record<string, unknown>> {
-    const executor = scoped ?? this.deps.toolExecutor;
-    if (!this.deps.toolRegistry || !executor) {
-      throw new ToolError(`"${tc.name}": registry or executor not configured`);
+    if (!this.deps.toolRegistry) {
+      throw new ToolError(`"${tc.name}": no tool registry configured`);
     }
 
     const toolDef = this.deps.toolRegistry.lookup(tc.name);
@@ -278,7 +288,12 @@ export class AgentExecutor implements NodeExecutor {
       throw new ToolError(`"${tc.name}" not found in registry`);
     }
 
-    const result = await executor.execute(signal, toolDef.path, args);
+    const result = await invokeTool(
+      signal,
+      toolDef,
+      args,
+      scoped ?? this.deps.toolExecutor,
+    );
 
     return result.output;
   }
@@ -525,6 +540,102 @@ function rejectionState(rejected: {
   });
 }
 
+/**
+ * What the model is told about this agent's tools.
+ *
+ * **The list is exactly the flow's, and the registry only fills silence.** A
+ * registry can hold a hundred tools a plugin declared; none of them reaches the
+ * model unless the spec named it, so a tool source cannot put anything in front
+ * of a model on its own. What it can do is answer the two questions a spec
+ * often leaves blank.
+ *
+ * Those blanks were the real gap. `FileRegistry` gives every tool
+ * `description: ''` because there is nowhere in a filename to put a sentence,
+ * and this function used to read the spec alone — so a tool's description
+ * reached the model only if the flow's author repeated it, and a spec with no
+ * `inputs` told the model the tool takes no arguments at all. A plugin knows
+ * both and had no way to say so.
+ *
+ * **The spec wins where it speaks.** It is the document the run's author
+ * submitted and can read back; a registry entry is configuration they may never
+ * see, and on a server it can arrive from a plugin somebody else submitted.
+ * Letting it override would let one party silently change what the model is
+ * told about a tool another party described deliberately. Disagreement is
+ * therefore not an error — a tools directory whose descriptions improve must
+ * not fail every flow that repeated the old text — but it is worth saying out
+ * loud, because the point of one source of truth is learning when there are two.
+ */
+export function buildToolDefinitions(
+  tools: ToolSpec[] | undefined,
+  registry: Registry | undefined,
+  warn: (message: string) => void,
+): ToolDefinition[] {
+  return (
+    tools?.map((t) => {
+      const known = registry?.lookup(t.name);
+      const spec = t.description ?? '';
+
+      if (spec && known?.description && spec !== known.description) {
+        warn(
+          `tool "${t.name}" is described one way in the flow and another by ` +
+            `${known.origin ?? 'the registry'}. The model is told the flow's: ` +
+            `"${spec}".`,
+        );
+      }
+
+      return {
+        name: t.name,
+        description: spec || known?.description || '',
+        // Wholesale or not at all, never merged. `buildToolSchema` marks every
+        // property it produces as required, so a merge of the two would forge a
+        // requirement neither author wrote — the spec's fields would arrive
+        // mandatory inside a schema whose own optionality rules say otherwise.
+        parameters:
+          t.inputs && t.inputs.length > 0
+            ? buildToolSchema(t)
+            : (known?.inputSchema ?? buildToolSchema(t)),
+      };
+    }) ?? []
+  );
+}
+
+/**
+ * Fill in the inputs a spec gave a default for and the model left out.
+ *
+ * Until now every input was marked required, so the model had to supply one
+ * whether or not the spec had already said what it should be. Making a
+ * defaulted input optional is the correct schema — and on its own it would have
+ * meant the tool simply receives nothing, which is worse than before: the spec
+ * declares a value, the model reasonably omits it, and it is dropped between
+ * them. A default is the author saying what happens when it is absent, so this
+ * is where that sentence is honoured.
+ *
+ * Only for keys the model did not send. A value it chose always wins, including
+ * one that happens to equal the default.
+ */
+function withDefaults(
+  args: Record<string, unknown>,
+  tools: ToolSpec[] | undefined,
+  called: string,
+): Record<string, unknown> {
+  // This tool's own inputs, never the agent's other tools'. Two tools sharing
+  // an argument name is ordinary — a `limit` on one and a `limit` on another —
+  // and taking defaults from the wrong one would send a value the author wrote
+  // about something else.
+  const spec = tools?.find((t) => t.name === called);
+  if (!spec?.inputs) return args;
+
+  let filled: Record<string, unknown> | undefined;
+  for (const input of spec.inputs) {
+    const name = propertyTitle(input);
+    if (!name || input.jsonSchema.default === undefined) continue;
+    if (Object.hasOwn(args, name)) continue;
+    filled ??= { ...args };
+    filled[name] = input.jsonSchema.default;
+  }
+  return filled ?? args;
+}
+
 /** Build a JSON Schema object from a ToolSpec's inputs. */
 export function buildToolSchema(t: ToolSpec): JsonSchema {
   const properties: Record<string, JsonSchema> = {};
@@ -541,7 +652,13 @@ export function buildToolSchema(t: ToolSpec): JsonSchema {
         }
       }
       properties[name] = prop;
-      required.push(name);
+      // An input with a default is not required, which is the one thing this
+      // schema could never say. Every input used to be mandatory, so a spec
+      // could not describe an optional argument at all and a model was told it
+      // had to supply one it did not need. A declared default is the author
+      // saying what happens when it is absent, which is the definition of not
+      // required.
+      if (input.jsonSchema.default === undefined) required.push(name);
     }
   }
 

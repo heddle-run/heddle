@@ -86,6 +86,8 @@ export interface HostMethods {
   execute: ExecuteParams;
   /** Run one message transform. */
   apply: ApplyParams;
+  /** Run one tool this plugin declared and implements. */
+  callTool: CallToolParams;
   /** Consult one middleware after a seam's call site produced its outcome. */
   after: AfterParams;
 }
@@ -383,6 +385,58 @@ export interface ExecuteParams extends Record<string, unknown> {
    * for both, sending a node author to change something that is already right.
    */
   workspaceUnavailable?: 'confined';
+}
+
+/**
+ * Params for `callTool`: run one tool the plugin implements.
+ *
+ * Not a {@link PluginCapability}, and the asymmetry is the whole shape of the
+ * feature. Capabilities gate what a plugin may ask *heddle* to do, because a
+ * reverse call is the only way a plugin reaches something it was not given.
+ * This travels the other way: heddle is asking, about a tool the plugin put in
+ * its own manifest and the operator loaded. There is nothing to grant, because
+ * the plugin already declared it and someone already agreed to it.
+ *
+ * What it does need is what any tool call needs — a name and an input — plus
+ * the component the manifest said implements it, so one plugin can front a
+ * hundred tools from one handler and still know which was asked for.
+ */
+export interface CallToolParams extends Record<string, unknown> {
+  componentType: string;
+  tool: string;
+  input: Record<string, unknown>;
+}
+
+/**
+ * Read what a plugin returned from a tool.
+ *
+ * Checked rather than trusted for the reason every other reply is: this is
+ * parsed JSON from another process, and it is on its way to becoming a tool
+ * result the model reads. `ExecResult.output` is a `Record`, and a plugin
+ * answering with a string or an array would otherwise reach `JSON.stringify` in
+ * the agent loop as something the model was told is an object.
+ */
+export function readToolResult(raw: unknown, where: string): {
+  output: Record<string, unknown>;
+  stderr: string;
+} {
+  if (!isObject(raw)) {
+    throw new PluginError(
+      `${where} returned ${typeName(raw)}, expected { output }`,
+    );
+  }
+  const { output, stderr } = raw;
+  if (!isObject(output)) {
+    throw new PluginError(
+      `${where} returned no "output" object. A tool's result becomes a message the ` +
+        `model reads, so it has to be a JSON object of named values — wrap a bare ` +
+        `value as { result: … }.`,
+    );
+  }
+  return {
+    output,
+    stderr: typeof stderr === 'string' ? stderr : '',
+  };
 }
 
 /** Params for `apply`: run one message transform. */

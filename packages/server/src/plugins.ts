@@ -140,6 +140,39 @@ function refuseMiddleware(rawManifest: unknown): void {
   );
 }
 
+/**
+ * Refuse a submitted manifest that claims the right to take a name.
+ *
+ * `shadows: true` is a manifest saying "I know this tool name is already
+ * provided and I want it anyway". That is a reasonable thing for an operator to
+ * write about a plugin they installed. It is not a reasonable thing to accept
+ * from a caller, because the name need not appear anywhere in their flow and
+ * the party who later resolves it need not be them: an operator's middleware
+ * reaches `runTool` against the registry and never against the spec.
+ *
+ * Read straight off the raw manifest rather than after validation, because this
+ * has to hold whatever else about the manifest turns out to be wrong.
+ */
+function refuseShadowing(rawManifest: unknown): void {
+  if (typeof rawManifest !== 'object' || rawManifest === null) return;
+  const tools = (rawManifest as { tools?: unknown }).tools;
+  if (!Array.isArray(tools)) return;
+
+  for (const tool of tools) {
+    if (typeof tool !== 'object' || tool === null) continue;
+    const entry = tool as { name?: unknown; shadows?: unknown };
+    if (entry.shadows !== true) continue;
+    throw new HttpError(
+      400,
+      `tool "${String(entry.name)}" declares "shadows", which this server does not ` +
+        `accept from a submitted plugin. Shadowing lets a manifest take a tool name ` +
+        `something else already provides, and a name bound that way can be reached ` +
+        `by code the submitter did not write. Choose a name nothing else uses.`,
+      'PluginError',
+    );
+  }
+}
+
 export function buildPlugins(
   config: ServerConfig,
   code: MaterializedCode,
@@ -151,6 +184,7 @@ export function buildPlugins(
 
   try {
     for (const plugin of code.plugins) {
+      refuseShadowing(plugin.manifest);
       refuseMiddleware(plugin.manifest);
       registry.addRemote(
         loadRemotePlugin(plugin.manifest, plugin.path, {

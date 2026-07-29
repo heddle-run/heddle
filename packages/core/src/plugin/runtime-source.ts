@@ -341,6 +341,50 @@ function serve(handlers, options) {
     if (lifecycle(request)) return;
 
     const params = request.params || {};
+
+    // Tools live in serve()'s second argument rather than beside the component
+    // handlers, because the first argument is keyed by componentType and a
+    // "tools" key there would be a component literally named tools — colliding
+    // with the namespace a spec writes into.
+    if (request.method === 'callTool') {
+      const impl = (options && options.tools && options.tools[params.tool]) || undefined;
+      if (!impl) {
+        send({ id: request.id, error: { message:
+          'this plugin declares the tool "' + params.tool + '" in its manifest but ' +
+          'serves no handler for it. Write serve(handlers, { tools: { ' +
+          params.tool + ': async (input, ctx) => ({ output: { … } }) } }).' } });
+        return;
+      }
+      const key = String(request.id);
+      const controller = new AbortController();
+      inflight.set(key, { controller, cancelId: undefined });
+      try {
+        const ctx = {
+          signal: controller.signal,
+          tool: params.tool,
+          // No runTool, no callModel and no log. A tool is a leaf: heddle is
+          // inside this call for its whole duration, and a tool reaching back
+          // for another tool is a cycle heddle cannot see the shape of. A
+          // plugin that wants to compose has a node, which is the kind that
+          // composes.
+          //
+          // log is absent for a duller reason and it is worth stating: a
+          // report is filed against the execute or apply it was made inside,
+          // and a tool call is neither — it is dispatched from the agent loop,
+          // which built no reporter for it. Offering ctx.log here would hand an
+          // author a call that is refused every single time. Write to stderr,
+          // which heddle surfaces when the process fails.
+        };
+        const result = await impl(params.input || {}, ctx);
+        settle(key, request.id, { result: result || {} });
+      } catch (err) {
+        settle(key, request.id, {
+          error: { name: (err && err.name) || 'Error', message: String((err && err.message) || err) },
+        });
+      }
+      return;
+    }
+
     const handler = handlers[params.componentType];
     if (!handler) {
       send({ id: request.id, error: { message: 'this plugin does not provide "' + params.componentType + '"' } });

@@ -1,31 +1,26 @@
-import type { Registry, ToolDef } from '@heddle/core';
+import { composeRegistries, missingTools, type Registry } from '@heddle/core';
 import { HttpError } from './errors.js';
 
 /**
  * One registry over several, later sources shadowing earlier ones.
  *
- * The server can have two sources of tools at once: the executables it was
- * started with, and the scripts a request submitted. Callers pass the
- * server's first and the request's second, so a submitted tool shadows a
+ * The mechanism moved into core, which now has two callers; what stays here is
+ * this server's policy about the order. The server can have three sources of
+ * tools at once: the executables it was started with, the scripts a request
+ * submitted, and whatever a submitted plugin declares. Callers pass the
+ * server's first and the request's after, so a submitted tool shadows a
  * server-provided one of the same name. That direction is the predictable one
- * for a playground — a tool you just wrote is the tool that runs — and it
- * gives away nothing, since a flow that wanted the server's tool could simply
- * not have submitted one under that name.
+ * for a playground — a tool you just wrote is the tool that runs — and it gives
+ * away nothing, since a flow that wanted the server's tool could simply not have
+ * submitted one under that name.
+ *
+ * That reasoning covers submitted *scripts*, which only the submitter's own
+ * flow names. It does not extend to a submitted plugin's manifest, which is
+ * bulk and can bind a name the caller never wrote — see `buildPlugins`, which
+ * refuses that separately.
  */
 export function mergeRegistries(...registries: Registry[]): Registry {
-  if (registries.length === 1) return registries[0];
-
-  const tools = new Map<string, ToolDef>();
-  for (const registry of registries) {
-    for (const tool of registry.all()) {
-      tools.set(tool.name, tool);
-    }
-  }
-
-  return {
-    lookup: (name) => tools.get(name),
-    all: () => [...tools.values()],
-  };
+  return composeRegistries(registries);
 }
 
 /**
@@ -37,7 +32,7 @@ export function mergeRegistries(...registries: Registry[]): Registry {
  * is a 400 rather than a failure partway through the run.
  */
 export function assertToolsAvailable(registry: Registry, names: string[]): void {
-  const missing = names.filter((name) => !registry.lookup(name));
+  const missing = missingTools(registry, names);
   if (missing.length > 0) {
     throw new HttpError(
       400,
