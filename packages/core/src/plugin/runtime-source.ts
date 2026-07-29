@@ -190,6 +190,10 @@ function serve(handlers, options) {
   // What heddle's init said this plugin was granted.
   let granted = new Set();
 
+  // What each seam this plugin subscribed to will honour, from the same
+  // handshake. Empty until greeted, and empty for a plugin with no middleware.
+  let seamAdmits = {};
+
   // heddle's own rules, restated in the plugin's process because this is the
   // only place a check can throw at the call that broke it. emitEvent and log
   // return nothing, so heddle's refusal comes back as a frame nobody is
@@ -301,6 +305,7 @@ function serve(handlers, options) {
       // plugin that is never greeted has been granted nothing, and that is the
       // right answer rather than a special case: no handshake, no permission.
       granted = new Set((request.params || {}).capabilities || []);
+      seamAdmits = (request.params || {}).seams || {};
       send({ id: request.id, result: { protocol: HEDDLE_PROTOCOL_VERSION } });
       return true;
     }
@@ -349,7 +354,20 @@ function serve(handlers, options) {
         runTool: (name, input) => runTool(request.id, name, input),
         callModel: (modelRequest) => callModel(request.id, modelRequest),
         node: params.node || params.component || {},
+        // The same object as ctx.node wherever both apply, named for what it is.
+        // A middleware has no node — nothing in a document names it — so this is
+        // the only sensible name for the configuration its operator supplied,
+        // and giving it to every kind means one word for "my own fields".
+        component: params.component || params.node || {},
         phase: params.phase,
+        seam: params.seam,
+        attempt: params.attempt,
+        maxAttempts: params.maxAttempts,
+        // What this seam will actually honour, from the handshake. A middleware
+        // that wants to work at more than one seam can read it and choose,
+        // rather than sending a verdict that is refused — which, since heddle
+        // treats a middleware failure as fatal, would cost the run.
+        admits: (seamAdmits[params.seam] || []).slice(),
         signal: controller.signal,
         // Bound to this request's id, so heddle knows which node a report
         // belongs to and can keep that call's clock running. A plugin never
@@ -358,10 +376,35 @@ function serve(handlers, options) {
         log: (level, message) => log(request.id, level, message),
         getWorkspace: () => workspaceOf(params),
       };
-      const result =
-        request.method === 'apply'
-          ? await handler.apply(params.messages || [], ctx)
-          : await handler.execute(params.input || {}, ctx);
+      let result;
+      if (request.method === 'apply') {
+        result = await handler.apply(params.messages || [], ctx);
+      } else if (request.method === 'after') {
+        // Seam-keyed, so one component can subscribe to several and each gets
+        // its own function — rather than one handler opening with a switch on
+        // ctx.seam that every author has to remember to write.
+        const hook = handler[params.seam] && handler[params.seam].after;
+        if (!hook) {
+          send({
+            id: request.id,
+            error: {
+              message:
+                '"' + params.componentType + '" declares the "' + params.seam +
+                '" seam in its manifest but provides no handler for it. Write ' +
+                'serve({ ' + params.componentType + ': { ' + params.seam +
+                ': { after(input, ctx) { … } } } }).',
+            },
+          });
+          inflight.delete(key);
+          return;
+        }
+        result = await hook(
+          { subject: params.subject || {}, outcome: params.outcome || {} },
+          ctx,
+        );
+      } else {
+        result = await handler.execute(params.input || {}, ctx);
+      }
       settle(key, request.id, { result });
     } catch (err) {
       settle(key, request.id, {

@@ -151,6 +151,19 @@ export interface Event {
   nodeType?: string;
   state?: State;
   error?: Error;
+  /**
+   * Which attempt at this node produced the event, 1-based. Set on
+   * `node_start`, `node_complete` and `node_error`.
+   *
+   * It exists because middleware made `node_error` non-terminal. Before it, an
+   * error event meant the run was over and a client could say so; now a
+   * `nodeError` middleware can retry, so the same node can fail, be re-entered
+   * and succeed, and a consumer reading two `node_start`s for one node has no
+   * other way to tell a retry from a loop revisiting it. A client that ignores
+   * this field renders a retried node exactly as it renders a loop, which is
+   * the old behaviour and is why the field is additive rather than a new type.
+   */
+  attempt?: number;
   toolName?: string;
   toolArgs?: Record<string, unknown>;
   toolResult?: unknown;

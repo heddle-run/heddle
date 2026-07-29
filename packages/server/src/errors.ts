@@ -1,6 +1,7 @@
 import {
   CompileError,
   LLMError,
+  MiddlewareError,
   PluginError,
   RunError,
   SandboxError,
@@ -43,7 +44,19 @@ export function toErrorResponse(err: unknown): {
     return { status: err.status, body: { error: { type: err.type, message: err.message } } };
   }
 
-  // PluginError joins these because this server only ever loads plugins that
+  // A middleware is the one plugin component a caller cannot have submitted —
+  // it is host-configured, named nowhere in their document, and refused with a
+  // 400 if they try. Charging its failure to them as a bad request would tell
+  // the one person who cannot fix it that it is theirs to fix. Checked before
+  // PluginError because it is one.
+  if (err instanceof MiddlewareError) {
+    return {
+      status: 500,
+      body: { error: { type: err.name, message: err.message } },
+    };
+  }
+
+  // PluginError joins these because every *other* plugin this server loads
   // arrived with the request: a module that fails to import, or declares no
   // components, is the caller's broken submission.
   if (

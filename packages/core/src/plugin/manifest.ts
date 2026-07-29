@@ -23,6 +23,10 @@ import {
   PLUGIN_CAPABILITIES,
   type PluginCapability,
 } from './protocol.js';
+import {
+  readSubscription,
+  type SeamSubscription,
+} from './seams.js';
 import type { PluginIO } from './types.js';
 
 /** A JSON Schema fragment. Not validated structurally — Ajv is not a dependency. */
@@ -33,7 +37,7 @@ export interface ManifestComponent {
   /** The `component_type` string as it appears in a spec file. */
   componentType: string;
   /** What this is, which decides how heddle treats it. Defaults to `node`. */
-  kind?: 'node' | 'transform' | 'component';
+  kind?: 'node' | 'transform' | 'component' | 'middleware';
   /** Inputs to advertise when the spec file does not declare them. */
   inputs?: PluginIO[];
   /** Outputs to advertise when the spec file does not declare them. */
@@ -53,6 +57,19 @@ export interface ManifestComponent {
   schema?: JsonSchemaFragment;
   /** For transforms: which phase(s) of an agent's turn this runs in. */
   phase?: 'pre' | 'post' | 'both';
+  /**
+   * For middleware: which seams this subscribes to, and which halves of each.
+   *
+   * Declared rather than discovered, for the same reason `inputs` and `branches`
+   * are: heddle has to know before the process starts. A chain that learned its
+   * subscribers by calling them would spend a round trip per node per middleware
+   * finding out that most of them have nothing to say — on the failure path,
+   * which is exactly where a run can least afford it.
+   *
+   * Required for a middleware and forbidden on every other kind, so `seams` on a
+   * node is a load-time error rather than a field that silently does nothing.
+   */
+  seams?: SeamSubscription;
 }
 
 /** The manifest of an out-of-process plugin. */
@@ -151,9 +168,9 @@ export function validateManifest(raw: unknown): PluginManifest {
     seen.add(componentType);
 
     const kind = component.kind ?? 'node';
-    if (kind !== 'node' && kind !== 'transform' && kind !== 'component') {
+    if (kind !== 'node' && kind !== 'transform' && kind !== 'component' && kind !== 'middleware') {
       fail(
-        `plugin "${manifest.name}": component "${componentType}" has kind "${String(kind)}"; expected node, transform or component`,
+        `plugin "${manifest.name}": component "${componentType}" has kind "${String(kind)}"; expected node, transform, component or middleware`,
       );
     }
 
@@ -164,6 +181,8 @@ export function validateManifest(raw: unknown): PluginManifest {
       );
     }
 
+    const seams = asSeams(manifest.name as string, componentType, kind, component.seams);
+
     return {
       componentType,
       kind,
@@ -172,6 +191,7 @@ export function validateManifest(raw: unknown): PluginManifest {
       branches: asBranches(manifest.name as string, componentType, component.branches),
       schema: component.schema as JsonSchemaFragment | undefined,
       phase: phase as ManifestComponent['phase'],
+      seams,
     };
   });
 
@@ -237,6 +257,38 @@ function asIo(
       default: io.default,
     };
   });
+}
+
+/**
+ * Read a middleware's `seams`.
+ *
+ * The subscription itself is checked by {@link readSubscription}, which every
+ * path shares — a manifest is not the only way one arrives, and a rule enforced
+ * on the out-of-process path alone would be a rule an in-process author never
+ * meets. What is manifest-specific and stays here is the one refusal that is
+ * about `kind`: a node or a transform declaring `seams` has misunderstood which
+ * kind it is, and no in-process def can express that mistake because the field
+ * only exists on the middleware type.
+ */
+function asSeams(
+  plugin: string,
+  componentType: string,
+  kind: string,
+  value: unknown,
+): SeamSubscription | undefined {
+  const where = `plugin "${plugin}": ${componentType}`;
+
+  if (kind !== 'middleware') {
+    if (value !== undefined) {
+      fail(
+        `${where} declares "seams" but its kind is "${kind}". Only a middleware ` +
+          `subscribes to a seam; every other kind is named by the spec instead.`,
+      );
+    }
+    return undefined;
+  }
+
+  return readSubscription(where, value);
 }
 
 function asBranches(

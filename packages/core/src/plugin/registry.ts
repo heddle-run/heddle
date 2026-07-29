@@ -9,6 +9,7 @@ import type { ComponentDeserializationPlugin } from 'agentspec';
 import type {
   HeddlePlugin,
   PluginComponentDef,
+  PluginMiddlewareDef,
   PluginNodeDef,
   PluginTransformDef,
 } from './types.js';
@@ -17,11 +18,17 @@ import type { PluginHost } from './host.js';
 import { PluginError } from '../errors.js';
 
 /** What a custom component type is, which decides how heddle handles it. */
-export type ComponentKind = 'node' | 'transform' | 'component';
+export type ComponentKind = 'node' | 'transform' | 'component' | 'middleware';
 
 interface Registered {
   kind: ComponentKind;
   def: PluginComponentDef;
+}
+
+/** One middleware, and the plugin that supplied it. */
+export interface RegisteredMiddleware {
+  plugin: string;
+  def: PluginMiddlewareDef;
 }
 
 export class PluginRegistry {
@@ -30,6 +37,18 @@ export class PluginRegistry {
   private pluginNames: string[] = [];
   private deserializerInstance: AgentSpecDeserializer | undefined;
   private hosts: PluginHost[] = [];
+  /**
+   * Middleware, in load order, kept as a list rather than in `defs`.
+   *
+   * Everything in `defs` is there to be *looked up* by the component type a
+   * document wrote. Nothing looks a middleware up, because no document names
+   * one — the chain is "all of them, in order", and the order is the order the
+   * operator loaded the plugins in. Keeping them in the same map would imply a
+   * lookup that has no caller and would put a middleware's name in
+   * `componentTypeNames()`, where it would be offered to a spec author as
+   * something they could write.
+   */
+  private middlewares: RegisteredMiddleware[] = [];
 
   /** An empty registry — the default when no plugins are configured. */
   static empty(): PluginRegistry {
@@ -62,6 +81,16 @@ export class PluginRegistry {
         this.claim(def.componentType, plugin.name);
         this.defs.set(def.componentType, { kind, def });
       }
+    }
+
+    // Claimed alongside the rest, so one plugin cannot ship a node and a
+    // middleware under one name and leave which one wins to map iteration
+    // order — but recorded in a list, because the chain is ordered and the map
+    // is not.
+    for (const def of plugin.middleware ?? []) {
+      this.claim(def.componentType, plugin.name);
+      this.defs.set(def.componentType, { kind: 'middleware', def });
+      this.middlewares.push({ plugin: plugin.name, def });
     }
 
     this.sdkPlugins.push(new HeddleDeserializationPlugin(plugin));
@@ -140,8 +169,30 @@ export class PluginRegistry {
       : undefined;
   }
 
+  /**
+   * Every middleware, in the order its plugin was loaded.
+   *
+   * Load order is the only ordering there is, and it is the operator's: they
+   * chose the sequence of `--plugin` flags. That makes the chain's behaviour
+   * something an operator can change without touching a plugin or a flow, which
+   * is the right lever for a component nobody's document mentions.
+   */
+  middlewareDefs(): RegisteredMiddleware[] {
+    return this.middlewares;
+  }
+
+  /**
+   * The component types a spec may write.
+   *
+   * Middleware is excluded on purpose. This list is what the parser offers a
+   * spec author who named a type nothing provides, and a middleware is not
+   * something they can name — suggesting one would send them to write a
+   * `component_type` the deserializer will reject.
+   */
   componentTypeNames(): string[] {
-    return [...this.defs.keys()];
+    return [...this.defs]
+      .filter(([, entry]) => entry.kind !== 'middleware')
+      .map(([name]) => name);
   }
 
   /** Human-readable list of loaded plugins, for error messages. */

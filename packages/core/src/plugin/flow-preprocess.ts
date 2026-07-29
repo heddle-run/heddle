@@ -129,6 +129,21 @@ export function substitutePluginNodes(
         };
       }
 
+      if (kind === 'middleware') {
+        // Refused here rather than left to the deserializer, which has no
+        // plugin registered for a middleware type and would report it as a
+        // component type nothing provides — sending the author to load a plugin
+        // that is already loaded. Middleware is host-configured: the operator
+        // installs it and it runs on every node, which is exactly why a document
+        // cannot ask for one.
+        throw new PluginError(
+          `component "${value.name ?? '(unnamed)'}" has type "${componentType}", ` +
+            `which is a middleware. Middleware is installed by whoever runs heddle ` +
+            `and applies to every node in the flow, so it is not written into a ` +
+            `spec — remove it here and load it with --plugin instead.`,
+        );
+      }
+
       // `component` kinds are nested inside a plugin node or transform and are
       // deserialized with their parent, so they need no stand-in of their own.
       if (!kind && !isBuiltinComponentType(componentType)) {

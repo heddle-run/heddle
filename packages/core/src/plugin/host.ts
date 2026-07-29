@@ -48,6 +48,7 @@ import {
   type RpcResponse,
   type RunToolParams,
 } from './protocol.js';
+import type { AfterAction } from './seams.js';
 import type { ModelCaller, ToolRunner } from './services.js';
 import type { PluginReporter } from './types.js';
 
@@ -110,6 +111,11 @@ export interface PluginHostOptions {
    * trip to whoever configured the run.
    */
   capabilities?: PluginCapability[];
+  /**
+   * The verdicts each seam this plugin subscribed to admits, sent with the
+   * handshake. Absent for a plugin that provides no middleware.
+   */
+  seams?: Record<string, AfterAction[]>;
   /**
    * Serves the plugin's `runTool` calls.
    *
@@ -587,6 +593,7 @@ export class PluginHost {
       hostRequest(id, 'init', {
         protocol: PROTOCOL_VERSION,
         capabilities: [...this.granted],
+        ...(this.options.seams ? { seams: this.options.seams } : {}),
       }),
     );
   }

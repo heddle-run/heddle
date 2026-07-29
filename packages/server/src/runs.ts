@@ -8,6 +8,7 @@ import {
   SubprocessExecutor,
   Runner,
   type CompiledGraph,
+  DEFAULT_RUNNER_OPTIONS,
   type Dependencies,
   type Event,
   type ParsedFlow,
@@ -42,7 +43,20 @@ interface RunRequest extends FlowRequest, RequestCode {
  * misled about what the server will execute.
  */
 function rejectServerSideFields(body: Record<string, unknown>): void {
-  for (const field of ['toolsDir', 'tools_dir', 'flowsRoot', 'flows_root']) {
+  for (const field of [
+    'toolsDir',
+    'tools_dir',
+    'flowsRoot',
+    'flows_root',
+    // Middleware and its configuration are the operator's, for the reason
+    // `refuseMiddleware` gives. A caller who believes they set a retry policy
+    // has been misled about what the server will do with their run.
+    'middleware',
+    'pluginConfig',
+    'plugin_config',
+    'maxNodeAttempts',
+    'max_node_attempts',
+  ]) {
     if (field in body) {
       throw new HttpError(
         400,
@@ -98,6 +112,11 @@ function runnerOptions(
     timeout: config.timeout,
     verbose: false,
     eventHandler,
+    // The default, and inert: this server installs no middleware, so nothing
+    // ever asks to retry a node. It is set rather than omitted because the
+    // field is required, and taking it from `DEFAULT_RUNNER_OPTIONS` here would
+    // read as a knob an operator can turn, which on this path they cannot.
+    maxNodeAttempts: DEFAULT_RUNNER_OPTIONS.maxNodeAttempts,
   };
 }
 

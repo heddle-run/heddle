@@ -17,8 +17,27 @@ import { PluginError } from '../errors.js';
 import { PluginHost, type PluginHostOptions } from './host.js';
 import { validateManifest, type PluginManifest } from './manifest.js';
 import type { PluginCapability } from './protocol.js';
-import { remoteComponentDef, remoteNodeDef, remoteTransformDef } from './remote.js';
+import {
+  remoteComponentDef,
+  remoteMiddlewareDef,
+  remoteNodeDef,
+  remoteTransformDef,
+} from './remote.js';
+import { SEAMS, type AfterAction, type Seam } from './seams.js';
 import type { HeddlePlugin } from './types.js';
+
+/** The verdicts every seam this manifest subscribes to will admit. */
+function admittedVerdicts(
+  manifest: PluginManifest,
+): Record<string, AfterAction[]> | undefined {
+  const admitted: Record<string, AfterAction[]> = {};
+  for (const component of manifest.components) {
+    for (const seam of Object.keys(component.seams ?? {}) as Seam[]) {
+      admitted[seam] = SEAMS[seam].after;
+    }
+  }
+  return Object.keys(admitted).length > 0 ? admitted : undefined;
+}
 
 export interface RemotePluginOptions {
   /** Wall-clock budget for a single call into the plugin. */
@@ -133,6 +152,11 @@ export function loadRemotePlugin(
     // Passing the grant instead would give a plugin capabilities it never asked
     // for, which is the implicit availability this replaces.
     capabilities: manifest.capabilities,
+    // The verdicts each seam this plugin subscribed to will admit, sent with
+    // the handshake for the same reason the capabilities are: a middleware
+    // should read its limits rather than discover one by being refused, which
+    // under the fatal policy costs the run.
+    seams: admittedVerdicts(manifest),
   };
 
   const host = new PluginHost(manifest.name, hostOptions);
@@ -146,6 +170,7 @@ export function loadRemotePlugin(
     nodes: [],
     transforms: [],
     components: [],
+    middleware: [],
   };
 
   for (const entryComponent of manifest.components) {
@@ -158,6 +183,9 @@ export function loadRemotePlugin(
         break;
       case 'component':
         plugin.components!.push(remoteComponentDef(entryComponent));
+        break;
+      case 'middleware':
+        plugin.middleware!.push(remoteMiddlewareDef(manifest, entryComponent, getHost));
         break;
     }
   }

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { Command } from 'commander';
 import {
   compile,
@@ -10,6 +11,7 @@ import {
   Runner,
   loadPlugins,
   createSandbox,
+  MiddlewareChain,
   SandboxError,
   DEFAULT_RUNNER_OPTIONS,
   type RunnerOptions,
@@ -23,6 +25,71 @@ import { createProgressWriter, renderEvent } from './progress.js';
 /** Accumulates a repeatable commander flag into an array. */
 function collect(value: string, previous: string[]): string[] {
   return [...previous, value];
+}
+
+/**
+ * Read `--plugin-config ComponentType=<json>` into the shape the chain wants.
+ *
+ * `@file` is accepted alongside inline JSON for the same reason a server reads
+ * a credential from a file: a command line is visible in `ps` and lands in a
+ * shell history, and a middleware's configuration is as likely as not to hold
+ * an endpoint or a key.
+ *
+ * Every failure here names the flag and what was wrong with it, because this is
+ * an operator typing at a prompt — the one audience that can fix the problem in
+ * the next five seconds if told precisely what it is.
+ */
+function parsePluginConfig(
+  values: string[] | undefined,
+): Record<string, Record<string, unknown>> {
+  const config: Record<string, Record<string, unknown>> = {};
+
+  for (const entry of values ?? []) {
+    const eq = entry.indexOf('=');
+    if (eq <= 0) {
+      throw new Error(
+        `--plugin-config expects <ComponentType>=<json>, got "${entry}". ` +
+          `For example: --plugin-config RetryPolicy='{"maxAttempts":3}'`,
+      );
+    }
+    const componentType = entry.slice(0, eq);
+    const raw = entry.slice(eq + 1);
+
+    let text = raw;
+    if (raw.startsWith('@')) {
+      const path = raw.slice(1);
+      try {
+        text = readFileSync(path, 'utf-8');
+      } catch (err) {
+        throw new Error(
+          `--plugin-config ${componentType}=@${path}: the file is not readable ` +
+            `(${err instanceof Error ? err.message : String(err)})`,
+        );
+      }
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(text);
+    } catch (err) {
+      throw new Error(
+        `--plugin-config ${componentType}: the value is not JSON ` +
+          `(${err instanceof Error ? err.message : String(err)})`,
+      );
+    }
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      throw new Error(
+        `--plugin-config ${componentType}: expected a JSON object of settings, got ` +
+          `${parsed === null ? 'null' : Array.isArray(parsed) ? 'an array' : typeof parsed}`,
+      );
+    }
+    if (config[componentType]) {
+      throw new Error(`--plugin-config was given twice for "${componentType}"`);
+    }
+    config[componentType] = parsed as Record<string, unknown>;
+  }
+
+  return config;
 }
 
 interface SafeOptions {
@@ -112,6 +179,17 @@ export const runCommand = new Command('run')
     [] as string[],
   )
   .option(
+    '--plugin-config <type=json>',
+    'Configuration for a host-configured component such as a middleware; ' +
+      'value may be inline JSON or @file (repeatable)',
+    collect,
+    [] as string[],
+  )
+  .option(
+    '--max-node-attempts <n>',
+    'How many times one arrival at a node may be attempted when middleware retries',
+  )
+  .option(
     '--no-stream',
     'Ask the model for one buffered response instead of a token stream',
   )
@@ -129,6 +207,8 @@ export const runCommand = new Command('run')
         input?: string;
         chat?: boolean;
         plugin?: string[];
+        pluginConfig?: string[];
+        maxNodeAttempts?: string;
         stream?: boolean;
       } & SafeOptions,
       command: Command,
@@ -156,6 +236,14 @@ export const runCommand = new Command('run')
       const isChat = options.chat ?? false;
       const opts = buildRunnerOpts(verbose, isChat);
 
+      if (options.maxNodeAttempts !== undefined) {
+        const attempts = Number(options.maxNodeAttempts);
+        if (!Number.isInteger(attempts) || attempts < 1) {
+          throw new Error('--max-node-attempts must be a whole number of 1 or more');
+        }
+        opts.maxNodeAttempts = attempts;
+      }
+
       const deps = {
         toolExecutor: new SubprocessExecutor({ sandbox }),
         toolRegistry: reg,
@@ -165,6 +253,19 @@ export const runCommand = new Command('run')
         // streamed call differently. Commander leaves this true otherwise.
         stream: options.stream,
       };
+
+      // Built here rather than inside compile, because a middleware is not part
+      // of the graph: no document names one, and the same compiled flow run by
+      // a different operator has a different chain. Building it before
+      // `validate` keeps a misconfigured middleware a startup failure.
+      opts.middleware = MiddlewareChain.build(
+        plugins,
+        deps,
+        parsePluginConfig(options.pluginConfig),
+      );
+      if (verbose && !opts.middleware.isEmpty()) {
+        console.error(`Middleware: ${opts.middleware.describe().join('; ')}`);
+      }
 
       const cg = compile(pf, deps);
       validate(cg);
