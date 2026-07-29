@@ -60,9 +60,12 @@ A numbered patch series. Each entry says what it changes and what breaks in
 heddle if a refresh drops it — the refresh procedure below overwrites `src/`
 wholesale, so anything not listed here is lost silently.
 
-Every patch is additive and none changes upstream behaviour: heddle carries a
-fork of the *validation* layer of a format it does not own, and the way that
-stays affordable is that a rebase never has to resolve a semantic conflict.
+Patch 1 is purely additive. Patch 2 is not — it rewrites one line of
+`src/agents/agent.ts` — and that is the first time this series has changed a
+type upstream owns, so the general claim that a rebase never resolves a semantic
+conflict no longer holds unqualified. What still holds is that upstream's
+*behaviour* is unchanged: with nobody registering a widened schema, the lazy
+reference resolves to exactly the union it replaced.
 
 **1. Export the flow schema registration functions.**
 `src/index.ts` re-exports `registerNodeUnionSchema` and `registerFlowSchema`
@@ -73,6 +76,32 @@ heddle's plugin-defined node types and a flow containing one is rejected by
 `packages/core/src/plugin/flow-preprocess.ts` exists only to work around that,
 by validating a stand-in `InputMessageNode` and swapping the real component back
 in by id.
+
+**2. Lazy indirection for `MessageTransformUnion`.**
+New `src/transforms/lazy-schemas.ts`, mirroring `src/flows/lazy-schemas.ts`:
+`LazyMessageTransformRef` plus `registerMessageTransformSchema`.
+`src/transforms/message-transform.ts` self-registers the real union immediately
+after defining it, exactly as `src/flows/nodes/index.ts` and `src/flows/flow.ts`
+already do for theirs. `src/agents/agent.ts` changes `transforms:
+z.array(MessageTransformUnion)` to `z.array(LazyMessageTransformRef)` — the one
+non-additive line — importing the ref through `../transforms/index.js` and not
+from `lazy-schemas.js` directly. That import path is load-bearing: importing the
+lazy module on its own would not evaluate `message-transform.js`, so nothing
+would register and every transform would be refused.
+
+The default is `z.never()` rather than the `z.record(z.unknown())` its sibling
+uses, for the same reason: a half-applied patch should refuse every transform
+loudly instead of accepting any object silently.
+
+`src/index.ts` re-exports `registerMessageTransformSchema`.
+
+Without this, `Agent.transforms` is closed and a plugin transform is rejected
+before the SDK's deserialization plugin runs, which is what
+`packages/core/src/spec/open-unions.ts` exists to prevent. Note that patch 1's
+`registerFlowSchema` remains exported and deliberately uncalled: `LazyFlowRef`
+resolves to `FlowSchema`, whose `startNode` and `nodes` are already
+`LazyNodeRef`, so every subflow position widens through the node registration
+transitively.
 
 `package.json` also differs from upstream, and predates the series: it is marked
 `private`, and the test/lint/example scripts and their devDependencies are
@@ -95,5 +124,15 @@ then update the commit in the table and run `pnpm -w build && pnpm -w test`.
 
 A refresh that drops a patch does not fail loudly: the SDK still builds and its
 own behaviour is unchanged, and what breaks is heddle, somewhere downstream of a
-missing export. Diffing `src/index.ts` against upstream's after the rsync is the
-cheapest way to confirm the series is back.
+missing export. Diffing `src/index.ts` alone is no longer enough — patch 2
+touches four files, three of which upstream owns. After the rsync, diff:
+
+    src/index.ts
+    src/agents/agent.ts
+    src/transforms/index.ts
+    src/transforms/message-transform.ts
+    src/transforms/lazy-schemas.ts        (deleted outright by --delete)
+
+`packages/core/src/plugin/__tests__/vendor-schema-registration.test.ts` pins the
+exports, so `pnpm -w test` catches a dropped patch — but it catches it as a
+heddle test failure, which is why the list above is here.

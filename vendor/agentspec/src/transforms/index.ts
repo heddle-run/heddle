@@ -13,3 +13,8 @@ export {
   type MessageTransform,
   type SupportedDatastores,
 } from "./message-transform.js";
+
+export {
+  LazyMessageTransformRef,
+  registerMessageTransformSchema,
+} from "./lazy-schemas.js";

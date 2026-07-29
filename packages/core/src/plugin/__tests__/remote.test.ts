@@ -900,19 +900,20 @@ describe("kind: 'component'", () => {
     ).toThrow(/Policy "strict": "rule" is required/);
   });
 
-  it('is rejected by the SDK when it is put in a builtin slot', () => {
-    // `Flow.nodes` is a closed discriminated union and a bare component has no
-    // stand-in to hide behind, so this is the limit of the kind: it is reachable
-    // only under a plugin parent. The refusal comes from the SDK in the SDK's
-    // words — heddle knows the type and let it through — which is why the
-    // message lists every builtin node type and never mentions the plugin.
+  it('is refused by kind when it is put in a node slot', () => {
+    // Still the limit of the kind — a bare component is reachable only under a
+    // plugin parent — but the refusal moved and improved. `Flow.nodes` used to
+    // be a closed union, so this came back as the SDK's `Invalid discriminator
+    // value` listing every builtin node type and never mentioning the plugin.
+    // The union is widened now, so heddle refuses it itself and can say the
+    // thing the author actually needs: the type is real, and it is not a node.
     const entry = writePlugin('inaslot', `return { output: {} };`);
     const registry = PluginRegistry.empty();
     open.push(registry);
     registry.addRemote(loadRemotePlugin(nodeAndComponentManifest(), entry));
 
     expect(() => parseFlow(flowUsing('Policy'), registry)).toThrow(
-      /Invalid discriminator value/,
+      /provides as a component rather than a node/,
     );
   });
 });
