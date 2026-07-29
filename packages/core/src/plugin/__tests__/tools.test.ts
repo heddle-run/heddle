@@ -105,10 +105,15 @@ describe('a tool a plugin ships as an executable', () => {
   });
 
   it('refuses one that is simply not there, with a different message', () => {
+    // A sibling of the plugin's own directory that nothing creates, rather than
+    // a climb out to /bin: how many `..` it takes to reach a real system binary
+    // depends on how deep the platform's temp directory is, so a fixed climb
+    // asserts the containment refusal on Linux and the missing-file refusal on
+    // macOS. This is the missing-file refusal on both.
     const entry = plugin('escape-missing', 'serve({});');
-    expect(() => load(manifest([{ name: 'curl', path: '../../../bin/sh' }]), entry)).toThrow(
-      /not there beside the plugin/,
-    );
+    expect(() =>
+      load(manifest([{ name: 'curl', path: '../no-such-tool-here' }]), entry),
+    ).toThrow(/not there beside the plugin/);
   });
 
   it('refuses a symlink that leaves the plugin directory', () => {
