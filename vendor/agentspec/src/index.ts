@@ -272,6 +272,10 @@ export {
 // pair). A host that rebinds one and not the other gets a widened top-level flow
 // whose subflows still validate against the original union.
 export {
+  registerMessageTransformSchema,
+} from "./transforms/lazy-schemas.js";
+
+export {
   registerNodeUnionSchema,
   registerFlowSchema,
 } from "./flows/lazy-schemas.js";

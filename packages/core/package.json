@@ -48,7 +48,8 @@
   },
   "dependencies": {
     "openai": "^4.85.0",
-    "yaml": "^2.8.0"
+    "yaml": "^2.8.0",
+    "zod": "^3.23.0"
   },
   "devDependencies": {
     "agentspec": "workspace:*",

@@ -8,7 +8,7 @@ import { getPlaceholderPropertiesFromJsonObject } from "../templating.js";
 import { LlmConfigUnion, type LlmConfig } from "../llms/index.js";
 import { ToolUnion, ToolBoxUnion, type Tool, type ToolBox } from "../tools/index.js";
 import {
-  MessageTransformUnion,
+  LazyMessageTransformRef,
   type MessageTransform,
 } from "../transforms/index.js";
 
@@ -19,7 +19,7 @@ export const AgentSchema = ComponentWithIOSchema.extend({
   tools: z.array(ToolUnion).default([]),
   toolboxes: z.array(ToolBoxUnion).default([]),
   humanInTheLoop: z.boolean().default(true),
-  transforms: z.array(MessageTransformUnion).default([]),
+  transforms: z.array(LazyMessageTransformRef).default([]),
 });
 
 export type Agent = z.infer<typeof AgentSchema>;

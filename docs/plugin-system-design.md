@@ -2095,30 +2095,49 @@ refused every single time — removed rather than half-wired.
 tool descriptions.
 Cost: low as predicted for the manifest half; the union refactor was the real work.
 
-### Phase V — Vendored SDK extension (formerly Phase 8) — **tier 1 landed, tier 2 open**
+### Phase V — Vendored SDK extension (formerly Phase 8) — **landed**
 
-Blocked by nothing; run it alongside Phases 0–3.
+**Tier 1** exported `registerNodeUnionSchema` and `registerFlowSchema` and nothing called them, so
+`NodeUnion` stayed closed in practice. **Tier 2** calls the seam, adds the matching one for
+`MessageTransformUnion`, and deletes the placeholder machinery both existed to replace. Net −200
+lines.
 
-**Tier 1 — done.** `vendor/agentspec/src/index.ts` re-exports `registerNodeUnionSchema` and
-`registerFlowSchema` from `src/flows/lazy-schemas.js` (§8.1), and the `VENDOR.md` bookkeeping landed
-with it — *Local modifications* is now a numbered patch series, without which the next vendor
-refresh reverts the export silently. A regression test pins the export:
-`packages/core/src/plugin/__tests__/vendor-schema-registration.test.ts`.
+**The registration knows nothing about which plugins are loaded, and that is the design.** The
+obvious implementation — register `NodeUnion` widened with *this run's* plugin schemas — cannot be
+made safe: `registerNodeUnionSchema` writes a module-global that `z.lazy()` reads at parse time, and
+heddle builds a `PluginRegistry` per request with concurrent runs in one process. Save-and-restore
+around a synchronous parse works today and only today; its correctness rests on no `await` ever
+appearing between the write and the restore, which is invisible, untyped, and one refactor from a
+caller's flow validating against a different caller's plugin set — a failure that would not crash,
+only quietly accept. So the widened schema asks one question, *is this `componentType` builtin*,
+whose answer is a frozen-table lookup identical in every run forever (`spec/open-unions.ts`).
 
-**What tier 1 does not yet buy.** The seam is exported and nothing calls it. `NodeUnion` is still
-closed in practice, so `plugin/flow-preprocess.ts` and its restore path in `spec/adapter.ts` remain
-load-bearing for **every** plugin node: a flow carrying one is still handed to the SDK as an
-`InputMessageNode` stand-in and swapped back by id. Read §8.1's Tier 1 "Buys" column as what becomes
-possible, not as work already delivered — the placeholder machinery goes away when a caller
-registers a widened `NodeUnion`, which is a separate change.
+**What it gives up is slot discipline**, which the union was enforcing for free and can no longer:
+it cannot tell a plugin's node from a plugin's transform without knowing the plugin. Three checks
+take it over, and each names the kind — `toSpecNode`, `TransformChain.build`, and the compiler's
+default branch. That trade is favourable: `Invalid discriminator value` listing every builtin node
+type became "which a plugin provides as a transform rather than a node".
 
-**Tier 2 — open.** Lazy indirection and registration for `MessageTransformUnion`, `LlmConfigUnion`
-and `ToolUnion`; `src/flows/lazy-schemas.ts` still exports only the two node/flow functions.
+**What it does not give up is anything about builtins**, and this is pinned rather than asserted: the
+same malformed document was parsed with the change stashed and unstashed, and the error is
+byte-identical.
 
-**Unblocks:** deleting `plugin/flow-preprocess.ts` entirely; every future component kind's placeholder
-cost; and the cost model of Phase 5.
-Cost: medium for tier 2. This was scheduled last on the assumption that it required upstream
-cooperation — it does not.
+| Landed | Where |
+|---|---|
+| The widened unions, registered once, idempotent | `spec/open-unions.ts` |
+| Vendor patch 2: lazy indirection for `MessageTransformUnion`, defaulting to `z.never()` so a half-applied patch is loud | `vendor/agentspec/src/transforms/lazy-schemas.ts` and three files it touches |
+| `flow-preprocess.ts` reduced from substitution to `checkPluginComponents`, which reports and rewrites nothing | `plugin/flow-preprocess.ts` |
+| The restore path deleted; `AdapterOptions` down from three fields to one; `toSpecNode` gains a kind-aware branch | `spec/adapter.ts` |
+| One SDK deserialization per document instead of one per plugin component plus one for the rewrite | `spec/parser.ts` |
+
+**`LlmConfigUnion` and `ToolUnion` deliberately stayed closed.** Phase 4 already showed why: a plugin
+component's fields are never zod-parsed, so an ordinary `llm_config` on a plugin node deserializes
+today and `callModel` works with zero union involvement. Widening `LlmConfigUnion` buys exactly one
+thing — a *custom* config type in a *builtin* slot — which is Phase 5's provider kind and should be
+argued there with a caller in hand. Tier 1 is the standing evidence for what an unused registration
+seam is worth.
+
+**Unblocks:** Phase 5 at its lower cost. Every future component kind's placeholder cost is now zero.
 
 ### Phase 9 — Encoder kind
 

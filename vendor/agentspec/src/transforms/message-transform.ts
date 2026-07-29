@@ -2,6 +2,7 @@
  * Message transform types.
  */
 import { z } from "zod";
+import { registerMessageTransformSchema } from "./lazy-schemas.js";
 import { ComponentBaseSchema } from "../component.js";
 import { LlmConfigUnion, type LlmConfig } from "../llms/index.js";
 import {
@@ -78,6 +79,11 @@ export const MessageTransformUnion = z.discriminatedUnion("componentType", [
 ]);
 
 export type MessageTransform = z.infer<typeof MessageTransformUnion>;
+
+// Self-registers the way flows/nodes/index.ts and flows/flow.ts do, so the
+// lazy reference resolves to the real union for any consumer that has loaded
+// this module — which the barrel guarantees.
+registerMessageTransformSchema(MessageTransformUnion);
 
 export function createMessageSummarizationTransform(opts: {
   name: string;

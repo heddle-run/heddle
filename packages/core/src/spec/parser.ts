@@ -1,10 +1,17 @@
 import type { ComponentBase } from 'agentspec';
 import YAML from 'yaml';
-import { restoreAgentTransforms, toSpecFlow } from './adapter.js';
+import { toSpecFlow } from './adapter.js';
 import type { Agent, ParsedFlow } from './types.js';
 import { PluginRegistry } from '../plugin/registry.js';
-import { substitutePluginNodes } from '../plugin/flow-preprocess.js';
+import { checkPluginComponents } from '../plugin/flow-preprocess.js';
+import { installWidenedUnions } from './open-unions.js';
 import { SpecError } from '../errors.js';
+
+// At module scope, before any parse can happen: the SDK's node and transform
+// unions are closed until something widens them, and this is the something.
+// Called rather than imported for its side effect so nothing can drop it as
+// unused. See `spec/open-unions.ts` for why the widening is plugin-independent.
+installWidenedUnions();
 
 /** Default when no plugins are configured. Shared so its deserializer is reused. */
 const NO_PLUGINS = PluginRegistry.empty();
@@ -24,51 +31,38 @@ function toDoc(data: string | Buffer): Record<string, unknown> {
 /**
  * Deserializes any component document.
  *
- * Every document takes this path, plugins or not: `substitutePluginNodes` walks
- * the document to swap plugin components for stand-ins the SDK's schemas accept,
- * and returns it untouched when nothing needs swapping. Keeping one path means
- * there is no plugin-specific branch to drift out of sync with the plain one.
+ * One SDK call now, where there used to be one per plugin component plus one
+ * for the rewritten document. `checkPluginComponents` walks the document first
+ * and only to *report* — a component type nothing provides, or one a plugin
+ * provides as middleware, which no document may name. It rewrites nothing:
+ * the widened unions accept the real component, so the SDK deserializes it in
+ * place through the plugin path it has always had.
+ *
+ * Reporting before the SDK sees the document is what keeps the message good.
+ * The SDK's own refusal is `No plugin to deserialize component type "X"`, which
+ * is true and tells an author nothing about which plugins are loaded or how to
+ * load another.
  */
 function deserialize(
   raw: Record<string, unknown>,
   registry: PluginRegistry,
-): { component: ComponentBase; substitution: ReturnType<typeof substitutePluginNodes> } {
-  const d = registry.deserializer();
-  const substitution = substitutePluginNodes(raw, registry, (dict) =>
-    d.fromJson(JSON.stringify(dict)) as Record<string, unknown>,
-  );
-  return {
-    component: d.fromJson(JSON.stringify(substitution.doc)) as ComponentBase,
-    substitution,
-  };
+): ComponentBase {
+  checkPluginComponents(raw, registry);
+  return registry.deserializer().fromJson(JSON.stringify(raw)) as ComponentBase;
 }
 
-/**
- * Deserializes a component and puts its real plugin transforms back.
- *
- * Every path that returns a component rather than a ParsedFlow goes through
- * here. Doing the restore at the deserialize boundary is what keeps the four
- * entry points from drifting: forgetting it in one of them is how the standalone
- * Agent came back holding stand-ins in the first place.
- */
 function toComponent(
   raw: Record<string, unknown>,
   registry: PluginRegistry,
 ): ComponentBase {
-  const { component, substitution } = deserialize(raw, registry);
-  return restoreAgentTransforms(component, substitution.pluginTransforms);
+  return deserialize(raw, registry);
 }
 
 function toFlow(
   raw: Record<string, unknown>,
   registry: PluginRegistry,
 ): ParsedFlow {
-  const { component, substitution } = deserialize(raw, registry);
-  return toSpecFlow(component, {
-    registry,
-    pluginNodes: substitution.pluginNodes,
-    pluginTransforms: substitution.pluginTransforms,
-  });
+  return toSpecFlow(deserialize(raw, registry), { registry });
 }
 
 /** ParseFlow parses a JSON string into a ParsedFlow. */
@@ -107,21 +101,16 @@ export function parseComponent(
   registry: PluginRegistry = NO_PLUGINS,
 ): ParsedFlow | Agent {
   const raw = toDoc(data);
-  const { component, substitution } = deserialize(raw, registry);
+  const component = deserialize(raw, registry);
   const ct = (component as unknown as { componentType: string }).componentType;
 
   switch (ct) {
     case 'Flow':
-      return toSpecFlow(component, {
-        registry,
-        pluginNodes: substitution.pluginNodes,
-        pluginTransforms: substitution.pluginTransforms,
-      });
+      return toSpecFlow(component, { registry });
     case 'Agent':
-      return restoreAgentTransforms(
-        component,
-        substitution.pluginTransforms,
-      ) as unknown as Agent;
+      // Nothing to restore. The SDK holds the real transform, because the
+      // widened union let it through in the first place.
+      return component as unknown as Agent;
     default:
       throw new SpecError(`unsupported top-level componentType "${ct}"`);
   }
