@@ -1931,7 +1931,12 @@ Phase 3, so an encoder written now sees the final shape — `BuiltinEventType | 
    Reopening it needs a precedence rule, an explicit `implements: "builtin"` opt-in so shadowing is
    visible, providers carved out, and a correction to the compiler's plugin-first lookup comment
    (`graph/compile.ts`). None of that should be built speculatively.
-8. **How does a plugin's model answer ever get streamed?** Phase 4 buffers `callModel`, because
+8. **~~How does a plugin's model answer ever get streamed?~~ Resolved in §7.11: by attributing
+   rather than deciding. The mechanism is designed and deliberately not built.** The question asked
+   heddle to decide something it cannot observe, and all three of its candidates inherited that. The
+   original text is kept below because the reasoning is what §7.11 answers.
+
+   Phase 4 buffers `callModel`, because
    heddle cannot tell a plugin's model call from its scratch work and streaming it would publish
    scratch as the run's answer (§7.2). That is right for a judge and wrong for a summarizer plugin
    whose model output *is* the node's output — and heddle has no way to be told which it is. The
@@ -1948,6 +1953,80 @@ Phase 3, so an encoder written now sees the final shape — `BuiltinEventType | 
    plugin's chatter can ask for a protocol that renders none of it — which is a filtering decision
    and was never the hard part. The manifest flag remains the only candidate that puts the claim
    where the knowledge is.
+
+### 7.11 Streaming a plugin's model answer — **resolved; the mechanism is held**
+
+Q8's three candidates all fail the same way, and seeing why is the resolution. Recorded as a sketch
+rather than a specification: what is worth freezing is the argument, not the field names, because
+the field names will drift for however many phases pass before a caller appears.
+
+**The question is two questions with opposite epistemic status.** *Provenance* — this text came out
+of a model call made by component `C` under node `N` — heddle knows at mint time and cannot be lied
+to about, because `callModel` is served host-side and the plugin never touches the delta channel.
+*Salience* — this call is the answer rather than scratch — is a claim about what `execute` will
+return **after the call has ended**, and heddle cannot know it. Three arguments say no protocol shape
+fixes that:
+
+- **Temporal.** Deltas are minted before the return, so the retrospective rule anyone reaches for
+  first — *the call whose result the plugin returns is the answer* — is evaluable only once every
+  delta it would have gated is already gone. This codebase refuses retraction before the idea is
+  raised: `completeChat` turns streaming off entirely for an agent carrying a `post` transform,
+  precisely because a delta that reached a browser cannot be recalled. The prospective variant —
+  declare, then verify the accumulated text landed where it was declared — fails on false alarms: a
+  summarizer that trims whitespace or wraps its text in JSON fails the check while being honest, so
+  the warning fires constantly and is ignored. A receipt for something that cannot be undone is not
+  a control.
+- **Multiplicity.** `PluginModel` is held per compiled component and serves every `callModel` that
+  component makes, so a judge that scores privately and then writes a verdict for a person makes
+  both kinds of call inside one `execute`. Any *per-component* fact — a manifest flag, the kind, the
+  component type — is therefore guaranteed wrong for one of them. This is what kills Q8's candidate
+  (a) as stated, and it is not a heddle peculiarity: LangGraph binds its no-stream tag to the model
+  handle rather than to the node.
+- **Indistinguishability.** A judge's call and a summarizer's call are byte-identical in shape.
+  Nothing `readModelRequest` produces separates them.
+
+**So the answer is to attribute, never to adjudicate.** heddle stops trying to say *this is the
+answer* and says *this is `Summarizer`'s model text, under node `summarize`*, leaving the consumer to
+decide what that means. The mechanism would be a new `BuiltinEventType` member minted only while
+heddle is serving a `callModel`, carrying the node name and component type from the same
+`EventSource` that `pluginReporter` already uses — so a plugin's deltas and its `emitEvent` events
+hang off the same node and a client can correlate them. Per-call granularity is the only granularity
+the multiplicity argument permits, so the discriminator has to ride on the call.
+
+**The invariant, which is the part worth freezing:**
+
+> **Text obtained through `callModel` never appears under `token_delta`.** A plugin may ask heddle to
+> stream; it may never tell heddle what a stream means.
+
+Note the careful wording. A *provider* plugin's text does legitimately reach `token_delta` today, and
+that is not a hole: there, heddle asked for the answer and will put the content in the node's output,
+so heddle mints the claim and the plugin supplies only bytes. The direction of the call is what makes
+it safe — which is exactly the property `callModel` inverts.
+
+**Two designs are refused, and the tempting one is refused hardest.** *Answer to `token_delta`,
+scratch to a new type* buys the most for the least — every existing client renders a summarizer
+correctly for free. Refuse it: the moment a plugin can reach `token_delta`, that type stops being a
+claim only heddle makes, and `BuiltinEventType`'s docblock — *membership of this union is the right
+to be believed* — becomes false. *A new field on `token_delta`* is worse, and fails a test it appears
+to pass: `EVENT_CONTRACT_VERSION`'s rule that adding a field is safe is about **shape**, and this
+changes **population** — `token_delta` events that never existed before. Two shipped clients are the
+bill. The playground merges consecutive deltas keyed on `(type, nodeName)` and ignores unknown
+fields, so a judge's scratch would concatenate into the run's answer in heddle's own UI; the CLI
+progress writer keys its half-written line on the node alone, so the same text lands mid-sentence
+under the agent's header — on a client with no encoder available to intervene.
+
+**Held, not deferred by accident.** There is no caller. The summarizer is hypothetical, nothing in
+`examples/` streams through `callModel`, and the cost is a new event type plus edits to five clients
+and two published docs. Build it when a plugin wants it, and let that plugin's shape settle the
+per-call spelling.
+
+**What did land is the rider.** The investigation found a live defect with no relation to streaming:
+`manifest.ts` checked `stream` and `phase` for their *values* and never for their *kind*, so
+`stream: true` on a node — or `phase: "post"` on a provider — loaded clean and was read by nothing.
+`seams` and `protocol` were refused that way from the day each landed; these two were not, so the
+rule was applied by halves. `onlyOn` now refuses all four alike. This breaks a third-party manifest
+carrying `stream` on a non-provider, including `stream: false`, which is a no-op today — the right
+disposition, since the alternative is a field an author believes is doing something.
 
 ---
 
