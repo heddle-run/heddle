@@ -11,9 +11,6 @@ import FAQ from "@/components/FAQ";
 import CTA from "@/components/CTA";
 import Footer from "@/components/Footer";
 
-/* Sections divide themselves now: each opens with a numbered eyebrow and its
- * own hairline, and the boxed frames carry the accent ticks. The old explicit
- * <Rule /> separators would double up on that, so they are gone. */
 export default function Home() {
   return (
     <>

@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Execute command tool: runs a shell command and captures stdout, stderr, exit code.
 set -euo pipefail
 INPUT=$(cat)
 
@@ -16,7 +15,6 @@ if command -v timeout &>/dev/null; then
 elif command -v gtimeout &>/dev/null; then
   cd "$WORKDIR" && gtimeout 25 bash -c "$COMMAND" >"$STDOUT_FILE" 2>"$STDERR_FILE" || EXIT_CODE=$?
 else
-  # Fallback: run without timeout on systems that lack both
   cd "$WORKDIR" && bash -c "$COMMAND" >"$STDOUT_FILE" 2>"$STDERR_FILE" || EXIT_CODE=$?
 fi
 
@@ -28,7 +26,6 @@ with open(sys.argv[1]) as f:
 with open(sys.argv[2]) as f:
     stderr = f.read()
 
-# Truncate long output to stay within reasonable bounds
 if len(stdout) > 10000:
     stdout = stdout[:10000] + '\n... (truncated)'
 if len(stderr) > 5000:

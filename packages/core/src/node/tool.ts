@@ -4,10 +4,9 @@ import type { NodeExecutor, Dependencies } from './types.js';
 import { invokeTool } from '../tool/invoke.js';
 import { RunError, ToolError } from '../errors.js';
 
-/** ToolNodeExecutor executes a ToolNode by running an external tool. */
 export class ToolNodeExecutor implements NodeExecutor {
-  private node: ToolNode;
-  private deps: Dependencies;
+  private readonly node: ToolNode;
+  private readonly deps: Dependencies;
 
   constructor(node: ToolNode, deps: Dependencies) {
     this.node = node;
@@ -22,34 +21,36 @@ export class ToolNodeExecutor implements NodeExecutor {
     signal: AbortSignal | undefined,
     input: State,
   ): Promise<State> {
-    if (!this.node.tool) {
+    const result = await invokeTool(
+      signal,
+      this.resolveTool(),
+      input.toData(),
+      this.deps.toolExecutor,
+    );
+
+    return new State(result.output);
+  }
+
+  private resolveTool() {
+    const { tool } = this.node;
+    if (!tool) {
       throw new RunError(`ToolNode "${this.node.name}" has no tool`);
     }
 
-    if (!this.deps.toolRegistry) {
+    const registry = this.deps.toolRegistry;
+    if (!registry) {
       throw new RunError(
         `ToolNode "${this.node.name}": no tool registry configured`,
       );
     }
 
-    const toolDef = this.deps.toolRegistry.lookup(this.node.tool.name);
-    if (!toolDef) {
+    const definition = registry.lookup(tool.name);
+    if (!definition) {
       throw new ToolError(
-        `ToolNode "${this.node.name}": tool "${this.node.tool.name}" not found`,
+        `ToolNode "${this.node.name}": tool "${tool.name}" not found`,
       );
     }
 
-    // No executor check here any more: a plugin-implemented tool needs none,
-    // and refusing before the branch would fail a flow whose tools all come
-    // from plugins for want of something it never uses. `invokeTool` asks only
-    // when the tool turns out to be a path.
-    const result = await invokeTool(
-      signal,
-      toolDef,
-      input.toData() as Record<string, unknown>,
-      this.deps.toolExecutor,
-    );
-
-    return new State(result.output);
+    return definition;
   }
 }

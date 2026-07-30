@@ -2,8 +2,6 @@ import { FeatureCard } from "@/ds";
 import SectionLabel from "./SectionLabel";
 import { features } from "@/lib/constants";
 
-/** The bento: one tall cell carrying the headline capability with a pink glow
- *  orb behind it, and five hairline tiles around it. */
 export default function Features() {
   const [lead, ...rest] = features;
 

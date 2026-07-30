@@ -1,9 +1,6 @@
 import { BoxedFrame, Icon } from "@/ds";
 import { definition } from "@/lib/constants";
 
-/** The epigraph: the name is the thesis, so the dictionary entry is the pull
- *  quote. Framed by the signature corner ticks and opened by an oversized
- *  quotation glyph at low opacity. */
 export default function Definition() {
   return (
     <section className="hd-section">

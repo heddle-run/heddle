@@ -16,9 +16,6 @@ const marks = [
   { icon: "scroll-text", label: "MIT licensed" },
 ];
 
-/* Per-word hero, in the design system's idiom: Medium weight at -0.05em, each
- * word taking a hue on hover. Written out rather than using SectionHeading so
- * the accent can land on the last word alone. */
 const HERO_WORDS = [
   { text: "Weave", hue: "var(--hue-purple)" },
   { text: "agents", hue: "var(--hue-blue)" },
@@ -116,7 +113,6 @@ export default function Hero() {
           </a>
         </div>
 
-        {/* Install — the one place the page states a command outright */}
         <div
           className="ff-fade-in-up ff-delay-300"
           style={{
@@ -151,8 +147,6 @@ export default function Hero() {
         </ul>
       </div>
 
-      {/* The loom band — pipeline and brand mark in one drawing. Framed by the
-          signature corner ticks, which is this system's way of saying "look here". */}
       <div className="hd-container" style={{ paddingBottom: "var(--space-24)" }}>
         <BoxedFrame beam pad="var(--space-8)">
           <Loom />

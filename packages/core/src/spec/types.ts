@@ -1,21 +1,12 @@
-/**
- * Core type definitions for heddle.
- *
- * Uses agentspec SDK types for components, with heddle-specific types
- * for the graph representation (string-based edge references).
- */
-import type { ComponentBase, Property } from 'agentspec';
+import type { Property } from 'agentspec';
 import type { JsonSchema } from '../llm/types.js';
 
-// Re-export SDK Property type
 export type { Property } from 'agentspec';
 
-/** Returns the "title" field from a Property. */
-export function propertyTitle(p: Property): string {
-  return p.title ?? '';
+export function propertyTitle(property: Property): string {
+  return property.title ?? '';
 }
 
-/** LLMConfig holds LLM provider configuration. */
 export interface LLMConfig {
   componentType?: string;
   modelId: string;
@@ -24,7 +15,6 @@ export interface LLMConfig {
   defaultGenerationParameters?: JsonSchema;
 }
 
-/** ToolSpec defines a tool in Agent Spec. */
 export interface ToolSpec {
   componentType: string;
   name: string;
@@ -33,7 +23,6 @@ export interface ToolSpec {
   outputs?: Property[];
 }
 
-/** Agent represents an Agent Spec Agent component. */
 export interface Agent {
   componentType: string;
   name: string;
@@ -44,28 +33,21 @@ export interface Agent {
   inputs?: Property[];
   outputs?: Property[];
   humanInTheLoop?: boolean;
-  /**
-   * Message transforms attached to the agent. Agent Spec ships two
-   * summarization transforms; plugins contribute the rest.
-   */
   transforms?: TransformSpec[];
 }
 
-/** A MessageTransform attached to an Agent. */
 export interface TransformSpec {
   componentType: string;
   name: string;
   id?: string;
 }
 
-/** ControlFlowEdge uses string node names for graph traversal. */
 export interface ControlFlowEdge {
   fromNode: string;
   fromBranch?: string;
   toNode: string;
 }
 
-/** DataFlowEdge uses string node names for graph traversal. */
 export interface DataFlowEdge {
   sourceNode: string;
   sourceOutput: string;
@@ -73,7 +55,6 @@ export interface DataFlowEdge {
   destinationInput: string;
 }
 
-/** StartNode is the entry point of a flow. */
 export interface StartNode {
   componentType: 'StartNode';
   name: string;
@@ -81,7 +62,6 @@ export interface StartNode {
   outputs?: Property[];
 }
 
-/** EndNode is the exit point of a flow. */
 export interface EndNode {
   componentType: 'EndNode';
   name: string;
@@ -90,7 +70,6 @@ export interface EndNode {
   outputs?: Property[];
 }
 
-/** AgentNode wraps an Agent within a flow. */
 export interface AgentNode {
   componentType: 'AgentNode';
   name: string;
@@ -99,7 +78,6 @@ export interface AgentNode {
   outputs?: Property[];
 }
 
-/** ToolNode executes a tool within a flow. */
 export interface ToolNode {
   componentType: 'ToolNode';
   name: string;
@@ -108,7 +86,6 @@ export interface ToolNode {
   outputs?: Property[];
 }
 
-/** LLMNode runs a prompt template through an LLM. */
 export interface LLMNode {
   componentType: 'LlmNode';
   name: string;
@@ -118,7 +95,6 @@ export interface LLMNode {
   outputs?: Property[];
 }
 
-/** BranchingNode routes execution based on a mapping. */
 export interface BranchingNode {
   componentType: 'BranchingNode';
   name: string;
@@ -126,7 +102,6 @@ export interface BranchingNode {
   inputs?: Property[];
 }
 
-/** SpecNode is a discriminated union of all builtin node types. */
 export type SpecNode =
   | StartNode
   | EndNode
@@ -135,10 +110,6 @@ export type SpecNode =
   | LLMNode
   | BranchingNode;
 
-/**
- * CustomNode is a node contributed by a plugin. Its own fields are not known
- * statically, so plugin code reads them from the node it is handed.
- */
 export interface CustomNode {
   componentType: string;
   name: string;
@@ -147,10 +118,8 @@ export interface CustomNode {
   branches?: string[];
 }
 
-/** AnyNode is any node a compiled flow may contain, builtin or plugin-provided. */
 export type AnyNode = SpecNode | CustomNode;
 
-/** Flow represents the raw flow structure. */
 export interface Flow {
   name: string;
   componentType: string;
@@ -160,30 +129,31 @@ export interface Flow {
   dataFlowConnections?: DataFlowEdge[];
 }
 
-/** ParsedFlow holds the fully parsed flow with resolved nodes. */
 export interface ParsedFlow extends Flow {
   parsedNodes: AnyNode[];
 }
 
-/** Collect all ServerTool names from a parsed flow. */
-export function collectToolNames(pf: ParsedFlow): string[] {
-  const seen = new Set<string>();
+const SERVER_TOOL = 'ServerTool';
 
-  for (const n of pf.parsedNodes) {
-    let tools: ToolSpec[] | undefined;
-    if (n.componentType === 'AgentNode') {
-      tools = (n as AgentNode).agent?.tools;
-    } else if (n.componentType === 'ToolNode') {
-      const tool = (n as ToolNode).tool;
-      if (tool?.componentType === 'ServerTool') tools = [tool];
-    }
+export function collectToolNames(flow: ParsedFlow): string[] {
+  const names = new Set<string>();
 
-    if (tools) {
-      for (const t of tools) {
-        if (t.componentType === 'ServerTool') seen.add(t.name);
-      }
+  for (const node of flow.parsedNodes) {
+    for (const tool of toolsOf(node)) {
+      if (tool.componentType === SERVER_TOOL) names.add(tool.name);
     }
   }
 
-  return [...seen];
+  return [...names];
+}
+
+function toolsOf(node: AnyNode): ToolSpec[] {
+  if (node.componentType === 'AgentNode') {
+    return (node as AgentNode).agent?.tools ?? [];
+  }
+  if (node.componentType === 'ToolNode') {
+    const tool = (node as ToolNode).tool;
+    return tool ? [tool] : [];
+  }
+  return [];
 }

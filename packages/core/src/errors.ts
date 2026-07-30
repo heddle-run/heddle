@@ -1,5 +1,3 @@
-/** Typed error classes replacing Go-style "prefix: message" error wrapping. */
-
 export class CompileError extends Error {
   constructor(message: string, options?: ErrorOptions) {
     super(message, options);

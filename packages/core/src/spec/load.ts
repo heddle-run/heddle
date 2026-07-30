@@ -10,25 +10,19 @@ import { validateFlow } from './validate.js';
 import type { ParsedFlow } from './types.js';
 import type { PluginRegistry } from '../plugin/registry.js';
 
-function isYaml(path: string): boolean {
-  return path.endsWith('.yaml') || path.endsWith('.yml');
-}
-
-/** Load and validate a flow file (JSON or YAML detected by extension). */
 export function loadFlow(
   flowPath: string,
   registry?: PluginRegistry,
 ): ParsedFlow {
   const data = readFileSync(flowPath, 'utf-8');
-  const pf = isYaml(flowPath)
+  const flow = isYaml(flowPath)
     ? parseFlowYaml(data, registry)
     : parseFlow(data, registry);
 
-  validateFlow(pf);
-  return pf;
+  validateFlow(flow);
+  return flow;
 }
 
-/** Load any agent-spec component (Flow, Agent, Swarm, etc.) via SDK deserialization. */
 export function loadComponent(
   filePath: string,
   registry?: PluginRegistry,
@@ -37,4 +31,8 @@ export function loadComponent(
   return isYaml(filePath)
     ? parseComponentYaml(data, registry)
     : parseComponentJson(data, registry);
+}
+
+function isYaml(path: string): boolean {
+  return path.endsWith('.yaml') || path.endsWith('.yml');
 }

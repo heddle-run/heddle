@@ -1,9 +1,5 @@
 import { Icon } from "@/ds";
 
-/* heddle's lockup, in the design system's wordmark idiom: a Lucide glyph beside
- * the name in Inter Medium with tight tracking. Two deliberate departures from
- * the upstream Wordmark — the name stays lowercase (brand rule, not styling),
- * and `.run` trails it in mono as a quiet domain marker. */
 export default function Wordmark({
   size = "md",
   showDomain = true,

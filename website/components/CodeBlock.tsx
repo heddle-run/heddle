@@ -1,5 +1,3 @@
-/** A spec or terminal fragment. Inset surface, 1px border, mono at 12px —
- *  the design system reserves monospace for exactly this and numeric readouts. */
 export default function CodeBlock({
   code,
   label,

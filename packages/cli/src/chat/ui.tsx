@@ -11,6 +11,13 @@ import type { ChatSession } from './session.js';
 import { addMessage } from './session.js';
 import { getToolIcon, getToolTitle, formatDuration } from './tool-display.js';
 
+const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+const SPINNER_INTERVAL_MS = 80;
+const INDENT = '   ';
+const SEPARATOR = '·';
+const EXIT_COMMANDS = new Set(['/exit', '/quit']);
+const CHAT_HISTORY_KEY = '_chat_history';
+
 interface ToolCallEntry {
   id: string;
   toolName: string;
@@ -28,175 +35,76 @@ interface MessageEntry {
 
 type ChatEntry = MessageEntry | ToolCallEntry;
 
-function isToolCall(entry: ChatEntry): entry is ToolCallEntry {
-  return 'toolName' in entry;
-}
-
-const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-
-function Spinner() {
-  const [frame, setFrame] = useState(0);
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setFrame((prev) => (prev + 1) % SPINNER_FRAMES.length);
-    }, 80);
-    return () => clearInterval(timer);
-  }, []);
-  return <Text color="cyan">{SPINNER_FRAMES[frame]}</Text>;
-}
-
-function ToolCallLine({ entry }: { entry: ToolCallEntry }) {
-  const icon = getToolIcon(entry.toolName);
-  const title = getToolTitle(entry.toolName, entry.toolArgs);
-
-  if (entry.status === 'running') {
-    return (
-      <Box>
-        <Text>{'   '}</Text>
-        <Spinner />
-        <Text>{' '}{title}</Text>
-      </Box>
-    );
-  }
-
-  if (entry.status === 'error') {
-    const elapsed = entry.duration != null ? ` \u00b7 ${formatDuration(entry.duration)}` : '';
-    return (
-      <Box>
-        <Text>{'   '}</Text>
-        <Text color="red">{icon} {title}{elapsed}</Text>
-        {entry.error && <Text color="red">{' '}{entry.error}</Text>}
-      </Box>
-    );
-  }
-
-  const elapsed = entry.duration != null ? ` \u00b7 ${formatDuration(entry.duration)}` : '';
-  return (
-    <Box>
-      <Text dimColor>{'   '}{icon} {title}{elapsed}</Text>
-    </Box>
-  );
-}
-
-interface ChatProps {
+export interface StartChatOptions {
   graph: CompiledGraph;
   opts: RunnerOptions;
   session: ChatSession;
   inputKey: string;
 }
 
-function Chat({ graph, opts, session, inputKey }: ChatProps) {
+export function startChat({
+  graph,
+  opts,
+  session,
+  inputKey,
+}: StartChatOptions): void {
+  const instance = render(
+    <Chat graph={graph} opts={opts} session={session} inputKey={inputKey} />,
+  );
+  instance.waitUntilExit().catch(() => {});
+}
+
+function Chat({ graph, opts, session, inputKey }: StartChatOptions) {
   const { exit } = useApp();
   const [history, setHistory] = useState<ChatEntry[]>([]);
   const [input, setInput] = useState('');
   const [running, setRunning] = useState(false);
-  // The answer as far as it has been streamed. Held apart from `history`
-  // because it is not a message yet: it is a preview that gets thrown away
-  // when the turn ends, replaced either by the node's real output or by
-  // nothing at all if the run failed part way through writing it.
   const [streamed, setStreamed] = useState('');
 
-  useInput((_input, key) => {
-    if (key.ctrl && _input === 'c') {
-      exit();
-    }
+  useInput((typed, key) => {
+    if (key.ctrl && typed === 'c') exit();
   });
 
-  const hasActiveToolCall = running && history.some((e) => isToolCall(e) && e.status === 'running');
+  const hasActiveToolCall =
+    running && history.some((e) => isToolCall(e) && e.status === 'running');
 
   const handleSubmit = useCallback(
     async (value: string) => {
-      const trimmed = value.trim();
-      if (!trimmed || running) return;
+      const message = value.trim();
+      if (!message || running) return;
 
-      if (trimmed === '/exit' || trimmed === '/quit') {
+      if (EXIT_COMMANDS.has(message)) {
         exit();
         return;
       }
 
       setInput('');
       setStreamed('');
-      setHistory((prev) => [...prev, { role: 'user', content: trimmed }]);
+      setHistory((prev) => [...prev, { role: 'user', content: message }]);
 
-      // Capture previous messages before adding the current one
-      const previousMessages = session.messages.map((m) => ({
-        role: m.role,
-        content: m.content,
+      const previousMessages = session.messages.map((entry) => ({
+        role: entry.role,
+        content: entry.content,
       }));
-      addMessage(session, 'user', trimmed);
+      addMessage(session, 'user', message);
       setRunning(true);
 
       try {
-        const inputs: Record<string, unknown> = {
-          [inputKey]: trimmed,
-          _chat_history: previousMessages,
+        opts.eventHandler = (event: Event) => {
+          applyEvent(event, setStreamed, setHistory);
         };
-        opts.eventHandler = (e: Event) => {
-          // Cleared when a node starts, so a flow with two agent nodes previews
-          // the second answer on its own rather than running it onto the end of
-          // the first.
-          if (e.type === 'node_start') {
-            setStreamed('');
-          }
-          if (e.type === 'token_delta' && e.delta) {
-            setStreamed((prev) => prev + e.delta);
-          }
 
-          if (e.type === 'tool_call' && e.toolCallId) {
-            setHistory((prev) => [
-              ...prev,
-              {
-                id: e.toolCallId!,
-                toolName: e.toolName!,
-                toolArgs: e.toolArgs ?? {},
-                status: 'running' as const,
-                startedAt: e.startedAt ?? Date.now(),
-              },
-            ]);
-          }
-
-          if (e.type === 'tool_result' && e.toolCallId) {
-            setHistory((prev) =>
-              prev.map((entry) => {
-                if (isToolCall(entry) && entry.id === e.toolCallId) {
-                  return {
-                    ...entry,
-                    status: e.error ? ('error' as const) : ('completed' as const),
-                    duration: e.duration,
-                    error: e.error?.message,
-                  };
-                }
-                return entry;
-              }),
-            );
-          }
-        };
         const runner = new Runner(graph, opts);
-        const result = await runner.run(undefined, inputs);
+        const result = await runner.run(undefined, {
+          [inputKey]: message,
+          [CHAT_HISTORY_KEY]: previousMessages,
+        });
 
-        const data = result.toData();
-        const response =
-          typeof data.result === 'string'
-            ? data.result
-            : JSON.stringify(data, null, 2);
-
-        setHistory((prev) => [
-          ...prev,
-          { role: 'assistant', content: response },
-        ]);
-        addMessage(session, 'assistant', response);
+        recordAssistantReply(session, setHistory, formatResult(result.toData()));
       } catch (err) {
-        const errMsg = err instanceof Error ? err.message : String(err);
-        setHistory((prev) => [
-          ...prev,
-          { role: 'assistant', content: `Error: ${errMsg}` },
-        ]);
-        addMessage(session, 'assistant', `Error: ${errMsg}`);
+        const detail = err instanceof Error ? err.message : String(err);
+        recordAssistantReply(session, setHistory, `Error: ${detail}`);
       } finally {
-        // Drops the preview on both paths. On success the real output has
-        // just been pushed to `history` and would otherwise be shown twice;
-        // on failure the partial text is not an answer and must not be left
-        // on screen looking like one.
         setStreamed('');
         setRunning(false);
       }
@@ -218,43 +126,27 @@ function Chat({ graph, opts, session, inputKey }: ChatProps) {
         </Text>
       </Box>
 
-      {history.map((entry, i) => (
-        <Box key={i} marginBottom={0}>
+      {history.map((entry, index) => (
+        <Box key={index} marginBottom={0}>
           {isToolCall(entry) ? (
             <ToolCallLine entry={entry} />
-          ) : entry.role === 'user' ? (
-            <Text>
-              <Text bold color="green">
-                {'> '}
-              </Text>
-              {entry.content}
-            </Text>
           ) : (
-            <Text>
-              <Text bold color="blue">
-                {'< '}
-              </Text>
-              {entry.content}
-            </Text>
+            <MessageLine entry={entry} />
           )}
         </Box>
       ))}
 
       {streamed && (
         <Box marginBottom={0}>
-          <Text>
-            <Text bold color="blue">
-              {'< '}
-            </Text>
-            {streamed}
-          </Text>
+          <MessageLine entry={{ role: 'assistant', content: streamed }} />
         </Box>
       )}
 
       {running && !hasActiveToolCall && !streamed && (
         <Box marginTop={0}>
           <Text dimColor>
-            {'   '}<Spinner />{' '}Thinking...
+            {INDENT}
+            <Spinner /> Thinking...
           </Text>
         </Box>
       )}
@@ -274,21 +166,127 @@ function Chat({ graph, opts, session, inputKey }: ChatProps) {
   );
 }
 
-export interface StartChatOptions {
-  graph: CompiledGraph;
-  opts: RunnerOptions;
-  session: ChatSession;
-  inputKey: string;
+function MessageLine({ entry }: { entry: MessageEntry }) {
+  const isUser = entry.role === 'user';
+
+  return (
+    <Text>
+      <Text bold color={isUser ? 'green' : 'blue'}>
+        {isUser ? '> ' : '< '}
+      </Text>
+      {entry.content}
+    </Text>
+  );
 }
 
-export function startChat({
-  graph,
-  opts,
-  session,
-  inputKey,
-}: StartChatOptions): void {
-  const instance = render(
-    <Chat graph={graph} opts={opts} session={session} inputKey={inputKey} />,
+function ToolCallLine({ entry }: { entry: ToolCallEntry }) {
+  const icon = getToolIcon(entry.toolName);
+  const title = getToolTitle(entry.toolName, entry.toolArgs);
+  const elapsed =
+    entry.duration != null ? ` ${SEPARATOR} ${formatDuration(entry.duration)}` : '';
+
+  if (entry.status === 'running') {
+    return (
+      <Box>
+        <Text>{INDENT}</Text>
+        <Spinner />
+        <Text> {title}</Text>
+      </Box>
+    );
+  }
+
+  if (entry.status === 'error') {
+    return (
+      <Box>
+        <Text>{INDENT}</Text>
+        <Text color="red">
+          {icon} {title}
+          {elapsed}
+        </Text>
+        {entry.error && <Text color="red"> {entry.error}</Text>}
+      </Box>
+    );
+  }
+
+  return (
+    <Box>
+      <Text dimColor>
+        {INDENT}
+        {icon} {title}
+        {elapsed}
+      </Text>
+    </Box>
   );
-  instance.waitUntilExit().catch(() => {});
+}
+
+function Spinner() {
+  const [frame, setFrame] = useState(0);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setFrame((prev) => (prev + 1) % SPINNER_FRAMES.length);
+    }, SPINNER_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, []);
+
+  return <Text color="cyan">{SPINNER_FRAMES[frame]}</Text>;
+}
+
+function applyEvent(
+  event: Event,
+  setStreamed: React.Dispatch<React.SetStateAction<string>>,
+  setHistory: React.Dispatch<React.SetStateAction<ChatEntry[]>>,
+): void {
+  if (event.type === 'node_start') {
+    setStreamed('');
+  }
+  if (event.type === 'token_delta' && event.delta) {
+    setStreamed((prev) => prev + event.delta);
+  }
+  if (event.type === 'tool_call' && event.toolCallId) {
+    setHistory((prev) => [...prev, startedToolCall(event)]);
+  }
+  if (event.type === 'tool_result' && event.toolCallId) {
+    setHistory((prev) => prev.map((entry) => finishToolCall(entry, event)));
+  }
+}
+
+function startedToolCall(event: Event): ToolCallEntry {
+  return {
+    id: event.toolCallId as string,
+    toolName: event.toolName as string,
+    toolArgs: event.toolArgs ?? {},
+    status: 'running',
+    startedAt: event.startedAt ?? Date.now(),
+  };
+}
+
+function finishToolCall(entry: ChatEntry, event: Event): ChatEntry {
+  if (!isToolCall(entry) || entry.id !== event.toolCallId) return entry;
+
+  return {
+    ...entry,
+    status: event.error ? 'error' : 'completed',
+    duration: event.duration,
+    error: event.error?.message,
+  };
+}
+
+function recordAssistantReply(
+  session: ChatSession,
+  setHistory: React.Dispatch<React.SetStateAction<ChatEntry[]>>,
+  content: string,
+): void {
+  setHistory((prev) => [...prev, { role: 'assistant', content }]);
+  addMessage(session, 'assistant', content);
+}
+
+function formatResult(data: Record<string, unknown>): string {
+  return typeof data.result === 'string'
+    ? data.result
+    : JSON.stringify(data, null, 2);
+}
+
+function isToolCall(entry: ChatEntry): entry is ToolCallEntry {
+  return 'toolName' in entry;
 }

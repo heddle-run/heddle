@@ -7,12 +7,6 @@ import { resolveConfig, DEFAULT_PLUGIN_CALL_TIMEOUT } from '../config.js';
 import { materializeRequestCode, type MaterializedCode } from '../request-code.js';
 import { buildPlugins } from '../plugins.js';
 
-/**
- * A plugin whose `execute` never settles. The runtime keeps the process alive
- * on its stdin listener, so this is a plugin that is running and answering
- * nothing — the case a per-call budget exists for, and the one a run-length
- * budget cannot tell apart from a plugin doing slow work.
- */
 const HANGING_PLUGIN = {
   name: 'hang',
   manifest: {
@@ -32,15 +26,6 @@ function hangNode(): PluginNode {
   };
 }
 
-/**
- * The whole context a node executor is given, built once and annotated.
- *
- * These tests reach past the runner and call `execute` directly, which is the
- * only way to time one plugin call rather than a whole run. That means
- * assembling the context heddle would have assembled — and assembling it here
- * rather than inline at each call site, which is how three of them came to be
- * missing `getWorkspace` the moment the remote executor started reading it.
- */
 function pluginContext(): PluginContext {
   return {
     signal: undefined,
@@ -59,7 +44,6 @@ afterEach(() => {
   while (cleanups.length > 0) cleanups.pop()!();
 });
 
-/** Materialize the hanging plugin and load it, tearing both down afterwards. */
 function loadHangingPlugin(pluginCallTimeout: number, timeout: number) {
   const workDir = mkdtempSync(join(tmpdir(), 'heddle-plugin-timeout-'));
   cleanups.push(() => rmSync(workDir, { recursive: true, force: true }));
@@ -115,12 +99,6 @@ describe('per-call plugin budget', () => {
   });
 
   it('never exceeds the run budget, however it was configured', async () => {
-    // The default is a tightening for a five-minute run budget and a loosening
-    // for anything shorter, and an operator who lowers --timeout to shed load
-    // is doing the opposite of asking for a longer plugin call. What makes the
-    // clamp necessary rather than tidy: the run's deadline cannot end a pending
-    // plugin call by itself, so whichever bound is larger is the one that
-    // decides how long a concurrency slot stays held.
     const executor = loadHangingPlugin(30_000, 300);
 
     const started = Date.now();

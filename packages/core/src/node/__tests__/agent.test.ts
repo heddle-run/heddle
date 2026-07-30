@@ -1,20 +1,5 @@
-/**
- * The agent turn's tool-calling loop.
- *
- * The arguments a model sends with a tool call used to be read twice: once
- * leniently, to fill in the `tool_call` event, and once strictly, to run the
- * tool. The two disagreed exactly when it mattered — a malformed blob was
- * reported to observers as `{}` and never ran at all. These tests pin the two
- * together, because every hook the roadmap adds to this loop is handed that
- * same parse.
- */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// No credentials: the provider is stubbed, so the loop can be driven through
-// tool rounds without a model. Handed over on `Dependencies` rather than by
-// mocking the module — `generationParams` lives there too, and it reads the
-// spec into the request, which is the thing under test in the cases below that
-// set generation parameters.
 const chatCompletion = vi.fn();
 
 import { AgentExecutor } from '../agent.js';
@@ -37,19 +22,10 @@ const NODE: AgentNode = {
 
 interface Harness {
   events: Event[];
-  /** Every argument object the tool executor was actually handed. */
   received: Record<string, unknown>[];
   run(): Promise<Record<string, unknown>>;
 }
 
-/**
- * Drives one turn in which the model asks for `echo` with `args`, then answers.
- *
- * `args` is `unknown` rather than `string` because the endpoint is what decides
- * what arrives here, not heddle's types: a spec picks its own `llm_config.url`,
- * so a tool call with a missing or non-string `arguments` is a response shape
- * these tests have to be able to express.
- */
 function harness(args: unknown): Harness {
   const events: Event[] = [];
   const received: Record<string, unknown>[] = [];
@@ -107,8 +83,6 @@ describe('tool call arguments', () => {
       toolName: 'echo',
       toolArgs: { v: 41, nested: { deep: true } },
     });
-    // Identity, not deep equality: two separate readings of the same blob would
-    // pass a `toEqual` here and still be free to disagree on the next one.
     expect(toolCall(h.events)?.toolArgs).toBe(h.received[0]);
   });
 
@@ -121,8 +95,6 @@ describe('tool call arguments', () => {
   });
 
   it('announces the call it is about to fail, so the result has a pair', async () => {
-    // An observer that sees a tool_result with no tool_call cannot say which
-    // call failed. The event still fires; it just reports no arguments.
     const h = harness('not json at all');
     await h.run();
 
@@ -141,8 +113,6 @@ describe('tool call arguments', () => {
   });
 
   it('refuses a null arguments blob rather than passing it on as named arguments', async () => {
-    // Passes on its own, and pins which branch is doing the saving: `null`
-    // parses fine, so only the non-object check keeps it away from the tool.
     const h = harness('null');
     await h.run();
 
@@ -151,11 +121,6 @@ describe('tool call arguments', () => {
   });
 
   it('survives an endpoint that omits the arguments field', async () => {
-    // `ToolCall.arguments` is typed `string`, but a spec chooses its own
-    // `llm_config.url` and the field is copied straight out of that server's
-    // JSON. An endpoint that sends a tool call with no `arguments` used to
-    // throw a TypeError out of the agent node, killing the run — no
-    // `tool_call` event, no `tool_result`, nothing for the model to correct.
     const h = harness(undefined);
     const data = await h.run();
 
@@ -166,8 +131,6 @@ describe('tool call arguments', () => {
   });
 
   it('survives an endpoint that sends arguments already decoded', async () => {
-    // The other shape the same lie takes: a server that sends the arguments as
-    // a JSON object instead of a JSON string. Recoverable, not fatal.
     const h = harness({ v: 41 });
     const data = await h.run();
 
@@ -187,8 +150,6 @@ describe('tool call arguments', () => {
     const h = harness('{"v": ');
     const data = await h.run();
 
-    // The turn continues: a bad tool call is a message back to the model, not
-    // the end of the agent.
     expect(data).toMatchObject({ result: 'all done' });
 
     const followUp = chatCompletion.mock.calls.at(-1);

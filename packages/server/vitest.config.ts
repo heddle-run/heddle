@@ -8,8 +8,6 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      // Resolve the workspace dependency to source, so tests do not require a
-      // prior build of @heddle/core.
       '@heddle/core': fileURLToPath(
         new URL('../core/src/index.ts', import.meta.url),
       ),

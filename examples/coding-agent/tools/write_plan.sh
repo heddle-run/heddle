@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Write plan tool: creates or updates a .plan.md file for task tracking.
 set -euo pipefail
 INPUT=$(cat)
 

@@ -1,26 +1,149 @@
-/**
- * A deliberately small JSON Schema subset, used to validate spec components
- * against a plugin's manifest.
- *
- * The in-process API validates with a callback, so a plugin author brings
- * whatever validator they like. A manifest cannot do that — it is data — so
- * heddle has to do the checking, and that means owning a validator.
- *
- * This one is a subset rather than a dependency. `@heddle/core` is on the path
- * of a remote-code-execution surface, and a schema validator is a parser over
- * hostile input; the smaller the better. Supported:
- *
- *   type, required, properties, additionalProperties (boolean only),
- *   enum, const, items, minimum, maximum, minLength, maxLength, pattern
- *
- * Anything else in a schema is ignored rather than rejected, so a schema
- * written against full JSON Schema still validates — just less strictly than
- * its author intended. That is the trade, and it is stated here because a
- * validator that silently under-checks is worth knowing about.
- */
 import { PluginError } from '../errors.js';
 
 type Schema = Record<string, unknown>;
+
+export function checkSchema(
+  value: unknown,
+  schema: Schema,
+  where: string,
+): void {
+  walk(value, schema, where);
+}
+
+function walk(value: unknown, schema: Schema, path: string): void {
+  checkType(value, schema, path);
+  checkEnum(value, schema, path);
+  checkConst(value, schema, path);
+
+  if (typeof value === 'string') checkString(value, schema, path);
+  if (typeof value === 'number') checkNumber(value, schema, path);
+  if (Array.isArray(value)) checkItems(value, schema, path);
+  if (isPlainObject(value)) checkObject(value, schema, path);
+}
+
+function checkType(value: unknown, schema: Schema, path: string): void {
+  if (schema.type === undefined) return;
+
+  const types = Array.isArray(schema.type) ? schema.type : [schema.type];
+  const matches = types.some(
+    (type) => typeof type === 'string' && matchesType(value, type),
+  );
+
+  if (!matches) {
+    fail(path, `expected ${types.join(' or ')}, got ${typeOf(value)}`);
+  }
+}
+
+function checkEnum(value: unknown, schema: Schema, path: string): void {
+  if (!Array.isArray(schema.enum)) return;
+  if (schema.enum.some((option) => deepEqual(option, value))) return;
+
+  const options = schema.enum.map((option) => JSON.stringify(option)).join(', ');
+  fail(path, `must be one of ${options}`);
+}
+
+function checkConst(value: unknown, schema: Schema, path: string): void {
+  if (!('const' in schema)) return;
+  if (deepEqual(schema.const, value)) return;
+
+  fail(path, `must be ${JSON.stringify(schema.const)}`);
+}
+
+function checkString(value: string, schema: Schema, path: string): void {
+  const { minLength, maxLength, pattern } = schema;
+
+  if (typeof minLength === 'number' && value.length < minLength) {
+    fail(path, `must be at least ${minLength} characters`);
+  }
+  if (typeof maxLength === 'number' && value.length > maxLength) {
+    fail(path, `must be at most ${maxLength} characters`);
+  }
+  if (typeof pattern === 'string' && !compile(pattern, path).test(value)) {
+    fail(path, `must match /${pattern}/`);
+  }
+}
+
+function checkNumber(value: number, schema: Schema, path: string): void {
+  const { minimum, maximum } = schema;
+
+  if (typeof minimum === 'number' && value < minimum) {
+    fail(path, `must be >= ${minimum}`);
+  }
+  if (typeof maximum === 'number' && value > maximum) {
+    fail(path, `must be <= ${maximum}`);
+  }
+}
+
+function checkItems(value: unknown[], schema: Schema, path: string): void {
+  if (!isPlainObject(schema.items)) return;
+
+  value.forEach((entry, index) =>
+    walk(entry, schema.items as Schema, `${path}[${index}]`),
+  );
+}
+
+function checkObject(
+  value: Record<string, unknown>,
+  schema: Schema,
+  path: string,
+): void {
+  const properties = isPlainObject(schema.properties) ? schema.properties : {};
+
+  checkRequired(value, schema, path);
+
+  for (const [key, subSchema] of Object.entries(properties)) {
+    if (key in value && isPlainObject(subSchema)) {
+      walk(value[key], subSchema, `${path}.${key}`);
+    }
+  }
+
+  if (schema.additionalProperties === false) {
+    checkNoExtraProperties(value, properties, path);
+  }
+}
+
+function checkRequired(
+  value: Record<string, unknown>,
+  schema: Schema,
+  path: string,
+): void {
+  if (!Array.isArray(schema.required)) return;
+
+  for (const key of schema.required) {
+    if (typeof key === 'string' && !(key in value)) {
+      fail(path, `"${key}" is required`);
+    }
+  }
+}
+
+function checkNoExtraProperties(
+  value: Record<string, unknown>,
+  properties: Record<string, unknown>,
+  path: string,
+): void {
+  const extra = Object.keys(value).filter((key) => !(key in properties));
+  if (extra.length === 0) return;
+
+  const noun = extra.length === 1 ? 'y' : 'ies';
+  fail(path, `unexpected propert${noun} ${extra.join(', ')}`);
+}
+
+function compile(pattern: string, path: string): RegExp {
+  try {
+    return new RegExp(pattern);
+  } catch {
+    fail(path, `schema has an invalid "pattern": ${pattern}`);
+  }
+}
+
+function fail(path: string, message: string): never {
+  throw new PluginError(`${path}: ${message}`);
+}
+
+function matchesType(value: unknown, expected: string): boolean {
+  if (expected === 'number') return typeof value === 'number';
+  return typeOf(value) === expected;
+}
 
 function typeOf(value: unknown): string {
   if (value === null) return 'null';
@@ -29,117 +152,40 @@ function typeOf(value: unknown): string {
   return typeof value;
 }
 
-function matchesType(value: unknown, expected: string): boolean {
-  // JSON Schema's `number` admits integers; `integer` does not admit floats.
-  if (expected === 'number') return typeof value === 'number';
-  return typeOf(value) === expected;
-}
-
-/**
- * Check `value` against `schema`, throwing a PluginError naming the path that
- * failed. `where` prefixes the path so a message names the component.
- */
-export function checkSchema(value: unknown, schema: Schema, where: string): void {
-  walk(value, schema, where);
-}
-
-function walk(value: unknown, schema: Schema, path: string): void {
-  const fail = (message: string): never => {
-    throw new PluginError(`${path}: ${message}`);
-  };
-
-  if (schema.type !== undefined) {
-    const types = Array.isArray(schema.type) ? schema.type : [schema.type];
-    if (!types.some((t) => typeof t === 'string' && matchesType(value, t))) {
-      fail(`expected ${types.join(' or ')}, got ${typeOf(value)}`);
-    }
-  }
-
-  if (Array.isArray(schema.enum) && !schema.enum.some((option) => deepEqual(option, value))) {
-    fail(`must be one of ${schema.enum.map((o) => JSON.stringify(o)).join(', ')}`);
-  }
-
-  if ('const' in schema && !deepEqual(schema.const, value)) {
-    fail(`must be ${JSON.stringify(schema.const)}`);
-  }
-
-  if (typeof value === 'string') {
-    if (typeof schema.minLength === 'number' && value.length < schema.minLength) {
-      fail(`must be at least ${schema.minLength} characters`);
-    }
-    if (typeof schema.maxLength === 'number' && value.length > schema.maxLength) {
-      fail(`must be at most ${schema.maxLength} characters`);
-    }
-    if (typeof schema.pattern === 'string') {
-      let re: RegExp;
-      try {
-        re = new RegExp(schema.pattern);
-      } catch {
-        fail(`schema has an invalid "pattern": ${schema.pattern}`);
-      }
-      if (!re!.test(value)) fail(`must match /${schema.pattern}/`);
-    }
-  }
-
-  if (typeof value === 'number') {
-    if (typeof schema.minimum === 'number' && value < schema.minimum) {
-      fail(`must be >= ${schema.minimum}`);
-    }
-    if (typeof schema.maximum === 'number' && value > schema.maximum) {
-      fail(`must be <= ${schema.maximum}`);
-    }
-  }
-
-  if (Array.isArray(value) && schema.items && typeof schema.items === 'object') {
-    value.forEach((entry, i) => walk(entry, schema.items as Schema, `${path}[${i}]`));
-  }
-
-  if (isPlainObject(value)) {
-    const properties = isPlainObject(schema.properties) ? schema.properties : {};
-
-    if (Array.isArray(schema.required)) {
-      for (const key of schema.required) {
-        if (typeof key === 'string' && !(key in value)) {
-          fail(`"${key}" is required`);
-        }
-      }
-    }
-
-    for (const [key, sub] of Object.entries(properties)) {
-      if (key in value && isPlainObject(sub)) {
-        walk(value[key], sub, `${path}.${key}`);
-      }
-    }
-
-    // Only the boolean form. The schema form would mean recursing into
-    // arbitrary extra properties, which is more surface than this needs.
-    if (schema.additionalProperties === false) {
-      const extra = Object.keys(value).filter((key) => !(key in properties));
-      if (extra.length > 0) {
-        fail(`unexpected propert${extra.length === 1 ? 'y' : 'ies'} ${extra.join(', ')}`);
-      }
-    }
-  }
-}
-
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function deepEqual(a: unknown, b: unknown): boolean {
-  if (a === b) return true;
-  if (typeof a !== typeof b) return false;
-  if (a === null || b === null) return false;
-  if (Array.isArray(a) || Array.isArray(b)) {
-    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
-    return a.every((entry, i) => deepEqual(entry, b[i]));
+function deepEqual(left: unknown, right: unknown): boolean {
+  if (left === right) return true;
+  if (typeof left !== typeof right) return false;
+  if (left === null || right === null) return false;
+
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return arraysEqual(left, right);
   }
-  if (typeof a === 'object') {
-    const left = a as Record<string, unknown>;
-    const right = b as Record<string, unknown>;
-    const keys = Object.keys(left);
-    if (keys.length !== Object.keys(right).length) return false;
-    return keys.every((key) => key in right && deepEqual(left[key], right[key]));
+  if (typeof left === 'object') {
+    return objectsEqual(
+      left as Record<string, unknown>,
+      right as Record<string, unknown>,
+    );
   }
   return false;
+}
+
+function arraysEqual(left: unknown, right: unknown): boolean {
+  if (!Array.isArray(left) || !Array.isArray(right)) return false;
+  if (left.length !== right.length) return false;
+
+  return left.every((entry, index) => deepEqual(entry, right[index]));
+}
+
+function objectsEqual(
+  left: Record<string, unknown>,
+  right: Record<string, unknown>,
+): boolean {
+  const keys = Object.keys(left);
+  if (keys.length !== Object.keys(right).length) return false;
+
+  return keys.every((key) => key in right && deepEqual(left[key], right[key]));
 }

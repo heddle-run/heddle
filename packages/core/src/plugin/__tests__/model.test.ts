@@ -1,19 +1,3 @@
-/**
- * `callModel` — a plugin asking heddle to talk to a model for it.
- *
- * The property under test throughout is *whose decision is whose*. A plugin
- * composes the request; the spec names the model, the endpoint and the
- * credential. Every case below is one way that could come apart: a plugin
- * reaching a model its own component did not name, a component with no config
- * quietly borrowing someone else's, a transform being able to do less than a
- * node for no reason an author could see, or a per-call setting silently
- * erasing the spec's default.
- *
- * The provider is stubbed through `Dependencies.createProvider`, which is the
- * seam between "which config" and "which network call", so replacing it leaves
- * everything this file is about — reading the config, merging the parameters,
- * routing the reverse call — running for real.
- */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -25,8 +9,6 @@ import type { LLMConfig } from '../../spec/types.js';
 const chatCompletion = vi.fn();
 const built: Array<{ config: LLMConfig; options: Record<string, unknown> }> = [];
 
-// Records the config it was asked for, which is the whole question: a plugin
-// must not be able to reach a model its own component did not name.
 const stubProvider = (config: LLMConfig, options: Record<string, unknown>) => {
   built.push({ config, options });
   return { chatCompletion };
@@ -47,7 +29,6 @@ import type { HeddlePlugin, PluginContext, TransformContext } from '../types.js'
 let scratch: string;
 const open: PluginRegistry[] = [];
 
-/** The answer the stub gives unless a case wants a different one. */
 function answers(response: Partial<ChatResponse> = {}): void {
   chatCompletion.mockResolvedValue({
     content: 'the answer',
@@ -56,7 +37,6 @@ function answers(response: Partial<ChatResponse> = {}): void {
   });
 }
 
-/** The single request the stub was given. Fails loudly on none, or more than one. */
 function onlyRequest(): ChatRequest {
   expect(chatCompletion).toHaveBeenCalledTimes(1);
   return chatCompletion.mock.calls[0][1] as ChatRequest;
@@ -74,7 +54,6 @@ afterEach(() => {
   rmSync(scratch, { recursive: true, force: true });
 });
 
-/** An `llm_config` as a spec writes one, for a plugin component to carry. */
 function llmConfig(extra: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     component_type: 'OpenAiConfig',
@@ -84,7 +63,6 @@ function llmConfig(extra: Record<string, unknown> = {}): Record<string, unknown>
   };
 }
 
-/** A flow: start -> the plugin's node -> end. */
 function flowUsing(componentType: string, node: Record<string, unknown> = {}): string {
   return JSON.stringify({
     component_type: 'Flow',
@@ -135,11 +113,6 @@ async function run(
   return state.toData() as Record<string, unknown>;
 }
 
-// ---------------------------------------------------------------------------
-// A node, in process.
-// ---------------------------------------------------------------------------
-
-/** An in-process plugin whose node does whatever the test hands it. */
 function inProcess(
   componentType: string,
   execute: (ctx: PluginContext) => Promise<Record<string, unknown>>,
@@ -173,9 +146,6 @@ describe('a plugin node calling the model', () => {
     const state = await run(registry, flowUsing('JudgeNode', { llm_config: llmConfig() }));
 
     expect(state.verdict).toBe('the answer');
-    // The config the spec wrote, not one heddle chose: a plugin that could
-    // pick its own endpoint would make a submitted document unreadable as a
-    // statement of where a run sends things.
     expect(built).toHaveLength(1);
     expect(built[0].config.modelId).toBe('gpt-test');
     expect(onlyRequest().model).toBe('gpt-test');
@@ -205,9 +175,6 @@ describe('a plugin node calling the model', () => {
 
   it('lets a per-call setting override the spec default, and keeps the rest', async () => {
     const registry = inProcess('JudgeNode', async (ctx) => {
-      // Only temperature. `maxTokens` is the spec's and must survive, which is
-      // what makes this a merge rather than a replacement — a plugin that had
-      // to restate every default in order to change one would get it wrong.
       await ctx.callModel({
         messages: [{ role: 'user', content: 'x' }],
         temperature: 0,
@@ -238,8 +205,6 @@ describe('a plugin node calling the model', () => {
 
     await run(registry, flowUsing('JudgeNode', { llm_config: llmConfig() }));
 
-    // A provider rebuilt per call is a token bucket that never fills and a
-    // cache that never hits — the failure §7.6 names about `LLMExecutor`.
     expect(built).toHaveLength(1);
     expect(chatCompletion).toHaveBeenCalledTimes(2);
   });
@@ -253,8 +218,6 @@ describe('a plugin node calling the model', () => {
     await expect(run(registry, flowUsing('JudgeNode'))).rejects.toThrow(
       /callModel needs an "llm_config" on this component/,
     );
-    // The operator's default endpoint is right there in `deps` and is not
-    // reached for: an unnamed model is an error, never a fallback.
     expect(built).toHaveLength(0);
   });
 
@@ -270,9 +233,6 @@ describe('a plugin node calling the model', () => {
       defaultLlmUrl: 'https://operator.example',
     });
 
-    // Not a separate path to the model: a plugin's call goes through the same
-    // `createProvider` an agent's does, so `applyDefaultCredential`'s rule
-    // about where the operator's key may travel applies to it unchanged.
     expect(built[0].options).toMatchObject({
       allowEnvRefs: false,
       defaultKey: 'operator-key',
@@ -280,14 +240,6 @@ describe('a plugin node calling the model', () => {
     });
   });
 });
-
-// ---------------------------------------------------------------------------
-// A transform, in process.
-//
-// Driven through `TransformChain` directly. What is under test is the context
-// the chain builds, and a whole agent around it would only add a model call
-// that is not the one being asserted on.
-// ---------------------------------------------------------------------------
 
 describe('a plugin transform', () => {
   function chainWith(
@@ -338,10 +290,6 @@ describe('a plugin transform', () => {
   });
 
   it('has runTool as well, which in process it used to lack', async () => {
-    // The asymmetry this closes: out of process a transform's `runTool` worked,
-    // in process `TransformContext` did not offer one at all. A guardrail that
-    // consults a classifier is the ordinary case, and which side of a process
-    // boundary it runs on is not something its author chose.
     let ran: unknown;
     const chain = chainWith(
       async (ctx) => {
@@ -352,17 +300,10 @@ describe('a plugin transform', () => {
 
     await chain.apply('pre', [{ role: 'user', content: 'hi' }], undefined);
 
-    // No registry is configured here, so what is asserted is that the verb
-    // exists and reports heddle's own missing wiring — not `ctx.runTool is not
-    // a function`, which is what this used to be.
     expect(String(ran)).toMatch(/no tool registry configured/);
     expect(String(ran)).toMatch(/LlmGuard "guard"/);
   });
 });
-
-// ---------------------------------------------------------------------------
-// Out of process, where the verb is a frame on a pipe.
-// ---------------------------------------------------------------------------
 
 function writeHelperPlugin(name: string, source: string): string {
   const entry = join(scratch, `${name}.mjs`);
@@ -412,8 +353,6 @@ describe('a plugin calling the model from its own process', () => {
     });
 
     expect(state.verdict).toBe('{"score":0.9}');
-    // The whole ChatResponse crosses, not just its text: a plugin deciding
-    // whether the model stopped or ran out of tokens needs the rest of it.
     expect(state.why).toBe('stop');
     const req = onlyRequest();
     expect(req.model).toBe('gpt-test');
@@ -436,15 +375,11 @@ describe('a plugin calling the model from its own process', () => {
     });
 
     expect(String(state.err)).toMatch(/"callModel" is not granted to this plugin/);
-    // Refused before anything was built, which is the point of checking the
-    // grant in `serve` rather than inside the handler.
     expect(built).toHaveLength(0);
     expect(chatCompletion).not.toHaveBeenCalled();
   });
 
   it('rejects a frame naming no call, because a model belongs to a component', async () => {
-    // Hand-rolled, since the shipped runtime always names the call — this is
-    // the case a plugin written against the raw protocol can reach.
     const entry = join(scratch, 'nocall.mjs');
     writeFileSync(
       entry,
@@ -499,10 +434,6 @@ describe('a plugin calling the model from its own process', () => {
   });
 
   it('does not spend the plugin’s deadline on heddle’s own work', async () => {
-    // The budget is a silence budget. A plugin blocked on `callModel` is not
-    // silent — it is waiting on heddle, which knows exactly how long it has
-    // kept it waiting. Without the hold, this is a plugin killed at 300ms for a
-    // 700ms model call it did not make itself.
     chatCompletion.mockImplementation(
       () =>
         new Promise((resolve) =>
@@ -530,10 +461,6 @@ describe('a plugin calling the model from its own process', () => {
   });
 
   it('still kills a plugin that goes quiet after heddle has answered it', async () => {
-    // The other half of the same rule: the hold is released when the reverse
-    // call ends, so a plugin that stops answering afterwards is timed out
-    // exactly as it would have been. A hold that leaked would make the per-call
-    // budget unenforceable for any plugin that ever called the model.
     const entry = writeHelperPlugin(
       'stalls',
       `serve({ Stalls: { async execute(input, ctx) {

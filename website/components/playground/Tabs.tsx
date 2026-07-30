@@ -3,14 +3,9 @@
 export interface Tab {
   id: string;
   label: string;
-  /** Shown after the label, e.g. a count of open editors. */
   badge?: string | number;
 }
 
-/**
- * Section switcher. The design system marks a selected state with a 2px accent
- * edge and a lift in text weight — never a full inversion.
- */
 export default function Tabs({
   tabs,
   active,

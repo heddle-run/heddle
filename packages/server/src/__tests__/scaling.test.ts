@@ -5,13 +5,6 @@ import { join } from 'node:path';
 import { startServer } from '../server.js';
 import type { StartedServer } from '../server.js';
 
-/**
- * A tools directory holding one script that sleeps, and the flow that calls it.
- *
- * The drain tests need a run that is genuinely still executing when SIGTERM
- * lands. A start -> end flow finishes before the drain begins, which makes the
- * fast path — nothing in flight, close at once — the only thing under test.
- */
 function slowToolFixture(seconds: number): {
   toolsDir: string;
   flow: Record<string, unknown>;
@@ -68,7 +61,6 @@ function slowToolFixture(seconds: number): {
   };
 }
 
-/** Open a streaming run and wait until it is actually counted in flight. */
 async function startHeldRun(base: string, flow: Record<string, unknown>): Promise<Response> {
   const res = await fetch(`${base}/v1/runs?stream=true`, {
     method: 'POST',
@@ -85,7 +77,6 @@ async function startHeldRun(base: string, flow: Record<string, unknown>): Promis
   throw new Error('run never registered as in flight');
 }
 
-/** A minimal start -> end flow, as an Agent Spec JSON object. */
 function simpleFlow(): Record<string, unknown> {
   return {
     component_type: 'Flow',
@@ -124,7 +115,6 @@ async function withServer(
   }
 }
 
-/** Parse a Prometheus text exposition into a name -> value map. */
 function parseMetrics(text: string): Record<string, number> {
   const out: Record<string, number> = {};
   for (const line of text.split('\n')) {
@@ -165,15 +155,12 @@ describe('GET /metrics', () => {
 
       const m = parseMetrics(await (await fetch(`${base}/metrics`)).text());
       expect(m.heddle_runs_accepted_total).toBe(1);
-      // The run finished, so its slot is back.
       expect(m.heddle_active_runs).toBe(0);
       expect(m.heddle_run_saturation).toBe(0);
     });
   });
 
   it('counts runs rejected at the ceiling, so 429s are visible to a scaler', async () => {
-    // A ceiling of zero refuses everything, which is the rejection path without
-    // needing to hold a real run open.
     await withServer({ maxConcurrentRuns: 0 }, async (_started, base) => {
       const res = await fetch(`${base}/v1/runs`, {
         method: 'POST',
@@ -197,13 +184,9 @@ describe('readiness', () => {
       expect(ready.status).toBe(200);
       expect(await ready.json()).toMatchObject({ status: 'ok' });
 
-      // Hold a run open so the drain is still in progress — and the listener
-      // still answering — when readiness is probed.
       const held = await startHeldRun(base, flow);
       const draining = started.drain();
 
-      // Must be an actual 503, not a refused connection: the listener stays up
-      // through the drain precisely so the state is observable to a probe.
       const probe = await fetch(`${base}/readyz`);
       expect(probe.status).toBe(503);
       expect(await probe.json()).toMatchObject({ status: 'draining' });
@@ -214,8 +197,6 @@ describe('readiness', () => {
   }, 30_000);
 
   it('stays ready at the concurrency ceiling — saturation is not unhealthiness', async () => {
-    // A pod doing exactly as much work as it was configured for must stay in
-    // rotation; reporting it unready would evict a healthy pod under load.
     await withServer({ maxConcurrentRuns: 0 }, async (_started, base) => {
       const refused = await fetch(`${base}/v1/runs`, {
         method: 'POST',
@@ -240,9 +221,6 @@ describe('readiness', () => {
 
 describe('graceful drain', () => {
   it('lets an in-flight streaming run finish instead of cutting it', async () => {
-    // The regression this guards: the old shutdown called closeAllConnections
-    // immediately, so every rolling deploy and scale-in severed live SSE
-    // streams mid-run.
     const started = await startServer({
       host: '127.0.0.1',
       port: 0,
@@ -259,7 +237,6 @@ describe('graceful drain', () => {
       });
       expect(res.status).toBe(200);
 
-      // Drain concurrently with reading the body: the stream must survive it.
       const draining = started.drain();
       const text = await res.text();
       await draining;
@@ -276,13 +253,9 @@ describe('graceful drain', () => {
   it('refuses new runs with 503 once draining has begun', async () => {
     const { toolsDir, flow } = slowToolFixture(3);
     await withServer({ toolsDir, drainTimeout: 20_000 }, async (started, base) => {
-      // Hold the drain window open with a live run, so the late request below
-      // lands while the server is draining rather than after it has closed.
       const held = await startHeldRun(base, flow);
       const draining = started.drain();
 
-      // A run that arrives during the drain window is refused with a status it
-      // can act on, rather than a reset connection.
       const late = await fetch(`${base}/v1/runs`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -307,9 +280,7 @@ describe('graceful drain', () => {
       await draining;
       const elapsedMs = Number(process.hrtime.bigint() - before) / 1e6;
 
-      // The whole run completed...
       expect(text).toContain('event: flow_complete');
-      // ...and the drain waited for it, without running out the 30s deadline.
       expect(elapsedMs).toBeGreaterThan(1_000);
       expect(elapsedMs).toBeLessThan(20_000);
     });
@@ -326,7 +297,6 @@ describe('graceful drain', () => {
     await started.drain();
     const elapsedMs = Number(process.hrtime.bigint() - before) / 1e6;
 
-    // It must wait on live runs, not on the deadline.
     expect(elapsedMs).toBeLessThan(2_000);
     await started.close();
   });

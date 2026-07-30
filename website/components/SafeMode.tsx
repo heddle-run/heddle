@@ -3,13 +3,6 @@ import SectionLabel from "./SectionLabel";
 import CodeBlock from "./CodeBlock";
 import { safeMode } from "@/lib/constants";
 
-/**
- * Safe mode.
- *
- * The one section on this page making a security claim, so it states mechanisms
- * rather than adjectives — every line is traceable to packages/core/src/sandbox.
- * Keep it that way: no "enterprise-grade", no "bank-level", nothing unfalsifiable.
- */
 export default function SafeMode() {
   return (
     <section id="safe" className="hd-section" style={{ scrollMarginTop: 80 }}>
@@ -135,8 +128,6 @@ export default function SafeMode() {
           </div>
         </div>
 
-        {/* The honest footnote. A sandbox that cannot start is worth saying out
-            loud, because the failure is loud by design. */}
         <BoxedFrame
           corners="diagonal"
           edges="none"

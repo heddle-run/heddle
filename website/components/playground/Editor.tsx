@@ -1,13 +1,5 @@
 "use client";
 
-/**
- * A monospace editing surface.
- *
- * Still a plain textarea rather than a code editor component: the design system
- * reserves monospace for exactly this, and its own code snippets are set as
- * unhighlighted mono on an inset surface. Matching that is more consistent than
- * importing a syntax theme built from hues this palette does not use.
- */
 export default function Editor({
   value,
   onChange,
@@ -23,13 +15,6 @@ export default function Editor({
   placeholder?: string;
   rows?: number;
   spellCheck?: boolean;
-  /**
-   * Take whatever height the pane has, growing and shrinking with it.
-   *
-   * `rows` stays the flex basis rather than a floor, so the same editor still
-   * has a sensible height where the pane is sized by its contents instead —
-   * the stacked layout on a narrow screen.
-   */
   fill?: boolean;
 }) {
   return (

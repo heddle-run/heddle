@@ -90,14 +90,6 @@ describe('parseComponent', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// A standalone Agent is not a Flow, and used to be the path where a plugin
-// transform came back as the stand-in heddle swapped in for the SDK's benefit —
-// a MessageSummarizationTransform pointing at an Ollama config nobody
-// configured. `heddle validate <agent> --plugin` printed that, and any path
-// that ran a standalone Agent would have run none of its real transforms.
-// ---------------------------------------------------------------------------
-
 const REDACTOR = definePlugin({
   name: 'test-redactor',
   version: '1.0.0',
@@ -136,7 +128,6 @@ const AGENT_DOC = {
 
 const AGENT_JSON = JSON.stringify(AGENT_DOC);
 
-/** The one thing every entry point below has to get right. */
 function expectRealTransform(agent: Agent): void {
   expect(agent.transforms).toMatchObject([
     { componentType: 'Redactor', name: 'scrubber' },
@@ -190,8 +181,6 @@ describe('a standalone Agent carrying a plugin transform', () => {
     };
 
     expect(transform.config?.patterns).toEqual(['secret']);
-    // The stand-in carried a synthesized OllamaConfig. Nothing downstream
-    // should be able to see it, let alone dial it.
     expect(transform.llm).toBeUndefined();
   });
 

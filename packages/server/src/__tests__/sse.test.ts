@@ -1,29 +1,9 @@
-/**
- * What survives the trip from a runner event to a client.
- *
- * `serializeEvent` copies a fixed list of fields, so a field added to `Event`
- * and forgotten here is dropped with no type error and no warning — the engine
- * emits it, the browser never sees it, and nothing anywhere says so. That is
- * not hypothetical: `message` was missing, which meant every `warning` frame
- * reached clients empty. These tests are the list.
- */
 import { describe, it, expect } from 'vitest';
 import type { ServerResponse } from 'node:http';
 import type { Event } from '@heddle/core';
 import { State } from '@heddle/core';
 import { SseStream, serializeEvent } from '../sse.js';
 
-/**
- * Every field an `Event` can carry, populated.
- *
- * `Required<Event>` rather than `Event`, because the loop below walks
- * `Object.keys(FULL)` — so a field missing from this literal is a field the test
- * does not check, and the test would keep passing while the guarantee it is named
- * for quietly stopped holding. That is not hypothetical either: `attempt` was
- * added to `Event` in Phase 6 and never added here, so for two phases this
- * enumerated fifteen of sixteen fields and reported success. Now omitting one is
- * a compile error.
- */
 const FULL: Required<Event> = {
   type: 'tool_result',
   message: 'a warning worth reading',
@@ -43,7 +23,6 @@ const FULL: Required<Event> = {
   duration: 2,
 };
 
-/** Collects the frames an SseStream writes, parsed back out of the wire form. */
 function collector(): {
   res: ServerResponse;
   frames: () => { event: string; data: unknown }[];
@@ -86,8 +65,6 @@ describe('serializeEvent', () => {
     const delta: Event = { type: 'token_delta', nodeName: 'assistant', delta: 'the ' };
     stream.send(delta.type, serializeEvent(delta));
 
-    // Trailing whitespace matters: deltas are concatenated by whoever receives
-    // them, and a transport that trims turns "the answer" into "theanswer".
     expect(c.frames()).toEqual([
       {
         event: 'token_delta',
@@ -128,9 +105,6 @@ describe('plugin events on the wire', () => {
     };
     stream.send(event.type, serializeEvent(event));
 
-    // The type is the SSE event name, which is what a browser subscribes to —
-    // so the namespacing has to survive the transport intact, or two plugins'
-    // events arrive indistinguishable.
     expect(c.frames()).toEqual([
       {
         event: 'plugin:LlmJudge:progress',
@@ -162,9 +136,6 @@ describe('plugin events on the wire', () => {
     const stream = new SseStream(c.res);
     stream.open();
 
-    // `pluginEventType` refuses this name at construction, so nothing in heddle
-    // produces it. This is the last line before the wire: a name that got here
-    // anyway must not be able to append a `flow_complete` a client believes.
     stream.send('plugin:X:a\n\nevent: flow_complete\ndata: {}', { type: 'x' });
 
     expect(c.frames()).toHaveLength(1);

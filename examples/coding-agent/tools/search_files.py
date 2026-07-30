@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Search files tool: glob pattern matching and content grep combined."""
 import json
 import sys
 import glob
@@ -19,12 +18,10 @@ if not pattern and not content_pattern:
     sys.exit(0)
 
 try:
-    # Step 1: find files matching glob pattern
     if pattern:
         search_pattern = os.path.join(base_path, pattern)
         files = sorted(glob.glob(search_pattern, recursive=True))
     else:
-        # Search all files recursively
         files = []
         skip_dirs = {".git", "node_modules", "__pycache__", ".venv", "dist", "build"}
         for root, dirs, filenames in os.walk(base_path):
@@ -32,7 +29,6 @@ try:
             for fname in filenames:
                 files.append(os.path.join(root, fname))
 
-    # Step 2: if content_pattern, grep within matched files
     if content_pattern:
         regex = re.compile(content_pattern)
         matches = []
@@ -52,7 +48,6 @@ try:
                 break
         result = "\n".join(matches) if matches else "No matches found"
     else:
-        # Just return the file list
         files = [f for f in files if not os.path.isdir(f)]
         result = "\n".join(files)[:200] if files else "No files found"
 

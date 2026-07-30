@@ -1,11 +1,3 @@
-/**
- * The playground surface: CORS, request-submitted tools and plugins, the
- * capabilities probe, and the concurrency ceiling.
- *
- * These exercise a server started with `allowRequestCode`, which is a
- * configuration nothing else in the test suite uses and nothing should run
- * outside a disposable container.
- */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { existsSync, mkdtempSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -15,7 +7,6 @@ import { createServer } from '../server.js';
 
 const ORIGIN = 'https://heddle.run';
 
-/** A flow whose single working node runs a tool named `echo_upper`. */
 function toolFlow(toolName = 'echo_upper'): Record<string, unknown> {
   return {
     component_type: 'Flow',
@@ -63,7 +54,6 @@ function toolFlow(toolName = 'echo_upper'): Record<string, unknown> {
   };
 }
 
-/** A flow with one node of a custom type that only a plugin can provide. */
 function pluginFlow(): Record<string, unknown> {
   return {
     component_type: 'Flow',
@@ -107,18 +97,11 @@ function pluginFlow(): Record<string, unknown> {
   };
 }
 
-/** A tool script: reads JSON on stdin, writes JSON on stdout. */
 const ECHO_UPPER = `
 read -r line
 printf '%s' "$line" | tr '[:lower:]' '[:upper:]'
 `;
 
-/**
- * A submitted plugin is two things: a manifest declaring what it provides, and
- * handler source calling `serve()`. The runtime that defines `serve` is
- * prepended by the server, so the source never imports anything — it runs from
- * a temp directory with no node_modules beside it.
- */
 const SHOUT_MANIFEST = {
   name: 'test-plugin',
   version: '1.0.0',
@@ -192,8 +175,6 @@ describe('CORS', () => {
     expect(res.headers.get('access-control-allow-origin')).toBeNull();
   });
 
-  // A configured origin must match exactly: a prefix check would admit
-  // heddle.run.attacker.example, which is a different site.
   it('does not admit an origin that merely starts with a configured one', async () => {
     const res = await fetch(`${base}/healthz`, {
       headers: { origin: `${ORIGIN}.attacker.example` },
@@ -249,8 +230,6 @@ describe('request-submitted tools', () => {
       tools: [{ name: 'echo_upper', source: ECHO_UPPER, interpreter: 'sh' }],
     });
     expect(res.status).toBe(200);
-    // The runner accumulates state rather than replacing it, so the start
-    // node's `text` is still there alongside the tool's uppercased output.
     expect(await res.json()).toMatchObject({
       flow: 'tool-flow',
       state: { TEXT: 'HELLO' },
@@ -327,10 +306,6 @@ describe('request-submitted plugins', () => {
     expect(res.status).toBe(400);
   });
 
-  // The in-process shape is not merely unsupported, it is the thing this
-  // endpoint exists to refuse: importing it would run the caller's code inside
-  // the server. The message has to say so, since the author's plugin is
-  // otherwise perfectly valid heddle.
   it('refuses a plugin written against the in-process API', async () => {
     const res = await post('/v1/runs', {
       flow: pluginFlow(),
@@ -360,9 +335,6 @@ describe('request-submitted plugins', () => {
       inputs: { text: 'x' },
       plugins: [{ name: 'broken', manifest: SHOUT_MANIFEST, source: 'this is not javascript {{{' }],
     });
-    // The process is started lazily, so this surfaces when the node runs
-    // rather than at load. It is still the caller's fault, and PluginError
-    // maps to 400.
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: { type: string } };
     expect(body.error.type).toBe('PluginError');
@@ -390,16 +362,6 @@ describe('request-submitted plugins', () => {
     }
   });
 
-  // -------------------------------------------------------------------------
-  // Capabilities, over HTTP.
-  //
-  // The server grants `runTool` and nothing else, written out rather than
-  // derived, so that a capability heddle learns later is not handed to callers'
-  // plugins by the act of upgrading. A submitted plugin still gets only what its
-  // own manifest declares, which is the half these three cover.
-  // -------------------------------------------------------------------------
-
-  /** Calls a submitted tool from inside the plugin, reporting either outcome. */
   const toolCaller = (capabilities?: string[]) => ({
     name: 'caller',
     manifest: { ...SHOUT_MANIFEST, ...(capabilities ? { capabilities } : {}) },
@@ -428,16 +390,12 @@ describe('request-submitted plugins', () => {
     });
 
     expect(res.status).toBe(200);
-    // The tool uppercased the whole JSON line it was handed, keys included,
-    // which is what makes `TEXT` rather than `text` the proof it really ran.
     expect(await res.json()).toMatchObject({
       state: { text: '{"TEXT":"HELLO"}' },
     });
   });
 
   it('refuses a plugin the tools it never declared it would use', async () => {
-    // Same plugin, same tool, same server policy. The only difference is the
-    // manifest, so this is what says the declaration carries the permission.
     const res = await post('/v1/runs', {
       flow: pluginFlow(),
       inputs: { text: 'hello' },
@@ -453,12 +411,6 @@ describe('request-submitted plugins', () => {
   });
 
   it('rejects a manifest asking for a capability heddle does not serve', async () => {
-    // At load, so the caller is told before anything runs, and by name — a
-    // misspelling is the likeliest way to end up here.
-    //
-    // The name has to be one heddle genuinely does not serve, so it moves as
-    // the roadmap lands: this was `callModel` until Phase 4 made it real, and
-    // `getState` is the next proposal on the same list.
     const res = await post('/v1/runs', {
       flow: pluginFlow(),
       inputs: { text: 'hello' },
@@ -478,12 +430,7 @@ describe('request-submitted plugins', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// The property that lets one engine serve many callers.
-// ---------------------------------------------------------------------------
-
 describe('isolation between runs', () => {
-  /** Plants whatever it is given on a global, and reports everything planted. */
   const planter = (name: string) => ({
     name,
     manifest: { ...SHOUT_MANIFEST, components: [{ componentType: 'ShoutNode' }] },
@@ -500,7 +447,6 @@ describe('isolation between runs', () => {
     `,
   });
 
-  // The attack that succeeds against the in-process API, over HTTP.
   it('does not carry one caller state into the next request', async () => {
     const first = await post('/v1/runs', {
       flow: pluginFlow(),
@@ -518,7 +464,6 @@ describe('isolation between runs', () => {
       plugins: [planter('b')],
     });
     expect(second.status).toBe(200);
-    // A shared process would answer ["caller-one-secret"] here.
     expect((await second.json()) as Record<string, unknown>).toMatchObject({
       state: { text: '[]' },
     });
@@ -556,7 +501,6 @@ describe('isolation between runs', () => {
     });
     expect(res.status).toBe(400);
 
-    // The server is still answering, which is the half that matters.
     const after = await post('/v1/runs', {
       flow: pluginFlow(),
       inputs: { text: 'still here' },
@@ -643,9 +587,6 @@ describe('submitted code is validated before it reaches disk', () => {
 });
 
 describe('malformed flows', () => {
-  // The deserializer crashes on a flow missing a section it assumes exists,
-  // and the raw "Cannot read properties of undefined" is useless to whoever
-  // wrote the document.
   it('explains a flow that is missing its sections', async () => {
     const res = await post('/v1/validate', {
       flow: 'component_type: Flow\nname: broken\n',
@@ -701,8 +642,6 @@ describe('a server without --allow-request-code', () => {
     });
   }
 
-  // Refused rather than ignored: a caller whose plugin was silently dropped
-  // would see an unknown-component-type failure and no reason for it.
   it('refuses submitted tools with an explanation', async () => {
     const res = await plainPost('/v1/runs', {
       flow: toolFlow(),
@@ -734,8 +673,6 @@ describe('a server without --allow-request-code', () => {
 
 describe('concurrency ceiling', () => {
   it('refuses runs beyond the limit with a 429', async () => {
-    // Three at once against a limit of two. The tool sleeps so the first
-    // requests are still holding their slots when the third arrives.
     const slow = {
       flow: toolFlow(),
       inputs: { text: 'hello' },
@@ -792,7 +729,6 @@ describe('streaming with submitted code', () => {
 });
 
 describe('specs cannot read the server environment', () => {
-  /** A flow whose agent's llm_config is chosen by the caller. */
   function agentFlowWith(llmConfig: Record<string, unknown>): Record<string, unknown> {
     return {
       component_type: 'Flow',
@@ -832,8 +768,6 @@ describe('specs cannot read the server environment', () => {
     };
   }
 
-  // The reference is not restricted to model keys: any variable the process
-  // holds can be named, and the flow chooses the URL it is sent to.
   it('refuses to dereference an environment variable', async () => {
     process.env.HEDDLE_UNRELATED_SECRET = 'aws-style-credential';
     try {
@@ -852,7 +786,6 @@ describe('specs cannot read the server environment', () => {
       expect(res.status).toBe(500);
       const body = (await res.json()) as { error: { message: string } };
       expect(body.error.message).toContain('does not resolve');
-      // The value must not appear in the reply, even in an error.
       expect(JSON.stringify(body)).not.toContain('aws-style-credential');
     } finally {
       delete process.env.HEDDLE_UNRELATED_SECRET;
@@ -886,10 +819,6 @@ describe('specs cannot read the server environment', () => {
       });
       const present = (await forPresent.json()) as { error: { message: string } };
 
-      // Same shape either way, so the environment cannot be enumerated by
-      // comparing responses. replaceAll, not replace: the message names the
-      // variable more than once, and normalizing only the first occurrence
-      // would compare two strings that still differ by name.
       expect(present.error.message.replaceAll('HEDDLE_PRESENT', 'X')).toBe(
         absent.error.message.replaceAll('DEFINITELY_NOT_SET_ANYWHERE', 'X'),
       );
@@ -899,8 +828,6 @@ describe('specs cannot read the server environment', () => {
   });
 
   it('still accepts a credential written into the spec', async () => {
-    // Reaches the provider and fails on connection, not on the credential —
-    // which is the point: the caller supplies their own key.
     const res = await post('/v1/runs', {
       flow: agentFlowWith({
         component_type: 'OpenAiConfig',
@@ -925,9 +852,6 @@ describe('the operator credential is bound to the operator endpoint', () => {
   beforeAll(async () => {
     withKey = createServer({
       allowRequestCode: true,
-      // Points at a closed port: these tests assert which credential and URL
-      // the engine *chooses*, and a chosen endpoint that answers would make
-      // them depend on a live provider.
       defaultLlmKey: 'operator-secret-key',
       defaultLlmUrl: 'http://127.0.0.1:9/operator',
       log: () => {},
@@ -957,9 +881,6 @@ describe('the operator credential is bound to the operator endpoint', () => {
           component_type: 'AgentNode', id: 'a', name: 'a',
           agent: {
             component_type: 'Agent', id: 'ia', name: 'ia', system_prompt: 'x',
-            // OpenAiConfig has no `url` field — agentspec drops it. Only
-          // OpenAiCompatibleConfig can name an endpoint, so that is the type a
-          // caller choosing one has to use, and the type the rule guards.
           llm_config: {
             component_type: llm.url ? 'OpenAiCompatibleConfig' : 'OpenAiConfig',
             id: 'l', name: 'l', model_id: 'm', ...llm,
@@ -978,8 +899,6 @@ describe('the operator credential is bound to the operator endpoint', () => {
       body: JSON.stringify(body),
     });
 
-  // The hole this rule exists to close: a caller naming a destination and
-  // letting the server attach its credential to the request.
   it('refuses a spec that chooses a url but supplies no key', async () => {
     const res = await post({
       flow: agentFlow({ url: 'http://127.0.0.1:9/attacker' }),
@@ -997,22 +916,17 @@ describe('the operator credential is bound to the operator endpoint', () => {
       inputs: { query: 'hi' },
     });
     const body = (await res.json()) as { error: { message: string } };
-    // Reaches the provider and fails on the connection, not on the rule.
     expect(body.error.message).not.toMatch(/has to supply the key/);
   });
 
   it('supplies the credential to a spec that names neither', async () => {
     const res = await post({ flow: agentFlow({}), inputs: { query: 'hi' } });
     const body = (await res.json()) as { error: { message: string } };
-    // Got as far as dialling the operator endpoint, which is what "supplied"
-    // looks like from outside.
     expect(body.error.type ?? '').toBe('LLMError');
     expect(JSON.stringify(body)).not.toContain('operator-secret-key');
   });
 
   it('a server with no default credential is unchanged', async () => {
-    // The main suite's server has none configured; a spec with a url and no
-    // key is its caller's problem, not a refusal.
     const res = await post({
       flow: agentFlow({ url: 'http://127.0.0.1:9/x', api_key: 'k' }),
       inputs: { query: 'hi' },

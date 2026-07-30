@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Edit file tool: targeted string replacement in files."""
 import json
 import sys
 
@@ -23,7 +22,6 @@ except Exception as e:
     sys.exit(0)
 
 if not old_string:
-    # Append mode
     content = content + new_string
     with open(path, "w") as f:
         f.write(content)

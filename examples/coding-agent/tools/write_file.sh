@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Write file tool: creates or overwrites a file with the given content.
 set -euo pipefail
 INPUT=$(cat)
 

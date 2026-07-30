@@ -10,14 +10,6 @@ interface Entry {
   interpreter?: string;
 }
 
-/**
- * The editable list behind the Tools and Plugins tabs.
- *
- * Both are a name plus a body; tools additionally choose an interpreter, which
- * the engine turns into a shebang. Names are constrained here to the same
- * pattern the engine enforces, so a name that cannot work is refused while it
- * is being typed rather than on submit.
- */
 export default function CodeList({
   entries,
   onChange,
@@ -33,11 +25,6 @@ export default function CodeList({
   limit: number;
   note: string;
   emptySource: string;
-  /**
-   * Starting manifest for a new plugin. Required for plugins: the engine
-   * refuses one without a manifest, since a plugin's component types have to be
-   * known while a flow is parsed rather than by running its code.
-   */
   emptyManifest?: unknown;
 }) {
   const update = (index: number, patch: Partial<Entry>) => {

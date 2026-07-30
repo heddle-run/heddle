@@ -1,20 +1,3 @@
-/**
- * A plugin's report, from the plugin's process to a client's socket.
- *
- * Every piece of this path already has a test and none of them cross the join.
- * `reporting.test.ts` proves plugin -> `PluginHost.serve` -> `pluginReporter` ->
- * `deps.eventHandler`, and stops at a collector array. `sse.test.ts` proves
- * `serializeEvent` + `SseStream.send`, and starts from an `Event` literal
- * somebody typed. What neither touches is `buildDependencies` putting the SSE
- * sink on `deps.eventHandler` in `runs.ts`, which is the only reason a plugin
- * node's event reaches a client at all — drop it and `pluginReporter` calls
- * `handler?.(...)`, every plugin event is silently discarded, and both suites
- * above still pass.
- *
- * The payloads are asserted, not just the frame names. That makes this cover
- * `serializeEvent`'s field list on the same path, so a field dropped there
- * fails here too.
- */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -22,7 +5,6 @@ import { join } from 'node:path';
 import type { Server } from 'node:http';
 import { createServer } from '../server.js';
 
-/** start -> the plugin's node -> end. */
 const FLOW = {
   component_type: 'Flow',
   name: 'reporting-flow',
@@ -89,7 +71,6 @@ interface Frame {
   data: Record<string, unknown>;
 }
 
-/** Split an SSE body into frames, keeping the event name beside its payload. */
 function frames(body: string): Frame[] {
   const out: Frame[] = [];
   for (const block of body.split('\n\n')) {
@@ -111,9 +92,6 @@ let workDir: string;
 
 beforeAll(async () => {
   workDir = mkdtempSync(join(tmpdir(), 'heddle-plugin-streaming-'));
-  // Both are required to reach this path at all: without the flag
-  // `rejectRequestCode` refuses the body, and a submitted plugin has nowhere to
-  // be written without a work directory.
   server = createServer({ allowRequestCode: true, workDir, log: () => {} });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();
@@ -141,12 +119,8 @@ describe('what a submitted plugin reports reaches the caller stream', () => {
     expect(res.status).toBe(200);
     const all = frames(await res.text());
 
-    // The run really finished, so an absent plugin frame below is a dropped
-    // report rather than a run that never got that far.
     expect(all.map((f) => f.name)).toContain('flow_complete');
 
-    // Namespaced by heddle from the component type it dispatched, which is why
-    // the client can attribute it without trusting the plugin.
     expect(all.find((f) => f.name === 'plugin:ProgressNode:progress')?.data).toMatchObject({
       nodeName: 'p',
       nodeType: 'ProgressNode',

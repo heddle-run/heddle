@@ -3,55 +3,50 @@ import { State } from '../state/state.js';
 import type { NodeExecutor, Dependencies } from './types.js';
 import { RunError } from '../errors.js';
 
-const DEFAULT_BRANCH = 'DEFAULT_BRANCH';
+const MAPPING_KEY_INPUT = 'branching_mapping_key';
+const DEFAULT_BRANCH_KEY = 'DEFAULT_BRANCH';
+const FALLBACK_BRANCH = 'default';
 
-/** BranchingExecutor executes a BranchingNode by routing based on a mapping. */
 export class BranchingExecutor implements NodeExecutor {
-  private node: BranchingNode;
-  private _branch = '';
+  private readonly node: BranchingNode;
+  private selectedBranch = '';
 
   constructor(node: BranchingNode, _deps: Dependencies) {
     this.node = node;
   }
 
   branch(): string {
-    return this._branch;
+    return this.selectedBranch;
   }
 
   async execute(
     _signal: AbortSignal | undefined,
     input: State,
   ): Promise<State> {
-    let keyValue = input.getString('branching_mapping_key');
-
-    if (keyValue === undefined) {
-      for (const key of input.keys()) {
-        const v = input.getString(key);
-        if (v !== undefined) {
-          keyValue = v;
-          break;
-        }
-      }
-      if (keyValue === undefined) {
-        throw new RunError(
-          `BranchingNode "${this.node.name}": no branching_mapping_key in input`,
-        );
-      }
-    }
-
-    if (keyValue in this.node.mapping) {
-      this._branch = this.node.mapping[keyValue];
-    } else if (DEFAULT_BRANCH in this.node.mapping) {
-      this._branch = this.node.mapping[DEFAULT_BRANCH];
-    } else {
-      this._branch = 'default';
-    }
-
+    this.selectedBranch = this.branchFor(this.readMappingKey(input));
     return input.clone();
+  }
+
+  private readMappingKey(input: State): string {
+    const key = input.getString(MAPPING_KEY_INPUT) ?? firstStringValue(input);
+    if (key === undefined) {
+      throw new RunError(
+        `BranchingNode "${this.node.name}": no ${MAPPING_KEY_INPUT} in input`,
+      );
+    }
+    return key;
+  }
+
+  private branchFor(key: string): string {
+    const { mapping } = this.node;
+    if (Object.hasOwn(mapping, key)) return mapping[key];
+    if (Object.hasOwn(mapping, DEFAULT_BRANCH_KEY)) {
+      return mapping[DEFAULT_BRANCH_KEY];
+    }
+    return FALLBACK_BRANCH;
   }
 }
 
-/** PassthroughExecutor passes inputs through unchanged (used for Start and End nodes). */
 export class PassthroughExecutor implements NodeExecutor {
   branch(): string {
     return '';
@@ -63,4 +58,12 @@ export class PassthroughExecutor implements NodeExecutor {
   ): Promise<State> {
     return input.clone();
   }
+}
+
+function firstStringValue(input: State): string | undefined {
+  for (const key of input.keys()) {
+    const value = input.getString(key);
+    if (value !== undefined) return value;
+  }
+  return undefined;
 }

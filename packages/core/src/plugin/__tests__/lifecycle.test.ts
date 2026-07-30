@@ -1,19 +1,3 @@
-/**
- * The protocol's lifecycle: the version handshake, the partial frame, and the
- * two ways a call or a process is asked to stop before it is destroyed.
- *
- * Every fixture here hand-rolls the protocol, as `remote.test.ts` does and for
- * the same reason — a lifecycle verb a plugin can only implement with heddle's
- * own helper is not part of the wire protocol, it is part of the helper. The
- * helper gets its own block at the bottom, driven directly rather than through
- * `PluginHost`, because what is being asserted there is what it puts on the
- * pipe.
- *
- * Nothing in heddle emits a partial yet. The frame is tested anyway: it is
- * routed ahead of the response check, and a host that gets that wrong resolves
- * the call with `undefined` instead. That failure is invisible until a plugin
- * that streams exists, and by then the shape cannot be changed.
- */
 import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
 import { spawn } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -37,18 +21,9 @@ afterAll(() => {
 });
 
 afterEach(() => {
-  // A leaked plugin process keeps vitest from exiting, and the cancel and
-  // shutdown cases here deliberately leave processes running.
   while (open.length) open.pop()!.dispose();
 });
 
-/**
- * The read loop, and nothing else.
- *
- * Every fixture supplies its own `onMessage`, so each one decides for itself
- * which lifecycle verbs it knows about — including none, which is the case the
- * handshake has to keep working.
- */
 const LOOP = `
 const send = (m) => process.stdout.write(JSON.stringify(m) + '\\n');
 let buf = '';
@@ -63,14 +38,12 @@ process.stdin.on('data', (chunk) => {
 });
 `;
 
-/** Write a plugin whose whole body is `onMessage`. */
 function writePlugin(name: string, body: string): string {
   const entry = join(scratch, `${name}.mjs`);
   writeFileSync(entry, `${LOOP}\nasync function onMessage(msg) {\n${body}\n}\n`);
   return entry;
 }
 
-/** Write a plugin against the inlined `serve()` helper. */
 function writeHelperPlugin(name: string, source: string): string {
   const entry = join(scratch, `${name}.mjs`);
   writeFileSync(entry, withRuntime(source));
@@ -86,7 +59,6 @@ function manifest(componentType: string, capabilities: string[] = []) {
   };
 }
 
-/** A host for one plugin, disposed after the test whatever it did to it. */
 function hostFor(
   entry: string,
   manifestData: unknown,
@@ -116,10 +88,6 @@ function execute(
 const wait = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
-// ---------------------------------------------------------------------------
-// init.
-// ---------------------------------------------------------------------------
-
 describe('the version handshake', () => {
   it('greets the plugin before it asks it for anything', async () => {
     const entry = writePlugin(
@@ -143,9 +111,6 @@ describe('the version handshake', () => {
     };
 
     expect(result.output.seen).toEqual(['init', 'execute']);
-    // `events` is the shape of runner event an encoder will be handed, sent to
-    // every plugin rather than only to one providing an encoder — `emitEvent`
-    // and `log` put a plugin's own frames into that same stream.
     expect(result.output.greeting).toEqual({
       protocol: PROTOCOL_VERSION,
       events: EVENT_CONTRACT_VERSION,
@@ -154,9 +119,6 @@ describe('the version handshake', () => {
   });
 
   it('tells the plugin what it was granted, not what heddle can do', async () => {
-    // The host grants runTool; this manifest asks for nothing. What the plugin
-    // is told is the settled set — otherwise `init` would advertise a
-    // capability the very next reverse call is refused for.
     const entry = writePlugin(
       'ungranted',
       `if (msg.method === 'init') {
@@ -178,10 +140,6 @@ describe('the version handshake', () => {
   });
 
   it('fails the call when the plugin speaks a different version', async () => {
-    // The fixture answers the execute too, and answers it correctly. The
-    // mismatch still wins: a plugin whose frames heddle has no rule for can
-    // produce a result that happens to parse, which is exactly the failure the
-    // handshake exists to catch before it is mistaken for success.
     const entry = writePlugin(
       'future',
       `if (msg.method === 'init') { send({ id: msg.id, result: { protocol: 99 } }); return; }
@@ -208,9 +166,6 @@ describe('the version handshake', () => {
   });
 
   it('runs a plugin that refuses the handshake', async () => {
-    // What a plugin written before `init` existed does: it does not recognise
-    // the verb and says so. Refusing it here would break every such plugin,
-    // which is the compatibility the handshake was added to protect.
     const entry = writePlugin(
       'legacy-error',
       `if (msg.method === 'init') {
@@ -252,10 +207,6 @@ describe('the version handshake', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// The partial frame.
-// ---------------------------------------------------------------------------
-
 describe('partials', () => {
   it('delivers each partial and still settles on the result', async () => {
     const entry = writePlugin(
@@ -275,9 +226,6 @@ describe('partials', () => {
   });
 
   it('does not settle the call', async () => {
-    // A partial routed to the response handler would resolve this with
-    // `undefined`, and the caller would be told the plugin returned nothing.
-    // Here the only thing that ends the call is its own timeout.
     const entry = writePlugin(
       'partial-only',
       `if (msg.method !== 'execute') return;
@@ -291,9 +239,6 @@ describe('partials', () => {
   });
 
   it('keeps a call alive for longer than its timeout while partials arrive', async () => {
-    // Nine hundred milliseconds of work under a three hundred millisecond
-    // budget. Without the reset the plugin is killed at 300ms for being hung,
-    // which is the opposite of what it is doing.
     const entry = writePlugin(
       'slow-streamer',
       `if (msg.method !== 'execute') return;
@@ -331,8 +276,6 @@ describe('partials', () => {
   });
 
   it('fails the call when its own consumer cannot take a partial', async () => {
-    // The consumer runs on the stdout handler's stack. Left to escape it is an
-    // uncaught exception naming neither the plugin nor the call.
     const entry = writePlugin(
       'thrower',
       `if (msg.method !== 'execute') return;
@@ -349,14 +292,6 @@ describe('partials', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// cancel.
-//
-// The call is already rejected by the time a cancel goes out — what these are
-// about is the process behind it, which used to be destroyed unconditionally.
-// ---------------------------------------------------------------------------
-
-/** Never answers an execute, and takes a position on `cancel`. */
 function writeHangingPlugin(name: string, cancels: boolean): string {
   return writePlugin(
     name,
@@ -380,8 +315,6 @@ describe('cancelling a call heddle has given up on', () => {
     await expect(execute(host, 'DeafNode', { hang: true })).rejects.toThrow(
       /did not answer execute within 200ms/,
     );
-    // Settled on the timeout, not after the grace period that follows it: the
-    // graceful path is about the process, and must not lengthen the call.
     expect(Date.now() - started).toBeLessThan(450);
   });
 
@@ -393,8 +326,6 @@ describe('cancelling a call heddle has given up on', () => {
     await expect(execute(host, 'PoliteNode', { hang: true })).rejects.toThrow(
       /did not answer execute/,
     );
-    // Past the grace period, so this is the plugin's acknowledgement sparing
-    // it and not the kill simply not having happened yet.
     await wait(800);
 
     await expect(execute(host, 'PoliteNode')).resolves.toEqual({
@@ -416,14 +347,6 @@ describe('cancelling a call heddle has given up on', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// shutdown.
-//
-// `dispose` is the teardown guarantee — it runs in a `finally` for every run,
-// and one caller's process must not outlive their request. These assert that
-// asking first did not turn the guarantee into a request.
-// ---------------------------------------------------------------------------
-
 describe('stopping a plugin process', () => {
   it('asks before it kills', async () => {
     const marker = join(scratch, 'said-goodbye');
@@ -444,8 +367,6 @@ describe('stopping a plugin process', () => {
     host.dispose();
     await wait(500);
 
-    // SIGKILL cannot be caught, so nothing but a graceful stop could have
-    // written this.
     expect(existsSync(marker)).toBe(true);
   });
 
@@ -453,8 +374,6 @@ describe('stopping a plugin process', () => {
     const entry = writePlugin(
       'immortal',
       `if (msg.method === 'init' || msg.method === 'shutdown') return;
-       // Keeps the event loop alive past EOF on stdin, which is otherwise
-       // enough to end any plugin on its own.
        setInterval(() => {}, 1000);
        send({ id: msg.id, result: { output: { pid: process.pid } } });`,
     );
@@ -485,15 +404,6 @@ async function until(condition: () => boolean, deadline: number): Promise<void> 
   while (!condition() && Date.now() < stop) await wait(50);
 }
 
-// ---------------------------------------------------------------------------
-// The inlined runtime helper.
-//
-// Driven directly rather than through `PluginHost`, because what is being
-// asserted is what it writes to the pipe — and a host that answered on its
-// behalf would hide the helper doing nothing at all.
-// ---------------------------------------------------------------------------
-
-/** Write frames to a plugin's stdin and collect the first `want` replies. */
 function speakTo(
   entry: string,
   frames: unknown[],
@@ -553,9 +463,6 @@ describe('the inlined runtime helper', () => {
   });
 
   it('acknowledges a cancel only after dropping the call it names', async () => {
-    // The handler resolves on abort, so a helper that acknowledged first and
-    // dropped the call later would send a result for id 1 as well — which
-    // heddle would have thrown away, having already failed that call.
     const entry = writeHelperPlugin(
       'helper-cancel',
       `serve({
@@ -601,15 +508,6 @@ describe('the inlined runtime helper', () => {
   });
 });
 
-/**
- * Frames that are valid JSON and not frames.
- *
- * `JSON.parse('null')` is `null`, and under `--allow-request-code` a plugin is
- * a stranger's program. Reading a property off that throws on the stdout `data`
- * handler's stack, where nothing catches it: neither the server nor the CLI
- * installs an `uncaughtException` handler, so one bad line from one plugin
- * would end the process and every concurrent run inside it.
- */
 describe('a plugin that writes JSON which is not a frame', () => {
   const cases: Array<[string, string]> = [
     ['null', 'null'],
@@ -627,8 +525,6 @@ describe('a plugin that writes JSON which is not a frame', () => {
       );
 
       const host = hostFor(entry, manifest('GarbageNode'), { timeout: 2000 });
-      // Named, not swallowed and not fatal: the author needs telling, and the
-      // other runs in this process need to survive being told.
       await expect(execute(host, 'GarbageNode')).rejects.toThrow(
         /not a protocol frame|is not JSON/,
       );

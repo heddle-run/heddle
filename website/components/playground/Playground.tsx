@@ -40,7 +40,6 @@ const PLUGIN_STUB = `serve({
 });
 `;
 
-/** The manifest a newly added plugin starts from, matching PLUGIN_STUB. */
 const PLUGIN_MANIFEST_STUB = {
   name: "my-plugin",
   version: "1.0.0",
@@ -68,8 +67,6 @@ export default function Playground() {
 
   const abortRef = useRef<AbortController>(null);
 
-  // Probe the engine once so the page can say what it is talking to, and warn
-  // early rather than at the first run if it is unreachable.
   useEffect(() => {
     const ac = new AbortController();
     fetchCapabilities(ac.signal)
@@ -83,7 +80,6 @@ export default function Playground() {
     return () => ac.abort();
   }, []);
 
-  /** Read the inputs box, reporting bad JSON without a round trip. */
   const readInputs = useCallback((): Record<string, unknown> => {
     const text = inputs.trim();
     if (!text) return {};
@@ -111,9 +107,6 @@ export default function Playground() {
     } else if ((err as Error)?.name === "AbortError") {
       setError({ type: "Aborted", message: "Run stopped." });
     } else {
-      // A fetch that rejects rather than returning a status is almost always
-      // the browser refusing the response: the engine is down, or its CORS
-      // origins do not include this one.
       setError({
         type: "NetworkError",
         message:
@@ -187,7 +180,6 @@ export default function Playground() {
     }
   };
 
-  /** Load an example, discarding whatever is in the editors. */
   const load = (next: Example) => {
     setExample(next);
     setFlow(next.flow);
@@ -214,7 +206,6 @@ export default function Playground() {
 
   return (
     <div className="hd-playground">
-      {/* --- Application bar --------------------------------------------- */}
       <header
         style={{
           position: "sticky",
@@ -237,7 +228,6 @@ export default function Playground() {
             gap: "var(--space-3)",
           }}
         >
-          {/* With the site's nav gone, the wordmark is the way back out. */}
           <Link href="/" aria-label="heddle — home">
             <Wordmark size="sm" />
           </Link>
@@ -286,7 +276,6 @@ export default function Playground() {
       <EngineNotice reachable={reachable} />
 
       <div className="hd-playground-body">
-        {/* --- Editors --------------------------------------------------- */}
         <section
           id="editors"
           tabIndex={-1}
@@ -335,8 +324,6 @@ export default function Playground() {
             </button>
           </div>
 
-          {/* The editors take the height the pane has: a flow fills it, and a
-              list of tools scrolls inside it. */}
           <div
             style={{
               display: "flex",
@@ -347,8 +334,6 @@ export default function Playground() {
               overflowY: "auto",
             }}
           >
-            {/* The tab names the document; the placeholder names its root,
-                which the engine requires to be a Flow. */}
             {tab === "spec" && (
               <Editor
                 fill
@@ -396,7 +381,6 @@ export default function Playground() {
           </div>
         </section>
 
-        {/* --- Run log ----------------------------------------------------- */}
         <section aria-label="Run" className="hd-playground-pane">
           <div
             style={{
@@ -463,7 +447,6 @@ export default function Playground() {
   );
 }
 
-/** Raised only when there is nothing to talk to. */
 function EngineNotice({ reachable }: { reachable?: boolean }) {
   if (!API_BASE) {
     return (
@@ -493,15 +476,6 @@ function EngineNotice({ reachable }: { reachable?: boolean }) {
   return null;
 }
 
-/**
- * The foot of the application: what the page is connected to, and the one
- * thing a visitor must read before pasting a key.
- *
- * The security copy sat in a section above the playground while this was a
- * document page. It is load-bearing and stays verbatim — a status bar keeps it
- * on screen the whole time a key is being typed, rather than above the fold
- * only.
- */
 function StatusBar({
   capabilities,
   reachable,
@@ -604,9 +578,6 @@ function StatusBar({
 
 function Notice({ children }: { children: React.ReactNode }) {
   return (
-    // Block, not flex: the sentence has inline <code> in it, and as flex items
-    // those became columns of their own — which only showed once the bar was
-    // narrow enough to wrap them.
     <p
       style={{
         margin: 0,
@@ -623,17 +594,6 @@ function Notice({ children }: { children: React.ReactNode }) {
   );
 }
 
-/**
- * Switches between the worked examples.
- *
- * A dropdown rather than the row of cards this page carried as a document: five
- * titles across the bar wrapped it onto three rows, and height in an
- * application is the thing being spent. The description follows the control
- * instead of sitting on each option, since only the selected one is in play.
- *
- * The vendored Select takes plain strings, so the title is the option value and
- * the example is found back by it. Titles are unique, and are the label anyway.
- */
 function ExamplePicker({
   current,
   onSelect,
@@ -674,9 +634,6 @@ function ExamplePicker({
         </Badge>
       )}
 
-      {/* The width is fixed in CSS rather than left to the text: a description
-          long enough to want more of the bar would push the actions onto a
-          second row, and the bar's height is the page's to spend. */}
       <span
         className="hd-playground-blurb"
         style={{

@@ -6,7 +6,6 @@ import type { Server } from 'node:http';
 import { createServer } from '../server.js';
 import { isPubliclyBound } from '../config.js';
 
-/** A minimal start -> end flow, as an Agent Spec JSON object. */
 function simpleFlow(): Record<string, unknown> {
   return {
     component_type: 'Flow',
@@ -33,7 +32,6 @@ function simpleFlow(): Record<string, unknown> {
   };
 }
 
-/** A flow with an agent node, whose llm_config carries no credentials. */
 function agentFlow(): Record<string, unknown> {
   return {
     component_type: 'Flow',
@@ -93,8 +91,6 @@ beforeAll(async () => {
   mkdirSync(flowsRoot);
   writeFileSync(join(flowsRoot, 'simple.json'), JSON.stringify(simpleFlow()));
 
-  // A flow that lives outside the root, plus a symlink inside the root that
-  // points at it. Both must be unreachable.
   outsideFile = join(scratch, 'outside.json');
   writeFileSync(outsideFile, JSON.stringify(simpleFlow()));
   symlinkSync(outsideFile, join(flowsRoot, 'escape.json'));
@@ -172,9 +168,6 @@ describe('POST /v1/validate', () => {
     expect(await res.json()).toMatchObject({ valid: true, flow: 'yaml-flow' });
   });
 
-  // Regression test for the eager-provider bug: AgentExecutor used to build an
-  // OpenAI client in its constructor, so compile() -- and therefore validation
-  // -- threw for any flow with an agent node unless the server had credentials.
   it('validates a flow with an agent node without any API key', async () => {
     const previous = process.env.OPENAI_API_KEY;
     delete process.env.OPENAI_API_KEY;
@@ -262,7 +255,6 @@ describe('POST /v1/runs?stream=true', () => {
       'flow_complete',
     ]);
 
-    // The terminal frame carries the final state, serialized from State.
     const frames = text.trim().split('\n\n');
     const last = frames[frames.length - 1];
     const data = JSON.parse(last.split('\ndata: ')[1]);
@@ -273,8 +265,6 @@ describe('POST /v1/runs?stream=true', () => {
   });
 
   it('reports a bad flow as a 400, not as an SSE error frame', async () => {
-    // Compilation happens before the stream opens, so the caller still gets a
-    // real status code.
     const res = await post('/v1/runs?stream=true', { flow: { component_type: 'Flow' } });
     expect(res.status).toBe(400);
     expect(res.headers.get('content-type')).toContain('application/json');
@@ -357,8 +347,6 @@ describe('security: bind address classification', () => {
 
 describe('cancellation', () => {
   it('aborts the run when the client disconnects', async () => {
-    // A tool that sleeps far longer than the test is willing to wait. If the
-    // disconnect were not wired to an AbortSignal, the run would keep going.
     const toolsDir = mkdtempSync(join(tmpdir(), 'heddle-tools-'));
     const marker = join(toolsDir, 'completed.marker');
     const toolPath = join(toolsDir, 'slow_tool.sh');
@@ -415,8 +403,6 @@ describe('cancellation', () => {
 
     try {
       const ac = new AbortController();
-      // For a stream, fetch settles as soon as the SSE headers arrive, so the
-      // abort lands on the body, not on this promise.
       const res = await fetch(`http://127.0.0.1:${port}/v1/runs?stream=true`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -427,12 +413,10 @@ describe('cancellation', () => {
 
       const draining = res.text();
 
-      // Give the run time to reach the tool node, then hang up.
       await new Promise((resolve) => setTimeout(resolve, 400));
       ac.abort();
       await expect(draining).rejects.toThrow();
 
-      // Wait past the point where the tool would have finished on its own.
       await new Promise((resolve) => setTimeout(resolve, 5200));
       const { existsSync } = await import('node:fs');
       expect(existsSync(marker)).toBe(false);

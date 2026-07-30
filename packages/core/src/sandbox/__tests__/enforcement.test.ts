@@ -1,11 +1,3 @@
-/**
- * Runs real tools under a real sandbox. Argv-shape assertions cannot tell you
- * whether the policy actually holds, so this suite checks the properties that
- * matter — $HOME unreadable, cwd unwritable, scratch writable — by observing
- * what a confined process can and cannot do.
- *
- * Skipped where no backend exists (Linux without bubblewrap, Windows).
- */
 import { describe, it, expect } from 'vitest';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
@@ -21,7 +13,6 @@ function backendAvailable(): boolean {
   return !spawnSync('bwrap', ['--version'], { stdio: 'ignore' }).error;
 }
 
-/** A tool that reports what the sandbox let it do, as JSON on stdout. */
 function writeProbeTool(dir: string): string {
   const path = join(dir, 'probe.sh');
   writeFileSync(
@@ -80,8 +71,6 @@ describe.runIf(backendAvailable())('sandbox enforcement', () => {
   it('denies access to the real home directory', async () => {
     const out = await run();
     expect(out.readHome).toBe(false);
-    // $HOME still resolves, but to a throwaway directory inside the sandbox,
-    // so tools that insist on a home do not fail outright.
     expect(out.writeHome).toBe(true);
   });
 
@@ -138,7 +127,6 @@ describe.runIf(backendAvailable())('sandbox session scoping', () => {
 
       expect(first.sawPeerFile).toBe(false);
       expect(first.writeWorkspace).toBe(true);
-      // The second call sees what the first one left behind.
       expect(second.sawPeerFile).toBe(true);
       expect(second.workspace).toBe(first.workspace);
     } finally {
@@ -156,7 +144,6 @@ describe.runIf(backendAvailable())('sandbox session scoping', () => {
 
       expect(inA.writeWorkspace).toBe(true);
       expect(inA.workspace).not.toBe(inB.workspace);
-      // Agent B never sees the file agent A wrote.
       expect(inB.sawPeerFile).toBe(false);
     } finally {
       a.dispose();
@@ -177,7 +164,6 @@ describe.runIf(backendAvailable())('sandbox session scoping', () => {
     const out = await callIn(makeExecutor());
     expect(out.marker).toBe('1');
     expect(out.readHome).toBe(false);
-    // The throwaway session is cleaned up as soon as the tool exits.
     expect(existsSync(out.workspace as string)).toBe(false);
   });
 });

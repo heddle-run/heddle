@@ -7,14 +7,6 @@ export const metadata: Metadata = {
     "Write an Agent Spec flow, wire tools and plugins, and run it in the browser against a live heddle engine.",
 };
 
-/**
- * The playground takes the whole viewport.
- *
- * Every other page on the site is a document — nav, sections, footer. This one
- * is an application: the editors and the run log are the page, and the site's
- * chrome would only take height away from them. The way back out is the
- * wordmark in the playground's own bar.
- */
 export default function PlaygroundPage() {
   return (
     <>

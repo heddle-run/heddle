@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# List directory tool: lists files and directories at a given path.
 set -euo pipefail
 INPUT=$(cat)
 
