@@ -2577,32 +2577,48 @@ compile error rather than a quietly narrower guarantee.
 **Unblocks:** CopilotKit and any AG-UI client against a heddle flow with no adapter in between;
 OpenAI-compatible chunk output; OTLP span export from the same event stream.
 
-### Phase 10 — Network policy
+### Phase 10 — Network policy — **landed in the half heddle can enforce**
 
-Resolves §7.10 Q4, which was the largest open item in the security model. A plugin reaches the network
-on its own and heddle never sees the call, so this is a `SandboxPolicy` change and not a
-`PluginCapability` — the argument is in the question.
+Resolves §7.10 Q4. Reachable by default with a deny list, as decided — and the phase split
+along the line the question could not see: **there are two outbound paths, and heddle can
+enforce exactly one of them.**
 
-**Reachable by default, private bands denied by default.** Default-reachable is already the behaviour
-(`DEFAULT_SANDBOX_POLICY.network` is `true`), so what this phase adds is the deny list — and the list
-inverts for one band, because a pure blocklist is fail-open in the direction that costs something.
-`169.254.169.254` is instance credentials, `127.0.0.1` is this server's own unauthenticated
-`/v1/runs`, and RFC1918 is whatever else the operator runs. A plugin wanting a public API keeps
-working; reaching the metadata service becomes a decision somebody made.
+**heddle's own requests, which it can enforce, and did.** A flow's `llm_config.url` becomes
+the model client's base URL and heddle connects to it. That is the point of the field when
+the spec is yours, and a different thing when the spec arrived in an HTTP request — then a
+stranger chooses where this process connects from inside your network. Under
+`--allow-request-code` a submitted spec may no longer name a loopback, link-local or
+private address; `--allow-net <host>` punches a hole for the ordinary legitimate case, a
+model server on the operator's own network. The public internet stays reachable, because a
+flow calling a model API is the ordinary case and an allowlist of the internet is not a
+list. Specs an operator runs themselves are unrestricted, since refusing
+`http://localhost:11434` would break every Ollama user for nothing.
 
-**The two halves have to land together, and that is the whole difficulty.** heddle can express and
-validate a policy; heddle cannot enforce one. `bubblewrap.ts` has `--unshare-net` and nothing else,
-`seatbelt.ts` has `(allow network*)` / `(deny network*)`, and both are all-or-nothing — so a
-`denyNetwork: string[]` handed to either is a field that silently does nothing, which is the failure
-mode `manifest.ts` refuses everywhere else. Enforcement needs a backend that sees packets: gVisor's
-netstack does, and the playground already runs it. Where a backend cannot enforce, startup must say
-which rules were not applied rather than let the policy read as protection — the same honesty
-`startServer` already practises about `--allow-request-code`.
+This closes a live SSRF. `169.254.169.254` is instance credentials on every major cloud and
+`127.0.0.1` is this server's own unauthenticated `/v1/runs`; before this, a submitted spec
+naming either was fetched by heddle, with heddle's network position. It sits beside
+`allowEnvRefs` and is the same rule on the other axis: that one refuses a submitted spec a
+*value* out of this process, this one refuses it a *destination* inside this network.
 
-**Depends on:** nothing in this document. It is a sandbox change and could have been done at any
-point; what changed is that Phase 5 gave it a caller.
-**Unblocks:** a provider plugin an operator can scope to the host its config names. Cost: medium, and
-almost all of it is the backend half — the policy half is a field and a validator.
+**Tool and plugin egress, which heddle cannot enforce, and did not pretend to.**
+`SandboxPolicy.network` stays the all-or-nothing switch it was, because that is all either
+backend can do: `bubblewrap.ts` has `--unshare-net` and nothing else, and `seatbelt.ts` has
+`(allow network*)` / `(deny network*)`. A `denyNetwork: string[]` handed to either would be
+a field that silently does nothing — the failure mode `manifest.ts` refuses everywhere
+else, and the one this phase would have shipped had it taken the question at face value.
+Filtering there needs a backend that sees packets, which on the deployment that matters is
+gVisor's netstack.
+
+**What the enforced half does not do, recorded because a security control that overstates
+itself is worse than none.** It reads the address the spec wrote and does not resolve DNS,
+so a hostname resolving into a private range is not caught. Closing that needs the resolved
+address checked and then *pinned* for the connection, or the check is a different question
+from the connection — a socket-level change. It is a real gap and it is stated in the docs
+rather than papered over.
+
+**Depends on:** nothing. **Unblocks:** an operator running `--allow-request-code` against a
+network they care about. Cost: low for what landed; the sandbox half remains open and is
+the deployment's to solve.
 
 ### Phase 11 — Dynamic tool discovery
 

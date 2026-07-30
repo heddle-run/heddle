@@ -6,6 +6,7 @@ import type { PluginRegistry } from '../plugin/registry.js';
 import type { PluginComponent } from '../plugin/types.js';
 import { OpenAIProvider } from './openai.js';
 import { LLMError } from '../errors.js';
+import { assertEgressAllowed, type EgressPolicy } from './egress.js';
 
 const OPENAI_COMPATIBLE_TYPES = new Set([
   'OpenAiConfig',
@@ -28,6 +29,14 @@ export interface ProviderOptions {
   allowEnvRefs?: boolean;
   defaultUrl?: string;
   defaultKey?: string;
+  /**
+   * Where a spec heddle did not write may send heddle's own requests.
+   *
+   * Absent means unrestricted, which is the CLI running your own spec on your
+   * own machine. See `egress.ts` for what the policy refuses and, more
+   * importantly, what it does not.
+   */
+  egress?: EgressPolicy;
 }
 
 export function isBuiltinConfigType(componentType: string): boolean {
@@ -51,6 +60,7 @@ export function providerFor(config: LLMConfig, deps: Dependencies): Provider {
     allowEnvRefs: deps.allowEnvRefs,
     defaultKey: deps.defaultLlmKey,
     defaultUrl: deps.defaultLlmUrl,
+    egress: deps.egress,
   });
 }
 
@@ -75,6 +85,13 @@ export function createProvider(
     );
   }
   if (config.url) {
+    // Before it becomes a base URL, because after that it is a connection this
+    // process makes from wherever this process sits.
+    assertEgressAllowed(
+      config.url,
+      options.egress,
+      `llm_config "${configType}"`,
+    );
     clientOptions.baseURL = config.url;
   }
   applyDefaultCredential(clientOptions, config, options);

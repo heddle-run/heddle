@@ -47,6 +47,7 @@ heddle-server --tools-dir ./tools
 | `--drain-timeout <ms>` | `30000` | On SIGTERM, how long in-flight runs get to finish. |
 | `--cors-origin <origin>` | none | Browser origin allowed to call this server. Repeatable. |
 | `--allow-request-code` | off | Accept tool scripts and plugin modules in the request. |
+| `--allow-net <host>` | Let a submitted spec's `llm_config.url` reach a private host it would otherwise be refused — loopback, link-local and RFC1918 addresses are denied under `--allow-request-code`. Repeatable. | none |
 | `--work-dir <dir>` | `$TMPDIR` | Where per-run directories are created. |
 | `--llm-default-url <url>` | none | Endpoint the default model credential (`HEDDLE_LLM_DEFAULT_KEY`) belongs to. |
 | `--safe` | off | Run tool subprocesses inside an OS sandbox. |

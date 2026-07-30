@@ -204,6 +204,13 @@ function buildDependencies(
     plugins: plan.plugins,
     eventHandler,
     allowEnvRefs: !config.allowRequestCode,
+    // The same condition, for the same reason, applied to the other thing a
+    // submitted spec chooses. `allowEnvRefs` refuses it a value out of this
+    // process; this refuses it a *destination* inside this network. A spec the
+    // operator wrote is trusted with both.
+    egress: config.allowRequestCode
+      ? { allow: config.allowNet }
+      : undefined,
     defaultLlmKey: config.defaultLlmKey,
     defaultLlmUrl: config.defaultLlmUrl,
     stream: config.stream,
