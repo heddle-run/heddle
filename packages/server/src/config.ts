@@ -12,6 +12,14 @@ export interface ServerConfig {
   log: (message: string) => void;
   corsOrigins: string[];
   allowRequestCode: boolean;
+  /**
+   * Private hosts a submitted spec may reach anyway.
+   *
+   * Only consulted under `--allow-request-code`, because that is the only mode
+   * in which a spec's author and this server's operator are different people.
+   * See `egress.ts` in core for what is refused by default and what is not.
+   */
+  allowNet: string[];
   sandbox?: Sandbox;
   defaultLlmKey?: string;
   defaultLlmUrl?: string;
@@ -58,6 +66,7 @@ export function resolveConfig(options: ServerOptions = {}): ServerConfig {
     log: options.log ?? writeToStderr,
     corsOrigins: options.corsOrigins ?? [],
     allowRequestCode: options.allowRequestCode ?? false,
+    allowNet: options.allowNet ?? [],
     sandbox: options.sandbox,
     defaultLlmKey: options.defaultLlmKey,
     defaultLlmUrl: options.defaultLlmUrl,

@@ -4,6 +4,7 @@ import type { EventHandler } from '../runner/events.js';
 import type { LLMConfig } from '../spec/types.js';
 import type { Provider } from '../llm/types.js';
 import type { ProviderOptions } from '../llm/provider.js';
+import type { EgressPolicy } from '../llm/egress.js';
 import type { PluginRegistry } from '../plugin/registry.js';
 import type { MiddlewareChain } from '../plugin/middleware.js';
 
@@ -38,4 +39,12 @@ export interface Dependencies {
    * middleware never touches the chain.
    */
   middleware?: MiddlewareChain;
+  /**
+   * Where a spec heddle did not write may send heddle's own requests.
+   *
+   * Set by the server when it accepts submitted specs, and absent everywhere
+   * else — running your own spec on your own machine needs no such rule, and
+   * one would refuse a local Ollama for nothing.
+   */
+  egress?: EgressPolicy;
 }
