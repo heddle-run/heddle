@@ -1,7 +1,7 @@
 {
   "name": "@heddle/cli",
   "version": "0.2.0-beta.1",
-  "description": "Lightweight CLI agentic workflow framework",
+  "description": "Runtime for Open Agent Specification flows — the workflow is a document, not code",
   "type": "module",
   "license": "MIT",
   "repository": {

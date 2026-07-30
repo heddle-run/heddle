@@ -1,8 +1,8 @@
 # heddle
 
-A lightweight CLI framework for building and executing agentic workflows using the [Open Agent Specification](https://oracle.github.io/agent-spec/).
+A runtime for agentic workflows written as [Open Agent Specification](https://oracle.github.io/agent-spec/) documents.
 
-Define multi-step AI workflows as JSON, wire up LLM-powered agents and external tools, and run them from the command line.
+heddle needs no SDK. The workflow is a document — YAML or JSON — naming nodes, the edges between them, the model each agent calls and the tools they may use. heddle is what you point at it. One document runs two ways: `heddle run` on your machine, `heddle-server` over HTTP, with no rewrite between them.
 
 ## Features
 

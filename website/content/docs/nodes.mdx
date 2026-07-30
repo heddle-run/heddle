@@ -7,9 +7,25 @@ Nodes are the building blocks of a flow. Each node performs one step of your wor
 
 The examples below are single components, as they appear under a flow's `$referenced_components`. See [Flows](/docs/flows) for how they are wired together.
 
+<Callout type="warn">
+**heddle runs six of Agent Spec's fourteen node types.** `StartNode`, `EndNode`,
+`AgentNode`, `LlmNode`, `ToolNode` and `BranchingNode` execute. `ApiNode`,
+`CatchExceptionNode`, `FlowNode`, `InputMessageNode`, `MapNode`, `OutputMessageNode`,
+`ParallelFlowNode` and `ParallelMapNode` are valid Agent Spec, deserialise cleanly, and
+are then refused by name when the flow is parsed. A spec that is correct by the
+specification can still fail here.
+</Callout>
+
+A seventh possibility is a node type a plugin registers. It is written into `nodes[]` like
+any other, brings its own executor, and declares its own inputs, outputs and branches —
+see [Plugins](/docs/plugins).
+
 ## StartNode
 
-The entry point of a flow. Its `outputs` are the values the flow expects to be given at run time — they are what `--input` populates.
+The entry point of a flow. Its `outputs` **document** what the flow expects to be given at
+run time; they do not enforce it. `--input` becomes the starting state whatever it
+contains — a key nothing declares is carried, and a declared key you omit is absent
+rather than defaulted.
 
 ```yaml
 component_type: StartNode
@@ -26,7 +42,13 @@ A flow must have exactly one `StartNode`.
 
 ## EndNode
 
-The exit point of a flow. Its `inputs` are the values that end up in the run's final output. `branch_name` labels which branch this node terminates, for flows that end in more than one place.
+The exit point of a flow. Its declared `inputs` filter nothing: an EndNode passes state
+through, so the run returns the whole accumulated state that reached it, merged with
+anything a data-flow edge mapped in. Declare them to document the shape you intend.
+
+`branch_name` is accepted and read nowhere. In Agent Spec it feeds branch inference for
+subflow nodes, which heddle does not support, so labelling an EndNode with it changes
+nothing about how the flow runs.
 
 ```yaml
 component_type: EndNode
@@ -76,7 +98,29 @@ agent:
 
 The nested `agent` carries the prompt, the LLM config, and the tool declarations. `system_prompt` supports `{{variable}}` substitution from the node's input state.
 
-The agent runs at most 10 rounds of tool calling; exceeding that fails the run. Every declared tool input is treated as required — optional tool parameters are not yet expressible.
+The agent runs at most 10 rounds of tool calling; exceeding that fails the run.
+
+A tool input carrying a `default` is optional: it is left out of the schema's `required`
+list, and if the model omits it the default is filled in before the tool runs. An input
+without a default is required.
+
+**What the model is sent.** heddle builds a system message from the `system_prompt`, with
+`{{key}}` placeholders substituted from the run's state, and then a user message carrying
+the node's entire input state as JSON. The agent therefore sees its inputs whether or not
+the prompt mentions them.
+
+**`transforms`** attaches guardrails to the agent — see
+[Plugins](/docs/plugins). They change this node's contract in ways worth knowing: a `pre`
+transform that rejects skips the model call entirely and the node returns
+`transform_status: "rejected"` instead of its usual output, and an agent carrying a `post`
+transform does not stream, because a token that has reached a client cannot be recalled
+once the transform rejects the answer.
+
+<Callout type="warn">
+Agent Spec defines `human_in_the_loop`, `toolboxes` and `requires_confirmation` on an
+agent. heddle parses all three and acts on none. `human_in_the_loop` defaults to `true` in
+the schema, so a spec that appears to ask for human approval gets none.
+</Callout>
 
 The node's output is the model's final message under the key `result`. If that message is itself a JSON object, its keys are merged into the output as well.
 
@@ -133,7 +177,9 @@ tool:
       type: string
 ```
 
-The tool's `name` must match an executable in `--tools-dir`. See [Tools](/docs/tools).
+The tool's `name` must resolve in the flow's tool registry — an executable in
+`--tools-dir`, or a tool a loaded plugin contributes, which exists nowhere on disk. See
+[Tools](/docs/tools).
 
 ## BranchingNode
 

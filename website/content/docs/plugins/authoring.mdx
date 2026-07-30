@@ -1,0 +1,253 @@
+---
+title: Authoring a plugin
+description: The in-process and out-of-process APIs, the context object, and a worked example of each kind.
+---
+
+Two APIs, one set of concepts. In process you export functions; out of process you serve
+verbs over a pipe. The kinds, the capabilities and the context object are the same either
+way, so this page pairs them.
+
+## In process
+
+Default-export a plugin object. `definePlugin` is an identity helper — it exists so an
+editor can type-check what you wrote.
+
+```js
+import { definePlugin } from "@heddle/core";
+
+export default definePlugin({
+  name: "my-plugin",
+  version: "1.0.0",
+  nodes: [],
+  transforms: [],
+  providers: [],
+  middleware: [],
+  encoders: [],
+  tools: [],
+});
+```
+
+`name` and `version` are written into a spec as `component_plugin_name` and
+`component_plugin_version` when one is serialised, so they are not decorative.
+
+## Out of process
+
+Write a program that speaks the protocol. heddle inlines a runtime for you when the
+plugin is submitted to a server; on disk, a `.mjs` entry point is run under the host's
+node and a program with the execute bit is run directly.
+
+```js
+serve({
+  RegexNode: {
+    execute: (input, ctx) => ({
+      output: { matched: new RegExp(input.pattern).test(input.text) },
+    }),
+  },
+});
+```
+
+Beside it, a manifest declaring what the program provides:
+
+```json
+{
+  "name": "my-plugin",
+  "version": "1.0.0",
+  "capabilities": [],
+  "components": [{ "componentType": "RegexNode", "kind": "node" }]
+}
+```
+
+See the [manifest reference](/docs/plugins/manifest) for every field.
+
+<Callout>
+**stdout is the protocol.** A plugin that prints to stdout corrupts the channel, so
+`console.log` is redirected to stderr for you. Writing to `process.stdout` directly is
+the one way to break this, and heddle reports the resulting parse error naming that
+cause.
+</Callout>
+
+## The context object
+
+Every handler receives a context. What is on it depends on the kind, because what a
+component may do follows from the component rather than from where it was written.
+
+| Member | Available to | What it is |
+|---|---|---|
+| `signal` | all | An `AbortSignal`, fired when heddle cancels the call or stops the plugin |
+| `runTool(name, input)` | node, transform, middleware | Run one of the flow's tools |
+| `callModel(request)` | node, transform, middleware | Ask this component's `llm_config` for an answer |
+| `emitEvent(name, data)` | all | Publish `plugin:<componentType>:<name>` on the run's stream |
+| `log(level, message)` | all | A line for whoever is watching the run |
+| `node` / `component` | node, transform, provider | The component's own spec fields |
+| `getWorkspace()` | node | A directory this execution may write to, shared with its tools |
+| `partial(chunk)` | provider, streaming only | One piece of a streamed answer |
+| `runId` | encoder | heddle's identity for this run |
+| `seam`, `attempt`, `maxAttempts`, `admits` | middleware | Which seam is asking, and what it will honour |
+
+Cancellation is cooperative, as it is anywhere in Node: a handler that never reads
+`ctx.signal` runs to completion and heddle kills the process shortly after. One that does
+read it lets its process survive to serve the next call.
+
+`getWorkspace()` deserves a note. A plugin can always make its own temp directory; what
+it cannot do is find the one its tools can see. Under `--safe` a node's tool calls are
+confined to a session workspace, so a path from `mkdtemp` is not there on the tool's
+side — a failure that appears only under sandboxing and reads as the tool being broken.
+This returns the directory both sides share.
+
+## A node
+
+A node occupies a slot in the flow's graph. It returns an output and, optionally, a
+branch.
+
+```js
+// in process
+nodes: [
+  {
+    componentType: "RegexNode",
+    inferInputs: () => [{ title: "text", type: "string" }],
+    inferOutputs: () => [{ title: "matched", type: "boolean" }],
+    branches: () => ["hit", "miss"],
+    createExecutor: (node, deps) => ({
+      async execute(input, ctx) {
+        const matched = new RegExp(String(node.pattern)).test(String(input.text));
+        ctx.emitEvent("checked", { matched });
+        return { output: { matched }, branch: matched ? "hit" : "miss" };
+      },
+    }),
+  },
+],
+```
+
+```js
+// out of process
+serve({
+  RegexNode: {
+    async execute(input, ctx) {
+      const matched = new RegExp(ctx.node.pattern).test(input.text);
+      ctx.emitEvent("checked", { matched });
+      return { output: { matched }, branch: matched ? "hit" : "miss" };
+    },
+  },
+});
+```
+
+Branch names must be static. heddle validates the graph for reachability before anything
+runs, so a branch that exists only at run time is reported as an unreachable edge. Out of
+process, declare them in the manifest as `branches`.
+
+## A transform
+
+A transform hangs off `Agent.transforms` and sees the agent's messages — `pre` on their
+way to the model, `post` on the answer's way back. It returns `pass`, `modify` or
+`reject`.
+
+```js
+serve({
+  Processor: {
+    apply: (messages, ctx) => {
+      if (ctx.phase === "pre" && /ignore your instructions/i.test(messages.at(-1).content)) {
+        return { action: "reject", reason: "prompt injection" };
+      }
+      return { action: "pass" };
+    },
+  },
+});
+```
+
+`reject` is what makes a transform usable as a guardrail. In the `pre` phase heddle skips
+the model call entirely, so a blocked prompt costs nothing, and the agent returns
+`transform_status: "rejected"` — which a builtin `BranchingNode` can route on.
+
+## A provider
+
+A provider answers model calls itself, so a spec writes your component type where it
+would write `OpenAiConfig`. You *are* the endpoint, so you receive the whole request
+including `model`.
+
+```js
+serve({
+  AnthropicConfig: {
+    chat: async (request, ctx) => {
+      const res = await fetch(URL, {
+        method: "POST",
+        headers: { "x-api-key": ctx.component.api_key },
+        body: JSON.stringify({ model: request.model, messages: request.messages }),
+        signal: ctx.signal,
+      });
+      const body = await res.json();
+      return { content: body.content[0].text, finish_reason: body.stop_reason };
+    },
+  },
+});
+```
+
+`ctx.component` is the `llm_config` the spec wrote, which is where a key or a url the
+flow brought will be. **heddle does not resolve `$VAR` for you** — it will not read its
+own environment on your behalf, least of all when `--safe` has confined you precisely so
+you cannot read it either. Take a credential from your own component's fields, or from
+the environment the operator granted your process.
+
+A plugin may not claim a type the SDK ships. A flow writing `OpenAiConfig` reaches
+heddle's own client whatever plugins are loaded.
+
+To stream, add `"stream": true` to the component in your manifest and send each piece
+with `ctx.partial`:
+
+```js
+chat: async (request, ctx) => {
+  if (!ctx.stream) return await whole(request);
+  for await (const piece of pieces(request)) ctx.partial({ content: piece });
+  return { finish_reason: "stop" };
+}
+```
+
+Three rules, and they are the protocol's rather than this helper's. Each partial is one
+chunk, and chunks accumulate. **What you return is the last chunk**, not a summary of the
+ones you sent — returning `{}` is fine, and returning the whole answer again appends it
+twice. And your timeout is a silence budget that only restarts when you send something,
+so a provider that declares streaming and then buffers internally is killed exactly like
+one that hung.
+
+## A tool
+
+A tool the plugin implements itself goes in `serve`'s second argument, not the component
+map — a tool name is a different namespace from a component type.
+
+```js
+serve(handlers, {
+  tools: {
+    lookup: async (input, ctx) => ({ output: { found: await db.get(input.key) } }),
+  },
+});
+```
+
+Declare it in the manifest under `tools`, naming either a `path` — an executable shipped
+beside the plugin — or the `componentType` that implements it.
+
+## Lifecycle
+
+`serve`'s second argument also takes a shutdown hook:
+
+```js
+serve(handlers, { shutdown: async () => pool.end() });
+```
+
+It runs when heddle asks the plugin to stop, before the process exits. It has about a
+second — heddle kills what has not exited by then — so this is where a connection closes,
+not where a backlog drains.
+
+## Reporting
+
+`emitEvent` and `log` are how a plugin says anything at all. Neither is a duplicate of
+stderr, which out of process is capped and read only when the process *fails*: a plugin
+that works has no other way to be heard.
+
+The difference between them is who the payload is for. `log` is heddle's shape — a level
+and a string — so every client can render it without knowing the plugin exists.
+`emitEvent`'s `data` is the plugin's own shape, so only a client written against that
+plugin can read it. That is why `log` cannot carry data: the moment it could, it would be
+`emitEvent` under a worse name.
+
+You never choose the whole event type. heddle publishes yours as
+`plugin:<componentType>:<name>`, which is what stops a plugin emitting `flow_complete`
+and telling every client watching that a flow it does not own has finished.

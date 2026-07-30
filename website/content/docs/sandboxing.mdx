@@ -1,0 +1,91 @@
+---
+title: Sandboxing
+description: What --safe confines, what it does not, and which guarantees are conditional.
+---
+
+A tool is a program heddle runs on your machine. `--safe` confines those programs to an OS
+sandbox, so a tool that reads more than it should, writes where it should not, or is not
+the program you thought it was, is bounded by the kernel rather than by trust.
+
+```bash
+heddle run flow.json --tools-dir ./tools --safe
+```
+
+Confinement lives entirely in the executor: a backend never changes what a tool *is*, it
+rewrites how the tool is invoked. Nothing in the graph, node or spec layers knows a sandbox
+exists.
+
+## Backends
+
+| Backend | Platform | Mechanism |
+|---|---|---|
+| `bubblewrap` | Linux | `bwrap`, with user, pid, ipc, uts and cgroup namespaces unshared |
+| `seatbelt` | macOS | `sandbox-exec` with a generated SBPL profile |
+
+`--sandbox auto` is the default and picks the backend native to the platform. Naming one
+explicitly fails rather than falling back — `--sandbox bubblewrap` on macOS is an error,
+not a silent unconfined run. On any other platform `--safe` is refused outright, so there
+is no Windows path here.
+
+bubblewrap must be installed; heddle probes for `bwrap` on `PATH` and reports how to
+install it if missing. seatbelt ships with macOS.
+
+## What a confined tool gets
+
+- **Read-only system paths.** `/usr`, `/bin`, `/sbin`, `/lib`, `/lib64`, `/lib32`, `/etc`
+  and `/opt`, bound read-only.
+- **A fresh `/tmp`** per invocation, as tmpfs — nothing survives between tools.
+- **The working directory and the tool itself, read-only.** A tool can be run; it cannot
+  rewrite itself or its siblings.
+- **A writable workspace**, shared with the other tools in the same node's scope so they
+  can hand each other files.
+- **Nothing from the environment** unless named with `--allow-env`.
+
+Everything else is added explicitly:
+
+| Flag | Grants |
+|---|---|
+| `--allow-read <path>` | Read access to a path (repeatable) |
+| `--allow-write <path>` | Write access to a path; read is implied (repeatable) |
+| `--allow-env <name>` | Forwards one environment variable (repeatable) |
+| `--deny-net` | Removes network access |
+
+<Callout type="warn">
+Each of these is a hard error without `--safe`, naming the offending flag. They tune a
+sandbox; they do not switch one on.
+</Callout>
+
+**The network is allowed by default**, including under `--safe`. A tool that fetches a URL
+keeps working when you add the flag, which is usually what you want and is worth knowing
+if it is not. `--deny-net` removes it, and on Linux that is a network namespace: all or
+nothing, not a per-host filter.
+
+When plugins are loaded, the directory of every plugin-contributed tool that ships an
+executable is added to the read paths automatically. An operator auditing their
+`--allow-read` list is therefore looking at a narrower set than what is actually bound.
+
+## What it does not confine
+
+<Callout type="warn">
+**Plugins loaded with `--plugin` as an ES module are not sandboxed.** The CLI imports the
+module into the heddle process, where it runs with full Node privileges — the environment,
+the filesystem, the network, everything the process has. Only the tools it invokes through
+`ctx.runTool` are confined. Load one only if you would run its author's code directly.
+</Callout>
+
+An out-of-process plugin is different: it is a subprocess, it gets an empty environment,
+and it is confined by the same sandbox as a tool when one is configured.
+
+heddle itself is not sandboxed, and neither is the model call. `--safe` is about the
+programs a flow causes to be executed.
+
+## On a server
+
+`heddle-server` fixes confinement at startup: a request can neither ask for a sandbox nor
+opt out of one. Under `--allow-request-code` a submitted plugin runs in its own process
+with an empty environment and is killed when the run ends.
+
+The full operator picture — what a submitted flow can reach, why `$VAR` resolution is
+refused for caller-supplied specs, and what to restrict at the network layer — is in
+[`DEPLOYMENT.md`](https://github.com/heddle-run/heddle/blob/main/packages/server/DEPLOYMENT.md).
+That file is the reference; this page is the mechanism.

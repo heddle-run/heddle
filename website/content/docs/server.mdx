@@ -1,0 +1,149 @@
+---
+title: Server
+description: The same document over HTTP, with the run streamed back as it happens.
+---
+
+`heddle-server` runs the flows `heddle run` runs, over HTTP. There is no separate
+deployment format and no rewrite — the same document, pointed at by a different program.
+
+```bash
+heddle-server --port 4319 --tools-dir ./tools --flows-root ./flows
+```
+
+Routing is hand-rolled on `node:http`. The production dependency list is exactly one entry
+(`@heddle/core`), which is worth more here than a router's ergonomics, because this is a
+surface that executes what it is sent.
+
+## Routes
+
+| Route | Purpose |
+|---|---|
+| `POST /v1/runs` | Execute a flow, buffered |
+| `POST /v1/runs?stream=true` | Execute a flow, streamed as Server-Sent Events |
+| `POST /v1/validate` | Parse, compile and validate without running |
+| `GET /v1/capabilities` | What this server permits, so a client can adapt |
+| `GET /healthz` | Liveness — true while the event loop answers |
+| `GET /readyz` | Readiness — 503 the moment draining begins |
+| `GET /metrics` | Prometheus text exposition |
+
+<Callout type="warn">
+There is no authentication and no rate limiting. Do not expose this to a network you do
+not control.
+</Callout>
+
+## Running a flow
+
+Provide exactly one flow selector:
+
+| Field | Meaning |
+|---|---|
+| `flow` (object) | An Agent Spec flow as JSON |
+| `flow` (string) | Flow source text — YAML or JSON |
+| `flowPath` | Path relative to `--flows-root` |
+
+Plus `inputs`, a JSON object handed to the flow as its starting state.
+
+```bash
+curl -sX POST 'localhost:4319/v1/runs' \
+  -H 'content-type: application/json' \
+  -d '{"flowPath": "demo.yaml", "inputs": {"query": "hello"}}'
+```
+
+```json
+{ "flow": "demo", "state": { "query": "hello", "result": "..." } }
+```
+
+**Compilation happens before the stream opens.** A malformed flow comes back as a real
+`400`, not a `200` followed by an error frame — once SSE headers are out the status is
+fixed at 200.
+
+It is a POST rather than a GET because `EventSource` only issues GETs and a flow document
+does not belong in a query string: it is large, and it would end up in access logs.
+Consume the stream with `fetch` and a `ReadableStream`.
+
+## The event stream
+
+With `?stream=true` each runner event is one SSE frame, the event type as the frame name.
+
+```
+event: flow_start
+data: {"type":"flow_start"}
+
+event: node_start
+data: {"type":"node_start","nodeName":"agent","nodeType":"AgentNode","state":{...}}
+
+event: token_delta
+data: {"type":"token_delta","nodeName":"agent","delta":"The "}
+
+event: flow_complete
+data: {"type":"flow_complete","state":{"result":"..."}}
+```
+
+The frames are the engine's own event model. Only two fields need translating for JSON:
+state becomes a plain object, and an error becomes `{name, message}`.
+
+One extra frame name, `error`, carries failures that occur after the stream has opened and
+therefore cannot be an HTTP status. It is the transport's error channel, not a second event
+model.
+
+<Callout>
+Concatenating a node's `token_delta` events does not reconstruct its output. An agent that
+calls tools streams every round it makes, including rounds whose text is discarded, and an
+agent carrying a `post` transform does not stream at all. A delta is a report; the output
+is in `flow_complete`.
+</Callout>
+
+### Another wire format
+
+`?protocol=<name>` renders the run in a format a plugin supplies — AG-UI, for instance.
+A protocol nothing renders is a `400` listing what this server can. See
+[Encoders](/docs/plugins/encoders).
+
+## Submitted code
+
+By default a request may only select a flow. With `--allow-request-code` it may also send
+tool scripts and plugins:
+
+| Field | Shape |
+|---|---|
+| `tools` | `{ name, source, interpreter? }` |
+| `plugins` | `{ name, manifest, source }` |
+
+Every submitted plugin is loaded **out of process** — the only path this server offers. An
+in-process plugin would be imported into the server, and a caller who can do that has the
+server's environment, filesystem and memory. Each gets its own process, an empty
+environment, and is killed when the run ends.
+
+Without the flag, a request carrying either field is refused with a `400` rather than
+having it ignored: a caller whose plugin was silently dropped would see an
+unknown-component-type failure with no way to learn why.
+
+What a submitted plugin may do is narrower than what heddle can serve. `runTool`,
+`emitEvent` and `log` are granted. `callModel` is withheld entirely when the server
+supplies a default credential — a plugin can make a thousand model calls inside one node
+while the flow shows one, and that is survivable when the credential is the caller's own
+and not when it is the operator's. A submitted **middleware** is refused: it would run on
+every node of every flow, including other callers'. A submitted **encoder** is permitted,
+because it renders one run for the caller who asked and cannot alter it.
+
+<Callout type="warn">
+`--allow-request-code` accepts computation its callers choose and makes outbound requests
+to hosts they name. Restrict egress and put something in front of it. See
+[`DEPLOYMENT.md`](https://github.com/heddle-run/heddle/blob/main/packages/server/DEPLOYMENT.md).
+</Callout>
+
+## Draining
+
+`/readyz` goes 503 the moment a drain begins, while the listener stays open, so a pod
+leaves the load balancer's rotation with its open streams intact. Runs in flight are given
+until `--drain-timeout` to reach their own end before anything is closed.
+
+Closing connections up front — which is the obvious implementation — terminates every live
+stream on the spot, so every rolling deploy drops runs mid-flight.
+
+## Flags
+
+`heddle-server --help` lists them, and
+[the package README](https://github.com/heddle-run/heddle/blob/main/packages/server/README.md)
+documents every one with its default. A test refuses to let a flag exist without a row
+there.

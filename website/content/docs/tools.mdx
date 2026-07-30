@@ -69,6 +69,24 @@ chmod +x tools/*
 
 A tool's name is its filename with the extension stripped, so `fetch_api.py` is declared in the spec as `fetch_api`. Two files that reduce to the same name — `search.sh` and `search.py` — collide, and only one of them is registered.
 
+### Tools from a plugin
+
+A directory is not the only source. A plugin can contribute tools straight into the
+registry, either as executables it ships beside itself or as tools it implements in its own
+process — the latter existing nowhere on the filesystem. A flow names them exactly as it
+names a file-backed tool, and nothing downstream can tell the difference.
+
+```bash
+heddle run flow.json --tools-dir ./tools --plugin ./mcp-proxy/manifest.json
+```
+
+The registries are composed, and a plugin's tools go in weakest: a name from `--tools-dir`
+and a name a caller typed both beat a name a manifest bound in bulk. A plugin tool that
+collides at all is refused at load unless its manifest explicitly declared `shadows` — and
+a server refuses to let a submitted plugin be the one to declare it.
+
+See [Plugins](/docs/plugins/manifest) for the manifest's `tools` field.
+
 ## Declaring Tools in a Spec
 
 Tools are declared inline as `ServerTool` components, not referenced by bare name. The `name` is what links the declaration to the executable in `--tools-dir`; `description`, `inputs`, and `outputs` are what the model sees when deciding whether to call it.
@@ -139,6 +157,8 @@ Each `AgentNode` execution opens its own sandbox session. Every tool call is sti
 
 Widen the policy with `--allow-read <path>` and `--allow-write <path>`.
 
-<Callout type="info">
-Plugins loaded with `--plugin` are not sandboxed: the CLI imports the module into the heddle process, where it runs with full Node privileges. Only the tools it invokes via `ctx.runTool` are confined. Plugins submitted to the engine as a manifest plus source are different — each runs in its own process with an empty environment, and is confined by the same sandbox as tools when one is configured.
+<Callout type="warn">
+Plugins loaded with `--plugin` as an ES module are not sandboxed: the CLI imports the module into the heddle process, where it runs with full Node privileges. Only the tools it invokes via `ctx.runTool` are confined. A plugin loaded from a manifest is different — it runs in its own process with an empty environment, and is confined by the same sandbox as tools when one is configured.
 </Callout>
+
+See [Sandboxing](/docs/sandboxing) for the full policy, including which flags are a hard error without `--safe`.
