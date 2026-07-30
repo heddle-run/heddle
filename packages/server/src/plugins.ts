@@ -135,10 +135,51 @@ function refuseMiddleware(rawManifest: unknown): void {
       .join(', ')}), which cannot be submitted with a request. Middleware runs on ` +
       `every node of every flow, so it is installed by whoever runs this server ` +
       `rather than chosen per request. A component your own flow selects is a node, ` +
-      `a transform or a provider.`,
+      `a transform or a provider; a rendering your own client selects is an encoder, ` +
+      `which you may submit.`,
     'PluginError',
   );
 }
+
+/*
+ * Why a submitted **encoder** is permitted, when a middleware is not.
+ *
+ * The two look alike — neither is named in the caller's document — and they sit
+ * on opposite sides of the only line that matters here: whose run it changes.
+ *
+ * A middleware runs on every node of every flow, including flows submitted by
+ * other callers, and returns a verdict that decides what happens next. An
+ * encoder runs on one run — the one whose request selected it — and returns
+ * frames. `Event → WireFrame[]` is one-directional by construction: there is no
+ * verdict to return, no substitution to make, and nothing an encoder can do to
+ * the run it is rendering. So the blast radius is one response, and it is the
+ * response of the caller who asked for it.
+ *
+ * The audience argument that granted `emitEvent` and `log` applies here in its
+ * strongest form. A run's frames go to the SSE stream opened by the `POST` that
+ * started the run, and this server has no endpoint that attaches an observer to
+ * somebody else's run — so a submitted encoder renders that caller's own run,
+ * for that caller's own client. It is not a stranger putting text in front of
+ * your users; it is a caller choosing how to parse what they already receive.
+ *
+ * It also needs nothing. An encoder asks the host for no tool, no model and no
+ * workspace, so it is the one kind that works with an empty capability list —
+ * there is no grant to reason about, which is why it is absent from `GRANTED`
+ * rather than added to it.
+ *
+ * What it costs is the same thing `emitEvent` costs: volume. An encoder may
+ * return any number of frames per event, so it can amplify its own stream. The
+ * bound is the one every submitted flow already has — the run's wall-clock
+ * budget and the plugin's per-call timeout — and the bytes land on the
+ * connection that asked for them.
+ *
+ * The assumption to check before keeping this: it holds only while a run's
+ * frames go back to whoever started the run. An operator who streams runs to a
+ * shared console has an audience the submitter did not come with, and should
+ * refuse encoders here exactly as middleware is refused above.
+ *
+ * There is therefore no `refuseEncoder`. This comment is the decision.
+ */
 
 /**
  * Refuse a submitted manifest that claims the right to take a name.

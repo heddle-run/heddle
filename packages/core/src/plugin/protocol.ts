@@ -37,6 +37,9 @@ import type {
 } from '../llm/types.js';
 import type { LogLevel } from '../runner/events.js';
 import { SEAMS, type AfterAction, type Seam } from './seams.js';
+// Type-only, so the cycle with `types.ts` — which imports `AfterVerdict` from
+// here — is erased rather than real.
+import type { WireFrame } from './types.js';
 
 /**
  * The protocol's version, as an integer rather than a semver string.
@@ -102,6 +105,10 @@ export interface HostMethods {
   chat: ChatParams;
   /** Consult one middleware after a seam's call site produced its outcome. */
   after: AfterParams;
+  /** Ask one encoder to render one runner event. */
+  encode: EncodeParams;
+  /** Ask one encoder for the frames that belong after the last event. */
+  finishEncode: FinishEncodeParams;
 }
 
 export type HostMethod = keyof HostMethods;
@@ -330,6 +337,17 @@ export interface InitParams extends Record<string, unknown> {
    * provides no middleware.
    */
   seams?: Record<string, AfterAction[]>;
+  /**
+   * {@link import('../runner/events.js').EVENT_CONTRACT_VERSION} — which shape
+   * of runner event an encoder will be handed.
+   *
+   * Sent to every plugin rather than only to one providing an encoder, because
+   * `emitEvent` and `log` put a plugin's own frames into the same stream, so any
+   * plugin may care which contract a client is reading. Unlike `protocol`, a
+   * mismatch here is not refused: see the constant for why a partial rendering
+   * beats no rendering.
+   */
+  events: number;
 }
 
 /** What a plugin answers `init` with. Anything else is read as {@link UNVERSIONED}. */
@@ -613,6 +631,113 @@ export function readChatChunk(raw: unknown, where: string): ChatChunk {
   }
 
   return chunk;
+}
+
+/**
+ * Params for `encode`: one runner event, to be rendered.
+ *
+ * `event` is the serialized {@link import('../runner/events.js').Event} — the
+ * same object heddle's own frames carry, produced by `serializeEvent`, so a
+ * plugin encoder reads exactly what a browser watching the builtin protocol
+ * reads. That is deliberate: the alternative would be a second event shape
+ * defined only for plugins, which would have to be kept in step with the first
+ * and would drift the day a field was added to one of them.
+ *
+ * Two verbs rather than one with an optional `event`, for the reason Phase 5
+ * settled on for `chat`: one reader per frame and no shape that means two
+ * things. `finishEncode` carries no event because there is none — it asks for
+ * what belongs *after* the last one.
+ */
+export interface EncodeParams extends Record<string, unknown> {
+  componentType: string;
+  /**
+   * heddle's identity for this run, the same one `createEncoder` received.
+   *
+   * Sent on every call rather than only at the start, so a plugin process
+   * serving more than one run has something to key its bookkeeping on and does
+   * not have to assume it serves exactly one.
+   */
+  runId: string;
+  event: Record<string, unknown>;
+}
+
+/** Params for `finishEncode`: no more events are coming for this run. */
+export interface FinishEncodeParams extends Record<string, unknown> {
+  componentType: string;
+  runId: string;
+}
+
+/**
+ * Read the frames an encoder produced.
+ *
+ * Zero frames is ordinary and an empty array says so, which is why `[]` is
+ * accepted where `readChatResponse` refuses an absent `content`: an encoder that
+ * renders half of heddle's events passes over the other half, and a verb whose
+ * "nothing to say" answer was an error would make that the exceptional case.
+ *
+ * `data` has to be *present* rather than any particular shape — it is a
+ * protocol's own payload and heddle has no opinion about it — but a frame
+ * missing it entirely is a bug that would otherwise reach a client as
+ * `data: undefined`, which is not JSON and not anything.
+ *
+ * **There is no namespacing here, and that is not an oversight.** An `event`
+ * name from a plugin looks like the forgery `pluginEventType` exists to prevent,
+ * and it is the opposite case. `emitEvent` inserts one event into heddle's own
+ * stream, beside heddle's, where a name like `flow_complete` would be believed.
+ * An encoder *is* the stream: a client that asked for `ag-ui` gets exactly what
+ * that encoder produces and nothing of heddle's, so there is no second voice for
+ * it to imitate. What is still refused is a name that breaks the *frame* — see
+ * below — because that is a transport question rather than a trust one.
+ */
+export function readWireFrames(raw: unknown, where: string): WireFrame[] {
+  if (!Array.isArray(raw)) {
+    throw new PluginError(
+      `${where} returned ${typeName(raw)}, expected an array of frames. An encoder ` +
+        `with nothing to say about an event returns [].`,
+    );
+  }
+
+  return raw.map((entry, i) => {
+    if (!isObject(entry)) {
+      throw new PluginError(
+        `${where} returned ${typeName(entry)} as frame ${i + 1}, expected ` +
+          `{ data } with an optional "event" name.`,
+      );
+    }
+    if (!Object.hasOwn(entry, 'data')) {
+      throw new PluginError(
+        `${where} returned a frame ${i + 1} with no "data". A frame carries the ` +
+          `payload a client parses; a frame naming an event and carrying nothing is ` +
+          `a frame that says nothing.`,
+      );
+    }
+    const frame: WireFrame = { data: entry.data };
+    if (entry.event !== undefined) {
+      if (typeof entry.event !== 'string') {
+        throw new PluginError(
+          `${where} returned a frame ${i + 1} whose "event" is ` +
+            `${typeName(entry.event)}, expected a string. Omit it for a frame that ` +
+            `carries only data, which is what a protocol putting its own type inside ` +
+            `the payload wants.`,
+        );
+      }
+      // The one part of an SSE frame that is not JSON-escaped, so a newline in it
+      // ends the frame early and everything after is read as a frame of the
+      // sender's composition. `SseStream.send` strips these again at the wire;
+      // this refuses the frame outright, because here there is a call to fail and
+      // an author to tell, and a silently rewritten name is a rendering the plugin
+      // did not write.
+      if (/[\r\n]/.test(entry.event)) {
+        throw new PluginError(
+          `${where} returned a frame ${i + 1} whose "event" contains a newline. The ` +
+            `event name is the one part of a frame written without escaping, so a ` +
+            `newline in it would end the frame and let the rest be read as another.`,
+        );
+      }
+      frame.event = entry.event;
+    }
+    return frame;
+  });
 }
 
 /** Params for `apply`: run one message transform. */

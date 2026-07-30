@@ -198,6 +198,75 @@
  * kills the process shortly after. A handler that does read it lets its process
  * survive to serve the next call.
  *
+ * ---
+ *
+ * **An encoder** is the one kind that is not part of the flow at all. It renders
+ * the run for a client: heddle hands it each event and it returns the frames that
+ * go on the wire. Declare it `"kind": "encoder"` with a `protocol` — the name a
+ * client asks for — and a `contentType`:
+ *
+ * ```json
+ * { "componentType": "AgUiEncoder", "kind": "encoder",
+ *   "protocol": "ag-ui", "contentType": "text/event-stream" }
+ * ```
+ *
+ * ```js
+ * serve({
+ *   AgUiEncoder: {
+ *     encode: (event, ctx) => {
+ *       if (event.type === 'flow_start') {
+ *         return [{ data: { type: 'RUN_STARTED', runId: ctx.runId, threadId: ctx.runId } }];
+ *       }
+ *       if (event.type === 'token_delta') {
+ *         return [{ data: { type: 'TEXT_MESSAGE_CONTENT', messageId: event.nodeName, delta: event.delta } }];
+ *       }
+ *       return [];   // nothing to say about this one
+ *     },
+ *     finish: (ctx) => [{ data: { type: 'RUN_FINISHED', runId: ctx.runId } }],
+ *   },
+ * });
+ * ```
+ *
+ * Nobody asks for it in a spec, and no operator installs it — a request selects
+ * it with `?protocol=ag-ui`, because two clients hitting the same flow can want
+ * different renderings and neither the flow's author nor the operator knows
+ * which. A spec that names your encoder as a `component_type` is refused, saying
+ * so.
+ *
+ * `event` is the run event exactly as heddle's own protocol puts it on the wire,
+ * so what you read is what a browser watching `?protocol=heddle` reads:
+ * `{ type, nodeName?, nodeType?, delta?, message?, level?, data?, state?, error?,
+ * attempt?, tool* }`. Return an array of frames. `{ event, data }` writes a named
+ * SSE frame; `{ data }` alone writes a nameless one, which is what a protocol
+ * carrying its own type inside the payload wants. `[]` is the ordinary answer for
+ * an event your format does not render.
+ *
+ * **You get no capabilities and need none.** `Event → frames` asks heddle for
+ * nothing, so an encoder is the one kind that is fully functional with an empty
+ * `capabilities` list. It is also strictly one-directional: there is no verdict
+ * to return and no way to affect the run you are rendering.
+ *
+ * **Message boundaries are yours to keep.** heddle emits no event when a model's
+ * answer begins, and cannot honestly: it would have to claim a message was
+ * starting before knowing whether the node will stream at all — an agent carrying
+ * a `post` transform streams nothing, and one calling tools streams rounds whose
+ * text is discarded. What heddle does tell you is which node each `token_delta`
+ * belongs to, and a node's deltas are contiguous. So open a message on the first
+ * delta you see for a node and close it on that node's `node_complete` or
+ * `node_error`.
+ *
+ * `finish` is called exactly once, on every path — a run that finished, one that
+ * failed, and one whose caller hung up — and it is where a protocol's terminal
+ * frame belongs. A client that never receives one waits forever, and "the
+ * connection closed" is not something a protocol with a terminal event should
+ * have to infer. It takes no event, only `ctx`.
+ *
+ * If your `encode` throws, the stream ends with an error frame and the run stops:
+ * with your encoder selected, your rendering *is* the response, and a run whose
+ * answer nobody can read is not worth continuing to spend on.
+ *
+ * ---
+ *
  * `serve` takes a second argument for the things that are not per-component:
  *
  * ```js
@@ -496,6 +565,10 @@ function serve(handlers, options) {
         // model id, its url and any credential the flow brought all live.
         component: params.component || params.node || params.config || {},
         phase: params.phase,
+        // Which run this is, for an encoder. Sent on every encode and finish, so
+        // a plugin serving two runs at once keys its bookkeeping on it rather
+        // than assuming it serves one.
+        runId: params.runId,
         // Whether heddle wants this chat streamed. A provider that declared
         // "stream" in its manifest sees both values and has to serve both.
         stream: params.stream === true,
@@ -556,6 +629,32 @@ function serve(handlers, options) {
           { subject: params.subject || {}, outcome: params.outcome || {} },
           ctx,
         );
+      } else if (request.method === 'encode' || request.method === 'finishEncode') {
+        // One handler pair for both verbs, because they are two halves of one
+        // rendering rather than two features: an encoder that opens something on
+        // an event has to be able to close it at the end, and an author who wrote
+        // only "encode" has written a protocol that never terminates.
+        const hook = request.method === 'encode' ? handler.encode : handler.finish;
+        if (!hook) {
+          send({
+            id: request.id,
+            error: {
+              message:
+                '"' + params.componentType + '" is declared as an encoder in this ' +
+                "plugin's manifest but serves no " +
+                (request.method === 'encode' ? 'encode' : 'finish') +
+                ' handler. Write serve({ ' + params.componentType +
+                ': { encode(event, ctx) { … }, finish(ctx) { … } } }).',
+            },
+          });
+          inflight.delete(key);
+          return;
+        }
+        // A frame list, never undefined. An encoder with nothing to say about an
+        // event returns [], and an author who forgot the return statement gets a
+        // heddle-side error naming the frame rather than a silently empty stream.
+        result =
+          request.method === 'encode' ? await hook(params.event || {}, ctx) : await hook(ctx);
       } else {
         result = await handler.execute(params.input || {}, ctx);
       }

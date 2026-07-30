@@ -1,5 +1,5 @@
 import type { ServerResponse } from 'node:http';
-import { FileRegistry } from '@heddle/core';
+import { BUILTIN_PROTOCOL, EVENT_CONTRACT_VERSION, FileRegistry } from '@heddle/core';
 import type { ServerConfig } from './config.js';
 import { sendJson } from './http.js';
 import type { ConcurrencyGate } from './limits.js';
@@ -46,6 +46,18 @@ export function handleCapabilities(
       acceptsFlowPath: Boolean(config.flowsRoot),
       sandbox: config.sandbox?.name ?? null,
       tools: serverTools,
+      /**
+       * The renderings a request may ask for with `?protocol=`.
+       *
+       * Only heddle's own, and it is a list of one rather than a boolean because
+       * that is the honest shape: an encoder arrives with a request, so what this
+       * server can render depends on what the caller sends, and no probe made
+       * beforehand can enumerate it. What this says is "heddle's frames always
+       * work, and anything else is yours to submit" — which, when
+       * `allowRequestCode` is false, is the whole answer.
+       */
+      protocols: [BUILTIN_PROTOCOL],
+      eventContract: EVENT_CONTRACT_VERSION,
       limits: {
         maxIterations: config.maxIterations,
         timeout: config.timeout,

@@ -21,6 +21,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadRemotePlugin } from '../remote-loader.js';
 import { PROTOCOL_VERSION } from '../protocol.js';
+import { EVENT_CONTRACT_VERSION } from '../../runner/events.js';
 import { withRuntime } from '../runtime-source.js';
 import type { PluginHost } from '../host.js';
 
@@ -142,8 +143,12 @@ describe('the version handshake', () => {
     };
 
     expect(result.output.seen).toEqual(['init', 'execute']);
+    // `events` is the shape of runner event an encoder will be handed, sent to
+    // every plugin rather than only to one providing an encoder — `emitEvent`
+    // and `log` put a plugin's own frames into that same stream.
     expect(result.output.greeting).toEqual({
       protocol: PROTOCOL_VERSION,
+      events: EVENT_CONTRACT_VERSION,
       capabilities: ['runTool'],
     });
   });

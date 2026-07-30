@@ -24,6 +24,7 @@ import type { ToolDef } from '../tool/types.js';
 import type { PluginCapability } from './protocol.js';
 import {
   remoteComponentDef,
+  remoteEncoderDef,
   remoteMiddlewareDef,
   remoteNodeDef,
   remoteProviderDef,
@@ -194,6 +195,7 @@ export function loadRemotePlugin(
     components: [],
     providers: [],
     middleware: [],
+    encoders: [],
   };
 
   for (const entryComponent of manifest.components) {
@@ -212,6 +214,9 @@ export function loadRemotePlugin(
         break;
       case 'middleware':
         plugin.middleware!.push(remoteMiddlewareDef(manifest, entryComponent, getHost));
+        break;
+      case 'encoder':
+        plugin.encoders!.push(remoteEncoderDef(manifest, entryComponent, getHost));
         break;
     }
   }

@@ -9,11 +9,13 @@ import type { ComponentDeserializationPlugin } from 'agentspec';
 import type {
   HeddlePlugin,
   PluginComponentDef,
+  PluginEncoderDef,
   PluginMiddlewareDef,
   PluginNodeDef,
   PluginProviderDef,
   PluginTransformDef,
 } from './types.js';
+import { BUILTIN_PROTOCOL, PROTOCOL_NAME } from './encoder.js';
 import { HeddleDeserializationPlugin } from './deserializer.js';
 import type { PluginHost } from './host.js';
 import type { Registry, ToolDef } from '../tool/types.js';
@@ -25,7 +27,8 @@ export type ComponentKind =
   | 'transform'
   | 'component'
   | 'provider'
-  | 'middleware';
+  | 'middleware'
+  | 'encoder';
 
 interface Registered {
   kind: ComponentKind;
@@ -58,6 +61,20 @@ export class PluginRegistry {
   private middlewares: RegisteredMiddleware[] = [];
   /** Which plugin claimed each tool name, so a collision names both. */
   private toolNames = new Map<string, string>();
+
+  /**
+   * Encoders by the protocol name a request asks for, with the plugin that
+   * supplied each so a collision can name both.
+   *
+   * A third namespace, beside component types and tool names, and it is a
+   * namespace rather than a lookup in `defs` because what selects an encoder is
+   * not what a document writes. `defs` answers "a spec said `X`, what is it";
+   * this answers "a client asked for `ag-ui`, who renders it". The two happen to
+   * be strings and share nothing else — a plugin's component may be called
+   * `AgUiEncoder` while its protocol is `ag-ui`, and neither name has to know
+   * about the other.
+   */
+  private encoders = new Map<string, { plugin: string; def: PluginEncoderDef }>();
 
   /**
    * Tools contributed by plugins, in load order, kept out of `defs` for the
@@ -111,6 +128,18 @@ export class PluginRegistry {
       this.middlewares.push({ plugin: plugin.name, def });
     }
 
+    // Claimed in `defs` like a middleware, for the same two reasons: one plugin
+    // must not ship a node and an encoder under one component type and leave
+    // which wins to map iteration order, and `kindOf` has to be able to tell a
+    // spec author that the type they wrote is real but is not theirs to write.
+    // Registered by protocol separately, because that is what selects one.
+    for (const def of plugin.encoders ?? []) {
+      this.claim(def.componentType, plugin.name);
+      this.defs.set(def.componentType, { kind: 'encoder', def });
+      this.claimProtocol(def, plugin.name);
+      this.encoders.set(def.protocol, { plugin: plugin.name, def });
+    }
+
     for (const tool of plugin.tools ?? []) {
       const claimed = this.toolNames.get(tool.name);
       // Any second claim, including one from a plugin reporting the same name.
@@ -156,6 +185,58 @@ export class PluginRegistry {
       throw new PluginError(
         `component type "${componentType}" is provided by more than one plugin ` +
           `(re-registered by "${pluginName}"). Remove the duplicate plugin.`,
+      );
+    }
+  }
+
+  /**
+   * Rejects a protocol name a plugin may not have.
+   *
+   * The refusal that matters is the first one, and it is the same rule
+   * `providerFor` enforces about a builtin `llm_config` type: a plugin cannot
+   * become the renderer for a client that asked for heddle's own frames. That
+   * client is not asking for an extension, it is asking for the thing it already
+   * knows, and answering with a stranger's rendering is a capture — a `heddle`
+   * stream is what a browser written against `flow_complete` is switching on.
+   * Refused at load, so an operator learns of it when they load the plugin
+   * rather than when a client's rendering silently changes.
+   *
+   * A collision between two plugins is a load error rather than last-wins for
+   * `toolNames`'s reason: load order is `--plugin` order, and nothing about
+   * typing two flags says which of two AG-UI implementations a client meant.
+   */
+  private claimProtocol(def: PluginEncoderDef, pluginName: string): void {
+    if (typeof def.protocol !== 'string' || !PROTOCOL_NAME.test(def.protocol)) {
+      throw new PluginError(
+        `plugin "${pluginName}" declares an encoder whose protocol is ` +
+          `${JSON.stringify(def.protocol)}. A protocol name is what a client puts in ` +
+          `"?protocol=", so it has to match ${PROTOCOL_NAME.source} — lower-case ` +
+          `letters, digits and hyphens. Try "ag-ui".`,
+      );
+    }
+    if (def.protocol === BUILTIN_PROTOCOL) {
+      throw new PluginError(
+        `plugin "${pluginName}" declares an encoder for protocol ` +
+          `"${BUILTIN_PROTOCOL}", which is heddle's own wire format. A client asking ` +
+          `for it is asking for the frames heddle documents, so a plugin may not ` +
+          `answer for it — choose a name for your own format instead.`,
+      );
+    }
+    if (typeof def.contentType !== 'string' || !def.contentType) {
+      throw new PluginError(
+        `plugin "${pluginName}" declares the encoder "${def.protocol}" with no ` +
+          `"contentType". It is the response's own content type, so heddle has ` +
+          `nothing to send without it — "text/event-stream" for a protocol carried ` +
+          `over SSE.`,
+      );
+    }
+    const claimed = this.encoders.get(def.protocol);
+    if (claimed !== undefined) {
+      throw new PluginError(
+        `plugins "${claimed.plugin}" and "${pluginName}" both render the protocol ` +
+          `"${def.protocol}". A protocol name is what a client asks for, so heddle ` +
+          `will not guess which rendering they meant. Load one of them, or rename ` +
+          `the protocol in its manifest.`,
       );
     }
   }
@@ -238,13 +319,28 @@ export class PluginRegistry {
   }
 
   /**
-   * The component types a spec may write.
+   * The encoder for a protocol, if a plugin renders it.
    *
-   * Middleware is excluded on purpose. This list is what the parser offers a
-   * spec author who named a type nothing provides, and a middleware is not
-   * something they can name — suggesting one would send them to write a
-   * `component_type` the deserializer will reject.
+   * Never asked about {@link BUILTIN_PROTOCOL}: its caller resolves heddle's own
+   * name first, and {@link claimProtocol} refused a plugin that tried to take
+   * it. Both halves, for `providerFor`'s reason — the load-time refusal is the
+   * message an author gets, and the lookup order is the guarantee.
    */
+  encoderDef(protocol: string): PluginEncoderDef | undefined {
+    return this.encoders.get(protocol)?.def;
+  }
+
+  /**
+   * Every protocol a loaded plugin renders, for a client asking what it may
+   * request and for the error shown to one that asked for something else.
+   *
+   * heddle's own is not in here. This is what plugins add, and the caller
+   * assembling the answer is the one that knows the builtin exists.
+   */
+  encoderProtocols(): string[] {
+    return [...this.encoders.keys()].sort();
+  }
+
   /**
    * The tools every loaded plugin contributes, as a Registry.
    *
@@ -266,9 +362,18 @@ export class PluginRegistry {
     return this.toolDefs.length > 0;
   }
 
+  /**
+   * The component types a spec may write.
+   *
+   * Middleware and encoders are excluded on purpose. This list is what the
+   * parser offers a spec author who named a type nothing provides, and neither
+   * kind is something they can name — suggesting one would send them to write a
+   * `component_type` the deserializer will reject. They are the two kinds nobody's
+   * document mentions: one the operator installs, one the request selects.
+   */
   componentTypeNames(): string[] {
     return [...this.defs]
-      .filter(([, entry]) => entry.kind !== 'middleware')
+      .filter(([, entry]) => entry.kind !== 'middleware' && entry.kind !== 'encoder')
       .map(([name]) => name);
   }
 

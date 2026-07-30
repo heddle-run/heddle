@@ -109,6 +109,32 @@ export function isPluginEvent(type: EventType): type is PluginEventType {
   return type.startsWith(PLUGIN_EVENT_PREFIX);
 }
 
+/**
+ * The version of the {@link Event} contract, as an integer.
+ *
+ * `Event` was an internal struct until an encoder could render it. Now a
+ * third party writes code against these field names, so this is the number
+ * that says which shape they are reading — the same job {@link
+ * import('../plugin/protocol.js').PROTOCOL_VERSION} does for the RPC frames,
+ * and an integer for the same reason: there is no range to express, because
+ * neither side can enumerate which fields the other depends on.
+ *
+ * **Unlike the protocol version, a mismatch is not a refusal.** The two
+ * numbers gate different things. A plugin speaking the wrong *protocol* cannot
+ * be talked to at all, so the handshake fails the call. An encoder reading a
+ * later *event* contract still renders every field it recognizes, and the ones
+ * it does not are fields it was never going to render — so refusing the run
+ * would trade a complete rendering for no rendering at all. It is sent at
+ * `init` and left to the encoder to act on.
+ *
+ * **Adding a field does not move this; changing or removing one does.** That
+ * asymmetry is the whole contract, and it is the direction §10 of the design
+ * already called safe: `serializeEvent` spreads rather than enumerating, so a
+ * new field reaches every client without anything being told it exists, and an
+ * encoder that has never heard of it renders exactly what it did yesterday.
+ */
+export const EVENT_CONTRACT_VERSION = 1;
+
 /** Event holds information about a runner event. */
 export interface Event {
   type: EventType;

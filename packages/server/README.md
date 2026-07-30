@@ -286,6 +286,40 @@ Two notes on the shape:
   as a real `400`, not as a `200` followed by an error frame. Once SSE headers
   are out, the status is fixed at 200.
 
+### `POST /v1/runs?stream=true&protocol=<name>`
+
+The frames above are heddle's own rendering of the run, and they are one
+rendering among however many are loaded. `protocol` selects another.
+
+| Value | What you get |
+|---|---|
+| omitted | heddle's frames, exactly as documented above |
+| `heddle` | the same thing, asked for by name |
+| anything else | a rendering supplied by a plugin that declares that protocol |
+
+A protocol nothing renders is a `400` listing what this server can render.
+`GET /v1/capabilities` reports the same list in `protocols`, plus
+`eventContract` — the version of the event shape an encoder is handed.
+
+Two rules worth knowing:
+
+- **A named protocol needs `stream=true`.** The buffered response is one JSON
+  body and carries no events at all, so `?protocol=ag-ui` without a stream is a
+  `400` rather than a protocol silently ignored. That holds for `heddle` too:
+  naming a protocol is a claim about the response body, and omitting the
+  parameter is the way to ask for the buffered form.
+- **The response's content type is the encoder's.** A protocol other than
+  heddle's own need not be carried over SSE, so the header comes from what the
+  encoder declared.
+
+An encoder arrives with the request, as a plugin whose manifest declares
+`"kind": "encoder"` — which means `--allow-request-code` is required to use one,
+and that a server without it renders `heddle` and nothing else. See
+`examples/ag-ui/` for a complete one.
+
+Because a plugin cannot claim the name `heddle`, a client asking for it always
+gets the frames documented above.
+
 ### Request body
 
 Both endpoints take the same flow selector. Provide exactly one of:
@@ -304,7 +338,7 @@ With `--allow-request-code`, both endpoints additionally accept:
 | Field | Type | Meaning |
 |---|---|---|
 | `tools` | array | `{ name, source, interpreter? }`. `interpreter` is one of `sh`, `bash`, `python3`, `node`, and generates a shebang when `source` has none. |
-| `plugins` | array | `{ name, source }`. ESM, default-exporting a heddle plugin. |
+| `plugins` | array | `{ name, manifest, source }`. `manifest` declares what the plugin provides, as data, so parsing a flow that uses it executes nothing; `source` is ESM calling `serve()`, and only ever runs in its own process. A bare module default-exporting a plugin object — the in-process shape — is refused, because importing it would run the caller's code inside the server. |
 
 Names must match `[A-Za-z0-9_-]{1,64}` — they become filenames, and nothing that
 navigates a path is allowed through. Without the flag, a request carrying either
