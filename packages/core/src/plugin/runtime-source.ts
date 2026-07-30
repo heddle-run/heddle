@@ -260,6 +260,27 @@ function serve(handlers, options) {
 
     const params = request.params || {};
 
+    // Addressed to the plugin rather than to one of its components, so it is
+    // answered before the componentType lookup below — which this carries none of.
+    if (request.method === 'listTools') {
+      const list = options && options.listTools;
+      if (typeof list !== 'function') {
+        send({ id: request.id, error: { message:
+          'this plugin declares "discoverTools" in its manifest but serves no ' +
+          'listTools handler. Write serve(handlers, { listTools: async () => ' +
+          '({ tools: [ … ] }) }).' } });
+        return;
+      }
+      try {
+        send({ id: request.id, result: (await list()) || { tools: [] } });
+      } catch (err) {
+        send({ id: request.id, error: {
+          name: (err && err.name) || 'Error',
+          message: String((err && err.message) || err) } });
+      }
+      return;
+    }
+
     if (request.method === 'callTool') {
       await serveTool(request, params);
       return;

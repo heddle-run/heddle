@@ -39,6 +39,24 @@ export interface PluginManifest {
   capabilities: PluginCapability[];
   components: ManifestComponent[];
   tools: ManifestTool[];
+  /**
+   * Whether this plugin's tool list has to be asked for rather than read.
+   *
+   * The exception to the rule the rest of this file exists to enforce, and it is
+   * narrow on purpose. Everything else here is data, so heddle can learn what a
+   * plugin provides without running it — which is what keeps `heddle validate`
+   * free and lets a spec be inspected without executing its author's code.
+   *
+   * An MCP proxy cannot honour that. The tool list belongs to the server it
+   * fronts, so a list committed to this file is a copy of somebody else's
+   * registry as it stood the day a build step ran. Declaring this says: start me,
+   * ask me once, and take the answer.
+   *
+   * **It costs the property above, so it is refused unless the operator opted
+   * in.** heddle will not start a stranger's process because a manifest asked it
+   * to. See `discoverTools` in `remote-loader.ts`.
+   */
+  discoverTools?: boolean;
 }
 
 export interface ManifestTool {
@@ -74,6 +92,10 @@ export function validateManifest(raw: unknown): PluginManifest {
   const name = readManifestName(manifest);
 
   readManifestVersion(manifest, name);
+  // Before the check below, which consults it: a `discoverTools` of "yes" is a
+  // bad boolean, and reporting it as "declares no components and no tools"
+  // would send an author to the wrong field.
+  assertBoolean(manifest, 'discoverTools', name);
   assertDeclaresSomething(manifest, name);
   assertCommandShape(manifest, name);
 
@@ -89,7 +111,18 @@ export function validateManifest(raw: unknown): PluginManifest {
     capabilities: asCapabilities(name, manifest.capabilities),
     components,
     tools: asTools(name, manifest.tools, componentTypes),
+    discoverTools: manifest.discoverTools === true,
   };
+}
+
+function assertBoolean(
+  manifest: Record<string, unknown>,
+  field: string,
+  name: string,
+): void {
+  if (manifest[field] !== undefined && typeof manifest[field] !== 'boolean') {
+    fail(`plugin "${name}" has a "${field}" that is not a boolean`);
+  }
 }
 
 function readManifestName(manifest: Record<string, unknown>): string {
@@ -116,9 +149,18 @@ function assertDeclaresSomething(
     Array.isArray(manifest.tools) && manifest.tools.length > 0;
   const declaresComponents =
     Array.isArray(manifest.components) && manifest.components.length > 0;
+  // A discovery-only plugin is the shape an MCP proxy has: it declares nothing
+  // statically because its tool list is the server's, not the manifest's. That
+  // is a promise to answer `listTools`, so it counts as declaring something —
+  // and a plugin that provides neither is still refused.
+  const promisesTools = manifest.discoverTools === true;
 
-  if (!declaresTools && !declaresComponents) {
-    fail(`plugin "${name}" manifest declares no components and no tools`);
+  if (!declaresTools && !declaresComponents && !promisesTools) {
+    fail(
+      `plugin "${name}" manifest declares no components and no tools. A plugin ` +
+        `whose tools are not known until it runs declares "discoverTools": true ` +
+        `instead.`,
+    );
   }
 }
 
@@ -183,7 +225,13 @@ function readComponent(
     branches: asBranches(plugin, componentType, component.branches),
     schema: component.schema as JsonSchemaFragment | undefined,
     phase,
-    stream: component.stream === true,
+    // Only on the kind that owns it, so a validated manifest is valid input to
+    // this function again. It was not: normalising `stream: false` onto every
+    // component meant a second pass saw a node declaring `stream` and — once
+    // `onlyOn` existed — refused it. `remotePluginFrom` validates, then
+    // `loadRemotePlugin` validates what it was handed, so that second pass is
+    // the ordinary CLI path rather than a hypothetical one.
+    stream: kind === 'provider' ? component.stream === true : undefined,
     seams: asSeams(plugin, componentType, kind, component.seams),
     protocol: rendering?.protocol,
     contentType: rendering?.contentType,
@@ -415,6 +463,34 @@ function asRendering(
   }
 
   return { protocol, contentType };
+}
+
+/**
+ * Check a tool list a plugin answered `listTools` with.
+ *
+ * Exactly the machinery a manifest's `tools` goes through, and that is the whole
+ * design: a discovered tool is a manifest tool that arrived late. The same name
+ * rule, the same `path` xor `componentType` exclusivity, the same schema byte
+ * and depth caps. Anything weaker would make discovery a way *around* this
+ * validator rather than an input to it — and this list came out of a process,
+ * which is a less trustworthy source than a file an operator installed.
+ */
+export function readDiscoveredTools(
+  plugin: string,
+  raw: unknown,
+  componentTypes: Set<string>,
+): ManifestTool[] {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    fail(`plugin "${plugin}" answered listTools with something that is not an object`);
+  }
+  const { tools } = raw as { tools?: unknown };
+  if (tools === undefined) {
+    fail(
+      `plugin "${plugin}" answered listTools with no "tools". A plugin with none ` +
+        `to offer answers { "tools": [] }, which is not the same as not answering.`,
+    );
+  }
+  return asTools(plugin, tools, componentTypes);
 }
 
 function asTools(

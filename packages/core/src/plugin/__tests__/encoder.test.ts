@@ -459,6 +459,28 @@ describe('a manifest declaring an encoder', () => {
     ).toThrow(/declares "phase" but its kind is "encoder"/);
   });
 
+  it('accepts its own output as input, which the CLI path depends on', () => {
+    // `remotePluginFrom` validates a manifest and hands the result to
+    // `loadRemotePlugin`, which validates what it was handed — so every
+    // `--plugin foo.json` is validated twice. That made normalisation a
+    // correctness question rather than a tidiness one: writing `stream: false`
+    // onto every component meant the second pass saw a node declaring `stream`,
+    // and once it was refused on the wrong kind, no manifest could be loaded
+    // from disk at all. Nothing covered that path, so the suite stayed green.
+    const once = validateManifest({
+      name: 'p',
+      version: '1.0.0',
+      components: [
+        { componentType: 'N', kind: 'node' },
+        { componentType: 'T', kind: 'transform', phase: 'pre' },
+        { componentType: 'P', kind: 'provider', stream: true },
+      ],
+    });
+
+    expect(() => validateManifest(once)).not.toThrow();
+    expect(validateManifest(once)).toEqual(once);
+  });
+
   it('still accepts each field on the kind that owns it', () => {
     // The refusals above must not have made the ordinary declarations harder.
     expect(() =>

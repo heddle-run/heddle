@@ -16,6 +16,36 @@ const NO_CALL_MODEL =
   'plugin against a heddle started without --default-llm-key, where the only ' +
   'credential in play is the one your own spec brings.';
 
+/**
+ * Refuse a submitted plugin that has to be started before heddle knows what it
+ * provides.
+ *
+ * `/v1/validate` proves something stronger than it looks: `loadRemotePlugin`
+ * reads the manifest as data and `PluginHost` starts on first call, so
+ * validating a flow executes none of the submitted plugin's code. Discovery
+ * would spend exactly that, on the endpoint callers reach for *because* it runs
+ * nothing — and it is the one route that takes no concurrency slot, so it would
+ * become an unmetered way to make this server spawn processes.
+ *
+ * The operator cannot opt in on a caller's behalf here, because the caller and
+ * the operator are different people. A dynamic tool list is something you
+ * install, not something you accept in a request body.
+ */
+function refuseDiscovery(rawManifest: unknown): void {
+  const manifest = rawManifest as { discoverTools?: unknown; name?: unknown };
+  if (manifest?.discoverTools !== true) return;
+
+  throw new HttpError(
+    400,
+    `this plugin declares "discoverTools", which cannot be submitted with a ` +
+      `request. heddle would have to start it just to learn what tools it has, ` +
+      `and this server reads a submitted manifest as data precisely so that ` +
+      `validating a flow runs none of its author's code. Declare the tools in ` +
+      `the manifest instead.`,
+    'PluginError',
+  );
+}
+
 export function buildPlugins(
   config: ServerConfig,
   code: MaterializedCode,
@@ -29,6 +59,7 @@ export function buildPlugins(
     for (const plugin of code.plugins) {
       refuseShadowing(plugin.manifest);
       refuseMiddleware(plugin.manifest);
+      refuseDiscovery(plugin.manifest);
 
       registry.addRemote(
         loadRemotePlugin(plugin.manifest, plugin.path, {
