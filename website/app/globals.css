@@ -207,10 +207,221 @@ body {
   }
 }
 
+/* A comparison pane: the file list beside the code on a wide screen, above
+   it once the panes stack. */
+.hd-compare-pane-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+@media (min-width: 900px) {
+  .hd-compare-pane-body {
+    flex-direction: row;
+  }
+}
+
+/* The file list in each comparison pane. Below 900px, where the panes stack,
+   a 10rem gutter would be a third of the screen — so it is a strip of files
+   above the code instead, and the directory becomes a prefix on each name
+   rather than a heading of its own. */
+.hd-compare-tree {
+  display: flex;
+  flex: 0 0 auto;
+  min-height: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border-bottom: 1px solid var(--border-hairline);
+  background: var(--bg-sunken);
+}
+
+.hd-compare-tree-group {
+  display: flex;
+}
+
+.hd-compare-tree-dir {
+  display: none;
+}
+
+.hd-compare-tree-file {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 44px;
+  padding: 0 var(--space-4);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  text-align: left;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  transition:
+    color var(--dur-base) var(--ease-standard),
+    background-color var(--dur-base) var(--ease-standard),
+    border-color var(--dur-base) var(--ease-standard);
+}
+
+.hd-compare-tree-file:hover {
+  color: var(--text-strong);
+}
+
+.hd-compare-tree-file[aria-current] {
+  border-bottom-color: var(--brand-pink);
+  background: var(--bg-inset);
+  color: var(--text-strong);
+}
+
+.hd-compare-tree-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--text-faint);
+}
+.hd-compare-tree-file[aria-current] .hd-compare-tree-icon {
+  color: var(--brand-pink);
+}
+
+.hd-compare-tree-prefix {
+  color: var(--text-faint);
+}
+
+@media (min-width: 900px) {
+  .hd-compare-tree {
+    display: block;
+    width: 10.5rem;
+    padding: var(--space-2) 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    border-bottom: 0;
+    border-right: 1px solid var(--border-hairline);
+  }
+
+  .hd-compare-tree-group {
+    display: block;
+  }
+
+  .hd-compare-tree-dir {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: 32px;
+    padding: 0 var(--space-4);
+    color: var(--text-faint);
+    font-family: var(--font-mono);
+    font-size: var(--fs-2xs);
+    letter-spacing: var(--tracking-widest);
+    text-transform: uppercase;
+  }
+
+  .hd-compare-tree-file {
+    width: 100%;
+    padding: 0 var(--space-3) 0 var(--space-4);
+    border-bottom: 0;
+    border-left: 2px solid transparent;
+  }
+  .hd-compare-tree-file[aria-current] {
+    border-bottom-color: transparent;
+    border-left-color: var(--brand-pink);
+  }
+
+  .hd-compare-tree-group[data-dir] .hd-compare-tree-file {
+    padding-left: var(--space-6);
+  }
+
+  .hd-compare-tree-leaf {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .hd-compare-tree-prefix {
+    display: none;
+  }
+}
+
+@media (min-width: 1100px) {
+  .hd-compare-tree {
+    width: 12.5rem;
+  }
+}
+
+/* The padding lives on the wrapper: with border-collapse, padding on the
+   table box itself is ignored. */
+.hd-compare-ledger-wrap {
+  padding: var(--space-4) var(--space-5);
+}
+
+.hd-compare-ledger {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.hd-compare-ledger,
+.hd-compare-ledger thead,
+.hd-compare-ledger tbody,
+.hd-compare-ledger tr,
+.hd-compare-ledger th,
+.hd-compare-ledger td {
+  display: block;
+}
+
+.hd-compare-ledger thead {
+  display: none;
+}
+
+.hd-compare-ledger tr + tr {
+  margin-top: var(--space-4);
+}
+
+.hd-compare-ledger td[data-side]::before {
+  content: attr(data-side);
+  display: block;
+  margin-top: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-widest);
+  color: var(--text-faint);
+}
+
+@media (min-width: 900px) {
+  .hd-compare-ledger {
+    display: table;
+  }
+  .hd-compare-ledger thead {
+    display: table-header-group;
+  }
+  .hd-compare-ledger tbody {
+    display: table-row-group;
+  }
+  .hd-compare-ledger tr {
+    display: table-row;
+  }
+  .hd-compare-ledger th,
+  .hd-compare-ledger td {
+    display: table-cell;
+    vertical-align: baseline;
+    padding: var(--space-1) var(--space-6) var(--space-1) 0;
+  }
+  .hd-compare-ledger th[scope="row"] {
+    width: 1%;
+  }
+  .hd-compare-ledger tr + tr {
+    margin-top: 0;
+  }
+  .hd-compare-ledger td[data-side]::before {
+    content: none;
+  }
+}
+
 .hd-nav-links {
   display: none;
 }
-@media (min-width: 860px) {
+/* Five links plus the wordmark, the toggle and the CTA need more room than
+   the four this was set for. */
+@media (min-width: 960px) {
   .hd-nav-links {
     display: flex;
   }

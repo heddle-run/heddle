@@ -9,6 +9,7 @@ import Wordmark from "./Wordmark";
 const links = [
   { label: "Method", href: "/#method" },
   { label: "Isolation", href: "/#safe" },
+  { label: "Compare", href: "/compare" },
   { label: "Playground", href: "/playground" },
   { label: "Docs", href: "/docs" },
 ];

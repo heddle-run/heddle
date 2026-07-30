@@ -1,4 +1,5 @@
-import { BoxedFrame } from "@/ds";
+import Link from "next/link";
+import { BoxedFrame, Icon } from "@/ds";
 import SectionLabel from "./SectionLabel";
 
 export default function Manifesto() {
@@ -57,6 +58,23 @@ export default function Manifesto() {
                 has to be trusted on faith — and a flow that runs here runs on
                 any other conforming runtime unchanged.
               </p>
+
+              <Link
+                href="/compare"
+                className="ff-text-transition"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "var(--space-2)",
+                  marginTop: "var(--space-6)",
+                  fontSize: "var(--fs-sm)",
+                  fontWeight: "var(--fw-medium)",
+                  color: "var(--text-strong)",
+                }}
+              >
+                The same agent, four frameworks
+                <Icon name="arrow-right" size={14} />
+              </Link>
             </div>
           </div>
         </BoxedFrame>
