@@ -17,6 +17,7 @@ import {
 interface ValidateOptions {
   toolsDir?: string;
   plugin?: string[];
+  discoverTools?: boolean;
 }
 
 export const validateCommand = new Command('validate')
@@ -29,8 +30,12 @@ export const validateCommand = new Command('validate')
     (value: string, previous: string[]) => [...previous, value],
     [] as string[],
   )
+  .option(
+    '--discover-tools',
+    'Let a plugin that declares "discoverTools" be started so heddle can ask what tools it has. Off by default: reading a manifest runs nothing.',
+  )
   .action(async (specPath: string, options: ValidateOptions) => {
-    const plugins = await loadPlugins(options.plugin);
+    const plugins = await loadPlugins(options.plugin, options.discoverTools === true);
 
     const component = loadComponent(specPath, plugins) as unknown as {
       componentType: string;

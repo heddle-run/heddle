@@ -26,6 +26,7 @@ export interface HostMethods {
   after: AfterParams;
   encode: EncodeParams;
   finishEncode: FinishEncodeParams;
+  listTools: ListToolsParams;
 }
 
 export type HostMethod = keyof HostMethods;
@@ -82,6 +83,18 @@ export interface InitResult {
 }
 
 export type ShutdownParams = Record<string, never>;
+
+/**
+ * Params for `listTools`: none.
+ *
+ * The only work verb heddle sends that carries nothing, and the emptiness is the
+ * point. Every other one names the component it is about, because a plugin can
+ * provide several and heddle has to say which it is talking to. This is
+ * addressed to the plugin itself — *what have you got* — so there is nothing to
+ * name. Sent exactly once, at load, before any flow has been compiled against
+ * the answer.
+ */
+export type ListToolsParams = Record<string, never>;
 
 export interface CancelParams extends Record<string, unknown> {
   call: number | string;

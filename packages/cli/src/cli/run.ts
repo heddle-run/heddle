@@ -46,6 +46,7 @@ interface RunOptions extends SafeOptions {
   input?: string;
   chat?: boolean;
   plugin?: string[];
+  discoverTools?: boolean;
   pluginConfig?: string[];
   maxNodeAttempts?: string;
   stream?: boolean;
@@ -62,6 +63,10 @@ export const runCommand = new Command('run')
     'Plugin module providing custom component types (repeatable)',
     collect,
     [] as string[],
+  )
+  .option(
+    '--discover-tools',
+    'Let a plugin that declares "discoverTools" be started so heddle can ask what tools it has. Off by default: reading a manifest runs nothing.',
   )
   .option(
     '--plugin-config <type=json>',
@@ -105,7 +110,7 @@ export const runCommand = new Command('run')
   .action(async (flowPath: string, options: RunOptions, command: Command) => {
     const verbose = command.parent?.opts().verbose ?? false;
 
-    const plugins = await loadPlugins(options.plugin);
+    const plugins = await loadPlugins(options.plugin, options.discoverTools === true);
     let interactive = false;
     try {
       interactive = await runFlow(flowPath, options, plugins, verbose);

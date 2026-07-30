@@ -4,6 +4,7 @@ import type { SandboxSession } from '../sandbox/types.js';
 import { PluginError } from '../errors.js';
 import { PluginHost, type PluginHostOptions } from './host.js';
 import {
+  readDiscoveredTools,
   validateManifest,
   type ManifestTool,
   type PluginManifest,
@@ -185,6 +186,59 @@ function buildPlugin(
   }
 
   return plugin;
+}
+
+/**
+ * Ask a plugin what tools it has, and add them to what it already declared.
+ *
+ * **The one place heddle starts a plugin to learn what it provides**, and the
+ * exception is bought rather than granted: a manifest asking for it is not
+ * enough, the operator has to opt in as well, so `loadRemotePlugin` stays a
+ * function that reads data and this stays a function somebody called.
+ *
+ * That split is what protects `heddle validate`. Loading is still free and still
+ * executes nothing; discovery is a separate, awaited step that a caller either
+ * takes or does not. The server takes it nowhere, which is why validating a
+ * submitted flow starts no process however its plugins are written.
+ *
+ * **Once, at load, and cached for the registry's lifetime** — which is the whole
+ * of why `Registry.lookup` can stay synchronous. Discovery happens before the
+ * registry is built rather than inside it, so the three call sites that resolve
+ * a tool name during execution and request validation never wait on a pipe.
+ *
+ * A plugin that declares tools *and* discovers them gets both, its own first. A
+ * discovered tool colliding with one of its declared tools is a duplicate name
+ * and refused as one.
+ */
+export async function discoverTools(
+  remote: RemotePlugin,
+  manifest: PluginManifest,
+  root: string,
+): Promise<void> {
+  if (!manifest.discoverTools) return;
+
+  const answer = await remote.host.call('listTools', {});
+  const componentTypes = new Set(manifest.components.map((c) => c.componentType));
+  const declared = manifest.tools;
+  const discovered = readDiscoveredTools(
+    manifest.name,
+    answer,
+    componentTypes,
+  );
+
+  // Re-validated as one list, so a discovered name colliding with a declared one
+  // is caught here by the same duplicate check rather than becoming a registry
+  // collision whose error names the wrong thing.
+  const all = readDiscoveredTools(
+    manifest.name,
+    { tools: [...declared, ...discovered] },
+    componentTypes,
+  );
+
+  const getHost = (): PluginHost => remote.host;
+  remote.plugin.tools = all.map((tool) =>
+    toolDefFor(manifest, tool, root, getHost),
+  );
 }
 
 function admittedVerdicts(
