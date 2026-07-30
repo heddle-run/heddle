@@ -16,7 +16,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 
 import { loadPlugins } from '../loader.js';
 import { discoverTools, loadRemotePlugin } from '../remote-loader.js';
@@ -52,15 +52,17 @@ function writePlugin(source: string, manifest: Record<string, unknown>): string 
 /**
  * The processes this one currently owns.
  *
- * A *set of pids* rather than a count, because a count is not a measurement of
- * anything here: other tests in this file start and stop plugins, so the
- * baseline moves in both directions and a shrinking count reads as a pass. What
- * this has to answer is narrower — did a process that was not running before
- * survive — and only a pid can answer it.
+ * `execFileSync` rather than `execSync`, because a shell is a child too: every
+ * sample taken through one contains that sample's own `sh`, under a new pid each
+ * time, so a poll comparing samples never converges. The first version of this
+ * helper did exactly that and hung until the test timed out — the instrument was
+ * measuring itself.
  */
 function childPids(): Set<number> {
   try {
-    const out = execSync(`pgrep -P ${process.pid}`, { encoding: 'utf-8' });
+    const out = execFileSync('pgrep', ['-P', String(process.pid)], {
+      encoding: 'utf-8',
+    });
     return new Set(out.split('\n').filter(Boolean).map(Number));
   } catch {
     // `pgrep` exits non-zero when nothing matches, which is not an error here.
@@ -68,22 +70,38 @@ function childPids(): Set<number> {
   }
 }
 
+/** Whether a pid is still there. Signal 0 tests for existence and sends nothing. */
+function alive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Wait for the children started since `before` to go, and report any that stay.
  *
- * Polled rather than slept, because a fixed delay is a guess about a machine —
- * too short and CI reports a leak that was merely slow, too long and every run
- * pays for it. This returns as soon as the answer is settled.
+ * A pid counts as leaked only if it is *still alive* a moment after it was seen,
+ * which is what separates a plugin that outlived its registry from the
+ * short-lived process this check spawns to look. Polled rather than slept: a
+ * fixed delay is a guess about a machine, too short on a loaded runner and
+ * wasteful everywhere else.
  */
 async function leakedSince(
   before: Set<number>,
-  deadlineMs = 5000,
+  deadlineMs = 3000,
 ): Promise<number[]> {
   const start = Date.now();
   for (;;) {
-    const leaked = [...childPids()].filter((pid) => !before.has(pid));
-    if (leaked.length === 0 || Date.now() - start > deadlineMs) return leaked;
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    const candidates = [...childPids()].filter((pid) => !before.has(pid));
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    const persistent = candidates.filter(alive);
+    if (persistent.length === 0 || Date.now() - start > deadlineMs) {
+      return persistent;
+    }
   }
 }
 
@@ -351,7 +369,7 @@ describe('what a failed discovery leaves behind', () => {
     await expect(loadPlugins([path], true)).rejects.toThrow();
 
     expect(await leakedSince(before)).toEqual([]);
-  });
+  }, 15_000);
 
   it('stops the plugins it had already loaded', async () => {
     // Everything before the one that failed is in the registry, and nobody else
@@ -369,5 +387,5 @@ describe('what a failed discovery leaves behind', () => {
     await expect(loadPlugins([good, bad], true)).rejects.toThrow();
 
     expect(await leakedSince(before)).toEqual([]);
-  });
+  }, 15_000);
 });
