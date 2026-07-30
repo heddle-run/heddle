@@ -163,8 +163,14 @@ function readComponent(
   );
   const componentType = readComponentType(component, plugin, seen);
   const kind = readKind(component, plugin, componentType);
+
+  // Kind before value, for both. A `phase` on a provider and a `stream` on a
+  // node are not bad values — they are fields nothing will ever read, which is
+  // the failure this validator exists to prevent.
+  onlyOn(component, 'phase', kind, 'transform', plugin, componentType);
   const phase = readPhase(component, plugin, componentType);
 
+  onlyOn(component, 'stream', kind, 'provider', plugin, componentType);
   assertBooleanField(component, 'stream', plugin, componentType);
 
   const rendering = asRendering(plugin, componentType, kind, component);
@@ -337,6 +343,36 @@ function asSeams(
   }
 
   return readSubscription(where, value);
+}
+
+/**
+ * Refuse a per-kind field on a component of the wrong kind.
+ *
+ * `seams` and the rendering pair were refused this way from the day each
+ * landed; `phase` and `stream` were not, and checked only their *values* — so
+ * `stream: true` on a node, or `phase: "post"` on a provider, loaded clean and
+ * was read by nothing. That is this validator's own failure mode reached by the
+ * one route nobody covered: not a value heddle rejects, but a field heddle
+ * never looks at.
+ *
+ * Worth stating once, now that four fields obey it: a manifest field belongs to
+ * exactly one kind, and writing it on another kind is a misunderstanding about
+ * which kind you are — never a harmless extra.
+ */
+function onlyOn(
+  component: Record<string, unknown>,
+  field: string,
+  kind: ManifestKind,
+  required: ManifestKind,
+  plugin: string,
+  componentType: string,
+): void {
+  if (component[field] === undefined || kind === required) return;
+  fail(
+    `plugin "${plugin}": ${componentType} declares "${field}" but its kind is ` +
+      `"${kind}". Only a ${required} uses it, so on a ${kind} it would be read by ` +
+      `nothing — remove it, or correct the kind.`,
+  );
 }
 
 function asRendering(

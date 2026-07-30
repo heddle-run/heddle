@@ -428,6 +428,51 @@ describe('a manifest declaring an encoder', () => {
     ).toThrow(/declares "protocol" but its kind is "node"/);
   });
 
+  it('refuses "stream" on a kind that is not a provider', () => {
+    // `stream` checked its value and never its kind, so `stream: true` on a node
+    // loaded clean and was read by nothing — the same silent no-op `seams` and
+    // `protocol` are refused for, reached by the one route nobody covered.
+    expect(() =>
+      validateManifest({
+        name: 'p',
+        version: '1.0.0',
+        components: [{ componentType: 'X', kind: 'node', stream: true }],
+      }),
+    ).toThrow(/declares "stream" but its kind is "node"/);
+  });
+
+  it('refuses "phase" on a kind that is not a transform', () => {
+    expect(() =>
+      validateManifest({
+        name: 'p',
+        version: '1.0.0',
+        components: [
+          {
+            componentType: 'X',
+            kind: 'encoder',
+            protocol: 'x',
+            contentType: 'text/plain',
+            phase: 'post',
+          },
+        ],
+      }),
+    ).toThrow(/declares "phase" but its kind is "encoder"/);
+  });
+
+  it('still accepts each field on the kind that owns it', () => {
+    // The refusals above must not have made the ordinary declarations harder.
+    expect(() =>
+      validateManifest({
+        name: 'p',
+        version: '1.0.0',
+        components: [
+          { componentType: 'A', kind: 'provider', stream: true },
+          { componentType: 'B', kind: 'transform', phase: 'both' },
+        ],
+      }),
+    ).not.toThrow();
+  });
+
   it('refuses a contentType on a kind that is not an encoder', () => {
     expect(() =>
       validateManifest({
