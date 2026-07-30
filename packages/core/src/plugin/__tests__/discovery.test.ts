@@ -49,16 +49,43 @@ function writePlugin(source: string, manifest: Record<string, unknown>): string 
   return path;
 }
 
-/** How many child processes this test file has left running. */
-function childCount(): number {
-  return Number(
-    execSync(`pgrep -P ${process.pid} | wc -l`, { encoding: 'utf-8' }).trim(),
-  );
+/**
+ * The processes this one currently owns.
+ *
+ * A *set of pids* rather than a count, because a count is not a measurement of
+ * anything here: other tests in this file start and stop plugins, so the
+ * baseline moves in both directions and a shrinking count reads as a pass. What
+ * this has to answer is narrower — did a process that was not running before
+ * survive — and only a pid can answer it.
+ */
+function childPids(): Set<number> {
+  try {
+    const out = execSync(`pgrep -P ${process.pid}`, { encoding: 'utf-8' });
+    return new Set(out.split('\n').filter(Boolean).map(Number));
+  } catch {
+    // `pgrep` exits non-zero when nothing matches, which is not an error here.
+    return new Set();
+  }
 }
 
-/** Give a disposed process a moment to actually go. */
-const settle = (): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, 250));
+/**
+ * Wait for the children started since `before` to go, and report any that stay.
+ *
+ * Polled rather than slept, because a fixed delay is a guess about a machine —
+ * too short and CI reports a leak that was merely slow, too long and every run
+ * pays for it. This returns as soon as the answer is settled.
+ */
+async function leakedSince(
+  before: Set<number>,
+  deadlineMs = 5000,
+): Promise<number[]> {
+  const start = Date.now();
+  for (;;) {
+    const leaked = [...childPids()].filter((pid) => !before.has(pid));
+    if (leaked.length === 0 || Date.now() - start > deadlineMs) return leaked;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+}
 
 /** A second plugin, under its own basename. */
 function writePluginAt(
@@ -313,7 +340,7 @@ describe('what a failed discovery leaves behind', () => {
     // leave a started process with no reference left to dispose it. The CLI
     // survived by accident, on `process.exit`; `loadPlugins` is public API,
     // where there is no such backstop.
-    const before = childCount();
+    const before = childPids();
     const path = writePlugin(
       `serve({ Proxy: {} }, { listTools: async () => ({ tools: [
          { name: 'not a valid name', componentType: 'Proxy' },
@@ -322,15 +349,14 @@ describe('what a failed discovery leaves behind', () => {
     );
 
     await expect(loadPlugins([path], true)).rejects.toThrow();
-    await settle();
 
-    expect(childCount()).toBe(before);
+    expect(await leakedSince(before)).toEqual([]);
   });
 
   it('stops the plugins it had already loaded', async () => {
     // Everything before the one that failed is in the registry, and nobody else
     // holds it. The same disposition `buildPlugins` takes on the server.
-    const before = childCount();
+    const before = childPids();
     const good = writePluginAt('good', SERVES_TWO, PROXY);
     const bad = writePluginAt(
       'bad',
@@ -341,8 +367,7 @@ describe('what a failed discovery leaves behind', () => {
     );
 
     await expect(loadPlugins([good, bad], true)).rejects.toThrow();
-    await settle();
 
-    expect(childCount()).toBe(before);
+    expect(await leakedSince(before)).toEqual([]);
   });
 });
