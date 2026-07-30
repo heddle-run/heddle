@@ -799,8 +799,8 @@ channel. **Middleware progress in Phase 6 is therefore `emitEvent`, not a partia
 ### 7.2 The widened `PluginMethod` set — **mostly landed, Phases 3 and 4**
 
 This is the cheap axis, and the one that changes what people can build. `emitEvent`, `log` and
-`callModel` landed; only `getState` is still a proposal. `getWorkspace` landed as something other
-than a verb, which is recorded below the table.
+`callModel` landed. `getState` was the fourth proposal and is **withdrawn** — see below.
+`getWorkspace` landed as something other than a verb, which is recorded below the table.
 
 ```ts
 export type PluginMethod =
@@ -808,16 +808,17 @@ export type PluginMethod =
   | 'emitEvent'    // landed, Phase 3
   | 'log'          // landed, Phase 3
   | 'callModel'    // landed, Phase 4
-  | 'getState'     // read the run's accumulated State
   | 'callPlugin';  // deliberately NOT proposed — see Open questions
 ```
+
+The set is therefore closed at four, and `PLUGIN_METHODS` in `plugin/protocol.ts` is the whole of it.
 
 | Method | Rationale | Serving code |
 |---|---|---|
 | `callModel` | **Landed.** The single highest-value addition. Without it, an LLM-as-judge node, a semantic router or a summarizer must ship its own SDK *and* obtain its own credential — and a submitted plugin has an empty environment (`PluginHost.resolveCommand`), so it cannot. | `PluginModel` (`plugin/services.ts`), bound per execution and served in `plugin/host.ts`'s `serveCallModel` against the caller the call was dispatched with — per component, and with no host-wide fallback at all. See below for why. |
 | `emitEvent` | **Landed.** A plugin node was silent between `node_start` and `node_complete` (`runner.ts:47,77`). Required opening `EventType` (`runner/events.ts`) to a namespaced string plus a `data?: unknown` payload, which is what `PluginEventType` is. | `pluginReporter` (`plugin/executor.ts`), served in `plugin/host.ts`'s `serveEmitEvent` against the reporter the call was dispatched with. |
 | `log` | **Landed.** `console.log` is silently redirected to stderr (the generated runtime's `console` shim, `plugin/runtime-source.ts`) and stderr is bounded to 4096 bytes and only surfaced on failure (`host.ts`'s `STDERR_LIMIT`). There was no way for a working plugin to say anything. | Same reporter as `emitEvent`, published as `plugin_log` carrying `level` and `message`. |
-| `getState` | `execute` receives only the node's resolved input (`plugin/remote.ts`, `remoteNodeDef`), which after `resolveInputs` is *usually* the whole state (`runner.ts:112-114`) but is not guaranteed to be. Explicit beats incidental. | Requires the Runner to hand `currentState` to `Dependencies` per node — a real change, and the weakest item on this list. |
+| ~~`getState`~~ | **Withdrawn, never built.** The argument was that `execute` receives only the node's resolved input (`plugin/remote.ts`, `remoteNodeDef`), which after `resolveInputs` is *usually* the whole state (`runner.ts:112-114`) but is not guaranteed to be — so explicit beats incidental. What it would have cost is threading `currentState` through `Dependencies` per node, and what it buys is a case nobody has brought: a plugin that needs a value its node was not given is a plugin whose node should have been given it, which the spec's data-flow edges already express. Withdrawn rather than deferred, because a proposal that survives four phases without a caller is not waiting for its turn. | — |
 
 Note what is *not* here: no `readFile`, no `fetch`, no `getEnv`. The process boundary denies those,
 and re-granting them over RPC would hand back exactly what `plugin/host.ts`, module docblock bought.
@@ -1854,33 +1855,82 @@ Phase 3, so an encoder written now sees the final shape — `BuiltinEventType | 
    to watch already has `emitEvent` and `log`, which cannot fail a run. The carve-out that makes it
    affordable is in the reporting: on `nodeError` the run fails with the node's own error and the
    middleware failure as `cause`.
-4. **Network policy for plugins.** The current model denies the environment and (optionally) the
-   filesystem; it says nothing about the network. Example (c) needs it, guardrails plugins must not
-   have it. Neither `SandboxPolicy` nor the capability list expresses it today.
+4. **~~Network policy for plugins.~~ Decided: reachable by default, with a deny list the operator
+   owns. Scheduled as Phase 10.** The current model denies the environment and (optionally) the
+   filesystem; it says nothing about the network beyond an all-or-nothing switch.
 
    **Phase 5 made this concrete rather than hypothetical.** A provider plugin's whole job is an
    outbound request, so it is the first kind that is useless without network and the first whose
-   network access an operator would obviously want to scope — to the one host its config names. The
-   capability model cannot express that, because a capability gates a *reverse call* and this is not
-   one: the plugin reaches the network on its own, through its own runtime, and heddle never sees it.
-   Whatever answers this will be a sandbox policy, not a `PluginCapability`. This is now the largest
-   open item in the security model.
-5. **Should `getState` exist at all?** It requires threading `currentState` through `Dependencies`,
-   and the value it adds over the node's resolved input is small in practice, since `resolveInputs`
-   returns the whole accumulated state whenever a node has no mappings (`runner.ts:112-114`). Weakest
-   item in §7.2.
-6. **Does `listTools` justify starting a process during load?** It breaks the one property that makes
-   `/v1/validate` cheap (`remote-loader.ts:109-111`). Manifest-declared tools cover most real cases;
-   MCP discovery is the case that does not, and it is the case people will ask for.
-7. **Should a plugin ever be allowed to claim a builtin type?** Phase 5 answered this for one kind
-   and left it open for the rest: a *provider* must never claim one, because a flow writing
-   `OpenAiConfig` and reaching a stranger's code is a capture rather than an extension — so
+   network access an operator would obviously want to scope. The capability model cannot express that,
+   because a capability gates a *reverse call* and this is not one: the plugin reaches the network on
+   its own, through its own runtime, and heddle never sees it. So this is a sandbox policy, not a
+   `PluginCapability`.
+
+   **The decision, and the one place it does not go where it was pointed.** Default-reachable is
+   right, and it is also what already happens — `DEFAULT_SANDBOX_POLICY.network` is `true`
+   (`sandbox/types.ts`), and a plugin process inherits the session's policy
+   (`server/plugins.ts`, the `session` option). What is new is the deny list, and it inverts for one
+   band of addresses, because a pure blocklist is fail-open in exactly the direction that costs
+   something. The addresses a submitted plugin would reach are the ones nobody enumerates:
+   `169.254.169.254` for cloud instance credentials, `127.0.0.1` for this server's own
+   unauthenticated `/v1/runs`, and the RFC1918 ranges for whatever else is on the operator's network.
+   Those are not exotic; they are the standard SSRF targets, and `--allow-request-code` is a standing
+   invitation to them. So: **the public internet is allowed by default and the private bands are
+   denied by default**, with an operator allowlist to punch holes. That keeps the intent — a plugin
+   that wants an API just works — while making the case that actually leaks something an explicit
+   decision rather than an omission.
+
+   **What heddle can enforce, stated plainly, because the answer is "not this".** Neither backend can
+   filter by address. bubblewrap has `--unshare-net` and nothing else (`sandbox/bubblewrap.ts`), and
+   seatbelt has `(allow network*)` / `(deny network*)` (`sandbox/seatbelt.ts`) — both all-or-nothing.
+   A `denyNetwork: string[]` added to `SandboxPolicy` and handed to either one would be a field that
+   silently does nothing, which is the failure mode the manifest validator refuses everywhere else.
+   Phase 10 therefore has two halves that must land together: heddle *expresses and validates* the
+   policy, and a backend that can see packets *enforces* it. gVisor's netstack can, which is what the
+   playground already runs; bwrap and seatbelt get the honest all-or-nothing degrade plus a warning
+   naming what was not enforced. A policy heddle cannot enforce must say so at startup rather than
+   read as protection.
+5. **~~Should `getState` exist at all?~~ No, and it is withdrawn.** It was never built — the only
+   traces are §7.2's proposal, now struck, and a test asserting heddle *refuses* the verb
+   (`plugin/__tests__/remote.test.ts`), which stays because it pins that an unknown reverse call is
+   refused rather than ignored. The reasoning is in §7.2: what it adds over the node's resolved input
+   is a case nobody has brought, and a plugin needing a value its node was not given is a plugin whose
+   node should have been given it — which the spec's data-flow edges already say. A proposal that
+   survives four phases without a caller is not waiting for its turn.
+6. **~~Does `listTools` justify starting a process during load?~~ Yes — MCP is the reason, and it is
+   scheduled as Phase 11.** Phase 7 answered this "no for now" and declared tools instead, which was
+   right for what Phase 7 could see: a build step writes an MCP proxy's tool list into its manifest,
+   and `heddle validate` stays free. What that costs in practice is the thing MCP is for — a server's
+   tool list is *its* to change, and a manifest committed last week is a stale copy of somebody else's
+   registry.
+
+   **The shape, and the property that must not be traded for it.** The instinct is to make
+   `/v1/validate` start the process, and that is the one thing Phase 11 must not do. `handleValidate`
+   currently proves something stronger than it looks: `loadRemotePlugin` reads the manifest as data
+   and `PluginHost` starts on first `call`, so **validating a flow executes none of the plugin
+   author's code** — its docblock says so. Make discovery implicit there and `/v1/validate` becomes as
+   privileged as `/v1/runs`, on the endpoint callers reach for *because* it does not execute anything;
+   it is also the one route that takes no concurrency slot (`server.ts`, where `handleRun` is handed
+   `gate` and `handleValidate` is not), so it would become an unmetered way to make this server spawn
+   processes.
+
+   So discovery is opt-in and metered, never a side effect of validating: a manifest declares that its
+   tools are dynamic, an operator opts in, the process starts, and `listTools` (`ListToolsParams`,
+   already sketched in §7.1) answers once and is cached for the registry's lifetime. `Registry.lookup`
+   stays synchronous — the discovery happens before the registry is built, not inside it, which is the
+   invariant three call sites depend on. A declared tool list remains valid and remains the default,
+   so nothing written for Phase 7 changes.
+7. **~~Should a plugin ever be allowed to claim a builtin type?~~ Closed: no, until somebody asks.**
+   Phase 5 answered it for one kind — a *provider* must never claim one, because a flow writing
+   `OpenAiConfig` and reaching a stranger's code is a capture rather than an extension, so
    `providerFor` checks builtins before the registry as well as `claim` refusing the registration.
-   Any future opt-in has to carve providers out. `plugin/registry.ts` forbids it generally,
-   which means the two transforms heddle skips (`plugin/transform.ts`, `BUILTIN_TRANSFORMS`) can never be supplied by
-   a plugin — the feature is impossible in both directions at once. Allowing it needs a precedence
-   rule and an explicit `implements: "builtin"` opt-in so shadowing is visible, and the compiler's
-   plugin-first lookup (`graph/compile.ts:74-80`) would need its comment corrected.
+   For the rest the honest position is that there is no caller. `plugin/registry.ts` forbids it
+   generally, and the one consequence worth recording is that the two transforms heddle implements
+   itself (`plugin/transform.ts`, `BUILTIN_TRANSFORMS`) can therefore never be supplied by a plugin —
+   the feature is impossible in both directions at once, and that is the known cost of the closure.
+   Reopening it needs a precedence rule, an explicit `implements: "builtin"` opt-in so shadowing is
+   visible, providers carved out, and a correction to the compiler's plugin-first lookup comment
+   (`graph/compile.ts`). None of that should be built speculatively.
 8. **How does a plugin's model answer ever get streamed?** Phase 4 buffers `callModel`, because
    heddle cannot tell a plugin's model call from its scratch work and streaming it would publish
    scratch as the run's answer (§7.2). That is right for a judge and wrong for a summarizer plugin
@@ -2006,11 +2056,20 @@ numbering was left alone so cross-references stay valid. The actual order:
 | 7 Registry | 1 | landed; off the main line |
 | 9 Encoder | 2, 3 | landed; off the main line |
 | **V** SDK extension | — | landed; independent; landed before 5 |
+| 10 Network policy | — | **open**; resolves §7.10 Q4; needs a backend that can filter |
+| 11 Dynamic tools | 7 | **open**; resolves §7.10 Q6; MCP is the caller |
 
-Every phase in this table has landed. What remains is recorded per phase below —
-Phase 6's five reserved seams, and the two surfaces neither Phase 6 nor Phase 9
-reaches (the server installs no middleware; the CLI selects no encoder) — plus
-the open questions in §7.10, of which Q4 is the largest.
+Phases 0 through V have all landed — that was the original roadmap, and it is
+closed. Phases 10 and 11 are new, and neither came out of the original list: each
+is an open question from §7.10 that acquired an answer and therefore acquired
+work. They are numbered after V rather than slotted in, for the reason the header
+gives — phase numbers are identities, not an order.
+
+What else remains is recorded per phase below: Phase 6's five reserved seams, and
+the two surfaces neither Phase 6 nor Phase 9 reaches (the server installs no
+middleware; the CLI selects no encoder). Of the questions in §7.10 only Q8 is
+still open, and it is the one with no obvious answer rather than the one with no
+demand.
 
 Three things moved after the first draft:
 
@@ -2306,11 +2365,18 @@ survivable only while there is one answer. They now call `invokeTool` (`tool/inv
 branches once. The obvious repair, an optional `path` beside an optional `call`, was rejected: two
 fields both claiming how a tool runs leave every consumer to rediscover the precedence.
 
-**Dynamic `listTools` deliberately did not land, and open question 6 is answered no for now.** The
-property `remote-loader.ts` protects is that nothing executes to learn what a plugin provides, and
-`Registry.lookup` is synchronous at three call sites including the server's request check. Declared
-tools keep both. An MCP proxy writes its tool list into the manifest with a build step, which costs a
-rerun when a tool is added upstream and buys a `heddle validate` that still starts nobody's process.
+**Dynamic `listTools` deliberately did not land.** The property `remote-loader.ts` protects is that
+nothing executes to learn what a plugin provides, and `Registry.lookup` is synchronous at three call
+sites including the server's request check. Declared tools keep both. An MCP proxy writes its tool
+list into the manifest with a build step, which costs a rerun when a tool is added upstream and buys a
+`heddle validate` that still starts nobody's process.
+
+That reasoning still holds and the trade has since been made anyway: **open question 6 was answered
+"no for now" here and is now answered yes, scheduled as Phase 11.** What changed is not the cost but
+the caller — a manifest committed last week is a stale copy of an MCP server's own registry, and that
+is the thing MCP exists to avoid. Phase 11 keeps both properties this phase protected by making
+discovery opt-in and metered rather than implicit, and by doing it before the registry is built rather
+than inside `lookup`. Declared tools remain the default, so nothing here is walked back.
 
 | Landed | Where |
 |---|---|
@@ -2431,6 +2497,59 @@ compile error rather than a quietly narrower guarantee.
 
 **Unblocks:** CopilotKit and any AG-UI client against a heddle flow with no adapter in between;
 OpenAI-compatible chunk output; OTLP span export from the same event stream.
+
+### Phase 10 — Network policy
+
+Resolves §7.10 Q4, which was the largest open item in the security model. A plugin reaches the network
+on its own and heddle never sees the call, so this is a `SandboxPolicy` change and not a
+`PluginCapability` — the argument is in the question.
+
+**Reachable by default, private bands denied by default.** Default-reachable is already the behaviour
+(`DEFAULT_SANDBOX_POLICY.network` is `true`), so what this phase adds is the deny list — and the list
+inverts for one band, because a pure blocklist is fail-open in the direction that costs something.
+`169.254.169.254` is instance credentials, `127.0.0.1` is this server's own unauthenticated
+`/v1/runs`, and RFC1918 is whatever else the operator runs. A plugin wanting a public API keeps
+working; reaching the metadata service becomes a decision somebody made.
+
+**The two halves have to land together, and that is the whole difficulty.** heddle can express and
+validate a policy; heddle cannot enforce one. `bubblewrap.ts` has `--unshare-net` and nothing else,
+`seatbelt.ts` has `(allow network*)` / `(deny network*)`, and both are all-or-nothing — so a
+`denyNetwork: string[]` handed to either is a field that silently does nothing, which is the failure
+mode `manifest.ts` refuses everywhere else. Enforcement needs a backend that sees packets: gVisor's
+netstack does, and the playground already runs it. Where a backend cannot enforce, startup must say
+which rules were not applied rather than let the policy read as protection — the same honesty
+`startServer` already practises about `--allow-request-code`.
+
+**Depends on:** nothing in this document. It is a sandbox change and could have been done at any
+point; what changed is that Phase 5 gave it a caller.
+**Unblocks:** a provider plugin an operator can scope to the host its config names. Cost: medium, and
+almost all of it is the backend half — the policy half is a field and a validator.
+
+### Phase 11 — Dynamic tool discovery
+
+Resolves §7.10 Q6. Phase 7 declared tools in the manifest and answered this "no for now"; MCP is why
+the answer changes. A server's tool list is that server's to change, and a manifest committed last
+week is a stale copy of somebody else's registry.
+
+**Opt-in and metered, and never a side effect of validating.** The instinct is to let
+`/v1/validate` start the process, and that is the one thing this phase must not do. `handleValidate`
+proves something stronger than it looks — `loadRemotePlugin` reads the manifest as data and
+`PluginHost` starts on first `call`, so validating a flow executes none of the plugin author's code.
+Discovery there would make the endpoint callers reach for *because* it runs nothing exactly as
+privileged as `/v1/runs`, and it is also the one route taking no concurrency slot (`server.ts` hands
+`gate` to `handleRun` and not to `handleValidate`), so it would become an unmetered way to make this
+server spawn processes.
+
+So: a manifest declares its tools are dynamic, an operator opts in, the process starts, and
+`listTools` answers once and is cached for the registry's lifetime. **`Registry.lookup` stays
+synchronous** — discovery happens before the registry is built rather than inside it, which is the
+invariant three call sites depend on, including the server's request check. A declared tool list stays
+valid and stays the default, so nothing written for Phase 7 changes.
+
+**Depends on:** Phase 7, whose `ToolImpl` union and `toolRegistry()` this extends rather than replaces.
+**Unblocks:** an MCP proxy that does not need a build step rerun when a tool is added upstream.
+Cost: low-medium. The verb is sketched in §7.1 as `ListToolsParams`; the work is the opt-in, the
+metering, and keeping `heddle validate` free.
 
 ---
 
