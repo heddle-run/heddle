@@ -29,18 +29,67 @@ A seam is a place in the engine where a middleware may be consulted, and each na
 verdicts it will honour. The set is closed, declared as data, and read by the manifest
 validator, the verdict reader and the handshake alike.
 
-| Seam | Position | Consulted | `after` verdicts | Built |
+| Seam | Position | Halves | Verdicts | Built |
 |---|---|---|---|---|
-| `nodeError` | a node | when it throws | `pass` `replace` `retry` `fail` | yes |
-| `node` | a node | always | `pass` `replace` `fail` | no |
-| `modelCall` | a model call | always | `pass` `replace` `retry` `fail` | no |
-| `toolCall` | a tool call | always | `pass` `replace` `fail` | no |
-| `toolResult` | a tool's result | always | `pass` `replace` | no |
-| `agentRound` | an agent round | always | `pass` `fail` | no |
+| `nodeError` | a node | `after` | `pass` `replace` `retry` `fail` | yes |
+| `toolCall` | a tool call | `before` `after` | before: `proceed` `modify` `replace` `reject`<br/>after: `pass` `replace` `fail` | yes |
+| `node` | a node | `before` `after` | `pass` `replace` `fail` | no |
+| `modelCall` | a model call | `before` `after` | `pass` `replace` `retry` `fail` | no |
+| `toolResult` | a tool's result | `after` | `pass` `replace` | no |
+| `agentRound` | an agent round | `before` `after` | `pass` `fail` | no |
 
-Only `nodeError` is consulted today. The other five are reserved so that their arrival
-changes no meaning — a manifest subscribing to one that is not built is refused at load,
-naming the seams that are.
+Two are consulted today. The other four are reserved so that their arrival changes no
+meaning — a manifest subscribing to one that is not built is refused at load, naming the
+seams that are.
+
+Note what `toolCall` does *not* admit: `retry`. By the time a tool call is decided, the
+assistant message that asked for it is already in the conversation, so re-issuing the call
+is not re-entering a clean state.
+
+## Gating a tool call
+
+`toolCall` is the seam an approval gate hangs off, and it is the first with a `before`
+half — the first place a middleware decides what happens rather than reacting to what did.
+
+```js
+serve({
+  ApprovalGate: {
+    toolCall: {
+      before: ({ subject, input }, ctx) => {
+        if (subject.toolName !== 'shell') return { action: 'proceed' };
+        if (/rm|sudo/.test(String(input.cmd))) {
+          return { action: 'reject', reason: 'destructive command' };
+        }
+        return { action: 'proceed' };
+      },
+    },
+  },
+});
+```
+
+| Verdict | Effect |
+|---|---|
+| `proceed` | The call runs as the model asked |
+| `modify` | The call runs with the arguments you supply |
+| `replace` | The call does not run; your value is the result |
+| `reject` | The call does not run; the reason is returned to the model |
+
+<Callout type="warn">
+**A refused call is still answered.** A provider refuses a request whose assistant message
+asked for a tool call that no tool message answers, so a rejection is a *reply* saying the
+call was refused — never a skipped turn. That is what lets the model react to a refusal,
+and it is why `reject` carries a reason rather than being a way to abandon a turn.
+</Callout>
+
+`modify` does not end the walk. A verdict that replaces, rejects or fails settles what
+happens; a modification only changes what the next middleware is deciding about, so the
+chain carries on with the new arguments. That is what lets a redactor and a gate compose —
+the redactor rewrites the arguments and the gate then sees what would actually run rather
+than what the model first asked for.
+
+A middleware subscribes per half, so one that declared only `after` is never asked. The
+call site checks before it consults, which matters more here than at `nodeError`: this runs
+on every tool call of every round rather than only on a failure.
 
 Note what `toolCall` does *not* admit: `retry`. By the time a tool call fails, the
 assistant message that requested it is already in the conversation, so re-issuing the
@@ -140,9 +189,9 @@ declaring a required field and receiving `{}` is exactly the one that would othe
 
 ## What is not available yet
 
-The `before` half of every seam is unbuilt, and so are the five seams above marked no. A
-verdict vocabulary with no call site is a contract nobody can test, so the names are
-reserved and the behaviour is not.
+The four seams above marked no are unbuilt, as is the `before` half of each. A verdict
+vocabulary with no call site is a contract nobody can test, so the names are reserved and
+the behaviour is not.
 
 **A server installs no middleware.** `heddle-server` has no operator-plugin path at all —
 it loads only what a request submitted, and a submitted middleware is refused with a 400.

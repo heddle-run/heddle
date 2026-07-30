@@ -8,7 +8,7 @@ import type {
 import type { Dependencies } from '../node/types.js';
 import type { ToolDef } from '../tool/types.js';
 import type { Event, LogLevel } from '../runner/events.js';
-import type { AfterVerdict } from './protocol.js';
+import type { AfterVerdict, BeforeVerdict } from './protocol.js';
 import type { Seam, SeamSubscription } from './seams.js';
 
 export interface PluginIO {
@@ -118,9 +118,23 @@ export type SeamOutcome =
 export interface MiddlewareSubject {
   nodeName?: string;
   nodeType?: string;
+  /** For `toolCall`: which tool, and which of the model's calls asked for it. */
+  toolName?: string;
+  toolCallId?: string;
 }
 
 export interface PluginMiddlewareExecutor {
+  /**
+   * Consulted before a call site acts, on the seams that have a `before` half.
+   *
+   * Optional, because a middleware subscribes per half: one that declared only
+   * `after` is never asked, and one that declared `before` and serves no handler
+   * is refused when the chain is built rather than discovered mid-run.
+   */
+  before?(
+    input: { subject: MiddlewareSubject; input: Record<string, unknown> },
+    ctx: MiddlewareContext,
+  ): BeforeVerdict | Promise<BeforeVerdict>;
   after(
     input: { subject: MiddlewareSubject; outcome: SeamOutcome },
     ctx: MiddlewareContext,

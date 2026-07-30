@@ -15,6 +15,7 @@ import type { NodeExecutor, Dependencies } from './types.js';
 import type { EventHandler } from '../runner/events.js';
 import type { Executor, Registry } from '../tool/types.js';
 import { invokeTool } from '../tool/invoke.js';
+import type { ChainBefore } from '../plugin/middleware.js';
 import { generationParams, providerFor } from '../llm/provider.js';
 import { TransformChain } from '../plugin/transform.js';
 import { RunError, ToolError } from '../errors.js';
@@ -189,8 +190,50 @@ export class AgentExecutor implements NodeExecutor {
     scopedExecutor: Executor | undefined,
   ): Promise<Message> {
     const parsed = parseToolArguments(call);
-    const args = withDefaults(parsed.args, this.agent.tools, call.name);
+    let args = withDefaults(parsed.args, this.agent.tools, call.name);
     const startedAt = Date.now();
+
+    /**
+     * Whatever a middleware decides, this method returns a message carrying
+     * `call.id`.
+     *
+     * That is the invariant the whole seam is built around, and it is not
+     * heddle's to choose: a provider refuses a request whose assistant message
+     * asked for a tool call that no tool message answers. So a rejection is a
+     * *reply* saying the call was refused, never a skipped turn — which is also
+     * why the model can react to it, and why an approval gate is expressible at
+     * all rather than just a way to break the conversation.
+     */
+    const gate = await this.beforeToolCall(signal, call, args);
+    if (gate.action === 'modify') args = gate.input;
+
+    if (gate.action === 'reject' || gate.action === 'replace') {
+      const refused = gate.action === 'reject';
+      this.warn(
+        refused
+          ? `"${gate.by}" refused the tool call "${call.name}": ${gate.reason}`
+          : `"${gate.by}" supplied a result for "${call.name}" without running it.`,
+      );
+
+      this.deps.eventHandler?.({
+        type: 'tool_result',
+        nodeName: this.node.name,
+        toolName: call.name,
+        toolCallId: call.id,
+        duration: Date.now() - startedAt,
+        ...(refused
+          ? { toolResult: { refused: true, reason: gate.reason } }
+          : { toolResult: gate.value }),
+      });
+
+      return {
+        role: 'tool',
+        tool_call_id: call.id,
+        content: refused
+          ? `Refused: ${gate.reason}`
+          : JSON.stringify(gate.value),
+      };
+    }
 
     this.deps.eventHandler?.({
       type: 'tool_call',
@@ -234,6 +277,36 @@ export class AgentExecutor implements NodeExecutor {
 
       return { role: 'tool', tool_call_id: call.id, content: `Error: ${err}` };
     }
+  }
+
+  /**
+   * Ask the middleware chain what should happen to a tool call.
+   *
+   * Returns `proceed` whenever nothing is installed or nothing subscribes, so
+   * the caller has one shape to handle and the no-middleware path never touches
+   * the chain — which matters here more than at `nodeError`, because this runs
+   * on every tool call of every round rather than on a failure.
+   */
+  private async beforeToolCall(
+    signal: AbortSignal | undefined,
+    call: ToolCall,
+    args: Record<string, unknown>,
+  ): Promise<ChainBefore> {
+    const chain = this.deps.middleware;
+    if (!chain?.hasBefore('toolCall')) return { action: 'proceed' };
+
+    return chain.consultBefore(
+      'toolCall',
+      {
+        nodeName: this.node.name,
+        nodeType: 'AgentNode',
+        toolName: call.name,
+        toolCallId: call.id,
+      },
+      args,
+      signal,
+      this.deps.eventHandler,
+    );
   }
 
   private async executeTool(

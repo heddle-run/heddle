@@ -28,11 +28,13 @@ import type {
 } from './types.js';
 import {
   readAfterVerdict,
+  readBeforeVerdict,
   readChatChunk,
   readChatResponse,
   readToolResult,
   readWireFrames,
   type AfterVerdict,
+  type BeforeVerdict,
 } from './protocol.js';
 import { serializeEvent } from './encoder.js';
 import type { Event } from '../runner/events.js';
@@ -177,6 +179,26 @@ export function remoteMiddlewareDef(
       );
 
       return {
+        async before({ subject, input }, ctx): Promise<BeforeVerdict> {
+          const raw = await host().call(
+            'before',
+            {
+              seam: ctx.seam,
+              componentType: entry.componentType,
+              component: wire,
+              subject,
+              input,
+            },
+            {
+              signal: ctx.signal,
+              reporter: ctx,
+              runTool: ctx.runTool,
+              callModel: ctx.callModel,
+            },
+          );
+          return readBeforeVerdict(ctx.seam, raw, where);
+        },
+
         async after({ subject, outcome }, ctx): Promise<AfterVerdict> {
           const raw = await host().call(
             'after',

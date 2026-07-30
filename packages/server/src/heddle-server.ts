@@ -32,6 +32,7 @@ Options:
   --cors-origin <origin> Browser origin allowed to call this server (repeatable,
                          or "*" for any)
   --allow-request-code   Accept tool scripts and plugin modules in the request
+  --allow-net <host>     Let a submitted spec reach this private host (repeatable)
   --work-dir <dir>       Where per-run directories are created (default: $TMPDIR)
   --llm-default-url <url> Endpoint the default model credential belongs to. The
                          credential itself is read from HEDDLE_LLM_DEFAULT_KEY,
@@ -85,6 +86,7 @@ async function main(): Promise<void> {
       'drain-timeout': { type: 'string' },
       'cors-origin': { type: 'string', multiple: true },
       'allow-request-code': { type: 'boolean' },
+      'allow-net': { type: 'string', multiple: true },
       'work-dir': { type: 'string' },
       'llm-default-url': { type: 'string' },
       safe: { type: 'boolean' },
@@ -116,6 +118,7 @@ async function main(): Promise<void> {
     drainTimeout: toInt(values['drain-timeout'], '--drain-timeout'),
     corsOrigins: values['cors-origin'],
     allowRequestCode: values['allow-request-code'],
+    allowNet: values['allow-net'],
     workDir: values['work-dir'],
     defaultLlmKey: process.env.HEDDLE_LLM_DEFAULT_KEY || undefined,
     defaultLlmUrl: values['llm-default-url'],

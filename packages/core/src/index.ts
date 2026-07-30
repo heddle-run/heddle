@@ -213,6 +213,11 @@ export {
   isBuiltinConfigType,
   providerFor,
 } from './llm/provider.js';
+// The egress policy, which decides where a spec heddle did not write may send
+// heddle's own requests. Exported because an embedder accepting submitted specs
+// needs the same rule the server applies.
+export { assertEgressAllowed, isPrivateHost } from './llm/egress.js';
+export type { EgressPolicy } from './llm/egress.js';
 export type {
   ChatChunk,
   ChatRequest,

@@ -3,7 +3,12 @@ import { PluginError } from '../errors.js';
 import type { Dependencies } from '../node/types.js';
 import type { EventHandler } from '../runner/events.js';
 import { pluginReporter } from './executor.js';
-import { readAfterVerdict, type AfterVerdict } from './protocol.js';
+import {
+  readAfterVerdict,
+  readBeforeVerdict,
+  type AfterVerdict,
+  type BeforeVerdict,
+} from './protocol.js';
 import type { PluginRegistry, RegisteredMiddleware } from './registry.js';
 import { PluginModel, toolRunner, type ToolRunner } from './services.js';
 import { readSubscription, type Seam } from './seams.js';
@@ -29,6 +34,20 @@ export type ChainVerdict =
   | { action: 'retry'; delayMs: number; by: string }
   | { action: 'fail'; reason: string; by: string };
 
+/**
+ * What the whole chain decided before a call site acted.
+ *
+ * `modify` carries no `by`, and that is not an omission. A replacement or a
+ * rejection is one middleware's decision and is reported as such; a modification
+ * may have passed through several, each rewriting what the next one saw, so
+ * there is no single author to name.
+ */
+export type ChainBefore =
+  | { action: 'proceed' }
+  | { action: 'modify'; input: Record<string, unknown> }
+  | { action: 'replace'; value: Record<string, unknown>; by: string }
+  | { action: 'reject'; reason: string; by: string };
+
 export interface ConsultInput {
   subject: MiddlewareSubject;
   outcome: SeamOutcome;
@@ -40,6 +59,7 @@ export interface ConsultInput {
 interface Entry {
   plugin: string;
   componentType: string;
+  before: Set<Seam>;
   after: Set<Seam>;
   impl: PluginMiddlewareExecutor;
   config: Record<string, unknown>;
@@ -78,6 +98,18 @@ export class MiddlewareChain {
 
   has(seam: Seam): boolean {
     return this.entries.some((entry) => entry.after.has(seam));
+  }
+
+  /**
+   * Whether anything subscribes to this seam's `before` half.
+   *
+   * Separate from {@link has} because the halves are subscribed to separately,
+   * and a call site asking the wrong question would consult a chain that has
+   * nothing to say — a round trip per tool call, on the path where it is least
+   * affordable.
+   */
+  hasBefore(seam: Seam): boolean {
+    return this.entries.some((entry) => entry.before.has(seam));
   }
 
   describe(): string[] {
@@ -139,6 +171,112 @@ export class MiddlewareChain {
     }
 
     return { action: 'pass' };
+  }
+
+  /**
+   * Ask, in order, what should happen before a call site acts.
+   *
+   * The `after` chain's shape with one difference that matters: `modify` does
+   * not stop the walk. A verdict that replaces, rejects or fails ends it,
+   * because each of those settles what happens; a `modify` only changes what the
+   * next middleware is deciding about, so the chain carries on with the new
+   * input. That is what lets a redactor and an approval gate compose — the
+   * redactor rewrites the arguments and the gate then sees what would actually
+   * run, rather than what the model first asked for.
+   */
+  async consultBefore(
+    seam: Seam,
+    subject: MiddlewareSubject,
+    input: Record<string, unknown>,
+    signal: AbortSignal | undefined,
+    handler: EventHandler | undefined,
+  ): Promise<ChainBefore> {
+    let current = input;
+
+    for (const entry of this.beforeOrder(seam)) {
+      const verdict = await this.askBefore(
+        entry,
+        seam,
+        subject,
+        current,
+        signal,
+        handler,
+      );
+
+      switch (verdict.action) {
+        case 'proceed':
+          continue;
+        case 'modify':
+          current = verdict.input;
+          continue;
+        case 'replace':
+          return {
+            action: 'replace',
+            value: verdict.value,
+            by: entry.componentType,
+          };
+        case 'reject':
+          return {
+            action: 'reject',
+            reason: verdict.reason,
+            by: entry.componentType,
+          };
+      }
+    }
+
+    return current === input
+      ? { action: 'proceed' }
+      : { action: 'modify', input: current };
+  }
+
+  private beforeOrder(seam: Seam): Entry[] {
+    return [...this.entries].reverse().filter((entry) => entry.before.has(seam));
+  }
+
+  private async askBefore(
+    entry: Entry,
+    seam: Seam,
+    subject: MiddlewareSubject,
+    input: Record<string, unknown>,
+    signal: AbortSignal | undefined,
+    handler: EventHandler | undefined,
+  ): Promise<BeforeVerdict> {
+    const where = whereOf(entry);
+
+    // Subscribed to the half and serving no handler. Caught here rather than at
+    // build time because an in-process def is a plain object whose `before` is
+    // optional, and the remote def always has one — so this is the only place
+    // both shapes meet.
+    if (!entry.impl.before) {
+      throw new MiddlewareError(
+        `${where} subscribes to the "before" half of "${seam}" but provides no ` +
+          `before handler.`,
+      );
+    }
+
+    try {
+      const verdict = await entry.impl.before(
+        { subject, input },
+        this.contextFor(
+          entry,
+          seam,
+          { subject, outcome: { ok: true, value: undefined }, attempt: 1, maxAttempts: 1 },
+          signal,
+          handler,
+        ),
+      );
+      // Checked whichever side it came from. An in-process middleware is a plain
+      // object whose return value TypeScript saw at compile time and nothing has
+      // seen since — the same reason `ask` reads its `after` verdicts back.
+      return readBeforeVerdict(seam, verdict, where);
+    } catch (err) {
+      if (err instanceof MiddlewareError) throw err;
+      const detail = err instanceof Error ? err.message : String(err);
+      throw new MiddlewareError(
+        `${where} failed while heddle was consulting it on ${seam}: ${detail}`,
+        { cause: err instanceof Error ? err : undefined },
+      );
+    }
   }
 
   private inConsultOrder(seam: Seam): Entry[] {
@@ -206,6 +344,11 @@ function buildEntry(
   return {
     plugin,
     componentType: def.componentType,
+    before: new Set(
+      (Object.keys(seams) as Seam[]).filter((seam) =>
+        seams[seam]?.includes('before'),
+      ),
+    ),
     after: new Set(
       (Object.keys(seams) as Seam[]).filter((seam) =>
         seams[seam]?.includes('after'),

@@ -900,13 +900,30 @@ describe('the operator credential is bound to the operator endpoint', () => {
     });
 
   it('refuses a spec that chooses a url but supplies no key', async () => {
+    // A *public* endpoint, so this exercises the credential rule rather than the
+    // egress one. The operator's key is bound to the operator's endpoint: a spec
+    // that chooses where requests go has to bring its own key.
     const res = await post({
-      flow: agentFlow({ url: 'http://127.0.0.1:9/attacker' }),
+      flow: agentFlow({ url: 'https://attacker.example/v1' }),
       inputs: { query: 'hi' },
     });
 
     const body = (await res.json()) as { error: { message: string } };
     expect(body.error.message).toMatch(/has to supply the key/);
+    expect(JSON.stringify(body)).not.toContain('operator-secret-key');
+  });
+
+  it('refuses a spec that points at this network at all', async () => {
+    // Refused on the destination, before any question of credentials. Loopback
+    // is this server's own unauthenticated API; the same rule covers
+    // 169.254.169.254 and the RFC1918 ranges.
+    const res = await post({
+      flow: agentFlow({ url: 'http://127.0.0.1:9/attacker', api_key: 'sk-theirs' }),
+      inputs: { query: 'hi' },
+    });
+
+    const body = (await res.json()) as { error: { message: string } };
+    expect(body.error.message).toMatch(/loopback, link-local or private/);
     expect(JSON.stringify(body)).not.toContain('operator-secret-key');
   });
 

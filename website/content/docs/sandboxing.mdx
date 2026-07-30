@@ -79,6 +79,43 @@ and it is confined by the same sandbox as a tool when one is configured.
 heddle itself is not sandboxed, and neither is the model call. `--safe` is about the
 programs a flow causes to be executed.
 
+## Where a submitted spec may send requests
+
+The sandbox is about programs a flow causes to run. There is a second outbound path it
+says nothing about: **heddle's own requests**. A flow's `llm_config.url` becomes the model
+client's base URL, and heddle connects to it.
+
+That is the point of the field when the spec is yours. It is a different thing when the
+spec arrived in an HTTP request, because then a stranger is choosing where this process
+connects *from inside your network*. So under `--allow-request-code`, a submitted spec may
+not name a loopback, link-local or private address:
+
+| Refused by default | Why it matters |
+|---|---|
+| `169.254.169.254`, `fe80::/10` | Instance credentials on every major cloud |
+| `127.0.0.1`, `localhost`, `::1` | This server's own unauthenticated `/v1/runs` |
+| `10/8`, `172.16/12`, `192.168/16`, `fc00::/7` | Whatever else is on the operator's network |
+
+The public internet stays reachable — a flow calling a model API is the ordinary case, and
+an allowlist of the internet is not a list. `--allow-net <host>` names a private host that
+should be reachable anyway, which is the ordinary reason one is legitimate: a model server
+on the operator's own network.
+
+Specs you run yourself are unrestricted. `heddle run` against `http://localhost:11434` is
+an Ollama server, and refusing it would break the local case for nothing.
+
+<Callout type="warn">
+**This reads the address the spec wrote; it does not resolve DNS.** A hostname that
+resolves into a private range — `metadata.google.internal`, or any name an attacker
+controls and points at `127.0.0.1` — is not caught. Closing that needs the resolved address
+checked and then *pinned* for the connection, or the check is a different question from the
+connection. It also says nothing about what a tool or an out-of-process plugin reaches,
+since those connect through their own runtimes and heddle never sees them.
+
+What it closes is the direct case. Real containment is a network-level egress rule, and
+this does not replace one.
+</Callout>
+
 ## On a server
 
 `heddle-server` fixes confinement at startup: a request can neither ask for a sandbox nor
