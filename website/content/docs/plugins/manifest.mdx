@@ -1,0 +1,143 @@
+---
+title: Manifest reference
+description: Every field an out-of-process plugin may declare, and what each is refused for.
+---
+
+The manifest is the declarative half of an out-of-process plugin. It answers everything
+the parser and compiler need — what component types exist, what their inputs and outputs
+are, which branches they can take — so only execution crosses the process boundary.
+
+Two things follow, and both are worth more than the flexibility given up:
+
+- **Parsing stays synchronous.** No IPC round trip inside `parseFlow`.
+- **A spec's shape can be inspected without executing its author's code.** `heddle
+  validate` reads this file and starts nobody's process.
+
+```json
+{
+  "name": "guardrails",
+  "version": "1.0.0",
+  "capabilities": ["callModel"],
+  "components": [
+    { "componentType": "Processor", "kind": "transform", "phase": "both" }
+  ],
+  "tools": [
+    { "name": "classify", "componentType": "Processor" }
+  ]
+}
+```
+
+## Top level
+
+| Field | Required | Meaning |
+|---|---|---|
+| `name` | yes | Written to `component_plugin_name` when a spec is serialised |
+| `version` | yes | Written to `component_plugin_version` |
+| `command` | no | How to start the process, as argv, resolved against the plugin's own directory |
+| `capabilities` | no | The reverse calls this plugin intends to make. Absent means none |
+| `components` | no* | The component types this plugin provides |
+| `tools` | no* | Tools this plugin contributes to the flow's registry |
+
+<Callout>
+\* A manifest must declare components or tools. A tools-only plugin is a real shape and
+the point of the kind — an MCP proxy contributes no component at all.
+</Callout>
+
+When `command` is absent heddle supplies a default: a program carrying the execute bit is
+invoked by path, and a `.mjs` or `.js` entry point is run under the host's node. Invoking
+by path is the preferred form, because a sandbox binds the *program* it is given — launch
+a plugin as `node plugin.mjs` and the script is an argument rather than the program, so
+the confined node cannot find it.
+
+### capabilities
+
+A manifest asks; the host decides. A capability named here that the host does not grant
+fails the load, naming the capability — the operator's policy is not something a plugin
+discovers by probing at run time. A plugin that asks for nothing gets nothing.
+
+`"runTool"` · `"callModel"` · `"emitEvent"` · `"log"`
+
+Every reverse call is here, including the two that only *say* something. `emitEvent` and
+`log` look harmless next to running a tool, and they are gated all the same, because what
+they reach is somebody's screen.
+
+## components[]
+
+| Field | Applies to | Meaning |
+|---|---|---|
+| `componentType` | all | The string a spec writes. Must match `[A-Za-z_][A-Za-z0-9_]*`, unique within the manifest |
+| `kind` | all | `node` · `transform` · `component` · `provider` · `middleware` · `encoder`. Defaults to `node` |
+| `inputs` | node | Inputs to advertise when the spec does not declare them |
+| `outputs` | node | Outputs to advertise when the spec does not declare them |
+| `branches` | node | Branch names this component can take. Static by necessity |
+| `schema` | any spec-named kind | JSON Schema the spec component is checked against |
+| `phase` | transform | `pre` · `post` · `both` |
+| `stream` | provider | Whether this one can deliver an answer as it arrives. Off by default |
+| `seams` | middleware | Which seams this subscribes to. Required here, refused elsewhere |
+| `protocol` | encoder | The name a client asks for. Required here, refused elsewhere |
+| `contentType` | encoder | The response's content type. Required here, refused elsewhere |
+
+`inputs` and `outputs` take `{ title, type, description?, default? }`.
+
+`schema` replaces the in-process `validate()` callback. A schema is data, so it can be
+applied during parsing without starting the plugin.
+
+`branches` is static because heddle's graph validator checks reachability before anything
+executes — a branch that only exists at run time is reported as unreachable.
+
+`stream` is declared rather than negotiated because `completeChat` decides whether to
+stream by looking for a streaming method, synchronously, before the process is
+necessarily running. Off by default is the safe direction: a provider that says nothing
+is only ever sent `stream: false` and never has to handle a mode it did not implement.
+
+`protocol` must match `[a-z0-9][a-z0-9-]*` — it is a token a client puts in a query
+string, not an identifier — and may not be `heddle`, which is heddle's own wire format.
+
+## tools[]
+
+| Field | Required | Meaning |
+|---|---|---|
+| `name` | yes | What a spec writes and what the model is told. Must match `[A-Za-z_][A-Za-z0-9_]*` |
+| `path` | one of | An executable shipped beside the plugin |
+| `componentType` | one of | The component in this plugin that implements it |
+| `description` | no | Shown to the model |
+| `inputSchema` | no | The tool's parameters, as JSON Schema describing an object |
+| `outputSchema` | no | |
+| `shadows` | no | Whether this tool may take a name another source already provides |
+
+`path` and `componentType` are exclusive and exactly one must be given: they are two
+different answers to "how does this run", and a tool carrying both would leave the
+precedence to whoever wrote the dispatch. A `componentType` is checked against the
+components this same manifest declares.
+
+A `path` is resolved and checked at load — it must exist, be a file, carry the execute
+bit, and resolve *inside* the plugin's own directory. Containment is checked with
+`realpath`, so a symlink pointing out of the directory is caught rather than followed. A
+plugin needing a system binary ships a two-line wrapper.
+
+`shadows` is off by default, and the default is the point. A collision is a load error
+unless somebody says otherwise in writing — and a server refuses to let a submitted
+plugin be that somebody, because a name a caller never wrote can capture calls made by
+code they did not write either.
+
+<Callout type="warn">
+An `inputSchema` reaches the model's own tool block verbatim, and is serialised into
+every request of every round. heddle caps it at 64 KB and 16 levels of nesting, and
+refuses one whose declared `type` is anything but `object` — a tool takes named
+arguments, so its schema has to describe them.
+</Callout>
+
+## What is refused, and why
+
+The validator is deliberately strict, because it runs against data that may have arrived
+in an HTTP request and its failure is the first thing a plugin author sees.
+
+- A `kind` heddle does not recognise, listing the six that exist.
+- A capability heddle does not serve, listing the four that exist.
+- `seams` on anything but a middleware, and `protocol` or `contentType` on anything but an
+  encoder — a field that silently did nothing would leave an author believing their
+  component was reachable.
+- An encoder with no `protocol`, or none heddle could route, or one claiming `heddle`.
+- A component type declared twice, or one that is not a valid identifier.
+- A tool with both `path` and `componentType`, or neither; a tool naming a component the
+  plugin does not declare; two tools with one name.

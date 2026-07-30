@@ -4,13 +4,14 @@
     "---Introduction---",
     "index",
     "getting-started",
-    "comparison",
-    "---Core Concepts---",
+    "---Writing a spec---",
     "flows",
     "nodes",
     "tools",
-    "---Configuration---",
     "llm-providers",
+    "---Extending heddle---",
+    "plugins",
+    "---Running heddle---",
     "cli-reference"
   ]
 }

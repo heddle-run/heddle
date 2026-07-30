@@ -1,0 +1,155 @@
+---
+title: Middleware
+description: Retry, fallback and error policy — installed by whoever runs heddle, named in no document.
+---
+
+A middleware intercepts a call site rather than occupying a slot in a spec. It is the one
+kind an operator installs and a flow does not mention, which is the honest arrangement for
+something that runs on every node whether that flow asked or not.
+
+That is also why it cannot be spec-named. A component a flow *does* select is a
+transform, which already exists. A spec that writes a middleware's component type is
+refused, saying so.
+
+```bash
+heddle run flow.json \
+  --plugin ./retry-policy.json \
+  --plugin-config RetryPolicy='{"maxAttempts":3}'
+```
+
+<Callout type="warn">
+A middleware runs on flows written before it existed, by people who have never heard of
+it. One that throws fails runs it has nothing to do with. Blast radius is the reason it
+is the operator's to install and the reason its failures are fatal rather than skipped.
+</Callout>
+
+## Seams
+
+A seam is a place in the engine where a middleware may be consulted, and each names the
+verdicts it will honour. The set is closed, declared as data, and read by the manifest
+validator, the verdict reader and the handshake alike.
+
+| Seam | Position | Consulted | `after` verdicts | Built |
+|---|---|---|---|---|
+| `nodeError` | a node | when it throws | `pass` `replace` `retry` `fail` | yes |
+| `node` | a node | always | `pass` `replace` `fail` | no |
+| `modelCall` | a model call | always | `pass` `replace` `retry` `fail` | no |
+| `toolCall` | a tool call | always | `pass` `replace` `fail` | no |
+| `toolResult` | a tool's result | always | `pass` `replace` | no |
+| `agentRound` | an agent round | always | `pass` `fail` | no |
+
+Only `nodeError` is consulted today. The other five are reserved so that their arrival
+changes no meaning — a manifest subscribing to one that is not built is refused at load,
+naming the seams that are.
+
+Note what `toolCall` does *not* admit: `retry`. By the time a tool call fails, the
+assistant message that requested it is already in the conversation, so re-issuing the
+call is not re-entering a clean state.
+
+## Writing one
+
+A middleware subscribes to seams in its manifest and serves a handler per seam. The
+handler is keyed by seam name, so one component can subscribe to several and each gets
+its own function rather than a switch every author has to remember to write.
+
+```json
+{
+  "name": "retry-policy",
+  "version": "1.0.0",
+  "capabilities": [],
+  "components": [
+    {
+      "componentType": "RetryPolicy",
+      "kind": "middleware",
+      "seams": { "nodeError": ["after"] },
+      "schema": {
+        "type": "object",
+        "properties": { "maxAttempts": { "type": "number" } }
+      }
+    }
+  ]
+}
+```
+
+```js
+serve({
+  RetryPolicy: {
+    nodeError: {
+      after: ({ subject, outcome }, ctx) => {
+        if (ctx.attempt >= (ctx.component.maxAttempts ?? 3)) return { action: "pass" };
+        if (!/timed out|429/.test(outcome.error.message)) return { action: "pass" };
+        return { action: "retry", delayMs: 500 * ctx.attempt };
+      },
+    },
+  },
+});
+```
+
+`ctx.component` is the operator's configuration — `{}` when they supplied none, never
+undefined, because a middleware is host-configured and this is the only channel its
+settings arrive on.
+
+`ctx.admits` carries the verdicts this seam will honour, sent with the handshake. A
+middleware that wants to work at more than one seam can read it and fall back rather than
+send a verdict it will be refused for — which, under the fatal policy, would cost the
+run.
+
+What a middleware does **not** get is the run's data. It is installed by the operator and
+named nowhere in the caller's document, so handing it the state would disclose one
+caller's information to code they never asked for. `subject` names which node failed and
+`outcome` says how; a component that needs the data itself is a plugin node, which the
+flow names.
+
+## Verdicts
+
+| Verdict | Effect |
+|---|---|
+| `pass` | The error stands. The next middleware in the chain is consulted |
+| `retry` | The node is attempted again, optionally after `delayMs` |
+| `replace` | A supplied value becomes the node's output and the run continues |
+| `fail` | The run ends with a stated reason |
+
+The chain is consulted in the order the operator loaded the plugins — the sequence of
+`--plugin` flags — and the first non-`pass` verdict wins. That makes the chain's behaviour
+something an operator can change without touching a plugin or a flow.
+
+A retry spends an iteration, so `--max-iterations` remains the real bound on how many
+times anything executes. `--max-node-attempts` caps one arrival at a node and defaults to
+3; the budget is per arrival, so a node inside a loop gets a fresh one each visit.
+
+A granted retry and a substituted result are each reported as a `warning` event naming
+the middleware that decided it, so "the flow returned something odd" is traceable.
+
+<Callout>
+A `replace` supplies a result, never a route. Branch state is written by a node's last
+*successful* run, so consulting it after a failure would follow an edge from a previous
+visit. A replaced node therefore takes the unbranched edge, and a node whose every edge
+is labelled reports that the run cannot continue past it.
+</Callout>
+
+## Configuration
+
+`--plugin-config <ComponentType>=<json>` passes the operator's settings, once per
+component type. The value may be `@path` to read it from a file instead of the command
+line.
+
+The manifest's `schema` is applied to it before anything is built, and the check runs even
+when the operator supplied nothing — that is the case that matters, since a middleware
+declaring a required field and receiving `{}` is exactly the one that would otherwise read
+`undefined` on the first node that failed.
+
+## What is not available yet
+
+The `before` half of every seam is unbuilt, and so are the five seams above marked no. A
+verdict vocabulary with no call site is a contract nobody can test, so the names are
+reserved and the behaviour is not.
+
+**A server installs no middleware.** `heddle-server` has no operator-plugin path at all —
+it loads only what a request submitted, and a submitted middleware is refused with a 400.
+Middleware is therefore reachable from the CLI and from an embedder holding
+`RunnerOptions`, and not from a running server.
+
+One smaller gap worth knowing: `heddle run --chat` builds its own runner from the same
+options, so the chain is installed and a retry works — but the chat interface reads four
+event types and has no `warning` arm, so the retry happens silently. `heddle run` renders
+it.

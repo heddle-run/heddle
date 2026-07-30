@@ -1,0 +1,144 @@
+---
+title: Plugins
+description: Add component types, answer model calls, intercept failures, or render a run — in any language, in a process of their own.
+---
+
+A plugin teaches heddle something the engine does not ship: a node type, a message
+transform, a model provider, an error policy, a wire format, a tool. Agent Spec's own
+plugin system covers serialisation only — it teaches a deserialiser to read a custom
+`component_type` and says nothing about how to run it. heddle's covers both halves.
+
+Plugins are named by whoever runs heddle, never inside a flow document. Sharing a spec
+can therefore never cause code to be executed. A document selects among what was
+already loaded; it cannot ask for anything to be loaded.
+
+## The six kinds
+
+What distinguishes them is not what they do — it is **who chooses them**. That decides
+where a plugin's name may appear, and it is the first thing to settle when you are
+deciding what to write.
+
+| Kind | Chosen by | Appears as |
+|---|---|---|
+| `node` | the spec | a `component_type` in `nodes[]` |
+| `transform` | the spec | an entry in `Agent.transforms` |
+| `provider` | the spec | an `llm_config`, beside `OpenAiConfig` |
+| `component` | the spec | any other custom component the document names |
+| `middleware` | the operator | nothing — no document may name one |
+| `encoder` | the request | `?protocol=<name>` on a server run |
+
+The first four are written into the document, so a flow's author picks them. A
+middleware runs on every node of every flow whether that flow asked or not, which is
+exactly why it is installed by whoever runs heddle rather than chosen per run. An
+encoder renders the run for a client, and two clients hitting one flow can legitimately
+want different renderings — so the request picks.
+
+Tools are not a kind. A tool is already a first-class thing with its own namespace that
+a spec writes into, so a plugin contributing tools needs no component type at all. See
+[Tools](/docs/tools).
+
+## Two ways to write one
+
+<Callout type="warn">
+An in-process plugin is imported into heddle and runs with the same privileges. It can
+read the environment, the filesystem and anything else the process can. Load one only
+if you would run its author's code directly.
+</Callout>
+
+**In process.** A module that default-exports a plugin object. heddle imports it, so
+the plugin is the same program as heddle. It is the shorter path and the one the
+examples use.
+
+```js
+import { definePlugin } from "@heddle/core";
+
+export default definePlugin({
+  name: "my-plugin",
+  version: "1.0.0",
+  nodes: [
+    {
+      componentType: "RegexNode",
+      createExecutor: () => ({
+        execute: (input) => ({
+          output: { matched: new RegExp(String(input.pattern)).test(String(input.text)) },
+        }),
+      }),
+    },
+  ],
+});
+```
+
+```bash
+heddle run flow.json --plugin ./my-plugin.js
+```
+
+**Out of process.** A manifest plus a program. The manifest declares what the plugin
+provides, as data; the program speaks JSON Lines over stdin and stdout. heddle reads the
+manifest to parse and compile a flow, and starts the process only when something
+actually calls into it.
+
+```bash
+heddle run flow.json --plugin ./my-plugin/manifest.json
+```
+
+`--plugin` decides between them by extension: a `.json` file is a manifest and runs out
+of process; anything else is imported as an ES module. Both forms are repeatable, and
+both are accepted by `heddle validate` too.
+
+Two properties follow from the process boundary, and neither is available in process:
+
+- **The environment is chosen, not inherited.** A plugin sees only what it is given.
+  Credentials in heddle's own environment do not cross.
+- **A spec's shape can be inspected without running its author's code.** The manifest
+  answers what the plugin provides, so `heddle validate` starts nobody's process.
+
+It also means a plugin can be written in any language with a JSON parser and a read
+loop — the same bar a tool already clears.
+
+## What a plugin may ask heddle to do
+
+A plugin calls back into heddle for four things, and it gets each one only by naming it.
+An out-of-process plugin declares them in its manifest; a host that does not grant one
+refuses the plugin at load, naming the capability, rather than failing the call
+mid-run.
+
+| Capability | What it does |
+|---|---|
+| `runTool` | Run one of the flow's registered tools by name |
+| `callModel` | Ask the model this component's spec names for one answer |
+| `emitEvent` | Publish an event on the run's stream, under the plugin's own namespace |
+| `log` | Say one thing, at a level, for whoever is watching the run |
+
+There is no `readFile`, no `fetch` and no `getEnv`. The process boundary denies those,
+and re-granting them over RPC would hand back exactly what the boundary bought.
+
+`callModel` is the one worth understanding before you use it. **The plugin composes the
+request; the spec chooses the model.** The call goes to the `llm_config` on the plugin's
+own component — the same field an agent carries — so a plugin ships no SDK, holds no
+credential, and cannot send a request anywhere the document does not say it will go.
+
+```yaml
+- component_type: LlmJudge
+  name: judge
+  rubric: "Is the answer supported by the sources?"
+  llm_config:
+    component_type: OpenAiConfig
+    model_id: gpt-4o-mini
+```
+
+## Where to go next
+
+<Cards>
+  <Card title="Authoring a plugin" href="/docs/plugins/authoring">
+    Both APIs, the context object, and a worked example of each kind.
+  </Card>
+  <Card title="Manifest reference" href="/docs/plugins/manifest">
+    Every field an out-of-process plugin may declare.
+  </Card>
+  <Card title="Middleware" href="/docs/plugins/middleware">
+    Retry, fallback and error policy, installed by the operator.
+  </Card>
+  <Card title="Encoders" href="/docs/plugins/encoders">
+    Render a run in another wire format, such as AG-UI.
+  </Card>
+</Cards>
