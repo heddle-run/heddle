@@ -76,6 +76,20 @@ export function checkPluginComponents(
         );
       }
 
+      if (kind === 'encoder') {
+        // Request-selected, for the reason `PluginEncoderDef` gives: two clients
+        // hitting this same flow can want different renderings of it, so the
+        // choice belongs to whoever asked for the run and not to the document.
+        // Left to the SDK this reads as a component type nothing provides, which
+        // sends the author to load a plugin that is already loaded.
+        throw new PluginError(
+          `component "${value.name ?? '(unnamed)'}" has type "${componentType}", ` +
+            `which is an encoder. An encoder renders the run for a client rather ` +
+            `than doing anything inside it, so it is chosen by the request that ` +
+            `starts the run — remove it here and ask for its protocol instead.`,
+        );
+      }
+
       if (!kind && !isBuiltinComponentType(componentType)) {
         throw new PluginError(
           `component "${value.name ?? '(unnamed)'}" has type "${componentType}", ` +

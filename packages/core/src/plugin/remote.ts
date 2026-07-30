@@ -23,6 +23,8 @@ import type { Dependencies } from '../node/types.js';
 import type {
   PluginComponent,
   PluginComponentDef,
+  PluginEncoder,
+  PluginEncoderDef,
   PluginMiddlewareDef,
   PluginMiddlewareExecutor,
   PluginNode,
@@ -34,14 +36,18 @@ import type {
   PluginTransformExecutor,
   TransformPhase,
   TransformResult,
+  WireFrame,
 } from './types.js';
 import {
   readAfterVerdict,
   readChatChunk,
   readChatResponse,
   readToolResult,
+  readWireFrames,
   type AfterVerdict,
 } from './protocol.js';
+import { serializeEvent } from './encoder.js';
+import type { Event } from '../runner/events.js';
 import type {
   ChatChunk,
   ChatRequest,
@@ -493,6 +499,66 @@ async function* pullFrom(
     // cancelled by the signal the caller passed.
     void call.catch(() => {});
   }
+}
+
+/**
+ * The encoder half: a rendering of the run served from the plugin's process.
+ *
+ * The only kind whose remote form is *cheaper* to reason about than the local
+ * one, because an encoder asks the host for nothing. There is no `runTool` to
+ * thread and no session to open — `Event → WireFrame[]` needs no capability — so
+ * what crosses the pipe is one event out and frames back, and the plugin has
+ * nothing to be granted.
+ *
+ * Two things about the boundary are worth stating because both are decisions
+ * rather than consequences:
+ *
+ * - **The event crosses as `serializeEvent` renders it**, which is the same
+ *   object heddle's own protocol puts on the wire. A plugin encoder therefore
+ *   reads exactly what a browser watching `?protocol=heddle` reads, rather than
+ *   a shape invented for plugins that would have to be kept in step with it.
+ * - **No `signal`.** Every other verb takes the run's signal so a cancelled run
+ *   stops work in flight; here the work *is* the reporting of what already
+ *   happened, and `finishEncode` in particular exists to be called on the
+ *   aborted path. Passing a signal would cancel exactly the frames a client
+ *   needs most — the terminal ones — leaving it waiting for an end that heddle
+ *   deliberately declined to send. The bound is instead the per-call timeout,
+ *   which an encoder that has stopped answering hits like any other plugin.
+ */
+export function remoteEncoderDef(
+  manifest: PluginManifest,
+  entry: ManifestComponent,
+  host: () => PluginHost,
+): PluginEncoderDef {
+  // The protocol name rather than a spec name, because an encoder has none —
+  // nothing writes one into a document. It is also the name the client asked
+  // for, which is the useful half of "who is this" in a failure.
+  const where = nameOf(manifest.name, entry.componentType, entry.protocol!);
+  const componentType = entry.componentType;
+
+  return {
+    componentType,
+    protocol: entry.protocol!,
+    contentType: entry.contentType!,
+
+    createEncoder(runId: string): PluginEncoder {
+      return {
+        async encode(event: Event): Promise<WireFrame[]> {
+          const raw = await host().call('encode', {
+            componentType,
+            runId,
+            event: serializeEvent(event),
+          });
+          return readWireFrames(raw, `${where} rendering a "${event.type}"`);
+        },
+
+        async finish(): Promise<WireFrame[]> {
+          const raw = await host().call('finishEncode', { componentType, runId });
+          return readWireFrames(raw, `${where} finishing the run`);
+        },
+      };
+    },
+  };
 }
 
 /** A component type that is neither node nor transform: validation only. */

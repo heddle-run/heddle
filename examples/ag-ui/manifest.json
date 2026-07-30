@@ -1,0 +1,13 @@
+{
+  "name": "ag-ui-encoder",
+  "version": "1.0.0",
+  "capabilities": [],
+  "components": [
+    {
+      "componentType": "AgUiEncoder",
+      "kind": "encoder",
+      "protocol": "ag-ui",
+      "contentType": "text/event-stream; charset=utf-8"
+    }
+  ]
+}

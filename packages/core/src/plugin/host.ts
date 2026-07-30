@@ -48,6 +48,7 @@ import {
   type RpcResponse,
   type RunToolParams,
 } from './protocol.js';
+import { EVENT_CONTRACT_VERSION } from '../runner/events.js';
 import type { AfterAction } from './seams.js';
 import type { ModelCaller, ToolRunner } from './services.js';
 import type { PluginReporter } from './types.js';
@@ -592,6 +593,7 @@ export class PluginHost {
     this.write(
       hostRequest(id, 'init', {
         protocol: PROTOCOL_VERSION,
+        events: EVENT_CONTRACT_VERSION,
         capabilities: [...this.granted],
         ...(this.options.seams ? { seams: this.options.seams } : {}),
       }),

@@ -1,8 +1,10 @@
+import { randomUUID } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import {
   compile,
   validate,
   collectToolNames,
+  EncoderStream,
   FileRegistry,
   PluginRegistry,
   SubprocessExecutor,
@@ -28,7 +30,8 @@ import {
   type MaterializedCode,
   type RequestCode,
 } from './request-code.js';
-import { SseStream, serializeEvent } from './sse.js';
+import { resolveEncoder, requireStreamFor } from './encoders.js';
+import { SseStream } from './sse.js';
 import { assertToolsAvailable, mergeRegistries } from './tools.js';
 
 interface RunRequest extends FlowRequest, RequestCode {
@@ -166,11 +169,16 @@ export async function handleRun(
   config: ServerConfig,
   gate: ConcurrencyGate,
   stream: boolean,
+  protocol: string | null,
   headers: Record<string, string> = {},
 ): Promise<void> {
   const body = await readJsonBody(req, config.maxBodyBytes);
   rejectServerSideFields(body);
   if (!config.allowRequestCode) rejectRequestCode(body);
+  // Before the gate is taken and before any of the caller's code is written to
+  // disk: a request whose two query parameters contradict each other is wrong
+  // whatever its body says.
+  requireStreamFor(protocol, stream);
 
   const runBody = body as RunRequest;
   const inputs = runBody.inputs ?? {};
@@ -199,7 +207,7 @@ export async function handleRun(
     }
 
     if (stream) {
-      await runStreaming(res, config, runBody, inputs, code, plugins, ac, headers);
+      await runStreaming(res, config, runBody, inputs, code, plugins, ac, protocol, headers);
     } else {
       await runBuffered(res, config, runBody, inputs, code, plugins, ac, headers);
     }
@@ -240,37 +248,84 @@ async function runStreaming(
   code: MaterializedCode,
   plugins: PluginRegistry,
   ac: AbortController,
+  protocol: string | null,
   headers: Record<string, string>,
 ): Promise<void> {
   const sse = new SseStream(res, headers);
+  // Resolved before compiling, because an unknown protocol is a request error
+  // like a bad flow is, and both have to be reported while a 4xx is still
+  // possible. It needs the registry, so it cannot happen any earlier than this.
+  const encoder = resolveEncoder(protocol, plugins);
 
-  // Compile before opening the stream: a bad flow is a request error and
-  // deserves a real 4xx status, which is impossible once 200 headers are out.
+  // Nothing writes to the stream until `sse.open()`, which is after the compile
+  // — so the handler installed for `prepare` has nowhere to put an event, and
+  // drops one. Nothing emits during compilation or validation today; if
+  // something ever does, dropping it is still right, because at that point the
+  // response is a JSON 4xx body rather than a stream.
+  let events: EncoderStream | undefined;
+
   let graph: CompiledGraph;
   try {
-    graph = await prepare(runBody, config, code, plugins, (e) =>
-      sse.send(e.type, serializeEvent(e)),
-    );
+    graph = await prepare(runBody, config, code, plugins, (e) => events?.offer(e));
   } catch (err) {
     const { status, body } = toErrorResponse(err);
     sendJson(res, status, body, headers);
     return;
   }
 
-  sse.open();
+  // heddle's identity for this run. It exists for the encoder: a protocol with a
+  // run identity needs one, and cannot invent a stable one per frame. Minted
+  // here rather than in the engine because the request is the thing being
+  // identified — the engine runs a graph and has never needed a name for one.
+  const runId = randomUUID();
 
-  const opts = runnerOptions(config, (e) => sse.send(e.type, serializeEvent(e)));
-  const runner = new Runner(graph, opts);
+  events = new EncoderStream(
+    encoder.create(runId),
+    (frame) => sse.sendFrame(frame),
+    // An encoder that throws stops the run. With one selected, its rendering
+    // *is* the response, so a run whose answer nobody can read is not worth
+    // spending the caller's money and this server's slot on — the same
+    // reasoning as the `res.on('close')` abort when a caller hangs up. It is
+    // also the only kind of encoder failure that is prompt: without this the
+    // run would continue to completion, rendering nothing.
+    () => ac.abort(),
+  );
 
+  sse.open(encoder.contentType);
+
+  const runner = new Runner(graph, runnerOptions(config, events.handler()));
+
+  let failure: unknown;
   try {
     await runner.run(ac.signal, inputs);
   } catch (err) {
-    // Headers are already sent, so failures travel as an `error` frame. This
-    // is the transport's error channel, not a second event model: engine
-    // failures that have a runner event (node_error) have already been sent.
-    const { body } = toErrorResponse(err);
-    sse.send('error', body.error);
-  } finally {
-    sse.close();
+    failure = err;
   }
+
+  // Drained before anything else is written, on every path. Two things depend on
+  // it: the events the engine queued are rendered before the stream ends, and
+  // the encoder's own terminal frames — AG-UI's `RUN_FINISHED`, which a client
+  // waits for even on an aborted run — go out ahead of heddle's error channel
+  // rather than after it.
+  try {
+    await events.close();
+  } catch (err) {
+    // The encoder's failure supersedes the run's, and deliberately: when the
+    // encoder is what broke, the run's own error is `operation was aborted` —
+    // true, caused by the abort above, and useless to whoever has to fix the
+    // encoder.
+    failure = err;
+  }
+
+  if (failure) {
+    // Headers are already sent, so failures travel as an `error` frame. This is
+    // the transport's error channel, not a second event model: engine failures
+    // that have a runner event (node_error) have already been sent, and this
+    // frame is heddle's own rather than the selected protocol's — a client
+    // reading `ag-ui` gets one named frame it did not ask for, which is better
+    // than a stream that stops with no reason given.
+    const { body } = toErrorResponse(failure);
+    sse.send('error', body.error);
+  }
+  sse.close();
 }

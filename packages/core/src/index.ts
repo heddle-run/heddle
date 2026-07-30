@@ -78,7 +78,14 @@ export type {
   LogLevel,
   PluginEventType,
 } from './runner/events.js';
-export { isPluginEvent, PLUGIN_EVENT_PREFIX } from './runner/events.js';
+// `EVENT_CONTRACT_VERSION` is here because an encoder made `Event` a public
+// contract: a third party now writes field names against it, so the number
+// saying which shape they are reading has to be readable too.
+export {
+  EVENT_CONTRACT_VERSION,
+  isPluginEvent,
+  PLUGIN_EVENT_PREFIX,
+} from './runner/events.js';
 
 export { State } from './state/state.js';
 
@@ -156,6 +163,7 @@ export {
   readChatChunk,
   readChatResponse,
   readModelRequest,
+  readWireFrames,
   spokenProtocol,
 } from './plugin/protocol.js';
 export type {
@@ -166,7 +174,9 @@ export type {
   CancelParams,
   ChatParams,
   EmitEventParams,
+  EncodeParams,
   ExecuteParams,
+  FinishEncodeParams,
   HostLifecycleMethods,
   HostMethod,
   HostMethods,
@@ -200,6 +210,8 @@ export type {
   PluginComponent,
   PluginComponentDef,
   PluginContext,
+  PluginEncoder,
+  PluginEncoderDef,
   PluginIO,
   PluginMiddlewareDef,
   PluginMiddlewareExecutor,
@@ -216,7 +228,21 @@ export type {
   TransformContext,
   TransformPhase,
   TransformResult,
+  WireFrame,
 } from './plugin/types.js';
+
+// The rendering layer. `serializeEvent` and `builtinEncoder` are heddle's own
+// wire form, exported because the server writes the frames and core decides
+// their shape — the split that lets an `Event` field reach a client without the
+// transport being told it exists. `EncoderStream` is what drives any encoder
+// from the engine's synchronous event handler.
+export {
+  builtinEncoder,
+  BUILTIN_PROTOCOL,
+  EncoderStream,
+  PROTOCOL_NAME,
+  serializeEvent,
+} from './plugin/encoder.js';
 
 // ---------------------------------------------------------------------------
 // Tools

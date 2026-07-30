@@ -844,7 +844,7 @@ describe('a manifest declaring a provider', () => {
         version: '1.0.0',
         components: [{ componentType: 'X', kind: 'proviedr' }],
       }),
-    ).toThrow(/expected node, transform, component, provider or middleware/);
+    ).toThrow(/expected node, transform, component, provider, middleware or encoder/);
   });
 
   it('refuses seams on a provider, as on every other non-middleware kind', () => {

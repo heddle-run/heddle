@@ -16,7 +16,7 @@ import type {
 } from '../llm/types.js';
 import type { Dependencies } from '../node/types.js';
 import type { ToolDef } from '../tool/types.js';
-import type { LogLevel } from '../runner/events.js';
+import type { Event, LogLevel } from '../runner/events.js';
 import type { AfterVerdict } from './protocol.js';
 import type { Seam, SeamSubscription } from './seams.js';
 
@@ -375,6 +375,119 @@ export interface PluginProviderDef extends PluginComponentDef {
 }
 
 /**
+ * One frame on the wire, as an encoder produces it.
+ *
+ * `data` is what a client parses; `event` is the SSE event name, and it is
+ * optional because the two protocols heddle already has to serve disagree about
+ * whether there should be one. heddle's own frames put the event type in the
+ * name, so a browser can `addEventListener('node_start')`; AG-UI puts its type
+ * *inside* the JSON and writes nameless `data:` frames, so a client reads one
+ * stream and switches on the payload. An encoder that could not say "no name"
+ * could not produce a conformant AG-UI stream at all.
+ *
+ * Not a transport. A frame does not know it is being written to SSE — an
+ * `event` is dropped by a transport that has no notion of one, which is what
+ * lets the same encoder serve a future NDJSON or WebSocket carrier without
+ * being rewritten.
+ */
+export interface WireFrame {
+  /** SSE event name. Absent for a frame that carries only `data`. */
+  event?: string;
+  /** The frame's payload. Must survive `JSON.stringify`. */
+  data: unknown;
+}
+
+/**
+ * A rendering of one run, from its events to a client's wire format.
+ *
+ * **Per run, and stateful on purpose.** Every interesting target needs
+ * bookkeeping that only makes sense across a whole run: AG-UI has to open a
+ * message before the first delta it has seen and close it afterwards, and it
+ * has to invent a `messageId` to tie the two together. A pure
+ * `Event => WireFrame[]` function could do neither.
+ */
+export interface PluginEncoder {
+  /**
+   * One runner event in, zero or more frames out.
+   *
+   * Zero is ordinary rather than exceptional: most encoders render some of
+   * heddle's events and pass over the rest, and an event that produces no frame
+   * is how they say so.
+   */
+  encode(event: Event): Promise<WireFrame[]> | WireFrame[];
+  /**
+   * Frames that belong at the end, after the last event.
+   *
+   * Called exactly once, on every path — a run that finished, a run that threw,
+   * and a run whose caller hung up. AG-UI's `RUN_FINISHED` has to arrive even
+   * when the run was aborted, because a client that never sees a terminal event
+   * waits forever, and "the connection closed" is not something a protocol with
+   * a terminal event should have to infer.
+   */
+  finish(): Promise<WireFrame[]> | WireFrame[];
+}
+
+/**
+ * A wire format the run can be rendered into — the one kind that is not part of
+ * the flow at all.
+ *
+ * Every other kind answers "what runs inside a flow". This one answers "what
+ * the run looks like on the way out", which puts it outside the taxonomy: it is
+ * neither a slot a spec names nor an interception around an engine step, but a
+ * sink on the event stream.
+ *
+ * **Selected by the request, not by a document, and not by the operator.** That
+ * is the honest owner: two clients hitting the same flow can legitimately want
+ * different renderings of it, and neither the flow's author nor the operator is
+ * in a position to know which. So an encoder is named by {@link protocol} in
+ * the request that starts the run — where middleware is host-configured and a
+ * node is spec-named.
+ *
+ * **The selector is a protocol name and deliberately not a media type.** The
+ * obvious design keys off `Accept:`, and it does not work: heddle's own frames
+ * and AG-UI's are both `text/event-stream`, differing only in what the frames
+ * contain, so a media type cannot choose between them. {@link contentType} is
+ * still declared, because it is the response header — but it describes the
+ * carrier, and the carrier is not the identity.
+ *
+ * **One-directional, and that is a closed door rather than an omission.** An
+ * encoder returns frames and nothing else: no verdict, no substitution, no way
+ * to influence what it is rendering. Given a return path it would be middleware
+ * with none of the ordering rules a seam has, and a rendering layer that can
+ * change the thing it renders is not a rendering layer.
+ *
+ * It is also the only kind that can be granted nothing and still do its job.
+ * `Event => WireFrame[]` asks the host for no tool, no model and no workspace,
+ * so an encoder with an empty capability list is fully functional — which is
+ * why nothing here extends {@link PluginServices}.
+ */
+export interface PluginEncoderDef extends PluginComponentDef {
+  /**
+   * The name a request asks for, e.g. `ag-ui`.
+   *
+   * Its own namespace, sharing nothing with `componentType`. A protocol name is
+   * a public wire identifier that a client types and heddle's own builtin
+   * competes in; a component type is the internal name the plugin's handler
+   * table dispatches on. Keeping them apart is what lets a plugin call its
+   * component `AgUiEncoder` and still answer to `ag-ui`, and it keeps encoders
+   * out of `componentTypeNames()` — the list heddle offers a spec author as
+   * things they may write.
+   */
+  protocol: string;
+  /** Content type for the response, e.g. `text/event-stream`. */
+  contentType: string;
+  /**
+   * Build the rendering for one run.
+   *
+   * `runId` is heddle's identity for this run, minted per request. It is passed
+   * because a protocol with a run identity needs one and cannot invent a stable
+   * one per frame — AG-UI's `RUN_STARTED` carries `runId` and `threadId`, and
+   * every later frame is read against it.
+   */
+  createEncoder(runId: string): PluginEncoder;
+}
+
+/**
  * A middleware: a component that intercepts a call site rather than occupying a
  * slot in the spec.
  *
@@ -424,6 +537,15 @@ export interface HeddlePlugin {
   transforms?: PluginTransformDef[];
   /** Custom `llm_config` types, each answering model calls for itself. */
   providers?: PluginProviderDef[];
+  /**
+   * Wire formats the run can be rendered into, each selected by a request
+   * naming its `protocol`.
+   *
+   * Registered under that protocol name rather than by component type, for the
+   * reason {@link PluginEncoderDef.protocol} gives — so like middleware, and
+   * unlike the three above, nothing here is a name a spec may write.
+   */
+  encoders?: PluginEncoderDef[];
   /**
    * Middleware, which unlike the other three is not registered by component
    * type for lookup — nothing looks a middleware up, because no document names

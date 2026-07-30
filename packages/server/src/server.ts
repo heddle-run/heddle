@@ -112,7 +112,11 @@ async function route(
       throw new HttpError(503, 'server is draining; retry against another replica', 'Draining');
     }
     const stream = url.searchParams.get('stream') === 'true';
-    await handleRun(req, res, config, gate, stream, headers);
+    // Which rendering of the run's events the caller wants. `null` means they
+    // did not say, which is heddle's own — distinct from asking for `heddle` by
+    // name, only in that one is a default and the other is a choice.
+    const protocol = url.searchParams.get('protocol');
+    await handleRun(req, res, config, gate, stream, protocol, headers);
     return;
   }
 

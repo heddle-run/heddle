@@ -28,13 +28,21 @@ answers a model call, what happens when a node throws, whether a tool call is al
 how a tool's result is serialized back into the conversation, how state merges between nodes, how
 a prompt template renders, which tools exist at all, and what the run looks like on the wire. Today
 none of these were reachable from a plugin — the plugin surface was three component kinds, two verbs
-heddle calls (`execute`, `apply`) and one a plugin could call back (`runTool`). It is now five kinds,
-five verbs (`after` joined them in Phase 6, `callTool` in Phase 7, `chat` in Phase 5) and four
-reverse calls (`emitEvent` and `log` from Phase 3, `callModel` from Phase 4). Of the list above,
-three have been reached: **what happens when a node throws** (Phase 6), **which tools exist at all**
-(Phase 7), and **which provider answers a model call** (Phase 5). A plugin can both *call* a model
-and *be* the thing that answers one — two different questions, settled in opposite directions: a
-plugin composing a request never chooses the model, and a plugin answering one is chosen by the spec.
+heddle calls (`execute`, `apply`) and one a plugin could call back (`runTool`). It is now six kinds,
+seven verbs (`after` joined them in Phase 6, `callTool` in Phase 7, `chat` in Phase 5, `encode` and
+`finishEncode` in Phase 9) and four reverse calls (`emitEvent` and `log` from Phase 3, `callModel`
+from Phase 4). Of the list above, four have been reached: **what happens when a node throws**
+(Phase 6), **which tools exist at all** (Phase 7), **which provider answers a model call** (Phase 5),
+and **what the run looks like on the wire** (Phase 9). A plugin can both *call* a model and *be* the
+thing that answers one — two different questions, settled in opposite directions: a plugin composing a
+request never chooses the model, and a plugin answering one is chosen by the spec.
+
+The six kinds now differ along one axis worth naming, because it decides everything else about a
+kind: **who selects it.** A node, a transform and a provider are named by the *spec*. A middleware is
+installed by the *operator*. An encoder is chosen by the *request*. That last one is new with Phase 9
+and it is the only kind whose selector is neither of the two parties who were previously assumed to be
+the only candidates — which is why it needed a namespace of its own (`protocol`) rather than reusing
+the component-type namespace a document writes into.
 
 What the goal does **not** mean:
 
@@ -1600,7 +1608,127 @@ Note `capabilities: []`. A provider plugin needs nothing back from heddle — bu
 (`PluginHost.resolveCommand`, `plugin/host.ts`, `resolveCommand`). That is a policy question the capability list does not currently
 model, and it is one of the open questions below.
 
-### 7.9 The `encoder` kind
+### 7.9 The `encoder` kind — **landed**
+
+> **What shipped differs from the proposal below in two ways, both found by
+> reading AG-UI's actual schema rather than its prose.**
+>
+> **The selector is a protocol name, not a media type.** This section proposed
+> `contentType` as the identity and selection by `Accept:`. That does not work:
+> heddle's own frames and AG-UI's are *both* `text/event-stream`, differing only
+> in what the frames contain, so a media type cannot choose between them.
+> `PluginEncoderDef` therefore carries a `protocol` — `ag-ui`, in its own
+> namespace beside component types and tool names — selected with
+> `?protocol=ag-ui` beside the `?stream=true` that already decides whether there
+> are frames at all. `contentType` survives as the *response header*, which is
+> what it always described.
+>
+> `application/vnd.ag-ui+json`, which this section invented, is not a real AG-UI
+> media type. Over SSE the protocol is plain `text/event-stream`.
+>
+> **A frame's event name is optional.** AG-UI writes nameless `data:` frames with
+> its type *inside* the payload, in `SCREAMING_SNAKE`; heddle's own frames put the
+> type in the SSE event name so a browser can subscribe to it. An encoder that
+> could not say "no name" could not produce a conformant AG-UI stream, so
+> `WireFrame.event` is optional and `SseStream.sendFrame` writes both shapes.
+>
+> Also worth recording, because it cost a wrong field name: the prose docs' table
+> for `RunFinished` lists only `outcome` and `result`, while the schema requires
+> `threadId` **and** `runId`. The example was written against
+> `sdks/typescript/packages/core/src/events.ts`.
+
+#### What landed
+
+| Landed | Where |
+|---|---|
+| `encoder` as a sixth `ComponentKind`, claimed in `defs` so `kindOf` can refuse a spec that names one, and kept out of `componentTypeNames()` | `plugin/registry.ts` |
+| A third namespace: encoders by `protocol`, with `claimProtocol` refusing a malformed name, a missing `contentType`, a collision between two plugins, and `heddle` itself | `plugin/registry.ts` |
+| `WireFrame`, `PluginEncoder`, `PluginEncoderDef` | `plugin/types.ts` |
+| `serializeEvent` moved into core, and heddle's own frames re-expressed as `builtinEncoder()` — one encoder among however many, reachable by name as `?protocol=heddle` | `plugin/encoder.ts` |
+| `EncoderStream`: the ordered drain that lets a synchronous `EventHandler` feed an encoder that answers over a pipe | `plugin/encoder.ts` |
+| `encode` and `finishEncode` verbs, and `readWireFrames` | `plugin/protocol.ts` |
+| `EVENT_CONTRACT_VERSION`, sent to every plugin at `init` as `events` | `runner/events.ts`, `plugin/host.ts` |
+| `remoteEncoderDef`, which threads no signal and needs no capability | `plugin/remote.ts` |
+| `protocol` and `contentType` in the manifest, required on an encoder and refused on every other kind | `plugin/manifest.ts` |
+| `?protocol=` selection, an unknown protocol refused 400 naming what it can render, a protocol without `stream=true` refused, and the encoder's `contentType` as the response header | `server/encoders.ts`, `server/runs.ts`, `server/server.ts` |
+| A per-run `runId`, minted per request | `server/runs.ts` |
+| `protocols` and `eventContract` on `/v1/capabilities` | `server/capabilities.ts` |
+| The AG-UI encoder, exercised end to end through HTTP | `examples/ag-ui/` |
+
+**The message-boundary decision this section asked for: it is the encoder's, and
+heddle emits nothing.** The argument is that heddle does not know where a
+*message* begins — it knows where a *node* begins. To emit `TextMessageStart`
+itself it would have to claim a message was starting before knowing whether the
+node will produce one, and §7.5's own note names two ordinary configurations
+where it will not: an agent carrying a `post` transform streams nothing, and one
+calling tools streams rounds whose text is discarded. Delaying the claim until
+the first delta would make it exactly what an encoder can already do for itself.
+What heddle does supply is the two facts that make the bookkeeping cheap:
+`token_delta` carries `nodeName`, and the runner is a single sequential loop, so a
+node's deltas are contiguous.
+
+**The boundary turned out to be one of five disagreements, not the only one, and
+the adversarial review is what found the other four.** All four were in the
+example rather than the engine, and each is a place where heddle's event model and
+AG-UI's are both reasonable and do not line up:
+
+- **A message id has to be minted per node *visit*.** `attempt` cannot serve: it
+  is absent from `token_delta` altogether, and `runner.ts` resets it to 1 when the
+  flow advances, so a loop revisiting a streaming node reuses an id whichever way
+  it is read. AG-UI's reducer treats a repeated `TEXT_MESSAGE_START` as a no-op
+  and *appends* the content, so a reused id does not fail — it silently
+  concatenates two turns into one message.
+- **A step closes on `node_error` too.** A retry re-enters the node and emits a
+  second `STEP_STARTED`, and AG-UI's verifier — which sits unconditionally in its
+  client's pipeline — refuses one for a step already active. A step left open
+  there makes a conforming client abort a run heddle went on to complete, which is
+  the one outcome a non-terminal error must not cause.
+- **A tool message needs an id of its own.** `TOOL_CALL_RESULT.messageId` names a
+  *new* tool message, not the parent assistant one, so reusing the node's id
+  collides with the assistant message and with every other result in that node —
+  and a client keyed by message id keeps one of them.
+- **A failed tool is a result whose content is the error.** heddle emits
+  `tool_result` with an `error` and no `toolResult`; AG-UI's frame has a required
+  `content` and no error field at all, so a failure renders into `content` or it
+  is lost — and lost, it reads as a tool that successfully returned nothing.
+
+Plus one trap that is not a disagreement so much as a mismatch of scope:
+`STATE_SNAPSHOT` **replaces** the client's whole state, while `node_complete.state`
+is only that node's own output. Sending the second as the first deletes what
+earlier nodes and the run's inputs put there, so the encoder accumulates the run
+state the way the runner does. The example's own flow hides this, because
+`StartNode` and `EndNode` compile to a passthrough whose output *is* the merged
+state — which is exactly why it took a review to find.
+
+None of these is a defect in the kind, and that is the point worth keeping: every
+one is a decision an encoder author has to make, all five are invisible from
+heddle's side, and the example is where they are now written down.
+
+**An encoder failure ends the stream and the run.** With one selected, the
+encoding *is* the response, so a run whose answer nobody can read is not worth
+spending the caller's money and a concurrency slot on — the same rule as the
+`res.on('close')` abort when a caller hangs up. The failure travels on heddle's
+own error channel rather than the selected protocol's, because a rendering that
+just failed is not the thing to report it with.
+
+**`finish()` is told nothing about the outcome, and does not need to be.** AG-UI's
+`RUN_FINISHED` and `RUN_ERROR` are mutually exclusive, so the example has to know
+which happened — and reads it off the stream, since heddle emits `flow_complete`
+only on success. That is the one-directional rule paying for itself: the encoder
+infers what happened instead of being handed a verdict, which is why this kind
+needs no return path. It is also why `node_error` is *not* rendered as
+`RUN_ERROR`: since Phase 6 a node error is not terminal, so a client told the run
+had failed would be wrong whenever a middleware retried.
+
+**Still owed, and stated rather than papered over: the CLI cannot select one.**
+`heddle run` renders events with its own progress writer and has no `--protocol`,
+so an encoder is reachable from the server and from an embedder holding
+`RunnerOptions`, and not from the CLI. Recorded for the same reason Phase 6
+recorded the TUI's silence about `warning`: a contract nothing draws is not yet a
+feature. The shipped example is therefore submitted with a request, which is how
+it will really be used.
+
+#### The original argument
 
 Every kind so far answers "what runs inside a flow". This one answers "what the run looks like on
 the wire", and it falls outside the taxonomy in §5 — it is neither a spec-named slot nor an
@@ -1758,8 +1886,18 @@ Phase 3, so an encoder written now sees the final shape — `BuiltinEventType | 
    scratch as the run's answer (§7.2). That is right for a judge and wrong for a summarizer plugin
    whose model output *is* the node's output — and heddle has no way to be told which it is. The
    candidates are a manifest flag on the component (declarative, checkable at load, and a plugin can
-   still lie about which calls are the answer), a distinct verb, or leaving it to seam #33's encoder
-   to decide what a client sees. None is obviously right, and nothing is blocked on it today.
+   still lie about which calls are the answer), a distinct verb, or leaving it to the encoder to
+   decide what a client sees. None is obviously right, and nothing is blocked on it today.
+
+   **Phase 9 built the third candidate and it does not answer this.** An encoder now exists and can
+   drop or relabel any event, so "let the rendering decide" is reachable — but it decides for *every*
+   client of that protocol at once, from outside the plugin, with no way to tell one plugin's scratch
+   from another's answer. The information the question is missing is which calls are the answer, and
+   an encoder has strictly less of it than heddle does: it sees the events, not the call sites. What
+   an encoder *does* settle is the weaker version of the question — a client that wants none of a
+   plugin's chatter can ask for a protocol that renders none of it — which is a filtering decision
+   and was never the hard part. The manifest flag remains the only candidate that puts the claim
+   where the knowledge is.
 
 ---
 
@@ -1863,11 +2001,16 @@ numbering was left alone so cross-references stay valid. The actual order:
 | 2 Lifecycle + streaming | 1 | landed |
 | 3 `PluginContext` | 1, 2 | landed |
 | 4 `callModel` | 1, 3 | landed; also carried seam #26 (`ChatRequest` widening) |
-| 5 Provider kind | 2, 4 | *strongly prefers* V |
-| 6 Middleware kind | 1, 2, 3 | |
-| 7 Registry | 1 | off the main line |
-| 9 Encoder | 2, 3 | off the main line |
-| **V** SDK extension | — | independent; land before 5 |
+| 5 Provider kind | 2, 4 | landed; *strongly preferred* V, and took it |
+| 6 Middleware kind | 1, 2, 3 | landed at `nodeError`; five seams reserved |
+| 7 Registry | 1 | landed; off the main line |
+| 9 Encoder | 2, 3 | landed; off the main line |
+| **V** SDK extension | — | landed; independent; landed before 5 |
+
+Every phase in this table has landed. What remains is recorded per phase below —
+Phase 6's five reserved seams, and the two surfaces neither Phase 6 nor Phase 9
+reaches (the server installs no middleware; the CLI selects no encoder) — plus
+the open questions in §7.10, of which Q4 is the largest.
 
 Three things moved after the first draft:
 
@@ -2246,21 +2389,48 @@ seam is worth.
 
 **Unblocks:** Phase 5 at its lower cost. Every future component kind's placeholder cost is now zero.
 
-### Phase 9 — Encoder kind
+### Phase 9 — Encoder kind — **landed**
 
 `kind: 'encoder'` (§7.9), selected per request rather than named in a spec, with AG-UI as the first
-implementation and heddle's current frames re-expressed as the builtin one.
+implementation and heddle's current frames re-expressed as the builtin one. The cost estimate held —
+the rendering itself is small — and the two things that were not in the estimate are worth naming,
+because both were consequences of the kind rather than of the protocol.
+
+**The engine's event handler is synchronous and an out-of-process encoder is not.**
+`EventHandler` returns `void` and `Runner.emit` is fire-and-forget, so nothing in the engine could
+await a rendering that answers over a pipe. That is `EncoderStream`: a queue and one loop, the mirror
+image of Phase 5's `pullFrom` — there a plugin pushed and a `Provider` pulled, here the engine pushes
+and an encoder may answer whenever it answers. Without it, calling `encode` per event would put a
+remote encoder's round trips in flight together and let two frames whose order a protocol depends on
+race each other. Every run now goes through it, including `?protocol=heddle`, which is why the first
+server test asserts the default frames are byte-for-byte what they were.
+
+**A run had no identity.** Nothing in the engine or the server had ever needed a name for one — the
+broker mints a `runId`, and the broker was never deployed. AG-UI's `RUN_STARTED` requires `threadId`
+and `runId`, so the server mints one per request and hands it to `createEncoder`. It is the request's
+identity rather than the graph's, which is why it lives there and not in the runner.
 
 **Depends on:** ~~Phase 2 (token streaming)~~ — satisfied: `token_delta` exists, so AG-UI no longer
 degrades to a single `TextMessageChunk` carrying the whole answer. ~~Phase 3 (a namespaced
-`EventType`)~~ — satisfied: `EventType` is now `BuiltinEventType | PluginEventType` with `data` and
-`level` on `Event`, so an encoder sees the final shape. Still owes the message-boundary decision in
-§7.9. Independent of 4–7.
+`EventType`)~~ — satisfied. ~~The message-boundary decision in §7.9~~ — decided: it is the encoder's,
+and heddle emits nothing, for the reason given there.
+
+**`Event` is versioned, as this phase was told to do.** `EVENT_CONTRACT_VERSION` is an integer beside
+`PROTOCOL_VERSION`, sent at `init` as `events`, and reported on `/v1/capabilities`. It differs from the
+protocol version in one deliberate way: a mismatch is *not* a refusal. A plugin speaking the wrong
+protocol cannot be talked to at all; an encoder reading a later event contract still renders every
+field it recognizes, so refusing the run would trade a complete rendering for none. Adding a field
+does not move the number, and `serializeEvent` spreading rather than enumerating is what makes that
+direction safe.
+
+While there: the test §10 calls "the only form of this that survives someone adding a field in a
+hurry" had stopped covering one. `FULL` in `server/__tests__/sse.test.ts` is walked with
+`Object.keys`, so a field missing from the literal is a field unchecked — and `attempt` was never
+added when Phase 6 added it to `Event`. It is now typed `Required<Event>`, so omitting one is a
+compile error rather than a quietly narrower guarantee.
 
 **Unblocks:** CopilotKit and any AG-UI client against a heddle flow with no adapter in between;
 OpenAI-compatible chunk output; OTLP span export from the same event stream.
-Cost: low — but it promotes `Event` (`runner/events.ts`, `Event`) from an internal struct to a public
-contract, so version it in the same change.
 
 ---
 
@@ -2280,14 +2450,15 @@ documentation rather than an accident.
 
 Two new contracts appear in this revision and both are easy to create by accident:
 
-- **`Event` becomes public the moment encoders exist** (§7.9). `Event` and `EventType` have been
-  exported from `packages/core/src/index.ts` since before Phase 3, and Phase 3 added `data`, `level`,
-  `isPluginEvent` and `PLUGIN_EVENT_PREFIX` to that surface — so third-party code can already consume
-  the shape, and `packages/server/src/sse.ts` still describes the wire form as "the same event model
-  the engine already emits". Once an encoder renders it, adding a field is safe and changing one is a
-  break. **Version it in Phase 9, not now**: Phase 3 only added fields, which is the direction this
-  paragraph calls safe, and no encoder consumes `Event` yet. If that decision should move forward, it
-  should move as an argued change rather than as a side effect of a cleanup.
+- **~~`Event` becomes public the moment encoders exist~~ — it did, and it is versioned** (§7.9).
+  `Event` and `EventType` have been exported from `packages/core/src/index.ts` since before Phase 3,
+  and Phase 3 added `data`, `level`, `isPluginEvent` and `PLUGIN_EVENT_PREFIX` to that surface — so
+  third-party code could already consume the shape. Phase 9 made a third party *render* it, and
+  discharged this paragraph's instruction in the same change: `EVENT_CONTRACT_VERSION` is an integer
+  beside `PROTOCOL_VERSION`, sent to every plugin at `init` as `events` and reported on
+  `/v1/capabilities`. Adding a field does not move it; changing or removing one does. A mismatch is
+  not a refusal — see the constant for why a partial rendering beats no rendering, which is the one
+  place the two version numbers deliberately behave differently.
 
   Phase 2 found the sharp edge on the way there, and it is worth naming because every phase that adds
   an event will meet it. `serializeEvent` used to copy a **fixed list of fields**, so a field added to
@@ -2296,8 +2467,15 @@ Two new contracts appear in this revision and both are easy to create by acciden
   the function was written, which meant every `warning` frame reached clients empty. It now spreads
   instead of listing — which is how Phase 3's `data` and `level` reached clients without it being
   told they exist — and is covered by a test that walks a fully-populated `Event` and asserts nothing
-  is missing (`packages/server/src/__tests__/sse.test.ts`), which is the only form of this that
-  survives someone adding a field in a hurry.
+  is missing (`packages/server/src/__tests__/sse.test.ts`).
+
+  **That test had itself gone quietly narrower, and the way it did is the lesson.** It walks
+  `Object.keys(FULL)`, so its coverage is whatever the `FULL` literal happens to list — and `attempt`
+  was added to `Event` in Phase 6 and never added there. For two phases it enumerated fifteen of
+  sixteen fields and reported success, which is the *same* failure mode as the fixed list it was
+  written to catch, one level up. Phase 9 typed it `Required<Event>`, so a field added to `Event` and
+  not added here is now a compile error. A test that guards an enumeration has to be exhaustive by
+  construction, or it is an enumeration too.
 - **A patched `vendor/agentspec` is a fork** (§8.1). It is a cheap one — the package is unpublished
   and bundled via `noExternal`, so there is no downstream consumer — but the refresh workflow in
   `VENDOR.md` assumes a verbatim copy and will silently revert the patches if it is followed as
@@ -2335,6 +2513,26 @@ defences worth designing in from the start: per-seam registration so a plugin is
 seams it declared, and a `subject` payload that carries references rather than the whole state where
 the seam permits it.
 
+**An out-of-process encoder is the worst case on this axis, and Phase 9 shipped it knowingly.** A
+middleware costs a round trip per node per seam; an encoder costs one **per event**, and the event
+heddle emits most is `token_delta` — one per fragment of every model answer. A streamed
+thousand-token reply is therefore on the order of a thousand JSON Lines round trips through a pipe,
+each carrying a few bytes of text, to render frames that are themselves a few bytes. Nothing in the
+engine is waiting on any of them, which is the saving grace: `EncoderStream` queues, the run proceeds,
+and the cost is latency on the client's stream plus CPU on the server rather than a slower flow. The
+bound is the run's own wall-clock budget.
+
+The defences, in the order they should be reached for. **A batched verb** — `encode` taking the
+events queued since the last call rather than one — is the obvious one and needs no new concept:
+`EncoderStream` already holds exactly that list, and the frames come back in the same order either
+way. **An in-process encoder** is the other, and it is free: `PluginEncoderDef` is an ordinary
+in-process interface, so an operator's own encoder costs a function call. What is not a defence is
+declaring which events an encoder wants, which looks appealing and is a `serializeEvent` field list
+wearing a manifest — a filter that has to be updated whenever an event is added, failing silently
+when it is not. Neither is built, because the first consumer is a client submitting an encoder for its
+own run and paying its own latency, and a batching change is one an ordinary profile will justify
+better than this paragraph can.
+
 ### What stays closed, and why
 
 | Closed | Where | Why |
@@ -2346,5 +2544,6 @@ the seam permits it.
 | `$VAR` dereference for submitted specs | `llm/provider.ts:32-53` | The reference is not restricted to model credentials, and the "is not set" error is an enumeration oracle. |
 | Plugins in the server's process | `packages/server/src/plugins.ts:9-18` | Everything above is designed *around* this constraint. If a proposal is easier in-process, that is a reason to reject the proposal. |
 | Environment inheritance | `PluginHost.resolveCommand` (`plugin/host.ts`, `resolveCommand`), `packages/server/src/plugins.ts` | Named capabilities grant heddle-mediated *operations*, never raw process access. There is no `getEnv`, and there should not be one. |
-| An encoder that can alter the run | §7.9 | `Event → WireFrame[]` is one-directional on purpose. An encoder renders what happened; giving it a return path would make it middleware with none of §7.4's ordering rules, and a rendering layer that can change the thing it renders is not a rendering layer. |
+| An encoder that can alter the run | §7.9; `plugin/types.ts`, `PluginEncoder` | `Event → WireFrame[]` is one-directional on purpose. An encoder renders what happened; giving it a return path would make it middleware with none of §7.4's ordering rules, and a rendering layer that can change the thing it renders is not a rendering layer. Held after Phase 9, and it paid: AG-UI's mutually exclusive terminal events forced the example to *infer* the outcome from the stream, which works because `flow_complete` is emitted only on success. The one place an encoder does affect the run is by failing — the stream and the run end together — and that is the transport reporting a broken response, not a verdict. |
+| A plugin answering for heddle's own protocol | `plugin/registry.ts`, `claimProtocol`; `server/encoders.ts`, `resolveEncoder` | `?protocol=heddle` is a client asking for the frames heddle documents, and a browser written against `flow_complete` is switching on them. Refused at load *and* unreachable by lookup order, which is the same two-sided guarantee Phase 5 gave a builtin `llm_config` type. |
 | Divergence from the Agent Spec *format* | §8.1 | Extending the SDK's unions is in scope; inventing fields or semantics that make a heddle spec unreadable to another Agent Spec implementation is not. Every patch should be one upstream would plausibly accept. |

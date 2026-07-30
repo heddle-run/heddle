@@ -18,6 +18,7 @@
  *   which is already the whole risk.
  */
 import { PluginError } from '../errors.js';
+import { PROTOCOL_NAME } from './encoder.js';
 import {
   isPluginCapability,
   PLUGIN_CAPABILITIES,
@@ -37,7 +38,13 @@ export interface ManifestComponent {
   /** The `component_type` string as it appears in a spec file. */
   componentType: string;
   /** What this is, which decides how heddle treats it. Defaults to `node`. */
-  kind?: 'node' | 'transform' | 'component' | 'provider' | 'middleware';
+  kind?:
+    | 'node'
+    | 'transform'
+    | 'component'
+    | 'provider'
+    | 'middleware'
+    | 'encoder';
   /** Inputs to advertise when the spec file does not declare them. */
   inputs?: PluginIO[];
   /** Outputs to advertise when the spec file does not declare them. */
@@ -71,6 +78,24 @@ export interface ManifestComponent {
    * its own silence budget, since only a partial restarts the clock.
    */
   stream?: boolean;
+  /**
+   * For encoders: the name a request asks for, e.g. `ag-ui`.
+   *
+   * Required for an encoder and forbidden on every other kind, like `seams` and
+   * for the same reason — a `protocol` on a node is a misunderstanding about
+   * which kind it is, and read as a field that silently does nothing it would
+   * leave an author believing their format was selectable.
+   */
+  protocol?: string;
+  /**
+   * For encoders: the content type of the response this one produces.
+   *
+   * Required alongside `protocol`, because it is not derivable from it. Two
+   * encoders can share a carrier — heddle's own frames and AG-UI's are both
+   * `text/event-stream` — so the protocol name says which rendering and this
+   * says what to put in the header.
+   */
+  contentType?: string;
   /**
    * For middleware: which seams this subscribes to, and which halves of each.
    *
@@ -251,10 +276,11 @@ export function validateManifest(raw: unknown): PluginManifest {
       kind !== 'transform' &&
       kind !== 'component' &&
       kind !== 'provider' &&
-      kind !== 'middleware'
+      kind !== 'middleware' &&
+      kind !== 'encoder'
     ) {
       fail(
-        `plugin "${manifest.name}": component "${componentType}" has kind "${String(kind)}"; expected node, transform, component, provider or middleware`,
+        `plugin "${manifest.name}": component "${componentType}" has kind "${String(kind)}"; expected node, transform, component, provider, middleware or encoder`,
       );
     }
 
@@ -272,6 +298,7 @@ export function validateManifest(raw: unknown): PluginManifest {
     }
 
     const seams = asSeams(manifest.name as string, componentType, kind, component.seams);
+    const rendering = asRendering(manifest.name as string, componentType, kind, component);
 
     return {
       componentType,
@@ -283,6 +310,8 @@ export function validateManifest(raw: unknown): PluginManifest {
       phase: phase as ManifestComponent['phase'],
       stream: component.stream === true,
       seams,
+      protocol: rendering?.protocol,
+      contentType: rendering?.contentType,
     };
   });
 
@@ -534,6 +563,59 @@ function asSeams(
   }
 
   return readSubscription(where, value);
+}
+
+/**
+ * Read an encoder's `protocol` and `contentType`, and refuse them on any other
+ * kind.
+ *
+ * The shape of the protocol name is checked here as well as in
+ * `PluginRegistry.claimProtocol`, and the duplication is the same one `seams`
+ * has: the registry's check is the one every path shares, including the
+ * in-process API, and this one exists so the error names the manifest and the
+ * component that wrote it. What is manifest-specific and could not live in the
+ * registry is the refusal below — an in-process def cannot express "a node with
+ * a protocol", because the field only exists on the encoder type.
+ */
+function asRendering(
+  plugin: string,
+  componentType: string,
+  kind: string,
+  component: Record<string, unknown>,
+): { protocol: string; contentType: string } | undefined {
+  const where = `plugin "${plugin}": ${componentType}`;
+
+  if (kind !== 'encoder') {
+    for (const field of ['protocol', 'contentType'] as const) {
+      if (component[field] !== undefined) {
+        fail(
+          `${where} declares "${field}" but its kind is "${kind}". Only an encoder ` +
+            `renders the run for a client; every other kind is named by the spec or ` +
+            `installed by the operator.`,
+        );
+      }
+    }
+    return undefined;
+  }
+
+  const protocol = component.protocol;
+  if (typeof protocol !== 'string' || !PROTOCOL_NAME.test(protocol)) {
+    fail(
+      `${where} is an encoder, so it needs a "protocol" matching ` +
+        `${PROTOCOL_NAME.source} — the name a client puts in "?protocol=" to ask ` +
+        `for this rendering. Got ${JSON.stringify(protocol)}.`,
+    );
+  }
+  const contentType = component.contentType;
+  if (typeof contentType !== 'string' || !contentType) {
+    fail(
+      `${where} is an encoder, so it needs a "contentType" — the content type of ` +
+        `the response it produces. Use "text/event-stream" for a protocol carried ` +
+        `over SSE. Got ${JSON.stringify(contentType)}.`,
+    );
+  }
+
+  return { protocol, contentType };
 }
 
 function asBranches(

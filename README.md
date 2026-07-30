@@ -324,6 +324,16 @@ Anything a spec sets under `default_generation_parameters` — `temperature`,
 See [examples/guardrails](examples/guardrails) for a worked example: a `Processor`
 transform used as both a pre- and post-processor on an agent.
 
+A plugin can also supply an **encoder**, which is not part of a flow at all: it
+renders the run's event stream into another wire format, and the *request* selects
+it rather than the spec or the operator. That is because two clients hitting one
+flow can legitimately want different renderings, and neither the flow's author nor
+whoever runs the server knows which. Encoders are reachable through
+`heddle-server` — `POST /v1/runs?stream=true&protocol=ag-ui` — and not yet from
+this CLI, which renders events with its own progress writer.
+See [examples/ag-ui](examples/ag-ui) for one that speaks
+[AG-UI](https://docs.ag-ui.com), the protocol CopilotKit uses.
+
 ### Execution Pipeline
 
 ```

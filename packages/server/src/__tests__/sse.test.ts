@@ -13,8 +13,18 @@ import type { Event } from '@heddle/core';
 import { State } from '@heddle/core';
 import { SseStream, serializeEvent } from '../sse.js';
 
-/** Every field an `Event` can carry, populated. */
-const FULL: Event = {
+/**
+ * Every field an `Event` can carry, populated.
+ *
+ * `Required<Event>` rather than `Event`, because the loop below walks
+ * `Object.keys(FULL)` — so a field missing from this literal is a field the test
+ * does not check, and the test would keep passing while the guarantee it is named
+ * for quietly stopped holding. That is not hypothetical either: `attempt` was
+ * added to `Event` in Phase 6 and never added here, so for two phases this
+ * enumerated fifteen of sixteen fields and reported success. Now omitting one is
+ * a compile error.
+ */
+const FULL: Required<Event> = {
   type: 'tool_result',
   message: 'a warning worth reading',
   delta: 'the ',
@@ -24,6 +34,7 @@ const FULL: Event = {
   nodeType: 'AgentNode',
   state: new State({ result: 41 }),
   error: new Error('it broke'),
+  attempt: 2,
   toolName: 'echo',
   toolArgs: { v: 41 },
   toolResult: { echoed: 41 },

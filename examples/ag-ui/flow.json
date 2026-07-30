@@ -1,0 +1,24 @@
+{
+  "component_type": "Flow",
+  "name": "ag-ui-demo",
+  "description": "A minimal flow, so a rendering has a lifecycle to render.",
+  "start_node": { "$component_ref": "start" },
+  "nodes": [{ "$component_ref": "start" }, { "$component_ref": "end" }],
+  "control_flow_connections": [
+    {
+      "component_type": "ControlFlowEdge",
+      "name": "start_to_end",
+      "from_node": { "$component_ref": "start" },
+      "to_node": { "$component_ref": "end" }
+    }
+  ],
+  "$referenced_components": {
+    "start": {
+      "component_type": "StartNode",
+      "id": "start",
+      "name": "start",
+      "outputs": [{ "title": "query", "type": "string" }]
+    },
+    "end": { "component_type": "EndNode", "id": "end", "name": "end" }
+  }
+}
