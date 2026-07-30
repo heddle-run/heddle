@@ -10,6 +10,7 @@ These are declared on `heddle` itself and may appear before or after the subcomm
 | Option | Description |
 |--------|-------------|
 | `--verbose` | Log every node as it starts and completes, plus tool arguments and results |
+| `--trace` | Accepted and inert. Registered on the program and shown in `--help`, but nothing reads it |
 
 There is currently no `--version` flag. Use `heddle --help` to confirm the CLI is installed.
 
@@ -32,14 +33,29 @@ heddle run <flow> [options]
 | Option | Description |
 |--------|-------------|
 | `--tools-dir <path>` | Directory containing tool executables |
-| `--input <json>` | Input data as a JSON object |
+| `--input <json>` | Input data as a JSON object. Becomes the run's starting state |
 | `--chat` | Start an interactive chat session instead of a single run |
+| `--plugin <module>` | Load a plugin (repeatable). A `.json` path is a manifest and runs out of process; anything else is imported as an ES module |
+| `--plugin-config <Type>=<json>` | Configuration for a middleware component type (repeatable, once per type). `@path` reads the JSON from a file |
+| `--max-node-attempts <n>` | How many times one arrival at a node may be attempted when middleware retries. Whole number ≥ 1, default 3 |
+| `--no-stream` | Ask the model for one buffered response instead of a token stream |
 | `--safe` | Run tools inside an OS sandbox |
 | `--sandbox <backend>` | Sandbox backend: `auto` (default), `bubblewrap`, or `seatbelt` |
 | `--allow-read <path>` | Grant sandboxed tools read access to a path (repeatable) |
 | `--allow-write <path>` | Grant sandboxed tools write access to a path (repeatable) |
 | `--allow-env <name>` | Forward an environment variable into the sandbox (repeatable) |
 | `--deny-net` | Block network access for sandboxed tools |
+
+`--no-stream` is decided before the request goes out, not as a fallback. Use it for an
+endpoint that cannot serve SSE or that bills streamed calls differently. Note that an
+agent carrying a `post` transform does not stream regardless, since a token that has
+reached a client cannot be recalled once the transform rejects the answer.
+
+<Callout type="warn">
+`--sandbox`, `--allow-read`, `--allow-write`, `--allow-env` and `--deny-net` are each a
+hard error without `--safe`, naming the offending flag. They tune a sandbox; they do not
+switch one on. See [Sandboxing](/docs/sandboxing).
+</Callout>
 
 ### Examples
 
@@ -71,7 +87,11 @@ The final state is printed to stdout as formatted JSON. Progress, tool activity,
 heddle run flow.json --input '{"query": "hello"}' | jq .result
 ```
 
-The keys of `--input` should match the outputs declared on the flow's start node. Malformed JSON fails immediately; keys the flow does not declare are carried in the state but never read.
+`--input` becomes the run's starting state as given. It is not checked against the start
+node's declared outputs: malformed JSON fails immediately, but a key nothing declares is
+carried and is readable — an agent is sent its whole input state as JSON, and `{{key}}`
+substitution reads whatever the state holds. A declared key you omit is simply absent, and
+a prompt referencing it keeps the placeholder.
 
 ### Chat Mode
 
@@ -102,17 +122,30 @@ heddle validate <spec> [options]
 | Option | Description |
 |--------|-------------|
 | `--tools-dir <path>` | Directory containing tool executables (validates tool references) |
+| `--plugin <module>` | Load a plugin (repeatable), so a flow naming its component types can be parsed |
 
 ### What It Checks
 
 1. Schema validation against the Open Agent Specification
 2. Graph compilation and structural validation, for flows
-3. Existence of an executable for each declared `ServerTool`, when `--tools-dir` is given
+3. That every tool the flow names resolves — against the composed registry, so this runs
+   when `--tools-dir` is given *or* when a loaded plugin contributes tools
 
-Steps 2 and 3 need the same runtime configuration a real run does — notably a resolvable API key for every LLM config in the spec.
+**No API key is needed.** Providers are constructed on first use, so compiling a flow —
+and therefore validating it — never reaches a credential. A spec whose `llm_config` names
+`$OPENAI_API_KEY` validates with nothing in the environment.
+
+A `.json` argument to `--plugin` is read as a manifest, which is data: validating a flow
+that uses an out-of-process plugin starts none of that plugin's code.
 
 <Callout type="warn">
-`validate` currently exits 0 even when steps 2 and 3 fail. Any error after schema validation is caught and reported as `Graph validation skipped (unsupported node types or missing runtime config)`, which also hides genuine problems such as a missing tool executable or an unreachable node. Until this is tightened, read the printed output rather than relying on the exit code, and treat `Graph validation passed` as the signal you actually want to see.
+One gap worth knowing in CI. A spec that does not parse exits 1, and so does a tool the
+flow names that nothing provides — that check sits outside the catch deliberately, because
+exiting 0 while printing the problem is the one outcome a validator must not have. But a
+graph *compilation* failure is caught and reported as `Graph validation skipped`, and
+still exits 0: the skip exists to tolerate a compile that could not run, and it cannot
+tell that case from a real fault. Read the output as well as the status, and treat
+`Graph validation passed` as the signal you want.
 </Callout>
 
 ## heddle init

@@ -12,6 +12,8 @@
     "---Extending heddle---",
     "plugins",
     "---Running heddle---",
-    "cli-reference"
+    "cli-reference",
+    "server",
+    "sandboxing"
   ]
 }

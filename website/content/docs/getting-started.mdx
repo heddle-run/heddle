@@ -107,7 +107,11 @@ heddle run my-agent/flow.json \
   --input '{"query": "What is the Open Agent Specification?"}'
 ```
 
-`--input` is a JSON object whose keys match the outputs declared on the flow's start node. The final state is printed to stdout as JSON; progress and errors go to stderr.
+`--input` is a JSON object that becomes the run's starting state. It is not checked
+against the start node: a key nothing declares is carried anyway, and a declared key you
+omit is simply absent — a prompt referencing `{{missing}}` reaches the model with the
+placeholder still in it. The final state is printed to stdout as JSON; progress and errors
+go to stderr.
 
 Add `--verbose` for per-node logging:
 
@@ -144,8 +148,13 @@ Check your workflow before running it:
 heddle validate my-agent/flow.json --tools-dir my-agent/tools
 ```
 
-This validates the spec against the Agent Spec schema, then compiles and checks the graph.
+This validates the spec against the Agent Spec schema, compiles it, checks the graph, and
+checks that an executable exists for every tool the flow names.
 
 <Callout type="warn">
-Validation is not yet a reliable gate. If graph compilation fails for any reason — including a missing tool executable — `validate` prints `Graph validation skipped`, still reports the file as valid, and exits 0. Read its output rather than trusting the exit code.
+One gap worth knowing in CI. A tool a flow names and nothing provides exits 1, as does a
+spec that does not parse. But if graph *compilation* fails for some other reason,
+`validate` prints `Graph validation skipped` with the reason and still exits 0 — the
+skip exists to tolerate a compile that could not run, and it cannot tell that case from a
+real fault. Read the output as well as the status.
 </Callout>
