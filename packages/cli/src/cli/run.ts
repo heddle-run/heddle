@@ -18,6 +18,7 @@ import {
   MiddlewareChain,
   SandboxError,
   DEFAULT_RUNNER_OPTIONS,
+  type Dependencies,
   type Registry,
   type RunnerOptions,
   type Event,
@@ -144,7 +145,7 @@ async function runFlow(
   const runnerOpts = buildRunnerOpts(verbose, isChat);
   applyMaxNodeAttempts(runnerOpts, options.maxNodeAttempts);
 
-  const deps = {
+  const deps: Dependencies = {
     toolExecutor: new SubprocessExecutor({ sandbox }),
     toolRegistry: registry,
     plugins,
@@ -157,6 +158,12 @@ async function runFlow(
     deps,
     parsePluginConfig(options.pluginConfig),
   );
+  // The same chain on both, because the two reach different call sites: the
+  // runner consults `nodeError`, and an agent's tool loop consults `toolCall`
+  // with only its `Dependencies` in hand. Assigned after the build rather than
+  // in the literal above, since the chain is built *from* `deps` — and before
+  // `compile`, which is where the executors that will read it are made.
+  deps.middleware = runnerOpts.middleware;
   if (verbose && !runnerOpts.middleware.isEmpty()) {
     console.error(`Middleware: ${runnerOpts.middleware.describe().join('; ')}`);
   }
