@@ -16,6 +16,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { execSync } from 'node:child_process';
 
 import { loadPlugins } from '../loader.js';
 import { discoverTools, loadRemotePlugin } from '../remote-loader.js';
@@ -44,6 +45,29 @@ afterEach(() => {
 function writePlugin(source: string, manifest: Record<string, unknown>): string {
   writeFileSync(join(scratch, 'proxy.mjs'), withRuntime(source));
   const path = join(scratch, 'proxy.json');
+  writeFileSync(path, JSON.stringify(manifest));
+  return path;
+}
+
+/** How many child processes this test file has left running. */
+function childCount(): number {
+  return Number(
+    execSync(`pgrep -P ${process.pid} | wc -l`, { encoding: 'utf-8' }).trim(),
+  );
+}
+
+/** Give a disposed process a moment to actually go. */
+const settle = (): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, 250));
+
+/** A second plugin, under its own basename. */
+function writePluginAt(
+  base: string,
+  source: string,
+  manifest: Record<string, unknown>,
+): string {
+  writeFileSync(join(scratch, `${base}.mjs`), withRuntime(source));
+  const path = join(scratch, `${base}.json`);
   writeFileSync(path, JSON.stringify(manifest));
   return path;
 }
@@ -279,5 +303,46 @@ describe('the property discovery spends, and no more', () => {
     const found = registry.toolRegistry().lookup('search');
     expect(found).toBeDefined();
     expect(found).not.toBeInstanceOf(Promise);
+  });
+});
+
+describe('what a failed discovery leaves behind', () => {
+  it('starts no process it does not stop', async () => {
+    // Discovery is the first thing on this path that spawns, and the plugin is
+    // added to the registry only *after* it succeeds — so a rejection used to
+    // leave a started process with no reference left to dispose it. The CLI
+    // survived by accident, on `process.exit`; `loadPlugins` is public API,
+    // where there is no such backstop.
+    const before = childCount();
+    const path = writePlugin(
+      `serve({ Proxy: {} }, { listTools: async () => ({ tools: [
+         { name: 'not a valid name', componentType: 'Proxy' },
+       ] }) });`,
+      PROXY,
+    );
+
+    await expect(loadPlugins([path], true)).rejects.toThrow();
+    await settle();
+
+    expect(childCount()).toBe(before);
+  });
+
+  it('stops the plugins it had already loaded', async () => {
+    // Everything before the one that failed is in the registry, and nobody else
+    // holds it. The same disposition `buildPlugins` takes on the server.
+    const before = childCount();
+    const good = writePluginAt('good', SERVES_TWO, PROXY);
+    const bad = writePluginAt(
+      'bad',
+      `serve({ Proxy: {} }, { listTools: async () => ({ tools: [
+         { name: 'nope!', componentType: 'Proxy' },
+       ] }) });`,
+      PROXY,
+    );
+
+    await expect(loadPlugins([good, bad], true)).rejects.toThrow();
+    await settle();
+
+    expect(childCount()).toBe(before);
   });
 });

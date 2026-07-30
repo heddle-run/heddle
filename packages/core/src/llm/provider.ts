@@ -6,7 +6,11 @@ import type { PluginRegistry } from '../plugin/registry.js';
 import type { PluginComponent } from '../plugin/types.js';
 import { OpenAIProvider } from './openai.js';
 import { LLMError } from '../errors.js';
-import { assertEgressAllowed, type EgressPolicy } from './egress.js';
+import {
+  assertEgressAllowed,
+  redirectRefusingFetch,
+  type EgressPolicy,
+} from './egress.js';
 
 const OPENAI_COMPATIBLE_TYPES = new Set([
   'OpenAiConfig',
@@ -76,7 +80,18 @@ export function createProvider(
     );
   }
 
-  const clientOptions: { apiKey?: string; baseURL?: string } = {};
+  const clientOptions: {
+    apiKey?: string;
+    baseURL?: string;
+    fetch?: typeof fetch;
+  } = {};
+
+  // Under a policy, every request this client makes refuses a redirect — not
+  // only the ones naming a url. An operator's default endpoint can be redirected
+  // too, and the caller chose the spec that reached it.
+  if (options.egress) {
+    clientOptions.fetch = redirectRefusingFetch(`llm_config "${configType}"`);
+  }
 
   if (config.apiKey) {
     clientOptions.apiKey = resolveEnvVar(

@@ -19,8 +19,21 @@ interface GenerationParams {
 export class OpenAIProvider implements Provider {
   private readonly client: OpenAI;
 
-  constructor(options?: { apiKey?: string; baseURL?: string }) {
-    this.client = new OpenAI(options);
+  constructor(options?: {
+    apiKey?: string;
+    baseURL?: string;
+    /**
+     * The fetch the SDK uses, so an egress policy can refuse a redirect.
+     *
+     * A policy is checked once, against the base URL, before any connection is
+     * made — so without this the address checked is not the address connected
+     * to. See `redirectRefusingFetch` in `provider.ts`.
+     */
+    fetch?: typeof fetch;
+  }) {
+    // Cast at the boundary: the SDK types its `fetch` option as its own `Core.Fetch`,
+    // which is structurally the global `fetch` with a looser first parameter.
+    this.client = new OpenAI(options as ConstructorParameters<typeof OpenAI>[0]);
   }
 
   async chatCompletion(

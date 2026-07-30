@@ -12,7 +12,11 @@
  * worse than none, because somebody will rely on it.
  */
 import { describe, it, expect } from 'vitest';
-import { assertEgressAllowed, isPrivateHost } from '../egress.js';
+import {
+  assertEgressAllowed,
+  isPrivateHost,
+  redirectRefusingFetch,
+} from '../egress.js';
 import { createProvider } from '../provider.js';
 import type { LLMConfig } from '../../spec/types.js';
 
@@ -32,6 +36,13 @@ describe('the addresses nobody enumerates', () => {
     ['[::1]', 'IPv6 loopback'],
     ['[fe80::1]', 'IPv6 link-local'],
     ['[fd00::1]', 'IPv6 unique-local'],
+    // The root label. WHATWG URL keeps it on a *name* while stripping it from an
+    // IPv4 literal, so before this was normalised every entry in the name set
+    // was one character away from being bypassed — and `localhost.` resolves to
+    // loopback exactly as `localhost` does, with no attacker DNS involved.
+    ['localhost.', 'the root label, which does not change what it resolves to'],
+    ['LOCALHOST.', 'the same, uppercased'],
+    ['foo.localhost.', 'a subdomain of it'],
   ])('refuses %s (%s)', (host) => {
     expect(() =>
       assertEgressAllowed(`http://${host}:8080/v1`, submitted, where),
@@ -55,6 +66,13 @@ describe('what stays reachable', () => {
     'http://193.168.1.1',
   ])('allows %s', (url) => {
     expect(() => assertEgressAllowed(url, submitted, where)).not.toThrow();
+  });
+
+  it('matches an allowed host however the spec spelled it', () => {
+    // Otherwise the hole an operator punched would depend on a trailing dot.
+    expect(() =>
+      assertEgressAllowed('http://10.0.0.5./v1', { allow: ['10.0.0.5'] }, where),
+    ).not.toThrow();
   });
 
   it('allows a private host the operator named', () => {
@@ -112,5 +130,55 @@ describe('at the provider', () => {
     // Every existing caller passes no `egress`, so nothing that worked before
     // this landed behaves differently.
     expect(() => createProvider(config('http://localhost:11434/v1'), {})).not.toThrow();
+  });
+});
+
+describe('the address checked and the address connected to', () => {
+  it('refuses a redirect under a policy', async () => {
+    // The check runs once, at construction, against the base URL — so on its own
+    // it guarantees only that the *first* address was allowed. An allowed host
+    // answering 302 Location: http://127.0.0.1/ would move the request somewhere
+    // the policy already refused, and a 302 turns the POST into a GET, which is
+    // the shape a metadata service wants.
+    const redirecting = redirectRefusingFetch('llm_config "x"') as unknown as (
+      input: string,
+      init?: RequestInit,
+    ) => Promise<Response>;
+
+    const original = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response(null, {
+        status: 302,
+        headers: { location: 'http://127.0.0.1/latest/meta-data/' },
+      })) as typeof fetch;
+
+    try {
+      await expect(redirecting('https://allowed.example/v1')).rejects.toThrow(
+        /does not follow redirects/,
+      );
+      await expect(redirecting('https://allowed.example/v1')).rejects.toThrow(
+        /127\.0\.0\.1/,
+      );
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
+  it('passes an ordinary response through untouched', async () => {
+    const redirecting = redirectRefusingFetch('llm_config "x"') as unknown as (
+      input: string,
+    ) => Promise<Response>;
+
+    const original = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response('{"ok":true}', { status: 200 })) as typeof fetch;
+
+    try {
+      const res = await redirecting('https://allowed.example/v1');
+      expect(res.status).toBe(200);
+      expect(await res.text()).toBe('{"ok":true}');
+    } finally {
+      globalThis.fetch = original;
+    }
   });
 });

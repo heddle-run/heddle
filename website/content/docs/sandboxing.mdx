@@ -104,6 +104,13 @@ on the operator's own network.
 Specs you run yourself are unrestricted. `heddle run` against `http://localhost:11434` is
 an Ollama server, and refusing it would break the local case for nothing.
 
+**Redirects are refused, not followed.** The policy is checked once, against the base URL,
+before any connection is made — so on its own it would guarantee only that the *first*
+address was allowed. An allowed host answering `302 Location: http://127.0.0.1/` would move
+the request somewhere already refused, and a 302 turns the POST into a GET, which is the
+shape a metadata service wants. Under a policy heddle therefore refuses any redirect
+outright; no model API needs one to serve a completion.
+
 <Callout type="warn">
 **This reads the address the spec wrote; it does not resolve DNS.** A hostname that
 resolves into a private range — `metadata.google.internal`, or any name an attacker
