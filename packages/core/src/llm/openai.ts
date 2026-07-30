@@ -9,120 +9,69 @@ import type {
 } from './types.js';
 import { LLMError } from '../errors.js';
 
-/** OpenAIProvider implements Provider using the OpenAI API. */
-export class OpenAIProvider implements Provider {
-  private client: OpenAI;
+interface GenerationParams {
+  temperature?: number;
+  max_tokens?: number;
+  top_p?: number;
+  response_format?: { type: 'json_object' };
+}
 
-  constructor(opts?: { apiKey?: string; baseURL?: string }) {
-    this.client = new OpenAI(opts);
+export class OpenAIProvider implements Provider {
+  private readonly client: OpenAI;
+
+  constructor(options?: { apiKey?: string; baseURL?: string }) {
+    this.client = new OpenAI(options);
   }
 
   async chatCompletion(
     signal: AbortSignal | undefined,
-    req: ChatRequest,
+    request: ChatRequest,
   ): Promise<ChatResponse> {
     try {
       const completion = await this.client.chat.completions.create(
-        {
-          model: req.model,
-          messages: buildMessages(req),
-          tools: buildTools(req),
-          ...buildGeneration(req),
-        },
+        buildRequestBody(request),
         { signal },
       );
 
-      if (!completion.choices || completion.choices.length === 0) {
+      const choice = completion.choices?.[0];
+      if (!choice) {
         throw new LLMError('no choices in response');
       }
 
-      const choice = completion.choices[0];
-      const resp: ChatResponse = {
-        content: choice.message.content ?? '',
-        finish_reason: choice.finish_reason ?? '',
-      };
-
-      if (choice.message.tool_calls && choice.message.tool_calls.length > 0) {
-        resp.tool_calls = choice.message.tool_calls.map(
-          (tc): ToolCall => ({
-            id: tc.id,
-            name: tc.function.name,
-            arguments: tc.function.arguments,
-          }),
-        );
-      }
-
-      return resp;
+      return toResponse(choice);
     } catch (err) {
       throw asLLMError(err);
     }
   }
 
-  /**
-   * The same request with `stream: true`, translated chunk by chunk.
-   *
-   * A generator, so nothing is sent until the caller iterates: the request and
-   * the consumption of its response are one act here, and a stream created but
-   * never read would hold a connection open until the socket timed out.
-   */
   async *chatCompletionStream(
     signal: AbortSignal | undefined,
-    req: ChatRequest,
+    request: ChatRequest,
   ): AsyncIterable<ChatChunk> {
     try {
       const stream = await this.client.chat.completions.create(
-        {
-          model: req.model,
-          messages: buildMessages(req),
-          tools: buildTools(req),
-          ...buildGeneration(req),
-          stream: true,
-        },
+        { ...buildRequestBody(request), stream: true },
         { signal },
       );
 
       let sawChoice = false;
       for await (const part of stream) {
-        // Chunks with no choices are routine, not a fault: the usage-only
-        // final chunk and the content-filter preamble some OpenAI-compatible
-        // endpoints send both look like this.
         const choice = part.choices?.[0];
         if (!choice) continue;
         sawChoice = true;
 
         const chunk = toChunk(choice);
-        // A chunk that says nothing is every stream's opening frame — the one
-        // carrying `role: assistant` and no content. Dropping it here means no
-        // consumer has to learn to ignore an empty delta.
-        if (
-          chunk.content === undefined &&
-          chunk.tool_calls === undefined &&
-          chunk.finish_reason === undefined
-        ) {
-          continue;
-        }
+        if (isEmptyChunk(chunk)) continue;
         yield chunk;
       }
 
-      // Checked before `sawChoice`, because an abort arriving after the first
-      // chunk would otherwise look like a complete answer.
-      //
-      // The SDK swallows the abort: its iterator catches `AbortError` and
-      // returns rather than rethrowing (`openai/streaming.js`), so the loop
-      // above ends the same way a finished stream ends. Everything collected so
-      // far would then be handed back as the model's final answer, truncated
-      // wherever the caller happened to hang up — while `chatCompletion`
-      // rejects on the same abort. The two paths must not disagree about
-      // whether the model finished.
       if (signal?.aborted) {
         throw new LLMError('the model stream was aborted before it finished');
       }
-
       if (!sawChoice) {
-        // The streaming twin of "no choices in response". Ending the iteration
-        // quietly would hand the caller a blank answer indistinguishable from
-        // a model that genuinely replied with nothing.
-        throw new LLMError('the model stream closed without sending any choices');
+        throw new LLMError(
+          'the model stream closed without sending any choices',
+        );
       }
     } catch (err) {
       throw asLLMError(err);
@@ -130,20 +79,37 @@ export class OpenAIProvider implements Provider {
   }
 }
 
-/**
- * Carry the provider's own words. "OpenAI API error" on its own is the least
- * useful thing to tell someone whose key is wrong, whose model id does not
- * exist, or who has run out of credit — three failures that need three
- * different fixes. The credential in the message is the caller's own, and
- * providers redact it in their errors regardless.
- */
-function asLLMError(err: unknown): LLMError {
-  if (err instanceof LLMError) return err;
-  const detail = err instanceof Error ? err.message : String(err);
-  return new LLMError(`OpenAI API error: ${detail}`, { cause: err });
+function buildRequestBody(request: ChatRequest) {
+  return {
+    model: request.model,
+    messages: buildMessages(request),
+    tools: buildTools(request),
+    ...buildGeneration(request),
+  };
 }
 
-/** Translate one streamed choice into the wire-neutral chunk shape. */
+function toResponse(
+  choice: OpenAI.Chat.Completions.ChatCompletion.Choice,
+): ChatResponse {
+  const response: ChatResponse = {
+    content: choice.message.content ?? '',
+    finish_reason: choice.finish_reason ?? '',
+  };
+
+  const toolCalls = choice.message.tool_calls ?? [];
+  if (toolCalls.length > 0) {
+    response.tool_calls = toolCalls.map(
+      (call): ToolCall => ({
+        id: call.id,
+        name: call.function.name,
+        arguments: call.function.arguments,
+      }),
+    );
+  }
+
+  return response;
+}
+
 function toChunk(
   choice: OpenAI.Chat.Completions.ChatCompletionChunk.Choice,
 ): ChatChunk {
@@ -153,19 +119,9 @@ function toChunk(
     chunk.content = choice.delta.content;
   }
 
-  if (choice.delta.tool_calls && choice.delta.tool_calls.length > 0) {
-    chunk.tool_calls = choice.delta.tool_calls.map((tc): ToolCallDelta => {
-      const delta: ToolCallDelta = { index: tc.index };
-      if (tc.id) delta.id = tc.id;
-      if (tc.function?.name) delta.name = tc.function.name;
-      // Not `if (arguments)`: an empty-string fragment is legal and appending
-      // it is a no-op, but the field's presence is how a caller tells a
-      // fragment of a call apart from its announcement.
-      if (typeof tc.function?.arguments === 'string') {
-        delta.arguments = tc.function.arguments;
-      }
-      return delta;
-    });
+  const toolCalls = choice.delta.tool_calls ?? [];
+  if (toolCalls.length > 0) {
+    chunk.tool_calls = toolCalls.map(toToolCallDelta);
   }
 
   if (choice.finish_reason) {
@@ -175,95 +131,99 @@ function toChunk(
   return chunk;
 }
 
-/**
- * Spelled out rather than `Partial<ChatCompletionCreateParams>`, which would
- * carry an optional `stream` into the spread — and the SDK picks between its
- * buffered and streaming overloads on exactly that field's literal type, so a
- * `stream?: boolean` arriving from anywhere makes both calls below ambiguous.
- */
-interface GenerationParams {
-  temperature?: number;
-  max_tokens?: number;
-  top_p?: number;
-  response_format?: { type: 'json_object' };
+function toToolCallDelta(
+  call: OpenAI.Chat.Completions.ChatCompletionChunk.Choice.Delta.ToolCall,
+): ToolCallDelta {
+  const delta: ToolCallDelta = { index: call.index };
+
+  if (call.id) delta.id = call.id;
+  if (call.function?.name) delta.name = call.function.name;
+  if (typeof call.function?.arguments === 'string') {
+    delta.arguments = call.function.arguments;
+  }
+
+  return delta;
 }
 
-/**
- * The generation parameters, under the names this endpoint knows them by.
- *
- * Spread into the request rather than assigned, so a parameter the caller did
- * not set is *absent* rather than `undefined`. The OpenAI SDK serializes an
- * explicit `undefined` out of the body, but an OpenAI-*compatible* endpoint is
- * reached through the same client and several of them reject a null-valued
- * field they would have defaulted happily.
- *
- * `json` becomes `{ type: 'json_object' }`, which OpenAI only honours when the
- * word "JSON" appears somewhere in the messages — a prompt asking for a shape
- * usually says so, and a request that does not is rejected by the endpoint with
- * that exact complaint, which is a better teacher than anything this line could
- * do about it.
- */
-function buildGeneration(req: ChatRequest): GenerationParams {
+function isEmptyChunk(chunk: ChatChunk): boolean {
+  return (
+    chunk.content === undefined &&
+    chunk.tool_calls === undefined &&
+    chunk.finish_reason === undefined
+  );
+}
+
+function buildGeneration(request: ChatRequest): GenerationParams {
   const params: GenerationParams = {};
-  if (req.temperature !== undefined) params.temperature = req.temperature;
-  if (req.maxTokens !== undefined) params.max_tokens = req.maxTokens;
-  if (req.topP !== undefined) params.top_p = req.topP;
-  if (req.responseFormat === 'json') params.response_format = { type: 'json_object' };
+
+  if (request.temperature !== undefined) params.temperature = request.temperature;
+  if (request.maxTokens !== undefined) params.max_tokens = request.maxTokens;
+  if (request.topP !== undefined) params.top_p = request.topP;
+  if (request.responseFormat === 'json') {
+    params.response_format = { type: 'json_object' };
+  }
+
   return params;
 }
 
 function buildMessages(
-  req: ChatRequest,
+  request: ChatRequest,
 ): OpenAI.Chat.Completions.ChatCompletionMessageParam[] {
-  return req.messages.map((msg) => {
-    switch (msg.role) {
+  return request.messages.map((message) => {
+    switch (message.role) {
       case 'system':
-        return {
-          role: 'system' as const,
-          content: msg.content,
-        };
+        return { role: 'system' as const, content: message.content };
       case 'user':
-        return { role: 'user' as const, content: msg.content };
-      case 'assistant': {
-        if (msg.tool_calls && msg.tool_calls.length > 0) {
-          return {
-            role: 'assistant' as const,
-            content: msg.content,
-            tool_calls: msg.tool_calls.map((tc) => ({
-              id: tc.id,
-              type: 'function' as const,
-              function: {
-                name: tc.name,
-                arguments: tc.arguments,
-              },
-            })),
-          };
-        }
-        return {
-          role: 'assistant' as const,
-          content: msg.content,
-        };
-      }
+        return { role: 'user' as const, content: message.content };
+      case 'assistant':
+        return toAssistantMessage(message.content, message.tool_calls);
       case 'tool':
         return {
           role: 'tool' as const,
-          tool_call_id: msg.tool_call_id!,
-          content: msg.content,
+          tool_call_id: message.tool_call_id!,
+          content: message.content,
         };
     }
   });
 }
 
+function toAssistantMessage(
+  content: string,
+  toolCalls: ToolCall[] | undefined,
+): OpenAI.Chat.Completions.ChatCompletionAssistantMessageParam {
+  if (!toolCalls || toolCalls.length === 0) {
+    return { role: 'assistant', content };
+  }
+
+  return {
+    role: 'assistant',
+    content,
+    tool_calls: toolCalls.map((call) => ({
+      id: call.id,
+      type: 'function' as const,
+      function: { name: call.name, arguments: call.arguments },
+    })),
+  };
+}
+
 function buildTools(
-  req: ChatRequest,
+  request: ChatRequest,
 ): OpenAI.Chat.Completions.ChatCompletionTool[] | undefined {
-  if (!req.tools || req.tools.length === 0) return undefined;
-  return req.tools.map((t) => ({
+  if (!request.tools || request.tools.length === 0) return undefined;
+
+  return request.tools.map((tool) => ({
     type: 'function' as const,
     function: {
-      name: t.name,
-      description: t.description,
-      parameters: t.parameters,
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.parameters,
     },
   }));
+}
+
+function asLLMError(err: unknown): LLMError {
+  if (err instanceof LLMError) return err;
+
+  const detail = err instanceof Error ? err.message : String(err);
+  return new LLMError(`OpenAI API error: ${detail}`, { cause: err });
 }

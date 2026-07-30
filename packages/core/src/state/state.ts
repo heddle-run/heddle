@@ -1,19 +1,8 @@
-/**
- * State holds key-value data flowing through the graph.
- * It uses an immutable pattern: mutating methods return a new State.
- */
 export class State {
   private readonly data: Record<string, unknown>;
 
   constructor(data?: Record<string, unknown> | null) {
     this.data = data ? { ...data } : {};
-  }
-
-  /** Wrap already-owned data without copying. */
-  private static fromOwned(data: Record<string, unknown>): State {
-    const s = Object.create(State.prototype) as State;
-    (s as unknown as { data: Record<string, unknown> }).data = data;
-    return s;
   }
 
   has(key: string): boolean {
@@ -25,16 +14,16 @@ export class State {
   }
 
   getString(key: string): string | undefined {
-    const v = this.data[key];
-    return typeof v === 'string' ? v : undefined;
+    const value = this.data[key];
+    return typeof value === 'string' ? value : undefined;
   }
 
   set(key: string, value: unknown): State {
-    return State.fromOwned({ ...this.data, [key]: value });
+    return new State({ ...this.data, [key]: value });
   }
 
   merge(other: State): State {
-    return State.fromOwned({ ...this.data, ...other.data });
+    return new State({ ...this.data, ...other.data });
   }
 
   clone(): State {

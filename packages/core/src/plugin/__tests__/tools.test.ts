@@ -1,12 +1,3 @@
-/**
- * A plugin as a source of tools.
- *
- * Before this the only source was a directory of executables, where a tool's
- * name was its filename and its description was the empty string. These tests
- * are mostly about the two things that make a second source safe: that a name
- * cannot be taken quietly, and that a tool which merely *claims* to exist is
- * caught at load rather than partway through a run.
- */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import {
   chmodSync,
@@ -50,7 +41,6 @@ function plugin(name: string, body: string): string {
   return entry;
 }
 
-/** An executable tool beside a plugin, reading JSON on stdin as tools do. */
 function executable(entry: string, name: string, output: string): string {
   const path = join(entry, '..', name);
   writeFileSync(
@@ -73,10 +63,6 @@ function load(rawManifest: unknown, entry: string): PluginRegistry {
   return registry;
 }
 
-// ---------------------------------------------------------------------------
-// The two ways a tool can exist.
-// ---------------------------------------------------------------------------
-
 describe('a tool a plugin ships as an executable', () => {
   it('runs as any other tool does, through the subprocess executor', async () => {
     const entry = plugin('exec-form', 'serve({});');
@@ -92,9 +78,6 @@ describe('a tool a plugin ships as an executable', () => {
 
   it('refuses one that resolves outside the plugin directory', () => {
     const entry = plugin('escape', 'serve({});');
-    // A real program, so the containment check is what refuses it rather than
-    // the file simply not being there — those are two different refusals and
-    // this is the one being asserted.
     const outside = join(scratch, 'escape-target.sh');
     writeFileSync(outside, '#!/bin/sh\ntrue\n');
     chmodSync(outside, 0o755);
@@ -105,11 +88,6 @@ describe('a tool a plugin ships as an executable', () => {
   });
 
   it('refuses one that is simply not there, with a different message', () => {
-    // A sibling of the plugin's own directory that nothing creates, rather than
-    // a climb out to /bin: how many `..` it takes to reach a real system binary
-    // depends on how deep the platform's temp directory is, so a fixed climb
-    // asserts the containment refusal on Linux and the missing-file refusal on
-    // macOS. This is the missing-file refusal on both.
     const entry = plugin('escape-missing', 'serve({});');
     expect(() =>
       load(manifest([{ name: 'curl', path: '../no-such-tool-here' }]), entry),
@@ -117,7 +95,6 @@ describe('a tool a plugin ships as an executable', () => {
   });
 
   it('refuses a symlink that leaves the plugin directory', () => {
-    // String arithmetic on the path would pass this; only resolving it does not.
     const entry = plugin('symlink', 'serve({});');
     const outside = join(scratch, 'outside.sh');
     writeFileSync(outside, '#!/bin/sh\ntrue\n');
@@ -160,7 +137,6 @@ describe('a tool the plugin itself implements', () => {
     const tool = registry.toolRegistry().lookup('search')!;
 
     expect(tool.impl.kind).toBe('plugin');
-    // The point of the kind: no tools directory, no subprocess, no exec bit.
     const result = await invokeTool(undefined, tool, { q: 'heddle' }, undefined);
     expect(result.output).toEqual({ hits: ['heddle'] });
   });
@@ -201,10 +177,6 @@ describe('a tool the plugin itself implements', () => {
     ).toThrow(/which this plugin does not declare/);
   });
 });
-
-// ---------------------------------------------------------------------------
-// What a manifest may not say.
-// ---------------------------------------------------------------------------
 
 describe('what the manifest refuses', () => {
   it('refuses a tool with both a path and a componentType, or neither', () => {
@@ -247,7 +219,6 @@ describe('what the manifest refuses', () => {
   });
 
   it('loads a plugin whose whole content is tools', () => {
-    // The shape an MCP proxy has: no node, no transform, no middleware.
     const entry = plugin('tools-only', 'serve({});');
     executable(entry, 'only', '{}');
     const registry = load(manifest([{ name: 'only', path: './only' }]), entry);
@@ -275,10 +246,6 @@ describe('two plugins wanting one name', () => {
     ).toThrow(/both provide the tool "search"/);
   });
 });
-
-// ---------------------------------------------------------------------------
-// What the model is told.
-// ---------------------------------------------------------------------------
 
 describe('the tool definitions the model receives', () => {
   const spec = (t: Partial<ToolSpec>): ToolSpec =>
@@ -351,16 +318,8 @@ describe('the tool definitions the model receives', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// What an adversarial review of the first draft found.
-// ---------------------------------------------------------------------------
-
 describe('the plugin root is the manifest directory', () => {
   it('resolves command, cwd and tool paths against the manifest, not the interpreter', () => {
-    // The shape that broke it: a manifest naming an interpreter that lives
-    // nowhere near the plugin. Taken as the root, `/bin` would be where tool
-    // paths resolve — so the plugin's own tools are refused and any system
-    // binary passes the containment check.
     const dir = join(scratch, 'rooted');
     mkdirSync(join(dir, 'tools'), { recursive: true });
     const shipped = join(dir, 'tools', 'x');
@@ -389,7 +348,6 @@ describe('the plugin root is the manifest directory', () => {
     );
 
     const tool = registry.toolRegistry().lookup('x')!;
-    // realpath'd, which on macOS turns /var into /private/var.
     expect(tool.impl).toEqual({ kind: 'path', path: realpathSync(shipped) });
   });
 

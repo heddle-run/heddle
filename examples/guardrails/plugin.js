@@ -1,47 +1,12 @@
-/**
- * heddle plugin: Processor
- *
- * Adds one custom Agent Spec component type:
- *
- *   Processor  a MessageTransform that runs before or after an agent's model call
- *
- * It attaches to `Agent.transforms`, the slot Agent Spec already defines for
- * components that process an agent's messages. That means a Processor travels
- * with the agent rather than with a flow's graph, so it applies in chat mode and
- * to a standalone agent too — not only inside a flow.
- *
- * A Processor is just a function:
- *
- *   (messages, ctx) => { action: 'pass' }
- *                    | { action: 'modify', messages: newMessages }
- *                    | { action: 'reject', reason, messages? }
- *
- * `reject` is what makes this a guardrail. In the `pre` phase heddle skips the
- * model call entirely, so a blocked prompt costs nothing; the agent returns
- * `transform_status: "rejected"`, which a downstream BranchingNode can route on.
- *
- * Plain ESM with no imports, so it loads under both the built CLI and
- * `npm run dev`. TypeScript authors can import `definePlugin` from heddle for
- * type checking.
- */
-
-/** The message a guardrail cares about: the last one in the list. */
 function subject(messages) {
   return messages.at(-1);
 }
 
-/** Returns `messages` with the last one's content replaced. */
 function replaceLast(messages, content) {
   return [...messages.slice(0, -1), { ...subject(messages), content }];
 }
 
-/**
- * Built-in processor implementations, keyed by the `handler` named in the spec.
- * Add a function here — or push onto this object from your own module — and it
- * becomes available to any agent that loads this plugin.
- */
 export const handlers = {
-  /** Reject when the message matches any pattern. */
   blocklist(messages, { config }) {
     const content = subject(messages)?.content ?? '';
     for (const pattern of config.patterns ?? []) {
@@ -58,7 +23,6 @@ export const handlers = {
     return { action: 'pass' };
   },
 
-  /** Rewrite matches out of the message — PII on the way in, secrets on the way out. */
   redact(messages, { config }) {
     const content = subject(messages)?.content ?? '';
     const replacement = config.replacement ?? '[REDACTED]';
@@ -71,7 +35,6 @@ export const handlers = {
       : { action: 'modify', messages: replaceLast(messages, out) };
   },
 
-  /** Cap the length, either by truncating or by refusing outright. */
   max_length(messages, { config }) {
     const content = subject(messages)?.content ?? '';
     const limit = config.limit ?? 2000;
@@ -88,10 +51,6 @@ export const handlers = {
     };
   },
 
-  /**
-   * A guardrail specific to this example, to show that a Processor is only ever
-   * an ordinary function: refuse answers that hedge without saying anything.
-   */
   require_substance(messages, { config }) {
     const content = subject(messages)?.content ?? '';
     const minWords = config.min_words ?? 3;

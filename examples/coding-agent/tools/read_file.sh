@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Read file tool: reads a file and returns its content as JSON.
 set -euo pipefail
 INPUT=$(cat)
 

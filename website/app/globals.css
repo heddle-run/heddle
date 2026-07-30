@@ -2,30 +2,15 @@
 @import "fumadocs-ui/css/neutral.css";
 @import "fumadocs-ui/css/preset.css";
 
-/* The FormFlow design system: tokens, keyframes and the .ff-* effect classes.
-   Vendored under ds/ — see ds/DEVIATIONS.md. */
 @import "../ds/tokens/index.css";
 
 @source '../node_modules/fumadocs-ui/dist/**/*.js';
 
-/* ==========================================================================
-   heddle — built on the FormFlow design system
-   Near-monochrome neutrals, dark by default, drawn in 1px hairlines, with
-   #ff005e used as an instrument and never as a fill.
-   ========================================================================== */
-
-/* Inter arrives via next/font (app/layout.tsx) rather than the upstream Google
-   Fonts @import. --font-inter is the next/font variable; --font-sans is what
-   every design-system component reads. */
 :root {
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system,
     "Segoe UI", sans-serif;
 }
 
-/* --------------------------------------------------------------------------
-   fumadocs surface, mapped onto the design system's semantic tokens.
-   Set as plain custom properties (not @theme) so they re-resolve under .dark.
-   -------------------------------------------------------------------------- */
 :root {
   --color-fd-background: var(--bg-page);
   --color-fd-foreground: var(--text-strong);
@@ -50,9 +35,6 @@
   --font-mono: var(--font-mono);
 }
 
-/* --------------------------------------------------------------------------
-   Page chassis
-   -------------------------------------------------------------------------- */
 html {
   scroll-behavior: smooth;
   -webkit-font-smoothing: antialiased;
@@ -64,8 +46,6 @@ html.dark {
 }
 
 body {
-  /* The boxed-frame motif draws 1px rules that extend 100vw past their block;
-     without this they create a horizontal scrollbar. */
   overflow-x: hidden;
   background: var(--bg-page);
   color: var(--text-body);
@@ -73,13 +53,11 @@ body {
   transition: background-color var(--dur-base) var(--ease-standard);
 }
 
-/* Backdrop is fixed at z-0; page content rides above it. */
 .hd-content {
   position: relative;
   z-index: 10;
 }
 
-/* Visible skip link, in the design system's own idiom */
 .skip-link {
   position: absolute;
   left: -9999px;
@@ -103,10 +81,6 @@ body {
   outline-offset: 2px;
 }
 
-/* --------------------------------------------------------------------------
-   Layout helpers. Inline styles carry the design system's own values; these
-   exist only for the things inline styles cannot express — media queries.
-   -------------------------------------------------------------------------- */
 .hd-container {
   width: 100%;
   max-width: var(--container-max);
@@ -153,7 +127,6 @@ body {
   }
 }
 
-/* Bento: one tall feature cell beside a stack of smaller ones */
 .hd-bento {
   display: grid;
   gap: var(--space-6);
@@ -183,21 +156,12 @@ body {
   }
 }
 
-/* --------------------------------------------------------------------------
-   Playground. The one page that is an application rather than a document: it
-   fills the viewport, its two panes scroll independently, and the page itself
-   does not scroll at all. Below the split it stacks into a scrolling column,
-   where a viewport-height lock would leave each pane too short to work in.
-   -------------------------------------------------------------------------- */
 .hd-playground {
   display: flex;
   flex-direction: column;
   min-height: 100dvh;
 }
 
-/* The work surface. Full-bleed now, so it carries the panel fill the window
-   chrome used to give it — without one, the backdrop swirls read straight
-   through the run log. */
 .hd-playground-body {
   display: grid;
   grid-template-columns: 1fr;
@@ -233,9 +197,6 @@ body {
   }
 }
 
-/* The selected example's one-line description. It rides in the bar beside the
-   example dropdown, so it appears at a fixed width, and only where the bar has
-   the room to keep everything else on one row. */
 .hd-playground-blurb {
   display: none;
 }
@@ -246,7 +207,6 @@ body {
   }
 }
 
-/* Nav links collapse on small screens */
 .hd-nav-links {
   display: none;
 }
@@ -264,7 +224,6 @@ body {
   }
 }
 
-/* Footer columns */
 .hd-footer-grid {
   display: grid;
   gap: var(--space-8);
@@ -296,7 +255,6 @@ body {
   }
 }
 
-/* FAQ disclosure. Native <details>, so the only state the CSS needs is [open]. */
 .hd-faq summary::-webkit-details-marker,
 .hd-faq summary::marker {
   display: none;
@@ -313,8 +271,6 @@ body {
   border-color: var(--border-strong);
 }
 
-/* Per-word hero hover. The design system tints each word a different hue on
-   hover; --hd-hue carries the word's colour so this needs no client state. */
 .hd-hero-word {
   cursor: default;
   transition:
@@ -326,7 +282,6 @@ body {
   text-shadow: 0 0 30px currentColor;
 }
 
-/* Mono readouts — spec fragments, commands, numerals */
 .hd-mono {
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
@@ -338,14 +293,9 @@ body {
   text-transform: uppercase;
   letter-spacing: var(--tracking-widest);
   font-weight: var(--fw-semibold);
-  /* --text-faint is the design system's quietest step, but at 10px on the dark
-     page it falls under 3:1. --text-muted keeps the label subordinate and legible. */
   color: var(--text-muted);
 }
 
-/* --------------------------------------------------------------------------
-   Documentation shell — the same tokens, applied to fumadocs
-   -------------------------------------------------------------------------- */
 #nd-docs-layout,
 #nd-page,
 #nd-sidebar,
@@ -360,8 +310,6 @@ body {
   backdrop-filter: blur(var(--blur-chrome));
 }
 
-/* The backdrop swirls sit behind the whole app. Chrome surfaces need their own
-   translucent fill, or the colour washes straight through the sidebar. */
 #nd-sidebar {
   border-right: 1px solid var(--border-hairline);
   background: var(--surface-chrome);
@@ -375,7 +323,6 @@ body {
   letter-spacing: 0;
 }
 
-/* Sidebar section headings read as micro-labels */
 #nd-sidebar p[class*="font-medium"],
 #nd-sidebar h3 {
   font-family: var(--font-mono);
@@ -410,9 +357,6 @@ body {
   line-height: var(--lh-relaxed);
 }
 
-/* utilities.css strips underlines from every <a>; prose links need them back.
-   Headings are excluded — fumadocs wraps each one in its own anchor link, and
-   without this every h2 would render as pink underlined body copy. */
 #nd-page .prose :where(a) {
   color: var(--brand-pink);
   text-decoration: underline;
@@ -450,9 +394,6 @@ body {
   color: var(--text-muted);
 }
 
-/* Code. The previous system desaturated syntax highlighting because it allowed
-   no colour at all; this one has a full neutral ramp plus accent hues, so the
-   tokens are left to read normally. */
 #nd-page figure:has(pre),
 #nd-page pre:not(figure pre) {
   border: 1px solid var(--border-default);
@@ -495,10 +436,6 @@ body {
   display: none;
 }
 
-/* --------------------------------------------------------------------------
-   Reduced motion. The design system leans on slow infinite loops — swirls,
-   tracing beams, marquees. Honour the preference and hold them still.
-   -------------------------------------------------------------------------- */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

@@ -9,7 +9,6 @@ import {
   ToolError,
 } from '@heddle/core';
 
-/** An error carrying an explicit HTTP status, raised by the request layer. */
 export class HttpError extends Error {
   constructor(
     readonly status: number,
@@ -28,70 +27,46 @@ export interface ErrorBody {
   };
 }
 
-/**
- * Map an error onto an HTTP status and a structured body.
- *
- * Spec and compile failures are the caller's fault (the flow they submitted is
- * wrong) and map to 400. Failures that happen while running — a tool exiting
- * non-zero, an LLM call failing — are 500: the request was well-formed, the
- * execution was not successful.
- */
+const CALLER_FAULT_ERRORS = [SpecError, CompileError, PluginError];
+
+const SERVER_FAULT_ERRORS = [
+  MiddlewareError,
+  SandboxError,
+  RunError,
+  ToolError,
+  LLMError,
+];
+
 export function toErrorResponse(err: unknown): {
   status: number;
   body: ErrorBody;
 } {
   if (err instanceof HttpError) {
-    return { status: err.status, body: { error: { type: err.type, message: err.message } } };
+    return errorResponse(err.status, err.type, err.message);
   }
-
-  // A middleware is the one plugin component a caller cannot have submitted —
-  // it is host-configured, named nowhere in their document, and refused with a
-  // 400 if they try. Charging its failure to them as a bad request would tell
-  // the one person who cannot fix it that it is theirs to fix. Checked before
-  // PluginError because it is one.
-  if (err instanceof MiddlewareError) {
-    return {
-      status: 500,
-      body: { error: { type: err.name, message: err.message } },
-    };
+  if (isOneOf(err, SERVER_FAULT_ERRORS)) {
+    return errorResponse(500, err.name, err.message);
   }
-
-  // PluginError joins these because every *other* plugin this server loads
-  // arrived with the request: a module that fails to import, or declares no
-  // components, is the caller's broken submission.
-  if (
-    err instanceof SpecError ||
-    err instanceof CompileError ||
-    err instanceof PluginError
-  ) {
-    return {
-      status: 400,
-      body: { error: { type: err.name, message: err.message } },
-    };
-  }
-
-  // A sandbox that cannot be built is a fault in how the server was started —
-  // a missing bwrap, an unsupported platform — and never something the caller
-  // chose, since confinement is not request-configurable.
-  if (err instanceof SandboxError) {
-    return {
-      status: 500,
-      body: { error: { type: err.name, message: err.message } },
-    };
-  }
-
-  if (
-    err instanceof RunError ||
-    err instanceof ToolError ||
-    err instanceof LLMError
-  ) {
-    return {
-      status: 500,
-      body: { error: { type: err.name, message: err.message } },
-    };
+  if (isOneOf(err, CALLER_FAULT_ERRORS)) {
+    return errorResponse(400, err.name, err.message);
   }
 
   const message = err instanceof Error ? err.message : String(err);
   const name = err instanceof Error ? err.name : 'Error';
-  return { status: 500, body: { error: { type: name, message } } };
+  return errorResponse(500, name, message);
+}
+
+function isOneOf(
+  err: unknown,
+  kinds: Array<new (...args: never[]) => Error>,
+): err is Error {
+  return kinds.some((kind) => err instanceof kind);
+}
+
+function errorResponse(
+  status: number,
+  type: string,
+  message: string,
+): { status: number; body: ErrorBody } {
+  return { status, body: { error: { type, message } } };
 }

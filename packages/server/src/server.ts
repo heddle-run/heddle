@@ -4,7 +4,12 @@ import {
   type Server,
   type ServerResponse,
 } from 'node:http';
-import { resolveConfig, isPubliclyBound, type ServerConfig, type ServerOptions } from './config.js';
+import {
+  resolveConfig,
+  isPubliclyBound,
+  type ServerConfig,
+  type ServerOptions,
+} from './config.js';
 import { handleCapabilities } from './capabilities.js';
 import { corsHeaders, handlePreflight } from './cors.js';
 import { toErrorResponse, HttpError } from './errors.js';
@@ -17,26 +22,109 @@ import { handleValidate } from './validate.js';
 
 export const VERSION = '0.2.0-beta.1';
 
-/** Live per-instance state that outlives a single request. */
+const DRAIN_POLL_INTERVAL = 100;
+const TRAILING_SLASHES = /\/+$/;
+
 interface Runtime {
   gate: ConcurrencyGate;
   lifecycle: Lifecycle;
 }
 
-/**
- * Build the HTTP server. Does not listen — see {@link startServer}.
- *
- * Routing is hand-rolled on node:http rather than delegated to a framework.
- * The surface is a handful of routes, and this package is a remote-code-
- * execution surface: keeping its production dependency list at exactly one
- * entry (@heddle/core) is worth more here than the ergonomics of a router.
- */
+export interface StartedServer {
+  server: Server;
+  host: string;
+  port: number;
+  drain: () => Promise<void>;
+  close: () => Promise<void>;
+}
+
 export function createServer(options: ServerOptions = {}): Server {
   const config = resolveConfig(options);
   return buildRouter(config, newRuntime(config));
 }
 
-/** The live state a server instance owns, distinct from its static config. */
+export function startServer(
+  options: ServerOptions = {},
+): Promise<StartedServer> {
+  const config = resolveConfig(options);
+  const runtime = newRuntime(config);
+  const server = buildRouter(config, runtime);
+
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(config.port, config.host, () => {
+      server.removeListener('error', reject);
+      const port = boundPort(server, config.port);
+
+      announce(config, port);
+
+      resolve({
+        server,
+        host: config.host,
+        port,
+        drain: () =>
+          drainServer(server, runtime, config.drainTimeout, config.log),
+        close: () => closeServer(server),
+      });
+    });
+  });
+}
+
+export function drainServer(
+  server: Server,
+  runtime: Runtime,
+  timeoutMs: number,
+  log: (message: string) => void,
+): Promise<void> {
+  const { gate, lifecycle } = runtime;
+  lifecycle.beginDrain();
+
+  log(
+    gate.inFlight > 0
+      ? `draining: refusing new runs, waiting up to ${timeoutMs}ms for ${gate.inFlight} in flight`
+      : 'draining: no runs in flight',
+  );
+
+  return new Promise<void>((resolve, reject) => {
+    let settled = false;
+
+    const finish = (err?: Error | null): void => {
+      if (settled) return;
+      settled = true;
+      clearInterval(poll);
+      clearTimeout(deadline);
+
+      if (err && !isAlreadyClosed(err)) reject(err);
+      else resolve();
+    };
+
+    const closeListener = (): void => {
+      server.close(finish);
+      server.closeIdleConnections?.();
+    };
+
+    const poll = setInterval(() => {
+      if (gate.inFlight === 0) closeListener();
+    }, DRAIN_POLL_INTERVAL);
+
+    const deadline = setTimeout(() => {
+      if (settled) return;
+      log(
+        `drain timed out after ${timeoutMs}ms with ${gate.inFlight} run(s) still in flight; ` +
+          `closing connections`,
+      );
+      server.close(finish);
+      server.closeAllConnections?.();
+      finish();
+    }, timeoutMs);
+
+    deadline.unref?.();
+    poll.unref?.();
+
+    if (gate.inFlight === 0) closeListener();
+  });
+}
+
 function newRuntime(config: ServerConfig): Runtime {
   return {
     gate: new ConcurrencyGate(config.maxConcurrentRuns),
@@ -65,22 +153,17 @@ async function route(
 ): Promise<void> {
   if (handlePreflight(req, res, config)) return;
 
-  const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
+  const url = requestUrl(req);
   const method = req.method ?? 'GET';
-  const path = url.pathname.replace(/\/+$/, '') || '/';
+  const path = url.pathname.replace(TRAILING_SLASHES, '') || '/';
   const headers = corsHeaders(req, config);
   const { gate, lifecycle } = runtime;
 
-  // Liveness: true for as long as the event loop answers. It does not track
-  // draining — a draining process is still alive and must not be restarted.
   if (method === 'GET' && (path === '/healthz' || path === '/')) {
     sendJson(res, 200, { status: 'ok', version: VERSION }, headers);
     return;
   }
 
-  // Readiness: the switch Kubernetes watches to route work. It goes 503 the
-  // moment draining begins, so the pod leaves the Service endpoints while its
-  // open streams finish.
   if (method === 'GET' && path === '/readyz') {
     if (lifecycle.isDraining) {
       sendJson(res, 503, { status: 'draining' }, headers);
@@ -90,8 +173,6 @@ async function route(
     return;
   }
 
-  // Scrape target. Unauthenticated by design and meant for in-cluster
-  // collection only — an ingress must not route /metrics to the public.
   if (method === 'GET' && path === '/metrics') {
     sendText(res, 200, renderMetrics(gate), headers);
     return;
@@ -105,18 +186,23 @@ async function route(
 
   if (path === '/v1/runs') {
     requireMethod(method, 'POST');
-    // Refuse new runs once draining: readiness has already pulled us from
-    // rotation, but a connection opened in the gap still lands here, and it
-    // belongs on a replica that will outlive it.
     if (lifecycle.isDraining) {
-      throw new HttpError(503, 'server is draining; retry against another replica', 'Draining');
+      throw new HttpError(
+        503,
+        'server is draining; retry against another replica',
+        'Draining',
+      );
     }
-    const stream = url.searchParams.get('stream') === 'true';
-    // Which rendering of the run's events the caller wants. `null` means they
-    // did not say, which is heddle's own — distinct from asking for `heddle` by
-    // name, only in that one is a default and the other is a choice.
-    const protocol = url.searchParams.get('protocol');
-    await handleRun(req, res, config, gate, stream, protocol, headers);
+
+    await handleRun(
+      req,
+      res,
+      config,
+      gate,
+      url.searchParams.get('stream') === 'true',
+      url.searchParams.get('protocol'),
+      headers,
+    );
     return;
   }
 
@@ -129,175 +215,82 @@ async function route(
   throw new HttpError(404, `no route for ${method} ${path}`, 'NotFound');
 }
 
+function requestUrl(req: IncomingMessage): URL {
+  return new URL(
+    req.url ?? '/',
+    `http://${req.headers.host ?? 'localhost'}`,
+  );
+}
+
 function requireMethod(actual: string, expected: string): void {
   if (actual !== expected) {
-    throw new HttpError(405, `method ${actual} not allowed; use ${expected}`, 'MethodNotAllowed');
+    throw new HttpError(
+      405,
+      `method ${actual} not allowed; use ${expected}`,
+      'MethodNotAllowed',
+    );
   }
 }
 
-export interface StartedServer {
-  server: Server;
-  host: string;
-  port: number;
-  /**
-   * Stop accepting work, let in-flight runs finish, then close. Resolves once
-   * the listener is closed — see {@link drainServer}.
-   */
-  drain: () => Promise<void>;
-  /** Close immediately, cutting any open stream. Prefer {@link drain}. */
-  close: () => Promise<void>;
+function boundPort(server: Server, fallback: number): number {
+  const address = server.address();
+  return typeof address === 'object' && address ? address.port : fallback;
 }
 
-/**
- * True when a close failed only because the server was already closed.
- *
- * Shutting down twice is a legitimate sequence — `drain()` then `close()` as a
- * backstop, or a signal arriving while a drain is under way — and neither call
- * should reject for finding the work already done.
- */
+function closeServer(server: Server): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    server.close((err) =>
+      err && !isAlreadyClosed(err) ? reject(err) : resolve(),
+    );
+    server.closeAllConnections?.();
+  });
+}
+
 function isAlreadyClosed(err: Error): boolean {
   return (err as NodeJS.ErrnoException).code === 'ERR_SERVER_NOT_RUNNING';
 }
 
-/**
- * Retire a server without cutting the runs it is streaming.
- *
- * The order matters, and it is the whole point:
- *
- *  1. Flip readiness. `/readyz` answers 503 and `POST /v1/runs` is refused,
- *     while the listener stays open.
- *  2. Wait for the gate to empty — for every open SSE stream to reach its own
- *     natural end.
- *  3. Then stop listening and close.
- *  4. Only if the deadline passes, force the remainder closed.
- *
- * Step 4 is the escape hatch, not the mechanism. Closing every connection up
- * front — which is what this replaced — terminates every live stream on the
- * spot, so every rolling deploy and every scale-in drops runs mid-flight.
- *
- * Keeping the listener open through step 2 is deliberate. Closing it at step 1
- * costs nothing in safety but makes the drain invisible: a readiness probe gets
- * a refused connection instead of the 503 it is meant to observe, and a client
- * that arrives a moment late gets a connection reset rather than a status it
- * can act on. A draining pod should still be able to say that it is draining.
- */
-export function drainServer(
-  server: Server,
-  runtime: Runtime,
-  timeoutMs: number,
-  log: (message: string) => void,
-): Promise<void> {
-  const { gate, lifecycle } = runtime;
-  lifecycle.beginDrain();
+function announce(config: ServerConfig, port: number): void {
+  if (isPubliclyBound(config.host)) {
+    config.log(publicBindWarning(config.host, port));
+  }
+  if (config.allowRequestCode) {
+    config.log(REQUEST_CODE_NOTE);
+  }
 
-  log(
-    gate.inFlight > 0
-      ? `draining: refusing new runs, waiting up to ${timeoutMs}ms for ${gate.inFlight} in flight`
-      : 'draining: no runs in flight',
+  config.log(`heddle-server listening on http://${config.host}:${port}`);
+  config.log(
+    `  tools dir: ${config.toolsDir ?? '(none — tool nodes will fail)'}`,
   );
-
-  return new Promise<void>((resolve, reject) => {
-    let settled = false;
-    const finish = (err?: Error | null): void => {
-      if (settled) return;
-      settled = true;
-      clearInterval(poll);
-      clearTimeout(deadline);
-      if (err && !isAlreadyClosed(err)) {
-        reject(err);
-        return;
-      }
-      resolve();
-    };
-
-    /** Stop listening, then wait out whatever connections remain. */
-    const closeListener = (): void => {
-      server.close(finish);
-      // `server.close` will not complete while a keep-alive connection sits
-      // idle between requests, so retire those explicitly. Node only gained
-      // this in 18.2 — hence the optional call, as elsewhere here.
-      server.closeIdleConnections?.();
-    };
-
-    const poll = setInterval(() => {
-      if (gate.inFlight === 0) closeListener();
-    }, 100);
-
-    const deadline = setTimeout(() => {
-      if (settled) return;
-      log(
-        `drain timed out after ${timeoutMs}ms with ${gate.inFlight} run(s) still in flight; ` +
-          `closing connections`,
-      );
-      server.close(finish);
-      server.closeAllConnections?.();
-      finish();
-    }, timeoutMs);
-
-    // Neither timer should be what keeps the process alive.
-    deadline.unref?.();
-    poll.unref?.();
-
-    // Fast path: nothing to wait for.
-    if (gate.inFlight === 0) closeListener();
-  });
+  config.log(
+    `  flows root: ${config.flowsRoot ?? '(none — inline flows only)'}`,
+  );
+  config.log(
+    `  sandbox: ${config.sandbox?.name ?? '(none — tools run unconfined)'}`,
+  );
+  config.log(
+    `  request code: ${config.allowRequestCode ? 'accepted' : 'refused'}`,
+  );
+  config.log(
+    `  cors: ${config.corsOrigins.length > 0 ? config.corsOrigins.join(', ') : '(none)'}`,
+  );
+  config.log(`  max concurrent runs: ${config.maxConcurrentRuns}`);
+  config.log(`  drain timeout: ${config.drainTimeout}ms`);
 }
 
-/** Build the server and bind it, warning if it is reachable off-host. */
-export function startServer(options: ServerOptions = {}): Promise<StartedServer> {
-  const config = resolveConfig(options);
-  const runtime = newRuntime(config);
-  const server = buildRouter(config, runtime);
-
-  return new Promise((resolve, reject) => {
-    server.once('error', reject);
-    server.listen(config.port, config.host, () => {
-      server.removeListener('error', reject);
-      const address = server.address();
-      const port = typeof address === 'object' && address ? address.port : config.port;
-
-      if (isPubliclyBound(config.host)) {
-        config.log(
-          `WARNING: heddle-server is bound to ${config.host}:${port}, which may be reachable from ` +
-            `other hosts. There is NO AUTHENTICATION, and every request can execute the ` +
-            `executables in the configured tools directory. Do not expose this to a network ` +
-            `you do not fully control.`,
-        );
-      }
-
-      if (config.allowRequestCode) {
-        config.log(
-          `NOTE: --allow-request-code is on. Callers may submit tool scripts and plugin ` +
-            `modules; both run in their own processes and are stopped when the run ends, ` +
-            `and submitted specs cannot read this process's environment. What remains ` +
-            `yours to bound: this server has no authentication and no rate limiting, it ` +
-            `runs computation its callers choose, and it makes outbound requests to hosts ` +
-            `they name. Restrict egress and put something in front of it.`,
-        );
-      }
-
-      config.log(`heddle-server listening on http://${config.host}:${port}`);
-      config.log(`  tools dir: ${config.toolsDir ?? '(none — tool nodes will fail)'}`);
-      config.log(`  flows root: ${config.flowsRoot ?? '(none — inline flows only)'}`);
-      config.log(`  sandbox: ${config.sandbox?.name ?? '(none — tools run unconfined)'}`);
-      config.log(`  request code: ${config.allowRequestCode ? 'accepted' : 'refused'}`);
-      config.log(
-        `  cors: ${config.corsOrigins.length > 0 ? config.corsOrigins.join(', ') : '(none)'}`,
-      );
-      config.log(`  max concurrent runs: ${config.maxConcurrentRuns}`);
-      config.log(`  drain timeout: ${config.drainTimeout}ms`);
-
-      resolve({
-        server,
-        host: config.host,
-        port,
-        drain: () => drainServer(server, runtime, config.drainTimeout, config.log),
-        close: () =>
-          new Promise<void>((done, fail) => {
-            server.close((err) => (err && !isAlreadyClosed(err) ? fail(err) : done()));
-            server.closeAllConnections?.();
-          }),
-      });
-    });
-  });
+function publicBindWarning(host: string, port: number): string {
+  return (
+    `WARNING: heddle-server is bound to ${host}:${port}, which may be reachable from ` +
+    `other hosts. There is NO AUTHENTICATION, and every request can execute the ` +
+    `executables in the configured tools directory. Do not expose this to a network ` +
+    `you do not fully control.`
+  );
 }
+
+const REQUEST_CODE_NOTE =
+  `NOTE: --allow-request-code is on. Callers may submit tool scripts and plugin ` +
+  `modules; both run in their own processes and are stopped when the run ends, ` +
+  `and submitted specs cannot read this process's environment. What remains ` +
+  `yours to bound: this server has no authentication and no rate limiting, it ` +
+  `runs computation its callers choose, and it makes outbound requests to hosts ` +
+  `they name. Restrict egress and put something in front of it.`;

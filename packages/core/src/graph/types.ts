@@ -1,13 +1,11 @@
 import type { AnyNode, ControlFlowEdge, DataFlowEdge } from '../spec/types.js';
 import type { NodeExecutor } from '../node/types.js';
 
-/** DataSource identifies where a node input value comes from. */
 export interface DataSource {
   sourceNode: string;
   sourceOutput: string;
 }
 
-/** CompiledNode wraps a spec node with its executor and edge metadata. */
 export interface CompiledNode {
   name: string;
   type: string;
@@ -17,7 +15,8 @@ export interface CompiledNode {
   inputMappings: Map<string, DataSource>;
 }
 
-/** CompiledGraph is the fully compiled and ready-to-execute graph. */
+const UNBRANCHED = '';
+
 export class CompiledGraph {
   constructor(
     public name: string,
@@ -30,21 +29,30 @@ export class CompiledGraph {
     return this.nodes.get(name);
   }
 
-  /** Resolves the next node, preferring an exact branch match, then falling back to an unbranched edge. */
   nextNode(current: CompiledNode, branch: string): CompiledNode | undefined {
-    let fallback: CompiledNode | undefined;
+    return this.matchingBranch(current, branch) ?? this.unbranchedEdge(current);
+  }
+
+  private matchingBranch(
+    current: CompiledNode,
+    branch: string,
+  ): CompiledNode | undefined {
+    if (branch === UNBRANCHED) return undefined;
 
     for (const edge of current.edges) {
-      const edgeBranch = edge.fromBranch ?? '';
-      if (branch && edgeBranch === branch) {
-        const next = this.nodes.get(edge.toNode);
-        if (next) return next;
-      }
-      if (!edgeBranch && !fallback) {
-        fallback = this.nodes.get(edge.toNode);
-      }
+      if (edge.fromBranch !== branch) continue;
+      const next = this.nodes.get(edge.toNode);
+      if (next) return next;
     }
+    return undefined;
+  }
 
-    return fallback;
+  private unbranchedEdge(current: CompiledNode): CompiledNode | undefined {
+    for (const edge of current.edges) {
+      if ((edge.fromBranch ?? UNBRANCHED) !== UNBRANCHED) continue;
+      const next = this.nodes.get(edge.toNode);
+      if (next) return next;
+    }
+    return undefined;
   }
 }

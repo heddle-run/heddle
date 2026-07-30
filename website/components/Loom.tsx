@@ -1,21 +1,9 @@
-/*
- * The loom figure: nine warp threads under tension, lifted in alternation by
- * four heddle frames, converging into a single woven output. It doubles as the
- * execution pipeline — parse, validate, compile, run — so the brand mark and
- * the architecture diagram are the same drawing.
- *
- * Redrawn on the FormFlow palette: the frame and inactive threads are hairlines
- * in the neutral ramp; the single active thread and the finished cloth carry the
- * accent. That is the system's rule — colour as an instrument, one thread at a
- * time, never a fill.
- */
-
 const THREADS = 9;
 const SPACING = 30;
 const TOP = 40;
 const STATIONS = [180, 420, 660, 900];
 const LIFT = 14;
-const CENTER = TOP + ((THREADS - 1) / 2) * SPACING; // 160
+const CENTER = TOP + ((THREADS - 1) / 2) * SPACING;
 const CONVERGE_X = 1000;
 const END_X = 1148;
 
@@ -26,7 +14,6 @@ function threadPath(index: number): string {
   const points: string[] = [`M 0 ${y}`];
 
   STATIONS.forEach((x, station) => {
-    // Alternating lift pattern — the shed opens differently at each frame.
     const lifted = (index + station) % 2 === 0;
     const eyeY = lifted ? y - LIFT : y + LIFT;
     points.push(`L ${x - 36} ${y}`, `L ${x} ${eyeY}`, `L ${x + 36} ${y}`);
@@ -55,7 +42,6 @@ export default function Loom() {
           compile and run — and converge into a single output.
         </desc>
 
-        {/* Heddle frames */}
         {STATIONS.map((x) => (
           <g key={x}>
             <line
@@ -78,7 +64,6 @@ export default function Loom() {
           </g>
         ))}
 
-        {/* Warp threads */}
         {threads.map((i) => (
           <path
             key={i}
@@ -89,7 +74,6 @@ export default function Loom() {
           />
         ))}
 
-        {/* Heddle eyes — the point where a thread is picked up */}
         {threads.map((i) =>
           STATIONS.map((x, station) => {
             const y = TOP + i * SPACING;
@@ -112,7 +96,6 @@ export default function Loom() {
           }),
         )}
 
-        {/* The cloth */}
         <rect
           x={END_X}
           y={CENTER - 9}
@@ -123,7 +106,6 @@ export default function Loom() {
         />
       </svg>
 
-      {/* Stage legend — kept in markup so it stays legible at every width */}
       <ol
         className="hd-grid hd-grid-4"
         style={{

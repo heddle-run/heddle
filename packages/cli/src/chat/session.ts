@@ -20,30 +20,23 @@ const SESSIONS_DIR = join(
   'conversations',
 );
 
-function ensureDir(): void {
-  mkdirSync(SESSIONS_DIR, { recursive: true });
-}
+const UNSAFE_ID_CHARS = /[:.]/g;
 
-function sessionPath(id: string): string {
-  return join(SESSIONS_DIR, `${id}.json`);
-}
-
-/** Create a new chat session with a unique ID. */
 export function createSession(flowPath: string): ChatSession {
-  ensureDir();
+  mkdirSync(SESSIONS_DIR, { recursive: true });
+
   const now = new Date();
-  const id = `chat-${now.toISOString().replace(/[:.]/g, '-')}`;
   const session: ChatSession = {
-    id,
+    id: `chat-${now.toISOString().replace(UNSAFE_ID_CHARS, '-')}`,
     flowPath,
     createdAt: now.toISOString(),
     messages: [],
   };
+
   persist(session);
   return session;
 }
 
-/** Append a message to the session and persist to disk. */
 export function addMessage(
   session: ChatSession,
   role: 'user' | 'assistant',
@@ -57,15 +50,18 @@ export function addMessage(
   persist(session);
 }
 
-/** Load an existing session by ID. */
 export function loadSession(id: string): ChatSession {
-  const p = sessionPath(id);
-  if (!existsSync(p)) {
-    throw new Error(`session "${id}" not found at ${p}`);
+  const path = sessionPath(id);
+  if (!existsSync(path)) {
+    throw new Error(`session "${id}" not found at ${path}`);
   }
-  return JSON.parse(readFileSync(p, 'utf-8'));
+  return JSON.parse(readFileSync(path, 'utf-8'));
 }
 
 function persist(session: ChatSession): void {
   writeFileSync(sessionPath(session.id), JSON.stringify(session, null, 2));
+}
+
+function sessionPath(id: string): string {
+  return join(SESSIONS_DIR, `${id}.json`);
 }

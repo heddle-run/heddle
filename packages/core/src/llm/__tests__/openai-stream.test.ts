@@ -1,13 +1,3 @@
-/**
- * The streaming half of the provider contract, at the OpenAI boundary.
- *
- * What is pinned here is the translation: what the SDK hands over in fragments
- * versus what a consumer of `ChatChunk` is entitled to assume. The tool-call
- * shape is the part worth guarding — the SDK identifies a call by its position
- * in the turn and sends its name once, so a translation that keyed on `id`
- * would look correct against a single-tool transcript and merge two calls into
- * one against a real one.
- */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type OpenAI from 'openai';
 
@@ -30,7 +20,6 @@ const REQ: ChatRequest = {
   messages: [{ role: 'user', content: 'hi' }],
 };
 
-/** A stream that yields the given parts, then optionally fails. */
 function streamOf(parts: Part[], failWith?: Error): AsyncIterable<Part> {
   return {
     async *[Symbol.asyncIterator]() {
@@ -44,7 +33,6 @@ function serves(parts: Part[], failWith?: Error): void {
   create.mockResolvedValue(streamOf(parts, failWith));
 }
 
-/** Text-only deltas, the common case. */
 const text = (...words: string[]): Part[] =>
   words.map((content) => ({ choices: [{ delta: { content } }] }));
 
@@ -86,7 +74,6 @@ describe('chatCompletionStream', () => {
     serves(text('hi'));
     const stream = provider().chatCompletionStream(undefined, REQ);
 
-    // A stream created and abandoned would otherwise hold the connection open.
     expect(create).not.toHaveBeenCalled();
 
     await drain(stream);
@@ -111,7 +98,6 @@ describe('chatCompletionStream', () => {
   });
 
   it('ignores chunks that carry no choice at all', async () => {
-    // The usage-only trailer, and the preamble some compatible endpoints send.
     serves([{ choices: [] }, ...text('hi'), {}]);
     const chunks = await drain(provider().chatCompletionStream(undefined, REQ));
 
@@ -151,8 +137,6 @@ describe('chatCompletionStream', () => {
     ]);
     const chunks = await drain(provider().chatCompletionStream(undefined, REQ));
 
-    // The name and id come once; every later fragment is bare argument text
-    // that only the index ties back to the call it belongs to.
     expect(chunks.map((c) => c.tool_calls)).toEqual([
       [{ index: 0, id: 'call_1', name: 'echo', arguments: '' }],
       [{ index: 0, arguments: '{"v":' }],
@@ -194,8 +178,6 @@ describe('chatCompletionStream', () => {
       })(),
     ).rejects.toThrow(/upstream connect error/);
 
-    // The failure arrives after real output: that is the case the buffered
-    // call never has, and callers are told about the deltas they already got.
     expect(chunks).toHaveLength(2);
   });
 
@@ -216,15 +198,6 @@ describe('chatCompletionStream', () => {
   });
 });
 
-/**
- * An aborted stream must not look like a finished one.
- *
- * The SDK does not rethrow on abort: its iterator catches `AbortError` and
- * returns (`openai/streaming.js`), so the `for await` ends exactly the way a
- * completed stream ends. Nothing here can tell the difference by watching the
- * iterator, which is why the signal itself is consulted — and why these model
- * the SDK's silence rather than a throw.
- */
 describe('a stream the caller aborted', () => {
   beforeEach(() => create.mockReset());
 
@@ -247,8 +220,6 @@ describe('a stream the caller aborted', () => {
       })(),
     ).rejects.toThrow(LLMError);
 
-    // The prefix was delivered — that is not the bug. Reporting it as the whole
-    // answer would have been.
     expect(collected).toEqual([{ content: 'half an ' }]);
   });
 

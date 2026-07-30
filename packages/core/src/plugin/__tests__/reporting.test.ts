@@ -1,18 +1,3 @@
-/**
- * What an out-of-process plugin can say while it runs, and what it cannot.
- *
- * The in-process half of this is `context.test.ts`. These are the same three
- * claims made about a plugin that heddle does not share a heap with, where none
- * of them are true by construction any more: the event type is minted on one
- * side of a pipe from a name written on the other, the capability check is the
- * only thing between a stranger's process and a client's stream, and the node an
- * event is attributed to is not on the stack when the frame arrives.
- *
- * The fixtures hand-roll the protocol rather than using the inlined `serve()`
- * helper, as `remote.test.ts` does and for the same reason: a rule the helper
- * enforces on heddle's behalf is not a rule, it is a courtesy. The helper gets
- * its own block at the end, where what is asserted is the courtesy.
- */
 import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -44,15 +29,6 @@ afterEach(() => {
   while (open.length) open.pop()!.dispose();
 });
 
-/**
- * The protocol, plus the one thing these fixtures need that `remote.test.ts`
- * does not: a way to make a reverse call and wait for the answer.
- *
- * Waiting is what most of these assert on. `emitEvent` and `log` return nothing
- * to a plugin author, so the only way a test can see heddle refusing one is to
- * hold the response — which is also the difference between a check that runs
- * and a check whose failure nobody would notice.
- */
 const PREAMBLE = `
 let buf = '';
 const send = (m) => process.stdout.write(JSON.stringify(m) + '\\n');
@@ -90,35 +66,18 @@ function writePlugin(name: string, handleBody: string): string {
   return entry;
 }
 
-/** Write a plugin against the inlined `serve()` helper. */
 function writeHelperPlugin(name: string, source: string): string {
   const entry = join(scratch, `${name}.mjs`);
   writeFileSync(entry, withRuntime(source));
   return entry;
 }
 
-/**
- * Write a plugin that brings its own read loop.
- *
- * For the fixtures that have to *not* answer something. {@link PREAMBLE}
- * answers every request it is handed, `init` included, which is the one thing a
- * test about heddle's lifecycle frames cannot have it do.
- */
 function writeRawPlugin(name: string, source: string): string {
   const entry = join(scratch, `${name}.mjs`);
   writeFileSync(entry, source);
   return entry;
 }
 
-/**
- * A sandbox session that confines nothing, so a test can assert on what heddle
- * decides rather than on what a backend enforces.
- *
- * Whether the plugin's process is confined is the only thing `remoteNodeDef`
- * consults, and a real backend would make these tests platform-dependent for no
- * extra claim. What a real one does to a cross-session path is asserted
- * elsewhere; what is asserted here is that heddle stops sending one.
- */
 function stubSession(): SandboxSession {
   return {
     name: 'stub',
@@ -145,17 +104,8 @@ function manifest(
   };
 }
 
-/**
- * An operator who allows everything heddle serves.
- *
- * Deliberately not what these tests vary. A plugin still gets only what its own
- * manifest declares, so the capability cases change the manifest and leave the
- * policy alone — which is the half of the rule that a submitted plugin would
- * otherwise be able to probe for.
- */
 const ALL: PluginCapability[] = ['runTool', 'emitEvent', 'log'];
 
-/** start -> the plugin's node -> end. */
 function flowUsing(componentType: string): string {
   return JSON.stringify({
     component_type: 'Flow',
@@ -194,7 +144,6 @@ interface Run {
   events: Event[];
 }
 
-/** Load a plugin, run the flow that uses it, and keep everything it emitted. */
 async function run(
   componentType: string,
   entry: string,
@@ -209,10 +158,6 @@ async function run(
     loadRemotePlugin(manifestData, entry, { timeout, capabilities: ALL, session }),
   );
 
-  // One collector on both handlers, because a plugin's events and the engine's
-  // reach a client interleaved on one stream and several of these assert on
-  // what a client would see. The compiled graph's handler is what a plugin
-  // reports through; the runner's is what the engine reports through.
   const events: Event[] = [];
   const collect = (e: Event): void => {
     events.push(e);
@@ -233,14 +178,9 @@ async function run(
   return { state: state.toData() as Record<string, unknown>, events };
 }
 
-/** Every event a plugin put on the run's stream, engine events left out. */
 function reported(events: Event[]): Event[] {
   return events.filter((e) => e.type.startsWith('plugin:') || e.type === 'plugin_log');
 }
-
-// ---------------------------------------------------------------------------
-// emitEvent.
-// ---------------------------------------------------------------------------
 
 describe('a plugin emitting an event', () => {
   it('publishes it on the run stream, attributed and namespaced', async () => {
@@ -260,10 +200,6 @@ describe('a plugin emitting an event', () => {
     expect(state).toMatchObject({ ok: true });
     expect(reported(events)).toEqual([
       {
-        // The plugin asked for "step" and got the rest from heddle. The
-        // component type is in there because two plugins emitting "progress"
-        // with different payloads would otherwise share one type and therefore
-        // have no payload contract at all.
         type: 'plugin:ProgressNode:step',
         nodeName: 'p',
         nodeType: 'ProgressNode',
@@ -291,10 +227,6 @@ describe('a plugin emitting an event', () => {
   });
 
   it('cannot forge a builtin however it spells the name', async () => {
-    // The attack the namespace exists to stop: a client that stops waiting on
-    // `flow_complete` would be told the run was over by a node in the middle
-    // of it. The plugin supplies only the last segment, so what it gets is an
-    // event of its own with an unfortunate name.
     const entry = writePlugin(
       'forge',
       `for (const name of ['flow_complete', 'node_error', 'plugin_log']) {
@@ -310,19 +242,12 @@ describe('a plugin emitting an event', () => {
       'plugin:ForgeNode:node_error',
       'plugin:ForgeNode:plugin_log',
     ]);
-    // One flow_complete, and it is the engine's: the run really did finish
-    // once. Counted rather than merely looked for, because a forged one would
-    // pass a `some()` check by being indistinguishable.
     expect(events.filter((e) => e.type === 'flow_complete')).toHaveLength(1);
     expect(events.filter((e) => e.type === 'node_error')).toHaveLength(0);
     expect(events.filter((e) => e.type === 'plugin_log')).toHaveLength(0);
   });
 
   it('refuses a name that could carry a frame of its own', async () => {
-    // The event type *is* the SSE event name, and that is the one part of a
-    // frame written without JSON escaping. A newline in it ends the frame early
-    // and everything after is read as a frame of the plugin's composition —
-    // the forgery above, reached around the namespace instead of through it.
     const entry = writePlugin(
       'newline',
       `try { await callHost('emitEvent',
@@ -378,12 +303,6 @@ describe('a plugin emitting an event', () => {
   });
 
   it('refuses an event naming one of heddle own lifecycle frames', async () => {
-    // The pending map holds heddle's `init` and `cancel` frames beside real
-    // calls, and their ids are guessable: `init` is always 1. A plugin that
-    // never answers it leaves that id alive for the whole process, so naming it
-    // used to reach the "nothing built an executor here" branch — heddle
-    // blaming its own wiring for a frame a plugin forged, and sending whoever
-    // read it into plumbing that is working correctly.
     const entry = writeRawPlugin(
       'lifecycle-forge',
       `let buf = '';
@@ -397,7 +316,6 @@ process.stdin.on('data', (chunk) => {
   for (const line of lines) {
     if (!line.trim()) continue;
     const msg = JSON.parse(line);
-    // Never answered, which is what keeps heddle's pending id 1 alive.
     if (msg.method === 'init') continue;
     if (msg.method === 'execute') {
       executing = msg.id;
@@ -422,17 +340,11 @@ process.stdin.on('data', (chunk) => {
 
     expect(String(state.err)).toMatch(/is not an execute or apply/);
     expect(String(state.err)).toMatch(/lifecycle frame heddle sent the plugin/);
-    // The message this used to give, which points at heddle rather than at the
-    // plugin that made it up.
     expect(String(state.err)).not.toMatch(/nowhere to report to/);
     expect(reported(events)).toEqual([]);
   });
 
   it('keeps the call alive for as long as it keeps reporting', async () => {
-    // Nine hundred milliseconds of work under a three hundred millisecond
-    // budget. The timeout is a silence budget, and a plugin reporting steadily
-    // is the opposite of silent — without the reset, the natural way to say
-    // "still working" is also what gets you killed for not working.
     const entry = writePlugin(
       'slow',
       `for (let i = 0; i < 9; i++) {
@@ -457,10 +369,6 @@ process.stdin.on('data', (chunk) => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// log.
-// ---------------------------------------------------------------------------
-
 describe('a plugin logging', () => {
   it('puts a line on the run stream, in heddle own shape', async () => {
     const entry = writePlugin(
@@ -472,9 +380,6 @@ describe('a plugin logging', () => {
 
     const { events } = await run('NoisyNode', entry, manifest('NoisyNode', ['log']));
 
-    // A level and a string, under heddle's own type — so a client can render
-    // this without knowing the plugin exists, which is the whole difference
-    // from an event's `data`.
     expect(reported(events)).toEqual([
       {
         type: 'plugin_log',
@@ -519,14 +424,6 @@ describe('a plugin logging', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Capabilities.
-//
-// Two independent yeses, as `runTool` already has: the manifest asks and the
-// host grants. These vary the manifest, because a plugin that could learn the
-// operator's policy by making a call and reading the error would be probing it.
-// ---------------------------------------------------------------------------
-
 describe('capabilities on the reporting verbs', () => {
   it('refuses an emitEvent the manifest never declared, naming the capability', async () => {
     const entry = writePlugin(
@@ -536,15 +433,10 @@ describe('capabilities on the reporting verbs', () => {
        catch (e) { return { output: { err: e.message } }; }`,
     );
 
-    // The host grants everything and the reporter is wired. The one thing
-    // missing is the declaration, so this asserts the declaration is what
-    // carries the permission rather than documenting it.
     const { state, events } = await run('UndeclaredNode', entry, manifest('UndeclaredNode'));
 
     expect(String(state.err)).toMatch(/"emitEvent" is not granted to this plugin/);
     expect(String(state.err)).toMatch(/Add it to "capabilities" in the manifest/);
-    // A gate that reported a denial after publishing would satisfy the message
-    // assertion above and still have failed at its job.
     expect(reported(events)).toEqual([]);
   });
 
@@ -567,9 +459,6 @@ describe('capabilities on the reporting verbs', () => {
   });
 
   it('grants each verb on its own', async () => {
-    // Declaring one must not carry the other. They reach the same stream and
-    // an operator who allowed structured events has not thereby allowed a
-    // plugin to write prose into somebody's console.
     const entry = writePlugin(
       'eventonly',
       `await callHost('emitEvent', { call: msg.id, name: 'step' });
@@ -598,19 +487,12 @@ describe('capabilities on the reporting verbs', () => {
   });
 
   it('lists the reporting verbs among what heddle serves', () => {
-    // A misspelt capability is caught next to the plugin that wrote it, and the
-    // error has to name what does exist — that is the only way an author tells
-    // a typo from a heddle too old to have the verb.
     const entry = writePlugin('bogus', `return { output: {} };`);
     expect(() =>
       loadRemotePlugin(manifest('BogusNode', ['emitEvents']), entry, { capabilities: ALL }),
     ).toThrow(/It serves: runTool, emitEvent, log/);
   });
 });
-
-// ---------------------------------------------------------------------------
-// The workspace.
-// ---------------------------------------------------------------------------
 
 describe('the workspace a node is given', () => {
   it('arrives with the request and is writable', async () => {
@@ -624,16 +506,10 @@ describe('the workspace a node is given', () => {
     const { state } = await run('WriterNode', entry, manifest('WriterNode'));
 
     expect(typeof state.dir).toBe('string');
-    // Gone by the time the run ended. The directory is scoped to one execution
-    // — a plugin that fails partway leaves nothing, and a loop revisiting the
-    // node gets a fresh one rather than a path that has already been removed.
     expect(existsSync(state.dir as string)).toBe(false);
   });
 
   it('needs no capability, because it is not a call into heddle', async () => {
-    // A manifest declaring nothing at all. The path is in `ExecuteParams`, so
-    // there is no verb to gate and `PluginCapability` stays exactly the set of
-    // reverse calls rather than a set of reverse calls plus one field.
     const entry = writePlugin(
       'nogrant',
       `return { output: { got: typeof msg.params.workspace } };`,
@@ -643,13 +519,6 @@ describe('the workspace a node is given', () => {
   });
 
   it('is withheld when the plugin process is confined to a sandbox of its own', async () => {
-    // The live case under `heddle serve --safe`: `server/plugins.ts` gives every
-    // submitted plugin its own session, and the node's tool scope is a
-    // different one. The path heddle used to send was a real absolute path the
-    // plugin could not open — ENOENT under bubblewrap, EPERM under seatbelt —
-    // and the failure surfaced as the plugin's own filesystem error, naming
-    // nothing that would lead anyone here. It is also a host path from outside
-    // the plugin's confinement, handed unconditionally to an untrusted process.
     const entry = writePlugin(
       'confined',
       `return { output: {
@@ -668,15 +537,10 @@ describe('the workspace a node is given', () => {
     );
 
     expect(state.got).toBe('undefined');
-    // Marked rather than merely absent: a transform is also sent no workspace,
-    // and the two need different things said to different people.
     expect(state.why).toBe('confined');
   });
 
   it('fails getWorkspace naming the sandbox, not transforms', async () => {
-    // What an author actually reads. Before the marker existed the only
-    // message `workspaceOf` had was about transforms owning no tool scope,
-    // which would send a node author to change a component that is correct.
     const entry = writeHelperPlugin(
       'confined-helper',
       `serve({
@@ -702,14 +566,6 @@ describe('the workspace a node is given', () => {
     expect(String(state.err)).not.toMatch(/transform/);
   });
 });
-
-// ---------------------------------------------------------------------------
-// Transforms.
-//
-// A transform is not a node, so the attribution question has a different answer
-// and this is where it is pinned. The flow needs no model credential: a `pre`
-// transform that rejects makes heddle skip the model call entirely.
-// ---------------------------------------------------------------------------
 
 function agentFlowWithTransform(componentType: string): string {
   return JSON.stringify({
@@ -741,18 +597,12 @@ function agentFlowWithTransform(componentType: string): string {
       a: {
         component_type: 'AgentNode',
         id: 'a',
-        // Distinct from the agent's own name below, so the assertion on
-        // `nodeName` says which of the two a transform's events are filed
-        // under rather than passing whichever it is.
         name: 'agent_node',
         agent: {
           component_type: 'Agent',
           id: 'ia',
           name: 'the_agent',
           system_prompt: 'be helpful',
-          // Unreachable on purpose: the transform rejects, so this is never
-          // dialled, and a test that started passing for the wrong reason
-          // would fail loudly instead.
           llm_config: {
             component_type: 'OpenAiConfig',
             id: 'l',
@@ -796,10 +646,6 @@ describe('a transform reporting', () => {
       agentFlowWithTransform('Blocklist'),
     );
 
-    // A transform holds no position in the graph, so the agent is the only
-    // thing a consumer can hang its events off — the `Agent`'s own name, which
-    // is what the chain is built with. Which transform spoke is in `nodeType`,
-    // and in the event type itself.
     expect(reported(events)).toEqual([
       {
         type: 'plugin:Blocklist:checked',
@@ -833,16 +679,6 @@ describe('a transform reporting', () => {
     expect(state.transform_reason).toBe('workspace=undefined');
   });
 });
-
-// ---------------------------------------------------------------------------
-// The inlined runtime helper.
-//
-// Everything above is what heddle enforces. This is what the helper does on top
-// of it, and the reason it does anything at all: `emitEvent` and `log` return
-// nothing, so heddle's refusal comes back on a frame nobody is awaiting. A
-// plugin using the helper gets its mistakes thrown at the call that made them,
-// which is what an in-process plugin gets for the same mistake.
-// ---------------------------------------------------------------------------
 
 describe('the inlined runtime helper', () => {
   it('reports through ctx, without the author naming a call', async () => {
@@ -901,10 +737,6 @@ describe('the inlined runtime helper', () => {
   });
 
   it('throws at the call when the payload is not JSON', async () => {
-    // The one check heddle cannot make for a remote plugin: whatever reaches
-    // the host arrived as JSON and therefore re-serializes. Caught here it is
-    // still the plugin's own call failing, and the message still names the
-    // event.
     const entry = writeHelperPlugin(
       'helper-cycle',
       `serve({
@@ -924,9 +756,6 @@ describe('the inlined runtime helper', () => {
   });
 
   it('throws at the call when the capability was never declared', async () => {
-    // Read off the grant `init` delivered, so the helper refuses exactly what
-    // the host would have refused — and refuses it where a plugin author can
-    // see it, rather than on a response frame the author never awaits.
     const entry = writeHelperPlugin(
       'helper-ungranted',
       `serve({

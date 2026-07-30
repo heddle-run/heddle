@@ -1,16 +1,3 @@
-/**
- * Out-of-process plugins.
- *
- * The isolation block at the bottom is the reason this whole path exists: it
- * re-runs the attack that succeeds against the in-process API, and asserts it
- * now fails. If those tests ever go green for the wrong reason — a plugin that
- * silently did not run, say — the rest of the file is what catches it.
- *
- * Test plugins here hand-roll the protocol in plain JS rather than importing
- * the `serve()` helper. That is deliberate: it keeps the tests independent of
- * the helper, and demonstrates the protocol is small enough to implement in a
- * few lines, which is the bar a non-JavaScript plugin has to clear.
- */
 import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -39,12 +26,9 @@ afterAll(() => {
 });
 
 afterEach(() => {
-  // A leaked plugin process would keep vitest from exiting, and would also
-  // invalidate the isolation tests below.
   while (open.length) open.pop()!.dispose();
 });
 
-/** The protocol, in as little JS as it can be written. */
 const PREAMBLE = `
 let buf = '';
 const send = (m) => process.stdout.write(JSON.stringify(m) + '\\n');
@@ -84,7 +68,6 @@ function writePlugin(name: string, handleBody: string): string {
   return entry;
 }
 
-/** Write a plugin against the inlined `serve()` helper heddle ships. */
 function writeHelperPlugin(name: string, source: string): string {
   const entry = join(scratch, `${name}.mjs`);
   writeFileSync(entry, withRuntime(source));
@@ -104,21 +87,8 @@ function manifest(
   };
 }
 
-/**
- * What the helpers below grant, standing in for an operator who allows
- * everything heddle serves. The grant is deliberately not what these tests
- * vary: a plugin still gets only what its own manifest declares, so the
- * capability tests can change the manifest and leave the policy alone. The
- * cases that are about the grant call `loadRemotePlugin` themselves.
- */
 const ALL_CAPABILITIES = ['runTool', 'emitEvent', 'log'] as const;
 
-/**
- * A flow: start -> the plugin's node -> end.
- *
- * `node` adds fields to the plugin node itself, which is how a component of a
- * third kind gets into a document at all — it has no slot of its own.
- */
 function flowUsing(componentType: string, node: Record<string, unknown> = {}): string {
   return JSON.stringify({
     component_type: 'Flow',
@@ -152,13 +122,6 @@ function flowUsing(componentType: string, node: Record<string, unknown> = {}): s
   });
 }
 
-/**
- * Load a plugin, compile a flow that uses it, and run it.
- *
- * `events`, when passed, collects the runner's own stream — which is the only
- * way to see which node a run went through, since heddle's final state is the
- * merge of everything and says nothing about the path.
- */
 async function runFlow(
   flow: string,
   entry: string,
@@ -187,7 +150,6 @@ async function runFlow(
   return state.toData() as Record<string, unknown>;
 }
 
-/** Load a plugin, compile the straight-line flow that uses it, and run it. */
 async function runWith(
   componentType: string,
   entry: string,
@@ -241,33 +203,12 @@ describe('running a node in another process', () => {
 
   it('times out a plugin that never answers', async () => {
     const entry = writePlugin('hang', `return new Promise(() => {});`);
-    // Well under vitest's own 5s ceiling, so this asserts the host's timeout
-    // rather than racing it.
     await expect(
       runWith('HangNode', entry, manifest('HangNode'), {}, {}, 300),
     ).rejects.toThrow(/did not answer execute within/);
   });
 });
 
-// ---------------------------------------------------------------------------
-// Branching.
-//
-// A plugin node is the only node type whose branch is chosen by code heddle did
-// not compile in, and the manifest is the only place its branches are written
-// down. Those two have to agree, and the check that they do is worth more than
-// it looks: routing falls back to the unbranched edge when nothing matches, so
-// an undeclared branch that were let through would not fail — it would take a
-// plausible route to the wrong node, and the run would look like it worked.
-// ---------------------------------------------------------------------------
-
-/**
- * start -> p -> end_left | end_right | end_default
- *
- * Three ways out of one plugin node: two named branches and one edge with no
- * branch at all. Which end a run reaches is the only thing separating these
- * tests, so a routing failure shows up as the wrong end node rather than as a
- * flow that did not run.
- */
 function branchingFlowUsing(componentType: string): string {
   const edge = (name: string, to: string, branch: string | null) => ({
     component_type: 'ControlFlowEdge',
@@ -314,7 +255,6 @@ function branchingFlowUsing(componentType: string): string {
   });
 }
 
-/** The end node a run finished on, which is what "it routed" means here. */
 function endReached(events: Event[]): string | undefined {
   return events
     .filter((e) => e.type === 'node_complete' && e.nodeType === 'EndNode')
@@ -322,7 +262,6 @@ function endReached(events: Event[]): string | undefined {
 }
 
 describe('branching out of a plugin node', () => {
-  /** A plugin that returns whatever branch the flow input names. */
   const CHOOSER = `return { output: { chose: msg.params.input.pick },
                            branch: msg.params.input.pick };`;
 
@@ -348,8 +287,6 @@ describe('branching out of a plugin node', () => {
     const entry = writePlugin('chooser', CHOOSER);
     const declared = manifest('ChooserNode', { branches: ['left', 'right'] });
 
-    // Both directions from one plugin and one flow: a run that always took the
-    // first matching edge would pass either of these on its own.
     expect(await route(entry, declared, 'left')).toMatchObject({ end: 'end_left' });
     expect(await route(entry, declared, 'right')).toMatchObject({ end: 'end_right' });
   });
@@ -362,8 +299,6 @@ describe('branching out of a plugin node', () => {
       'left',
     );
 
-    // Declaring branches does not oblige a node to use them, and a plugin that
-    // says nothing must not be read as having picked its first one.
     expect(end).toBe('end_default');
     expect(state).toMatchObject({ ran: true });
   });
@@ -378,8 +313,6 @@ describe('branching out of a plugin node', () => {
   });
 
   it('refuses any branch from a node that declared none', async () => {
-    // The manifest is silent, so `branches` is empty rather than unconstrained.
-    // A plugin cannot open a route by returning a name for it.
     const entry = writePlugin('silentbranch', CHOOSER);
     await expect(route(entry, manifest('ChooserNode'), 'left')).rejects.toThrow(
       /not in its declared branches \[\]/,
@@ -387,9 +320,6 @@ describe('branching out of a plugin node', () => {
   });
 
   it('refuses a branch that is not a string', async () => {
-    // Refused where the wire is read, before the adapter compares it against
-    // the declared set. A branch names an edge and edges are named by string,
-    // so coercing this would let a plugin route on a value no spec can spell.
     const entry = writePlugin('numericbranch', `return { output: {}, branch: 42 };`);
     await expect(
       route(entry, manifest('ChooserNode', { branches: ['left'] }), 'left'),
@@ -438,14 +368,6 @@ describe('reverse calls', () => {
   });
 
   it('names what it does serve when the plugin calls something else', async () => {
-    // The roadmap adds verbs to this channel. A plugin built against a heddle
-    // that has them, run on one that does not, has to be able to tell that from
-    // the error — "unknown method" alone does not distinguish a typo from a
-    // version skew.
-    //
-    // The verb named here has to be one heddle does *not* serve, so it changes
-    // as the roadmap lands: this used to be `callModel`, which Phase 4 made
-    // real. `getState` is the next proposal in the design doc's §7.2 list.
     const entry = writePlugin(
       'wrongverb',
       `try { await callHost('getState', { key: 'x' }); return { output: { err: 'none' } }; }
@@ -473,14 +395,6 @@ describe('reverse calls', () => {
   });
 });
 
-/**
- * An executor whose scopes are distinguishable.
- *
- * Every `execute` reports the workspace of whichever scope it was reached
- * through, so a tool that ran outside the node's scope is visible as a
- * different string rather than as a subtle sandbox failure that only appears
- * under `--safe`.
- */
 function scopedExecutor(): {
   execute: (
     signal: AbortSignal | undefined,
@@ -509,12 +423,6 @@ function scopedExecutor(): {
 
 describe('where a plugin node tools run', () => {
   it('runs them in the scope heddle opened for that execution', async () => {
-    // The property `getWorkspace` sells: a file the plugin writes there can be
-    // named to `runTool` by path. That only holds if the tool runs in the same
-    // sandbox session the workspace came from. Served from the host's own
-    // runner instead, every tool got a throwaway session — a different
-    // workspace — so the file was simply not there on the tool's side, and it
-    // read as the tool being broken.
     const entry = writeHelperPlugin(
       'scoped-tool',
       `serve({
@@ -546,9 +454,6 @@ describe('where a plugin node tools run', () => {
   });
 
   it('gives the tool the run signal, which the host-wide runner drops', async () => {
-    // A pending tool call is otherwise uninterruptible: the run's signal never
-    // reaches it, so an aborted run waits out the tool's own timeout before its
-    // concurrency slot comes back.
     const entry = writeHelperPlugin(
       'signalled-tool',
       `serve({
@@ -579,8 +484,6 @@ describe('where a plugin node tools run', () => {
   });
 
   it('still serves a plugin that hand-rolls the protocol and names no call', async () => {
-    // Every plugin written before `call` was on `RunToolParams` looks like
-    // this. It keeps working, on the host-wide runner it always had.
     const entry = writePlugin(
       'callless-tool',
       `const r = await runTool('where', {});
@@ -605,16 +508,6 @@ describe('where a plugin node tools run', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Capabilities.
-//
-// Two independent yeses. The manifest asks, and the host grants; a call needs
-// both, and each refusal has to say which one is missing, because the two have
-// different people to fix them. A plugin that could learn the host's policy by
-// making the call and reading the error would be probing it, which is why the
-// grant half is settled before the process exists.
-// ---------------------------------------------------------------------------
-
 describe('capabilities', () => {
   it('refuses a runTool the manifest never declared', async () => {
     const entry = writePlugin(
@@ -623,9 +516,6 @@ describe('capabilities', () => {
        catch (e) { return { output: { err: e.message } }; }`,
     );
 
-    // The tools are there and the host grants runTool. The one thing missing is
-    // the declaration, so this asserts the declaration is what carries the
-    // permission rather than being documentation of it.
     let toolRuns = 0;
     const state = await runWith('UndeclaredNode', entry, manifest('UndeclaredNode'), {}, {
       toolRegistry: {
@@ -642,8 +532,6 @@ describe('capabilities', () => {
 
     expect(String(state.err)).toMatch(/"runTool" is not granted to this plugin/);
     expect(String(state.err)).toMatch(/Add it to "capabilities" in the manifest/);
-    // A gate that reported a denial after doing the thing would satisfy the
-    // message assertions above and still have failed at its job.
     expect(toolRuns).toBe(0);
   });
 
@@ -681,9 +569,6 @@ describe('capabilities', () => {
 
   it('names what the host does grant when it refuses', () => {
     const entry = writePlugin('ungranted2', `return { output: {} };`);
-    // Nothing granted is the default, and "Granted here: nothing" is a more
-    // useful thing to read than an empty list — an operator seeing it knows the
-    // policy is unset rather than narrowed.
     expect(() =>
       loadRemotePlugin(manifest('Ungranted2Node', {}, ['runTool']), entry),
     ).toThrow(/Granted here: nothing/);
@@ -699,19 +584,12 @@ describe('capabilities', () => {
   });
 
   it('loads a manifest that says nothing about capabilities', async () => {
-    // Every plugin written before capabilities existed looks like this. It has
-    // to keep loading and keep running; what it loses is the reverse calls it
-    // never declared, and only those.
     const entry = writePlugin('silent', `return { output: { ran: true } };`);
     const state = await runWith('SilentNode', entry, manifest('SilentNode'));
     expect(state).toMatchObject({ ran: true });
   });
 
   it('distinguishes a missing tool runner from a missing grant', async () => {
-    // Granted and declared, so the gate is satisfied — but nothing built an
-    // executor for this component, which is what installs the runner. Calling
-    // the host directly is the only way to reach that state, and it is exactly
-    // what a caller who skipped `compile` would hit.
     const entry = writePlugin(
       'norunner',
       `try { await runTool('echo', {}); return { output: { err: 'none' } }; }
@@ -754,8 +632,6 @@ describe('the manifest is data, not code', () => {
       ),
     );
 
-    // Parsing alone must fill these in. If it needed the process, this would
-    // hang or throw rather than resolve synchronously.
     const pf = parseFlow(flowUsing('DeclaredNode'), registry);
     const node = pf.parsedNodes.find((n) => n.name === 'p') as unknown as {
       branches: string[];
@@ -798,21 +674,6 @@ describe('the manifest is data, not code', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// kind: 'component'.
-//
-// The third kind is nominal: it has no RPC verb, no engine call site, and no
-// stand-in of its own, so it survives only where its parent was replaced by one
-// — nested inside a plugin node or transform. Put it anywhere the SDK looks and
-// the closed union rejects it before a line of plugin code runs.
-//
-// None of that was pinned by a test, which made it indistinguishable from an
-// unfinished feature. These tests describe what it *does*, so a change to any
-// of it shows up as a test that has to be rewritten rather than as a plugin
-// author's surprise.
-// ---------------------------------------------------------------------------
-
-/** A plugin providing one node type and one bare component type. */
 function nodeAndComponentManifest(
   componentSchema?: Record<string, unknown>,
 ): Record<string, unknown> {
@@ -841,21 +702,13 @@ describe("kind: 'component'", () => {
     registry.addRemote(loadRemotePlugin(nodeAndComponentManifest(), entry));
 
     expect(registry.kindOf('Policy')).toBe('component');
-    // The two lookups `compile` and the transform chain use. Both must miss, or
-    // heddle would try to execute something with no verb to execute it with.
     expect(registry.nodeDef('Policy')).toBeUndefined();
     expect(registry.transformDef('Policy')).toBeUndefined();
   });
 
   it('reaches its parent node as data, and is never executed itself', async () => {
-    // The plugin reports every componentType it was asked to execute. One entry
-    // means the nested component crossed as a field of its parent and nothing
-    // else — which is the whole of what this kind does today.
     const entry = writePlugin(
       'holder',
-      // Frames naming no component are the host's own lifecycle — the init
-      // handshake reaches this handler too, since the preamble routes
-      // everything here. What this test counts is components.
       `globalThis.__asked ??= [];
        if (msg.params.componentType) globalThis.__asked.push(msg.params.componentType);
        return { output: { policy: msg.params.node.policy,
@@ -872,8 +725,6 @@ describe("kind: 'component'", () => {
     );
 
     expect(state.asked).toEqual(['GateNode']);
-    // Deserialized, not passed through: the SDK's snake_case envelope is gone
-    // and the component carries the shape every other component has.
     expect(state.policy).toMatchObject({
       componentType: 'Policy',
       name: 'strict',
@@ -882,8 +733,6 @@ describe("kind: 'component'", () => {
   });
 
   it('is validated against its manifest schema when its parent is parsed', async () => {
-    // The one hook the kind does have. It runs at parse time, so a malformed
-    // sub-component is caught by `/v1/validate` without starting a process.
     const entry = writePlugin('schemaonly', `return { output: {} };`);
     const registry = PluginRegistry.empty();
     open.push(registry);
@@ -901,12 +750,6 @@ describe("kind: 'component'", () => {
   });
 
   it('is refused by kind when it is put in a node slot', () => {
-    // Still the limit of the kind — a bare component is reachable only under a
-    // plugin parent — but the refusal moved and improved. `Flow.nodes` used to
-    // be a closed union, so this came back as the SDK's `Invalid discriminator
-    // value` listing every builtin node type and never mentioning the plugin.
-    // The union is widened now, so heddle refuses it itself and can say the
-    // thing the author actually needs: the type is real, and it is not a node.
     const entry = writePlugin('inaslot', `return { output: {} };`);
     const registry = PluginRegistry.empty();
     open.push(registry);
@@ -918,29 +761,6 @@ describe("kind: 'component'", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Plugins heddle cannot run as a JavaScript module.
-//
-// JSON Lines over stdio was chosen so a plugin need not be JavaScript, and
-// there are exactly two ways to start one that is not: an executable entry with
-// a shebang, which the loader prefers, and `manifest.command`, for an entry
-// that cannot be made self-contained — the `python3 plugin.py` case. Both are
-// the justification for the whole wire format, and both shipped untested.
-//
-// These use POSIX shell because it sits at a fixed path on every Unix and the
-// fixture below uses only builtins, so it runs under the empty environment the
-// host spawns with. It also makes the point the protocol's docblock claims: the
-// plugin end fits in a few lines of a language heddle knows nothing about.
-// ---------------------------------------------------------------------------
-
-/**
- * The protocol, in shell.
- *
- * Reads the request `id` and the flow input's `text` by string surgery rather
- * than by parsing, which is sound here only because heddle writes `id` first
- * and JSON.stringify does not reorder. A real plugin would use its language's
- * JSON parser; this one has to fit in a fixture.
- */
 const SHELL_PLUGIN = [
   "q='\"'",
   'while IFS= read -r line; do',
@@ -952,29 +772,18 @@ const SHELL_PLUGIN = [
   'done',
 ].join('\n');
 
-/**
- * Writes the shell plugin, with or without the two things that let the loader
- * start it on its own: a shebang and the executable bit.
- */
 function writeShellPlugin(
   name: string,
   { selfStarting, extension = '.sh' }: { selfStarting: boolean; extension?: string },
 ): string {
   const entry = join(scratch, `${name}${extension}`);
   writeFileSync(entry, `${selfStarting ? '#!/bin/sh\n' : ''}${SHELL_PLUGIN}\n`);
-  // Set explicitly rather than through writeFileSync's mode, which is ignored
-  // for a file that already exists — and these names are reused across runs.
   chmodSync(entry, selfStarting ? 0o755 : 0o644);
   return entry;
 }
 
 describe('a plugin that is not a JavaScript module', () => {
   it('runs an executable entry point by path', async () => {
-    // No "command" anywhere. A shell script is neither .mjs nor .js, so the
-    // only way this answers at all is the loader having invoked it directly and
-    // the kernel having honoured its shebang — which is the form `--safe`
-    // needs, because a sandbox binds the program it is given and not a script
-    // passed to one.
     const entry = writeShellPlugin('executable', { selfStarting: true });
     const state = await runWith('ShellNode', entry, manifest('ShellNode'), {
       text: 'from the shell',
@@ -984,10 +793,6 @@ describe('a plugin that is not a JavaScript module', () => {
   });
 
   it('starts a plugin the way its manifest says to', async () => {
-    // The `python3 plugin.py` shape: the entry point is not executable and
-    // heddle has no idea how to run it, so the manifest supplies an
-    // interpreter. Named by basename to pin the other half of the contract —
-    // the process runs in the plugin's own directory.
     const entry = writeShellPlugin('interpreted', {
       selfStarting: false,
       extension: '.plugin',
@@ -1003,11 +808,6 @@ describe('a plugin that is not a JavaScript module', () => {
   });
 
   it('leaves a bare interpreter name for the OS to resolve', async () => {
-    // `python3 plugin.py` is the shape the manifest field was added for, and a
-    // bare name has no slash, so the loader must not "resolve" it against the
-    // plugin directory. It still runs despite the plugin's empty environment:
-    // with no PATH to inherit, exec falls back to the system default, which is
-    // where an interpreter installed for everyone lives.
     const entry = writeShellPlugin('bareinterp', {
       selfStarting: false,
       extension: '.plugin',
@@ -1023,9 +823,6 @@ describe('a plugin that is not a JavaScript module', () => {
   });
 
   it('resolves a relative interpreter against the plugin directory', async () => {
-    // A plugin that ships its own launcher cannot know where it was installed,
-    // so a `command[0]` with a slash in it is resolved against the entry point
-    // rather than against whatever directory heddle was started in.
     const entry = writeShellPlugin('shipped', {
       selfStarting: false,
       extension: '.plugin',
@@ -1050,9 +847,6 @@ describe('a plugin that is not a JavaScript module', () => {
       extension: '.plugin',
     });
 
-    // Refused at load, before a process exists: guessing an interpreter from
-    // the file's contents is the one thing that would make this convenient and
-    // also make it a way to run something the operator did not choose.
     expect(() => loadRemotePlugin(manifest('ShellNode'), entry)).toThrow(
       /is not executable and is not a \.mjs\/\.js file/,
     );
@@ -1062,8 +856,6 @@ describe('a plugin that is not a JavaScript module', () => {
   });
 
   it('reports an entry point that is not there', () => {
-    // Distinct from the message above, and it has to be: one means "heddle
-    // cannot start this file", the other means "there is no file".
     expect(() =>
       loadRemotePlugin(manifest('ShellNode'), join(scratch, 'absent.mjs')),
     ).toThrow(/is not accessible/);
@@ -1077,20 +869,6 @@ describe('a plugin that is not a JavaScript module', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Ending a run that is blocked on a plugin.
-//
-// The runner only looks at its signal between nodes, so an abort raised while
-// `execute` is outstanding reaches nothing unless the host is holding the
-// signal too. Left unthreaded, a client that hangs up or a run that spends its
-// wall-clock budget still occupies its concurrency slot until the plugin's own
-// per-call timer fires — which the operator may have set much higher.
-//
-// The per-call timer is deliberately far out of reach in these tests: what has
-// to end the call is the abort, not a timeout standing in for one.
-// ---------------------------------------------------------------------------
-
-/** Load a plugin that never answers, and compile the flow that calls it. */
 function hangingGraph(componentType: string, name: string) {
   const entry = writePlugin(name, `return new Promise(() => {});`);
   const registry = PluginRegistry.empty();
@@ -1159,30 +937,12 @@ describe('aborting a run that is inside a plugin call', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Under --safe.
-//
-// `resolveCommand` is the only place a plugin's argv meets a sandbox, and every
-// other test in this file runs the plugin unconfined — so a change there breaks
-// nothing anyone can see until a deployment sets --safe. A stub session is
-// enough to pin it: what has to hold is that the pieces of a `SandboxCommand`
-// cross the boundary unmangled, and that is checkable on a machine with neither
-// bubblewrap nor seatbelt.
-// ---------------------------------------------------------------------------
-
 interface StubSession {
   session: SandboxSession;
-  /** Every `wrap(toolPath, args)` the host made, in order. */
   wraps: { toolPath: string; args: string[] | undefined }[];
-  /** One entry per `cleanup()` the host called on a wrapped command. */
   cleanups: string[];
 }
 
-/**
- * A session that records what it was asked to wrap and hands back an identity
- * command — plus an `env`, a `cwd` and a `cleanup`, because those are the parts
- * of a `SandboxCommand` a caller can silently drop while still spawning.
- */
 function stubSession(): StubSession {
   const wraps: StubSession['wraps'] = [];
   const cleanups: string[] = [];
@@ -1194,7 +954,6 @@ function stubSession(): StubSession {
       return {
         command: toolPath,
         args: args ?? [],
-        // Stands in for what seatbelt returns and bubblewrap folds into args.
         env: { HEDDLE_SANDBOX: '1', HEDDLE_STUB_BASE: 'floor' },
         cwd: scratch,
         cleanup: () => cleanups.push(toolPath),
@@ -1224,18 +983,11 @@ describe('spawning a plugin under a sandbox', () => {
       workspace: scratch,
     });
 
-    // The plugin still answers, so the wrapping produced something runnable.
     expect(result).toMatchObject({ output: { ok: true } });
-    // Two arguments, not one joined string: a sandbox binds the program it is
-    // given and nothing else, so `node /path/plugin.mjs` as a single path names
-    // a program that does not exist on the confined side.
     expect(stub.wraps).toEqual([{ toolPath: process.execPath, args: [entry] }]);
   });
 
   it('gives the plugin the environment the backend built for it', async () => {
-    // Under seatbelt this env is the only place PATH and HOME exist — the
-    // backend does not fold them into argv the way bubblewrap does. A host that
-    // takes argv alone starts a confined plugin with nothing set at all.
     const entry = writePlugin(
       'sandbox-env',
       `return { output: { base: process.env.HEDDLE_STUB_BASE ?? 'absent' } };`,
@@ -1260,8 +1012,6 @@ describe('spawning a plugin under a sandbox', () => {
   });
 
   it('lets what the caller named win over the sandbox base', async () => {
-    // The base is a floor, not a policy. A variable the caller chose is a
-    // decision someone made, so it has to survive confinement.
     const entry = writePlugin(
       'sandbox-env-override',
       `return { output: { base: process.env.HEDDLE_STUB_BASE ?? 'absent' } };`,
@@ -1287,9 +1037,6 @@ describe('spawning a plugin under a sandbox', () => {
   });
 
   it('releases the sandbox scratch when the plugin is disposed', async () => {
-    // A plugin's process is wrapped once and lives for the whole run, so
-    // dispose is the only moment its scratch directory can go. Dropping the
-    // cleanup grows a heddle-scratch-* directory per plugin per run.
     const entry = writePlugin('sandbox-cleanup', `return { output: {} };`);
     const stub = stubSession();
     const remote = loadRemotePlugin(manifest('CleanNode'), entry, {
@@ -1310,16 +1057,8 @@ describe('spawning a plugin under a sandbox', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// The point of the exercise.
-// ---------------------------------------------------------------------------
-
 describe('isolation', () => {
   it('runs the plugin somewhere other than the heddle process', async () => {
-    // The claim the docs make about a submitted plugin, and the one every
-    // other guarantee in this block rests on. Asserted directly rather than
-    // inferred from the environment being empty, because an in-process plugin
-    // handed a scrubbed `process.env` would pass that check and none of these.
     const entry = writePlugin('pid', `return { output: { pid: process.pid } };`);
     const state = await runWith('PidNode', entry, manifest('PidNode'));
 
@@ -1337,14 +1076,8 @@ describe('isolation', () => {
       );
       const state = await runWith('EnvNode', entry, manifest('EnvNode'));
 
-      // In-process this reads process.env — every key the server holds,
-      // including whatever credential it was started with.
       expect(state.secret).toBeNull();
 
-      // Not an emptiness check: macOS injects __CF_USER_TEXT_ENCODING into
-      // every process regardless of the environment passed to spawn, so it is
-      // present on both sides without having crossed. The property that matters
-      // is that nothing else of the parent's did.
       const injectedByOs = new Set(['__CF_USER_TEXT_ENCODING']);
       const leaked = (state.keys as string[]).filter(
         (key) => !injectedByOs.has(key) && key in process.env,
@@ -1356,8 +1089,6 @@ describe('isolation', () => {
   });
 
   it('does not carry state from one run into the next', async () => {
-    // Exactly the attack that works against the in-process API: plant
-    // something on a global in one run, read it back in another.
     const entry = writePlugin(
       'planter',
       `globalThis.__planted ??= [];
@@ -1370,7 +1101,6 @@ describe('isolation', () => {
     expect(first.seen).toEqual(['run-one-secret']);
 
     const second = await runWith('PlanterNode', entry, m, {});
-    // A shared process would return ['run-one-secret'] here.
     expect(second.seen).toEqual([]);
   });
 
@@ -1397,8 +1127,6 @@ describe('isolation', () => {
     await expect(runWith('SuicideNode', entry, manifest('SuicideNode'))).rejects.toThrow(
       /exited/,
     );
-    // The test process is still here to assert it, which is the other half of
-    // the claim: the plugin's failure did not become the server's.
     expect(process.pid).toBeGreaterThan(0);
   });
 
@@ -1428,20 +1156,6 @@ describe('isolation', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Transforms: the other half of the plugin surface.
-//
-// A transform is not a node. It hangs off `Agent.transforms` and processes the
-// agent's *messages* around the model call, which is what makes a guardrail
-// possible — see examples/guardrails. These tests exist because the
-// out-of-process transform path shipped without any.
-//
-// They need no model credentials: a `pre` transform that rejects causes heddle
-// to skip the model call entirely, which is the property that makes a blocked
-// prompt free.
-// ---------------------------------------------------------------------------
-
-/** A flow whose agent carries one transform of the given component type. */
 function agentFlowWithTransform(
   componentType: string,
   component: Record<string, unknown> = {},
@@ -1481,9 +1195,6 @@ function agentFlowWithTransform(
           id: 'ia',
           name: 'ia',
           system_prompt: 'be helpful',
-          // Points nowhere reachable on purpose. A rejecting pre-transform
-          // must mean this is never dialled; if it is, the test fails loudly
-          // rather than silently passing for the wrong reason.
           llm_config: {
             component_type: 'OpenAiConfig',
             id: 'l',
@@ -1643,11 +1354,6 @@ describe('transforms out of process', () => {
   });
 
   it('runs a tool on the transform behalf', async () => {
-    // What a plugin may do has to follow from the plugin, not from where in the
-    // spec its component was written. A transform used to reach a host with no
-    // tool runner set — only nodes wired one up — so the identical plugin was
-    // told it had no tool access purely because it hung off `Agent.transforms`.
-    // A guardrail that consults a classifier is the ordinary case for this.
     const entry = writePlugin(
       'classify',
       `const verdict = await runTool('classify', { text: (msg.params.messages ?? []).at(-1)?.content });

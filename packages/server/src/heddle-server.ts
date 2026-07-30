@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util';
 import { createSandbox, type Sandbox, type SandboxBackend } from '@heddle/core';
-import { startServer } from './server.js';
+import { startServer, type StartedServer } from './server.js';
 import {
   DEFAULT_HOST,
   DEFAULT_PORT,
@@ -68,64 +68,8 @@ callers choose and makes outbound requests to hosts they name. Restrict egress
 and terminate authentication in front of it. See DEPLOYMENT.md.
 `;
 
-function toInt(value: string | undefined, flag: string): number | undefined {
-  if (value === undefined) return undefined;
-  const n = Number(value);
-  if (!Number.isInteger(n) || n < 0) {
-    throw new Error(`${flag} must be a non-negative integer, got "${value}"`);
-  }
-  return n;
-}
-
 const SANDBOX_BACKENDS = new Set(['auto', 'bubblewrap', 'seatbelt']);
-
-/**
- * Build the sandbox, or undefined when --safe was not given.
- *
- * The --allow-* and --deny-net flags only shape a sandbox, so using one without
- * --safe is a mistake worth reporting rather than ignoring — silently running
- * unconfined after being asked to restrict something is the wrong failure.
- */
-function buildSandbox(
-  values: Record<string, unknown>,
-  toolsDir: string | undefined,
-): Sandbox | undefined {
-  const allowRead = (values['allow-read'] as string[] | undefined) ?? [];
-  const allowWrite = (values['allow-write'] as string[] | undefined) ?? [];
-  const allowEnv = (values['allow-env'] as string[] | undefined) ?? [];
-  const backend = values.sandbox as string | undefined;
-  const denyNet = Boolean(values['deny-net']);
-
-  if (!values.safe) {
-    const tuning = [
-      backend !== undefined && '--sandbox',
-      allowRead.length > 0 && '--allow-read',
-      allowWrite.length > 0 && '--allow-write',
-      allowEnv.length > 0 && '--allow-env',
-      denyNet && '--deny-net',
-    ].filter((f): f is string => typeof f === 'string');
-
-    if (tuning.length > 0) {
-      throw new Error(`${tuning.join(', ')} requires --safe`);
-    }
-    return undefined;
-  }
-
-  const chosen = backend ?? 'auto';
-  if (!SANDBOX_BACKENDS.has(chosen)) {
-    throw new Error(
-      `unknown sandbox backend "${chosen}" (expected ${[...SANDBOX_BACKENDS].join(', ')})`,
-    );
-  }
-
-  return createSandbox(chosen as SandboxBackend, {
-    // Read-only: a tool can be run, but cannot rewrite itself or its siblings.
-    readPaths: [...(toolsDir ? [toolsDir] : []), ...allowRead],
-    writePaths: allowWrite,
-    network: !denyNet,
-    passEnv: allowEnv,
-  });
-}
+const DEFAULT_SANDBOX_BACKEND = 'auto';
 
 async function main(): Promise<void> {
   const { values } = parseArgs({
@@ -173,42 +117,101 @@ async function main(): Promise<void> {
     corsOrigins: values['cors-origin'],
     allowRequestCode: values['allow-request-code'],
     workDir: values['work-dir'],
-    // The key comes from the environment, not a flag: a flag would put it in
-    // `ps` output and the operator's shell history.
     defaultLlmKey: process.env.HEDDLE_LLM_DEFAULT_KEY || undefined,
     defaultLlmUrl: values['llm-default-url'],
-    // Environment rather than a flag because this server is deployed as a
-    // container image, where env is how the platform configures it and the
-    // argv is baked into the image.
     stream: boolEnv('HEDDLE_STREAM', process.env.HEDDLE_STREAM),
-    // Built before the listener so a bad sandbox setup fails at startup rather
-    // than on the first request that would have been confined by it.
     sandbox: buildSandbox(values, toolsDir),
   });
 
-  // SIGTERM is how an orchestrator retires a pod, and runs stream over
-  // long-lived connections: exiting promptly would cut every one of them. So
-  // the first signal starts a drain — stop accepting, let the open streams
-  // finish — and a second one is the operator saying they would rather not
-  // wait.
+  installShutdownHandlers(started);
+}
+
+function installShutdownHandlers(started: StartedServer): void {
   let shuttingDown = false;
+
   const shutdown = (signal: string): void => {
     if (shuttingDown) {
-      process.stderr.write(`\nsecond ${signal}; closing open runs immediately\n`);
-      void started.close().then(
-        () => process.exit(1),
-        () => process.exit(1),
+      process.stderr.write(
+        `\nsecond ${signal}; closing open runs immediately\n`,
       );
+      void started.close().then(exitFailure, exitFailure);
       return;
     }
+
     shuttingDown = true;
-    void started.drain().then(
-      () => process.exit(0),
-      () => process.exit(1),
-    );
+    void started.drain().then(exitSuccess, exitFailure);
   };
+
   process.on('SIGINT', () => shutdown('SIGINT'));
   process.on('SIGTERM', () => shutdown('SIGTERM'));
+}
+
+function buildSandbox(
+  values: Record<string, unknown>,
+  toolsDir: string | undefined,
+): Sandbox | undefined {
+  const allowRead = (values['allow-read'] as string[] | undefined) ?? [];
+  const allowWrite = (values['allow-write'] as string[] | undefined) ?? [];
+  const allowEnv = (values['allow-env'] as string[] | undefined) ?? [];
+  const backend = values.sandbox as string | undefined;
+  const denyNet = Boolean(values['deny-net']);
+
+  if (!values.safe) {
+    assertNoSandboxTuning({ backend, allowRead, allowWrite, allowEnv, denyNet });
+    return undefined;
+  }
+
+  const chosen = backend ?? DEFAULT_SANDBOX_BACKEND;
+  if (!SANDBOX_BACKENDS.has(chosen)) {
+    throw new Error(
+      `unknown sandbox backend "${chosen}" (expected ${[...SANDBOX_BACKENDS].join(', ')})`,
+    );
+  }
+
+  return createSandbox(chosen as SandboxBackend, {
+    readPaths: [...(toolsDir ? [toolsDir] : []), ...allowRead],
+    writePaths: allowWrite,
+    network: !denyNet,
+    passEnv: allowEnv,
+  });
+}
+
+function assertNoSandboxTuning(tuning: {
+  backend: string | undefined;
+  allowRead: string[];
+  allowWrite: string[];
+  allowEnv: string[];
+  denyNet: boolean;
+}): void {
+  const used = [
+    tuning.backend !== undefined && '--sandbox',
+    tuning.allowRead.length > 0 && '--allow-read',
+    tuning.allowWrite.length > 0 && '--allow-write',
+    tuning.allowEnv.length > 0 && '--allow-env',
+    tuning.denyNet && '--deny-net',
+  ].filter((flag): flag is string => typeof flag === 'string');
+
+  if (used.length > 0) {
+    throw new Error(`${used.join(', ')} requires --safe`);
+  }
+}
+
+function toInt(value: string | undefined, flag: string): number | undefined {
+  if (value === undefined) return undefined;
+
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new Error(`${flag} must be a non-negative integer, got "${value}"`);
+  }
+  return parsed;
+}
+
+function exitSuccess(): void {
+  process.exit(0);
+}
+
+function exitFailure(): void {
+  process.exit(1);
 }
 
 main().catch((err) => {

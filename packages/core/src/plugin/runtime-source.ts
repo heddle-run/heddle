@@ -1,297 +1,6 @@
-/**
- * The plugin's side of the protocol, as source text.
- *
- * A string rather than a module, because its consumer is a *different process*
- * that has no way to import anything. A plugin submitted to the playground is
- * written into a temp directory with no `node_modules` beside it, so the only
- * way it can call `serve()` is if `serve()` arrives in the same file.
- *
- * Keeping it as one string is also what keeps it honest: there is a single
- * definition of the protocol's client half, and `remote.test.ts` runs a plugin
- * built from this exact text. A second, typed copy for authors to import would
- * be nicer to write against and would drift.
- *
- * Plugins that are installed rather than submitted can write this to a file and
- * import it; it is exported from the package for that reason.
- *
- * ---
- *
- * What a plugin author writes, once this is prepended:
- *
- * ```js
- * serve({
- *   ShoutNode: {
- *     execute: (input) => ({ output: { text: String(input.text).toUpperCase() } }),
- *   },
- *   Blocklist: {
- *     apply: (messages) =>
- *       /badword/.test(messages.at(-1)?.content ?? '')
- *         ? { action: 'reject', reason: 'blocked' }
- *         : { action: 'pass' },
- *   },
- * });
- * ```
- *
- * `execute` and `apply` receive a `ctx` with the component's own spec fields and
- * five things to call:
- *
- * ```js
- * await ctx.runTool('grep', { pattern: 'TODO' });    // run a flow tool
- * await ctx.callModel({ messages });                 // ask the model
- * ctx.emitEvent('progress', { done: 3, total: 10 }); // tell the run's watchers
- * ctx.log('warn', 'retrying after a 429');           // say something for a person
- * const dir = ctx.getWorkspace();                    // a directory tools can see
- * ```
- *
- * Every one of these is a capability the manifest has to list under
- * `capabilities`, except `getWorkspace`, which is not a call into heddle at all
- * — the path arrives with the request. They are always there to call and fail
- * when they were not declared, so a plugin that forgot gets an error saying
- * exactly that rather than an `undefined` to work out for itself.
- *
- * `ctx.emitEvent(name, data)` publishes an event on the run's stream, where
- * every client watching the run sees it. **You supply only `name`**: heddle
- * publishes it as `plugin:<componentType>:<name>`, so an event of yours can
- * never be read as one of heddle's own. `name` has to be an identifier
- * (`[A-Za-z_][A-Za-z0-9_]*`) and `data` has to be plain JSON; both are checked
- * here, in your process, so a mistake throws at the call that made it.
- *
- * `ctx.callModel({ messages, responseFormat, temperature, maxTokens, topP })`
- * asks a model and returns `{ content, tool_calls?, finish_reason }` — the same
- * answer an agent node gets. **You do not choose the model.** It comes from the
- * `llm_config` on your own component in the spec, exactly as an agent's does:
- *
- * ```yaml
- * - component_type: LlmJudge
- *   name: judge
- *   rubric: "Is the answer supported by the sources?"
- *   llm_config:
- *     component_type: OpenAiConfig
- *     model_id: gpt-4o-mini
- * ```
- *
- * So you ship no SDK and hold no credential — your process has an empty
- * environment and could not use one — and whoever runs your plugin can read
- * their own spec and see every model it will reach. A component with no
- * `llm_config` gets an error naming the field; heddle never quietly borrows
- * whatever endpoint the operator configured for something else.
- *
- * `messages` is `[{ role, content }]` with roles `system`, `user`, `assistant`
- * or `tool`. `responseFormat: 'json'` asks for a JSON object back. The three
- * generation settings override whatever the spec's
- * `default_generation_parameters` set, and anything you leave out keeps the
- * spec's value.
- *
- * The answer arrives whole; there is no streamed form. heddle cannot tell your
- * model call from your scratch work — a judge asks for a score and returns a
- * number — so streaming it would publish your reasoning as the run's answer.
- * Say what you want said with `emitEvent`. And the call does not spend your
- * deadline: heddle stops your per-call clock for as long as it is the one
- * making you wait.
- *
- * `ctx.log(level, message)` — `debug`, `info`, `warn` or `error` — is for a
- * person rather than a program. It is not the same as writing to stderr: heddle
- * keeps only the last few kilobytes of that and shows it only when your process
- * *fails*, so a plugin that works has no way to say anything. A log line is an
- * event, so it survives success and arrives in order with everything else.
- *
- * `ctx.getWorkspace()` returns a directory this execution shares with the tools
- * it runs, so a file you write can be named to `runTool` by path. It is the
- * only way to hand a tool something large — `runTool` input is JSON on its way
- * to a subprocess's stdin. heddle destroys it when the node returns. It is
- * available to `execute` and not to `apply`: a transform owns no tool scope, so
- * there is no directory its tool calls would agree on.
- *
- * It also throws when the operator runs heddle with `--safe`, which confines
- * your process to a sandbox of its own. The node's tools are confined to a
- * different one, so there is no directory both sides can open and heddle sends
- * none rather than a path that would fail at your first write. Under `--safe` a
- * plugin node hands a tool its input through `runTool` and nothing else.
- *
- * **For everything except a streamed answer, `emitEvent` is how you report.**
- * The protocol also has a `{ id, partial }` frame, and it is not a second
- * progress channel: a partial is a piece of *one call's answer*, delivered only
- * to whatever inside heddle is awaiting that call, so it means nothing outside
- * the one call that has a consumer. That call is `chat` — see below — and
- * `ctx.partial` throws anywhere else rather than sending a frame heddle would
- * drop. An event is a report *about the run*, and it reaches the client.
- * Neither costs you your deadline: heddle's per-call timeout is a silence
- * budget, and anything you send resets it, so a plugin that works for ten
- * minutes and says so throughout is not killed for taking ten minutes.
- *
- * ---
- *
- * **A provider** is the one kind heddle calls to *get* a model answer rather
- * than to do something with one. Declare it `"kind": "provider"` in the
- * manifest and a spec writes your component type where it would write
- * `OpenAiConfig`:
- *
- * ```yaml
- * llm_config:
- *   component_type: AnthropicConfig
- *   name: claude
- *   model_id: claude-sonnet-4-5
- *   api_key: sk-ant-…
- * ```
- *
- * ```js
- * serve({
- *   AnthropicConfig: {
- *     chat: async (request, ctx) => {
- *       const res = await fetch(URL, { … , signal: ctx.signal });
- *       const body = await res.json();
- *       return { content: body.content[0].text, finish_reason: body.stop_reason };
- *     },
- *   },
- * });
- * ```
- *
- * `request` is `{ model, messages, tools?, temperature?, maxTokens?, topP?,
- * responseFormat? }` — the whole request, `model` included, because here you
- * *are* the endpoint. `ctx.component` is the `llm_config` the spec wrote, which
- * is where a key or a url the flow brought will be. **heddle does not resolve
- * `$VAR` for you**: it will not read its own environment on your behalf, least
- * of all when `--safe` has confined you precisely so you cannot read it either.
- * Take a credential from your own component's fields, or from the environment
- * the operator granted your process.
- *
- * Return `{ content, tool_calls?, finish_reason? }`. `content` is required —
- * an answer with nothing in it is `""` — and `tool_calls` is
- * `[{ id, name, arguments }]` with `arguments` as the JSON text the model
- * wrote, not the parsed object.
- *
- * To stream, add `"stream": true` to the component in your manifest and send
- * each piece with `ctx.partial`:
- *
- * ```js
- * chat: async (request, ctx) => {
- *   if (!ctx.stream) return await whole(request);
- *   for await (const piece of pieces(request)) ctx.partial({ content: piece });
- *   return { finish_reason: 'stop' };
- * }
- * ```
- *
- * Three rules, and they are the protocol's rather than this helper's. Each
- * partial is one chunk — `{ content?, tool_calls?, finish_reason? }`, all
- * optional, and chunks accumulate. **What you return is the last chunk**, not a
- * summary of the ones you sent, so returning `{}` is fine and returning the
- * whole answer again would append it twice. And your silence budget only
- * restarts when you send something: a provider that declares streaming, then
- * buffers the whole answer internally and says nothing, is killed exactly like
- * one that hung. Declare `stream` only if you are going to stream.
- *
- * A provider that does not declare it is never asked for one — `ctx.stream` is
- * always `false` — so serving only the buffered form is a complete provider,
- * not a partial one.
- *
- * **Mind the clock on a buffered provider.** Your per-call budget is a silence
- * budget, and answering a model call is the one job where you are legitimately
- * silent for a long time — heddle stops your clock while *it* is making you
- * wait, on `runTool` and `callModel`, but here it is waiting on you. A long
- * generation can outlast the operator's `--plugin-call-timeout` and be killed as
- * a hang. Streaming is the fix and not just a nicety: every partial restarts the
- * clock, so a provider that streams is bounded by the run, not by one call.
- *
- * `ctx.signal` is an `AbortSignal` that fires when heddle cancels the call or
- * stops the plugin. Cancellation is cooperative, exactly as it is anywhere else
- * in Node: a handler that never reads the signal keeps running, and heddle
- * kills the process shortly after. A handler that does read it lets its process
- * survive to serve the next call.
- *
- * ---
- *
- * **An encoder** is the one kind that is not part of the flow at all. It renders
- * the run for a client: heddle hands it each event and it returns the frames that
- * go on the wire. Declare it `"kind": "encoder"` with a `protocol` — the name a
- * client asks for — and a `contentType`:
- *
- * ```json
- * { "componentType": "AgUiEncoder", "kind": "encoder",
- *   "protocol": "ag-ui", "contentType": "text/event-stream" }
- * ```
- *
- * ```js
- * serve({
- *   AgUiEncoder: {
- *     encode: (event, ctx) => {
- *       if (event.type === 'flow_start') {
- *         return [{ data: { type: 'RUN_STARTED', runId: ctx.runId, threadId: ctx.runId } }];
- *       }
- *       if (event.type === 'token_delta') {
- *         return [{ data: { type: 'TEXT_MESSAGE_CONTENT', messageId: event.nodeName, delta: event.delta } }];
- *       }
- *       return [];   // nothing to say about this one
- *     },
- *     finish: (ctx) => [{ data: { type: 'RUN_FINISHED', runId: ctx.runId } }],
- *   },
- * });
- * ```
- *
- * Nobody asks for it in a spec, and no operator installs it — a request selects
- * it with `?protocol=ag-ui`, because two clients hitting the same flow can want
- * different renderings and neither the flow's author nor the operator knows
- * which. A spec that names your encoder as a `component_type` is refused, saying
- * so.
- *
- * `event` is the run event exactly as heddle's own protocol puts it on the wire,
- * so what you read is what a browser watching `?protocol=heddle` reads:
- * `{ type, nodeName?, nodeType?, delta?, message?, level?, data?, state?, error?,
- * attempt?, tool* }`. Return an array of frames. `{ event, data }` writes a named
- * SSE frame; `{ data }` alone writes a nameless one, which is what a protocol
- * carrying its own type inside the payload wants. `[]` is the ordinary answer for
- * an event your format does not render.
- *
- * **You get no capabilities and need none.** `Event → frames` asks heddle for
- * nothing, so an encoder is the one kind that is fully functional with an empty
- * `capabilities` list. It is also strictly one-directional: there is no verdict
- * to return and no way to affect the run you are rendering.
- *
- * **Message boundaries are yours to keep.** heddle emits no event when a model's
- * answer begins, and cannot honestly: it would have to claim a message was
- * starting before knowing whether the node will stream at all — an agent carrying
- * a `post` transform streams nothing, and one calling tools streams rounds whose
- * text is discarded. What heddle does tell you is which node each `token_delta`
- * belongs to, and a node's deltas are contiguous. So open a message on the first
- * delta you see for a node and close it on that node's `node_complete` or
- * `node_error`.
- *
- * `finish` is called exactly once, on every path — a run that finished, one that
- * failed, and one whose caller hung up — and it is where a protocol's terminal
- * frame belongs. A client that never receives one waits forever, and "the
- * connection closed" is not something a protocol with a terminal event should
- * have to infer. It takes no event, only `ctx`.
- *
- * If your `encode` throws, the stream ends with an error frame and the run stops:
- * with your encoder selected, your rendering *is* the response, and a run whose
- * answer nobody can read is not worth continuing to spend on.
- *
- * ---
- *
- * `serve` takes a second argument for the things that are not per-component:
- *
- * ```js
- * serve(handlers, { shutdown: async () => pool.end() });
- * ```
- *
- * `shutdown` runs when heddle asks the plugin to stop, before the process
- * exits. It has about a second — heddle kills what has not exited by then, so
- * this is where a connection closes, not where a backlog drains.
- *
- * The helper answers heddle's `init` with the protocol version it was generated
- * from, so a plugin built against a heddle that has moved on is told so at the
- * handshake instead of discovering it as an unknown verb mid-run.
- *
- * **stdout is the protocol.** A plugin that prints to stdout would corrupt the
- * channel, so `console.log` is redirected to stderr below. That is the single
- * most common way to break a plugin, and quietly fixing it is kinder than the
- * parse error it would otherwise cause — heddle reports that error naming this
- * cause, for the case where a plugin writes to `process.stdout` directly.
- */
 import { PROTOCOL_VERSION } from './protocol.js';
 
 export const PLUGIN_RUNTIME_JS = String.raw`
-// --- heddle plugin runtime (inlined) ----------------------------------------
-// Everything below is supplied by heddle. Your code follows.
 const HEDDLE_PROTOCOL_VERSION = ${PROTOCOL_VERSION};
 
 function serve(handlers, options) {
@@ -307,11 +16,6 @@ function serve(handlers, options) {
   const pending = new Map();
   let nextId = 0;
 
-  // Bound to the call it was made inside, like a report. Not for attribution
-  // here but for scope: heddle runs the tool in the tool scope it opened for
-  // that call, which is the one whose directory getWorkspace() names. Without
-  // the id the tool lands in a throwaway sandbox session and cannot see the
-  // file this plugin just wrote for it.
   const runTool = (call, name, input) =>
     new Promise((resolve, reject) => {
       const id = 't' + nextId++;
@@ -319,11 +23,6 @@ function serve(handlers, options) {
       send({ id, method: 'runTool', params: { call, name, input: input ?? {} } });
     });
 
-  // Bound to the call for a third reason on top of scope and the clock: which
-  // model answers comes from the component this call is running, so the id is
-  // how heddle knows which llm_config to use. There is no needs() check here
-  // for the same reason runTool has none — this promise is awaited, so heddle's
-  // own refusal arrives at the call that made it.
   const callModel = (call, request) =>
     new Promise((resolve, reject) => {
       const id = 'm' + nextId++;
@@ -331,18 +30,9 @@ function serve(handlers, options) {
       send({ id, method: 'callModel', params: Object.assign({ call: call }, request || {}) });
     });
 
-  // What heddle's init said this plugin was granted.
   let granted = new Set();
-
-  // What each seam this plugin subscribed to will honour, from the same
-  // handshake. Empty until greeted, and empty for a plugin with no middleware.
   let seamAdmits = {};
 
-  // heddle's own rules, restated in the plugin's process because this is the
-  // only place a check can throw at the call that broke it. emitEvent and log
-  // return nothing, so heddle's refusal comes back as a frame nobody is
-  // awaiting — checked only there, a plugin that misspelt an event name or
-  // forgot to declare the capability would report into silence.
   const EVENT_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
   const LOG_LEVELS = ['debug', 'info', 'warn', 'error'];
 
@@ -354,11 +44,6 @@ function serve(handlers, options) {
     );
   };
 
-  // Sent, not awaited. In heddle's process these two return nothing, and they
-  // return nothing here for the same reason: the same plugin logic has to be
-  // writable for both. What is left for heddle to refuse a well-formed report
-  // for is heddle's own wiring, so that goes to stderr rather than to a caller
-  // who is not listening for it.
   const report = (call, method, params) => {
     const id = 'r' + nextId++;
     pending.set(id, {
@@ -404,9 +89,6 @@ function serve(handlers, options) {
     report(call, 'log', { level, message: String(message) });
   };
 
-  // Two different people's problems arrive here as the same missing field, so
-  // heddle marks which. Blaming transforms for both would send a node author
-  // whose operator runs --safe to change something that is already correct.
   const workspaceOf = (params) => {
     if (typeof params.workspace === 'string') return params.workspace;
     if (params.workspaceUnavailable === 'confined') {
@@ -424,8 +106,6 @@ function serve(handlers, options) {
     );
   };
 
-  // Every call heddle is still waiting on, so cancel and shutdown have
-  // something to act on rather than a promise nobody kept a handle to.
   const inflight = new Map();
   let stopping = false;
 
@@ -442,12 +122,8 @@ function serve(handlers, options) {
     process.exit(0);
   };
 
-  // Answered before the componentType lookup below, which these carry none of.
   const lifecycle = (request) => {
     if (request.method === 'init') {
-      // The settled grant, which is what the checks above test against. A
-      // plugin that is never greeted has been granted nothing, and that is the
-      // right answer rather than a special case: no handshake, no permission.
       granted = new Set((request.params || {}).capabilities || []);
       seamAdmits = (request.params || {}).seams || {};
       send({ id: request.id, result: { protocol: HEDDLE_PROTOCOL_VERSION } });
@@ -456,19 +132,10 @@ function serve(handlers, options) {
     if (request.method === 'cancel') {
       const target = String((request.params || {}).call);
       const entry = inflight.get(target);
-      // Not ours, or already finished. heddle reads an error here as "could not
-      // vouch for it" and kills, which is the right answer: there is nothing to
-      // abort and nothing to promise about.
       if (!entry) {
         send({ id: request.id, error: { message: 'no call ' + target + ' in flight' } });
         return true;
       }
-      // Recorded, not answered. heddle spares the process on the strength of
-      // this reply, so it may only go out once the handler has actually
-      // stopped — and aborting does not stop anything by itself. Cancellation
-      // is cooperative: a handler that never reads ctx.signal runs to
-      // completion, and one that never returns never lets this be sent, which
-      // is exactly when heddle should be killing the process instead.
       entry.cancelId = request.id;
       entry.controller.abort();
       return true;
@@ -481,51 +148,120 @@ function serve(handlers, options) {
     return false;
   };
 
+  const serveTool = async (request, params) => {
+    const impl = (options && options.tools && options.tools[params.tool]) || undefined;
+    if (!impl) {
+      send({ id: request.id, error: { message:
+        'this plugin declares the tool "' + params.tool + '" in its manifest but ' +
+        'serves no handler for it. Write serve(handlers, { tools: { ' +
+        params.tool + ': async (input, ctx) => ({ output: { … } }) } }).' } });
+      return;
+    }
+    const key = String(request.id);
+    const controller = new AbortController();
+    inflight.set(key, { controller, cancelId: undefined });
+    try {
+      const ctx = { signal: controller.signal, tool: params.tool };
+      const result = await impl(params.input || {}, ctx);
+      settle(key, request.id, { result: result || {} });
+    } catch (err) {
+      settle(key, request.id, {
+        error: { name: (err && err.name) || 'Error', message: String((err && err.message) || err) },
+      });
+    }
+  };
+
+  const contextFor = (request, params, controller) => ({
+    partial: (chunk) => {
+      if (request.method !== 'chat' || !params.stream) {
+        throw new Error(
+          'ctx.partial is only available to a provider serving a streamed chat. ' +
+            'To report progress from a node or a transform, use ctx.emitEvent — ' +
+            'a partial goes to the one call awaiting it, an event goes to the run.',
+        );
+      }
+      send({ id: request.id, partial: chunk });
+    },
+    runTool: (name, input) => runTool(request.id, name, input),
+    callModel: (modelRequest) => callModel(request.id, modelRequest),
+    node: params.node || params.component || {},
+    component: params.component || params.node || params.config || {},
+    phase: params.phase,
+    runId: params.runId,
+    stream: params.stream === true,
+    seam: params.seam,
+    attempt: params.attempt,
+    maxAttempts: params.maxAttempts,
+    admits: (seamAdmits[params.seam] || []).slice(),
+    signal: controller.signal,
+    emitEvent: (name, data) => emitEvent(request.id, name, data),
+    log: (level, message) => log(request.id, level, message),
+    getWorkspace: () => workspaceOf(params),
+  });
+
+  const missingHandler = (request, message) => {
+    send({ id: request.id, error: { message } });
+    inflight.delete(String(request.id));
+  };
+
+  const dispatch = async (request, params, handler, ctx) => {
+    if (request.method === 'apply') {
+      return await handler.apply(params.messages || [], ctx);
+    }
+    if (request.method === 'chat') {
+      if (!handler.chat) {
+        missingHandler(
+          request,
+          '"' + params.componentType + '" is declared as a provider in this ' +
+            "plugin's manifest but serves no chat handler. Write serve({ " +
+            params.componentType + ': { chat(request, ctx) { … } } }).',
+        );
+        return undefined;
+      }
+      return await handler.chat(params.request || {}, ctx);
+    }
+    if (request.method === 'after') {
+      const hook = handler[params.seam] && handler[params.seam].after;
+      if (!hook) {
+        missingHandler(
+          request,
+          '"' + params.componentType + '" declares the "' + params.seam +
+            '" seam in its manifest but provides no handler for it. Write ' +
+            'serve({ ' + params.componentType + ': { ' + params.seam +
+            ': { after(input, ctx) { … } } } }).',
+        );
+        return undefined;
+      }
+      return await hook(
+        { subject: params.subject || {}, outcome: params.outcome || {} },
+        ctx,
+      );
+    }
+    if (request.method === 'encode' || request.method === 'finishEncode') {
+      const encoding = request.method === 'encode';
+      const hook = encoding ? handler.encode : handler.finish;
+      if (!hook) {
+        missingHandler(
+          request,
+          '"' + params.componentType + '" is declared as an encoder in this ' +
+            "plugin's manifest but serves no " + (encoding ? 'encode' : 'finish') +
+            ' handler. Write serve({ ' + params.componentType +
+            ': { encode(event, ctx) { … }, finish(ctx) { … } } }).',
+        );
+        return undefined;
+      }
+      return encoding ? await hook(params.event || {}, ctx) : await hook(ctx);
+    }
+    return await handler.execute(params.input || {}, ctx);
+  };
+
   const handle = async (request) => {
     if (lifecycle(request)) return;
 
     const params = request.params || {};
 
-    // Tools live in serve()'s second argument rather than beside the component
-    // handlers, because the first argument is keyed by componentType and a
-    // "tools" key there would be a component literally named tools — colliding
-    // with the namespace a spec writes into.
     if (request.method === 'callTool') {
-      const impl = (options && options.tools && options.tools[params.tool]) || undefined;
-      if (!impl) {
-        send({ id: request.id, error: { message:
-          'this plugin declares the tool "' + params.tool + '" in its manifest but ' +
-          'serves no handler for it. Write serve(handlers, { tools: { ' +
-          params.tool + ': async (input, ctx) => ({ output: { … } }) } }).' } });
-        return;
-      }
-      const key = String(request.id);
-      const controller = new AbortController();
-      inflight.set(key, { controller, cancelId: undefined });
-      try {
-        const ctx = {
-          signal: controller.signal,
-          tool: params.tool,
-          // No runTool, no callModel and no log. A tool is a leaf: heddle is
-          // inside this call for its whole duration, and a tool reaching back
-          // for another tool is a cycle heddle cannot see the shape of. A
-          // plugin that wants to compose has a node, which is the kind that
-          // composes.
-          //
-          // log is absent for a duller reason and it is worth stating: a
-          // report is filed against the execute or apply it was made inside,
-          // and a tool call is neither — it is dispatched from the agent loop,
-          // which built no reporter for it. Offering ctx.log here would hand an
-          // author a call that is refused every single time. Write to stderr,
-          // which heddle surfaces when the process fails.
-        };
-        const result = await impl(params.input || {}, ctx);
-        settle(key, request.id, { result: result || {} });
-      } catch (err) {
-        settle(key, request.id, {
-          error: { name: (err && err.name) || 'Error', message: String((err && err.message) || err) },
-        });
-      }
+      await serveTool(request, params);
       return;
     }
 
@@ -534,130 +270,13 @@ function serve(handlers, options) {
       send({ id: request.id, error: { message: 'this plugin does not provide "' + params.componentType + '"' } });
       return;
     }
+
     const key = String(request.id);
     const controller = new AbortController();
     inflight.set(key, { controller, cancelId: undefined });
     try {
-      // The only place a plugin may send a partial, and only when heddle asked
-      // for a stream. A partial is a piece of *this call's* answer — nothing
-      // else in heddle awaits one — so offering it anywhere else would be
-      // offering a call whose only effect is that heddle drops the frame.
-      const partial = (chunk) => {
-        if (request.method !== 'chat' || !params.stream) {
-          throw new Error(
-            'ctx.partial is only available to a provider serving a streamed chat. ' +
-              'To report progress from a node or a transform, use ctx.emitEvent — ' +
-              'a partial goes to the one call awaiting it, an event goes to the run.',
-          );
-        }
-        send({ id: request.id, partial: chunk });
-      };
-      const ctx = {
-        partial,
-        runTool: (name, input) => runTool(request.id, name, input),
-        callModel: (modelRequest) => callModel(request.id, modelRequest),
-        node: params.node || params.component || {},
-        // The same object as ctx.node wherever both apply, named for what it is.
-        // A middleware has no node — nothing in a document names it — so this is
-        // the only sensible name for the configuration its operator supplied,
-        // and giving it to every kind means one word for "my own fields". For a
-        // provider it is the llm_config the spec wrote, which is where its
-        // model id, its url and any credential the flow brought all live.
-        component: params.component || params.node || params.config || {},
-        phase: params.phase,
-        // Which run this is, for an encoder. Sent on every encode and finish, so
-        // a plugin serving two runs at once keys its bookkeeping on it rather
-        // than assuming it serves one.
-        runId: params.runId,
-        // Whether heddle wants this chat streamed. A provider that declared
-        // "stream" in its manifest sees both values and has to serve both.
-        stream: params.stream === true,
-        seam: params.seam,
-        attempt: params.attempt,
-        maxAttempts: params.maxAttempts,
-        // What this seam will actually honour, from the handshake. A middleware
-        // that wants to work at more than one seam can read it and choose,
-        // rather than sending a verdict that is refused — which, since heddle
-        // treats a middleware failure as fatal, would cost the run.
-        admits: (seamAdmits[params.seam] || []).slice(),
-        signal: controller.signal,
-        // Bound to this request's id, so heddle knows which node a report
-        // belongs to and can keep that call's clock running. A plugin never
-        // supplies it, which is what makes the attribution heddle's.
-        emitEvent: (name, data) => emitEvent(request.id, name, data),
-        log: (level, message) => log(request.id, level, message),
-        getWorkspace: () => workspaceOf(params),
-      };
-      let result;
-      if (request.method === 'apply') {
-        result = await handler.apply(params.messages || [], ctx);
-      } else if (request.method === 'chat') {
-        if (!handler.chat) {
-          send({
-            id: request.id,
-            error: {
-              message:
-                '"' + params.componentType + '" is declared as a provider in this ' +
-                "plugin's manifest but serves no chat handler. Write serve({ " +
-                params.componentType + ': { chat(request, ctx) { … } } }).',
-            },
-          });
-          inflight.delete(key);
-          return;
-        }
-        result = await handler.chat(params.request || {}, ctx);
-      } else if (request.method === 'after') {
-        // Seam-keyed, so one component can subscribe to several and each gets
-        // its own function — rather than one handler opening with a switch on
-        // ctx.seam that every author has to remember to write.
-        const hook = handler[params.seam] && handler[params.seam].after;
-        if (!hook) {
-          send({
-            id: request.id,
-            error: {
-              message:
-                '"' + params.componentType + '" declares the "' + params.seam +
-                '" seam in its manifest but provides no handler for it. Write ' +
-                'serve({ ' + params.componentType + ': { ' + params.seam +
-                ': { after(input, ctx) { … } } } }).',
-            },
-          });
-          inflight.delete(key);
-          return;
-        }
-        result = await hook(
-          { subject: params.subject || {}, outcome: params.outcome || {} },
-          ctx,
-        );
-      } else if (request.method === 'encode' || request.method === 'finishEncode') {
-        // One handler pair for both verbs, because they are two halves of one
-        // rendering rather than two features: an encoder that opens something on
-        // an event has to be able to close it at the end, and an author who wrote
-        // only "encode" has written a protocol that never terminates.
-        const hook = request.method === 'encode' ? handler.encode : handler.finish;
-        if (!hook) {
-          send({
-            id: request.id,
-            error: {
-              message:
-                '"' + params.componentType + '" is declared as an encoder in this ' +
-                "plugin's manifest but serves no " +
-                (request.method === 'encode' ? 'encode' : 'finish') +
-                ' handler. Write serve({ ' + params.componentType +
-                ': { encode(event, ctx) { … }, finish(ctx) { … } } }).',
-            },
-          });
-          inflight.delete(key);
-          return;
-        }
-        // A frame list, never undefined. An encoder with nothing to say about an
-        // event returns [], and an author who forgot the return statement gets a
-        // heddle-side error naming the frame rather than a silently empty stream.
-        result =
-          request.method === 'encode' ? await hook(params.event || {}, ctx) : await hook(ctx);
-      } else {
-        result = await handler.execute(params.input || {}, ctx);
-      }
+      const ctx = contextFor(request, params, controller);
+      const result = await dispatch(request, params, handler, ctx);
       settle(key, request.id, { result });
     } catch (err) {
       settle(key, request.id, {
@@ -666,13 +285,6 @@ function serve(handlers, options) {
     }
   };
 
-  // The one place a dispatched call stops being in flight.
-  //
-  // A cancelled call answers the cancel instead of itself: heddle has already
-  // failed the original and would discard an answer to it, and the cancel is
-  // what it is actually waiting on before deciding whether to kill this
-  // process. Sending both would be noise on a channel where noise is the
-  // failure mode; sending neither is what makes heddle kill.
   const settle = (key, requestId, payload) => {
     const entry = inflight.get(key);
     if (!entry) return;
@@ -709,14 +321,10 @@ function serve(handlers, options) {
     }
   });
 
-  // heddle closes stdin to end the run, and does it right after "shutdown" —
-  // so this races the verb, and stop() is written to let either win.
   process.stdin.on('end', () => void stop());
 }
-// --- end heddle plugin runtime ----------------------------------------------
 `;
 
-/** Prepend the runtime to a plugin's source, producing a runnable module. */
 export function withRuntime(source: string): string {
   return `${PLUGIN_RUNTIME_JS}\n${source}\n`;
 }

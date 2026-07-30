@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Calculator tool: reads JSON from stdin, writes JSON to stdout
 set -euo pipefail
 
 INPUT=$(cat)

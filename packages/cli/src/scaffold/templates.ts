@@ -12,40 +12,44 @@ import {
   AgentSpecSerializer,
 } from 'agentspec';
 
-const toolTemplate = `#!/usr/bin/env bash
-# Example tool: reads JSON from stdin, writes JSON to stdout
+const FLOW_FILE_MODE = 0o644;
+const TOOL_FILE_MODE = 0o755;
+
+const EXAMPLE_TOOL = `#!/usr/bin/env bash
 set -euo pipefail
 
-# Parse input
 INPUT=$(cat)
 MESSAGE=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('message','no message'))" 2>/dev/null || echo "no message")
 
-# Return JSON output
 echo "{\\"response\\": \\"Echo: $MESSAGE\\"}"
 `;
+
+export function generate(dir: string): void {
+  const toolsDir = join(dir, 'tools');
+
+  attempt('failed to create directory', () =>
+    mkdirSync(toolsDir, { recursive: true }),
+  );
+  attempt('failed to write flow.json', () =>
+    writeFileSync(join(dir, 'flow.json'), `${generateFlowJson()}\n`, {
+      mode: FLOW_FILE_MODE,
+    }),
+  );
+  attempt('failed to write example_tool.sh', () =>
+    writeFileSync(join(toolsDir, 'example_tool.sh'), EXAMPLE_TOOL, {
+      mode: TOOL_FILE_MODE,
+    }),
+  );
+}
 
 function generateFlowJson(): string {
   const start = createStartNode({
     name: 'start',
     outputs: [stringProperty({ title: 'query' })],
   });
-  const agent = createAgent({
-    name: 'assistant-agent',
-    systemPrompt:
-      "You are a helpful assistant. Answer the user's question: {{query}}",
-    llmConfig: createOpenAiConfig({ name: 'openai', modelId: 'gpt-4o' }),
-    tools: [
-      createServerTool({
-        name: 'example_tool',
-        description: 'An example tool that echoes input',
-        inputs: [stringProperty({ title: 'message' })],
-        outputs: [stringProperty({ title: 'response' })],
-      }),
-    ],
-  });
   const assistant = createAgentNode({
     name: 'assistant',
-    agent,
+    agent: createExampleAgent(),
     inputs: [stringProperty({ title: 'query' })],
     outputs: [stringProperty({ title: 'result' })],
   });
@@ -63,31 +67,31 @@ function generateFlowJson(): string {
   builder.addDataEdge(start, assistant, 'query');
   builder.addDataEdge(assistant, end, 'result');
 
-  const flow = builder.build('my-flow');
   const serializer = new AgentSpecSerializer();
-  return serializer.toJson(flow, { indent: 2 }) as string;
+  return serializer.toJson(builder.build('my-flow'), { indent: 2 }) as string;
 }
 
-/** Generate creates a new project in the given directory. */
-export function generate(dir: string): void {
-  const toolsDir = join(dir, 'tools');
-  try {
-    mkdirSync(toolsDir, { recursive: true });
-  } catch (err) {
-    throw new Error('failed to create directory', { cause: err });
-  }
+function createExampleAgent() {
+  return createAgent({
+    name: 'assistant-agent',
+    systemPrompt:
+      "You are a helpful assistant. Answer the user's question: {{query}}",
+    llmConfig: createOpenAiConfig({ name: 'openai', modelId: 'gpt-4o' }),
+    tools: [
+      createServerTool({
+        name: 'example_tool',
+        description: 'An example tool that echoes input',
+        inputs: [stringProperty({ title: 'message' })],
+        outputs: [stringProperty({ title: 'response' })],
+      }),
+    ],
+  });
+}
 
-  const flowPath = join(dir, 'flow.json');
+function attempt(message: string, action: () => void): void {
   try {
-    writeFileSync(flowPath, generateFlowJson() + '\n', { mode: 0o644 });
+    action();
   } catch (err) {
-    throw new Error('failed to write flow.json', { cause: err });
-  }
-
-  const toolPath = join(toolsDir, 'example_tool.sh');
-  try {
-    writeFileSync(toolPath, toolTemplate, { mode: 0o755 });
-  } catch (err) {
-    throw new Error('failed to write example_tool.sh', { cause: err });
+    throw new Error(message, { cause: err });
   }
 }

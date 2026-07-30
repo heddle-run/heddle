@@ -3,8 +3,6 @@
 import { useState } from "react";
 import { Icon } from "@/ds";
 
-/** An install line: mono command in an inset field, with a copy affordance.
- *  Border warms to the accent on hover; the tick flashes pink on success. */
 export default function CopyCommand({
   label,
   command,
@@ -21,7 +19,6 @@ export default function CopyCommand({
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      /* clipboard unavailable — the command is selectable either way */
     }
   };
 

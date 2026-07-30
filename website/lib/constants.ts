@@ -7,12 +7,9 @@ export const VERSION = "0.1.0-beta6";
 export const installCommands = [
   { label: "npm", cmd: "npm install -g @heddle/cli" },
   { label: "brew", cmd: "brew install spichen/tap/heddle" },
-  // Third because it is not an install at all — the runtime arrives with the
-  // command. Kept in the same list because the reader's question is the same.
   { label: "docker", cmd: "docker run --rm salahpichen/heddle --help" },
 ];
 
-/** Dictionary epigraph — the name is the product thesis. */
 export const definition = {
   word: "heddle",
   pronunciation: "| ˈhɛd(ə)l |",
@@ -93,8 +90,6 @@ json.dump({
   },
 ];
 
-/* Icon names are design-system registry keys (ds/components/core/Icon.jsx),
-   not component references — the DS resolves them itself. */
 export const features = [
   {
     icon: "file-json",
@@ -140,13 +135,6 @@ export const features = [
   },
 ];
 
-/**
- * Safe mode.
- *
- * Every claim here is checked against packages/core/src/sandbox/ and
- * packages/server/DEPLOYMENT.md. It is a security promise on a public page —
- * do not soften or extend it without re-reading those two sources.
- */
 export const safeMode = {
   flag: "--safe",
   points: [
@@ -181,8 +169,6 @@ export const safeMode = {
   ],
 };
 
-
-/** The spec / terminal spread. */
 export const specimenSpread = {
   spec: `component_type: Flow
 name: research-assistant

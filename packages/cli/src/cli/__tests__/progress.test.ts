@@ -1,17 +1,7 @@
-/**
- * How a run's progress reaches stderr.
- *
- * What is pinned here is the framing, not the wording: a model's answer arrives
- * in fragments rather than lines, so it shares a line with a `[node]` prefix
- * written once, and everything else has to close that line before writing. The
- * failure this guards is invisible in a passing run — output from an unrelated
- * event landing in the middle of the model's sentence.
- */
 import { describe, it, expect } from 'vitest';
 import type { Event } from '@heddle/core';
 import { createProgressWriter, renderEvent } from '../progress.js';
 
-/** Collects what the writer would put on stderr. */
 function record(verbose = false): {
   feed: (...events: Event[]) => void;
   text: () => string;
@@ -62,9 +52,6 @@ describe('everything else', () => {
     expect(r.text()).toBe('[assistant] half\nWarning: the stream failed\n');
   });
 
-  // The quiet events say nothing, but they still have to end the answer: the
-  // run's JSON result goes to stdout right after, and an unterminated stderr
-  // line appears to run into it.
   it('ends the answer even when the event itself is silent', () => {
     const r = record();
     r.feed(delta('assistant', 'done'), { type: 'flow_complete' });
@@ -84,14 +71,6 @@ describe('everything else', () => {
   });
 });
 
-/**
- * What a plugin says, and where it lands.
- *
- * `ctx.log` is documented as reaching "the run's stream — where the client is
- * already looking", and the CLI is heddle's own primary client. Every case here
- * failed silently before: `plugin_log` and the namespaced types fell through
- * the switch's `default`, so a plugin that logged produced no output at all.
- */
 describe('what a plugin reports', () => {
   it('prints a log line without --verbose', () => {
     const r = record();
@@ -122,8 +101,6 @@ describe('what a plugin reports', () => {
   });
 
   it('closes a streamed answer before writing one', () => {
-    // The invariant this file exists for, applied to the new arm: a log line
-    // that landed mid-sentence would shred the model's answer.
     const r = record();
     r.feed(delta('assistant', 'half'), {
       type: 'plugin_log',
@@ -147,8 +124,6 @@ describe('what a plugin reports', () => {
   });
 
   it('prints a namespaced event with no payload at all', () => {
-    // `emitEvent(name)` with no data is legal, and JSON.stringify(undefined) is
-    // undefined — printed unguarded it would read "progress undefined".
     const r = record(true);
     r.feed({ type: 'plugin:Reverse:started', nodeName: 'reverse', nodeType: 'Reverse' });
     expect(r.text()).toBe('[reverse] plugin:Reverse:started\n');

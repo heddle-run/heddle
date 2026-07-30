@@ -4,9 +4,6 @@ import { RootProvider } from "fumadocs-ui/provider";
 import { Backdrop } from "@/ds";
 import "./globals.css";
 
-/* One family, four weights — the design system ships nothing else.
-   Self-hosted by next/font rather than the upstream Google Fonts @import;
-   see ds/DEVIATIONS.md. */
 const inter = Inter({
   subsets: ["latin"],
   weight: ["300", "400", "500", "600"],
@@ -50,8 +47,6 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    // next-themes (inside RootProvider) writes the `dark` class and injects its
-    // own pre-paint script, so suppressHydrationWarning is required here.
     <html lang="en" className={inter.variable} suppressHydrationWarning>
       <body>
         <RootProvider
@@ -63,7 +58,6 @@ export default function RootLayout({
             disableTransitionOnChange: true,
           }}
         >
-          {/* Swirls, hairline grid and noise film — fixed at z-0, content at z-10. */}
           <Backdrop />
           <div className="hd-content">{children}</div>
         </RootProvider>

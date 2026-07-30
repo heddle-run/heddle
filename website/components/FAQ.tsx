@@ -2,10 +2,6 @@ import { Icon } from "@/ds";
 import SectionLabel from "./SectionLabel";
 import { faqItems } from "@/lib/constants";
 
-/*
- * Native <details> elements: keyboard-accessible, no JavaScript, and the state
- * change is instant. The only motion is the chevron, which rotates on open.
- */
 export default function FAQ() {
   return (
     <section className="hd-section">

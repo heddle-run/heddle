@@ -1,13 +1,3 @@
-/**
- * Client for the heddle HTTP engine.
- *
- * The site is a static export, so there is no server of ours between the
- * browser and the engine — this talks to it directly, which is why the engine
- * needs an allowed CORS origin. The endpoint is read from the environment at
- * build time; when it is absent the playground says so rather than failing on
- * the first request.
- */
-
 export const API_BASE = (process.env.NEXT_PUBLIC_HEDDLE_API ?? "").replace(
   /\/+$/,
   "",
@@ -21,30 +11,13 @@ export interface RequestTool {
 
 export interface RequestPlugin {
   name: string;
-  /**
-   * What the plugin provides, as data. The engine reads this while parsing, so
-   * a flow's shape is known without executing anyone's code — which is what
-   * makes accepting a submitted plugin reasonable at all.
-   */
   manifest: PluginManifest;
-  /** Handler source. Calls `serve()`, which the engine prepends. */
   source: string;
 }
 
-/** The declarative half of a submitted plugin. */
 export interface PluginManifest {
   name: string;
   version: string;
-  /**
-   * Reverse calls the plugin intends to make back into the engine, such as
-   * `runTool`. Omitted means none, and a plugin gets only what it names here —
-   * a call it did not declare is refused whatever the engine is willing to do.
-   *
-   * `runTool`, `emitEvent` and `log` are granted here. `callModel` is not: this
-   * playground supplies the model credential, and a plugin's calls are opaque
-   * to the flow that made them, so there is no bound on what a submitted one
-   * could spend. A manifest asking for it is refused at load with that reason.
-   */
   capabilities?: string[];
   components: Array<{
     componentType: string;
@@ -52,41 +25,19 @@ export interface PluginManifest {
     inputs?: Array<{ title: string; type: string }>;
     outputs?: Array<{ title: string; type: string }>;
     branches?: string[];
-    /** Transforms only: which side of the model call this runs on. */
     phase?: "pre" | "post" | "both";
-    /** JSON Schema the spec component is checked against while parsing. */
     schema?: Record<string, unknown>;
   }>;
 }
 
-/** A runner event, as it arrives over the wire. */
 export interface RunEvent {
   type: string;
   nodeName?: string;
   nodeType?: string;
-  /**
-   * On a `token_delta`, one fragment of a model's answer in the order it was
-   * produced. It is a report of progress and not a result: a run can fail
-   * after sending many of them and produce no output at all, so the
-   * accumulated text must never be shown as the run's answer.
-   */
   delta?: string;
-  /**
-   * The payload of an event a plugin emitted, exactly as the plugin passed it.
-   *
-   * Only ever set on a `plugin:<componentType>:<name>` type, and opaque: its
-   * shape belongs to whichever component the type names, so nothing here can do
-   * more than show it.
-   */
   data?: unknown;
-  /** How urgent a `plugin_log` is. Absent on every other type. */
   level?: "debug" | "info" | "warn" | "error";
   state?: Record<string, unknown>;
-  /**
-   * Two shapes reach this field, because two things produce it. A runner event
-   * carries a serialized `Error`, so `name`; the stream's own `error` frame
-   * carries the engine's error body, so `type`. Both always carry a message.
-   */
   error?: { name?: string; type?: string; message: string };
   toolName?: string;
   toolArgs?: Record<string, unknown>;
@@ -95,18 +46,6 @@ export interface RunEvent {
   message?: string;
 }
 
-/**
- * Add an event to a run's log, folding a streamed answer into one entry.
- *
- * A `token_delta` arrives per fragment, so keeping each one would grow the log
- * by a few hundred entries per answer — and since the log is rebuilt on every
- * append, an answer of n tokens would cost n² copying while it arrived. Folding
- * here keeps the log the length of the run's real structure instead.
- *
- * Only consecutive deltas from the same node merge. A tool call between two
- * stretches of an answer is real structure, and merging across it would move
- * text to a place the model did not produce it.
- */
 export function appendEvent(log: RunEvent[], event: RunEvent): RunEvent[] {
   const last = log[log.length - 1];
   if (
@@ -139,7 +78,6 @@ export interface ValidationResult {
   nodes: { name: string; type: string }[];
 }
 
-/** An error the engine reported, carrying its structured type. */
 export class EngineError extends Error {
   constructor(
     message: string,
@@ -158,7 +96,6 @@ function missingEndpoint(): EngineError {
   );
 }
 
-/** Turn a failed response into an EngineError, whatever shape it came back in. */
 async function toError(res: Response): Promise<EngineError> {
   let message = `request failed with status ${res.status}`;
   let type = "Error";
@@ -169,8 +106,6 @@ async function toError(res: Response): Promise<EngineError> {
       type = body.error.type ?? type;
     }
   } catch {
-    // A non-JSON failure is usually a proxy or a CORS rejection rather than
-    // the engine, and the status is the only thing worth reporting.
   }
   return new EngineError(message, type, res.status);
 }
@@ -184,7 +119,6 @@ export async function fetchCapabilities(
   return (await res.json()) as Capabilities;
 }
 
-/** The request body shared by both endpoints. */
 export interface RunPayload {
   flow: string;
   inputs: Record<string, unknown>;
@@ -196,8 +130,6 @@ function body(payload: RunPayload, withInputs: boolean): string {
   return JSON.stringify({
     flow: payload.flow,
     ...(withInputs ? { inputs: payload.inputs } : {}),
-    // Omitted entirely when empty: a server without --allow-request-code
-    // refuses the fields outright, and an empty array would still trip that.
     ...(payload.tools.length > 0 ? { tools: payload.tools } : {}),
     ...(payload.plugins.length > 0 ? { plugins: payload.plugins } : {}),
   });
@@ -218,7 +150,6 @@ export async function validateFlow(
   return (await res.json()) as ValidationResult;
 }
 
-/** One `event:`/`data:` frame from the stream. */
 function parseFrame(frame: string): RunEvent | undefined {
   let name = "message";
   const data: string[] = [];
@@ -231,22 +162,12 @@ function parseFrame(frame: string): RunEvent | undefined {
 
   try {
     const parsed = JSON.parse(data.join("\n")) as RunEvent;
-    // `error` frames carry the error body rather than a runner event, so they
-    // arrive without a type of their own.
     return { ...parsed, type: parsed.type ?? name };
   } catch {
     return undefined;
   }
 }
 
-/**
- * Run a flow, yielding events as they arrive.
- *
- * A POST rather than an EventSource: the flow does not belong in a query
- * string, so the stream is read off the response body directly. Compilation
- * happens before the engine opens the stream, which is why a bad flow arrives
- * here as a real 4xx and not as a 200 followed by an error frame.
- */
 export async function* streamRun(
   payload: RunPayload,
   signal?: AbortSignal,
@@ -274,8 +195,6 @@ export async function* streamRun(
 
       buffer += decoder.decode(value, { stream: true });
 
-      // Frames are separated by a blank line. A chunk boundary can fall
-      // anywhere, so anything after the last separator stays buffered.
       let split = buffer.indexOf("\n\n");
       while (split !== -1) {
         const event = parseFrame(buffer.slice(0, split));
@@ -289,36 +208,10 @@ export async function* streamRun(
   }
 }
 
-// ---------------------------------------------------------------------------
-// What the playground opens with
-// ---------------------------------------------------------------------------
-
-/**
- * A flow that runs without model credentials.
- *
- * Deliberately tool-only. An agent node would be a better advertisement, but
- * it would also fail on any engine without an API key, and a playground whose
- * first run fails teaches the wrong thing.
- */
-
-// ---------------------------------------------------------------------------
-// Examples
-//
-// Three of the five call no model at all, which is deliberate: the first thing
-// a visitor does should work. The guardrail is free for a reason worth knowing
-// — a `pre` transform that rejects means heddle never calls the model at all,
-// so a blocked prompt costs nothing. The two that do call one are answered by
-// the free model the engine was configured with, so neither asks a visitor for
-// a credential either.
-// ---------------------------------------------------------------------------
-
 export interface Example {
   id: string;
-  /** Shown on the selector. */
   title: string;
-  /** One line on what the example demonstrates. */
   blurb: string;
-  /** True when running it needs the caller's own model credential. */
   needsKey?: boolean;
   flow: string;
   inputs: string;
@@ -326,7 +219,6 @@ export interface Example {
   plugins: RequestPlugin[];
 }
 
-/** A tool: an executable the engine runs as a subprocess. */
 const SHOUT_TOOL: RequestTool = {
   name: "shout",
   interpreter: "sh",
@@ -338,18 +230,6 @@ printf '{"shouted":"%s"}' "$(printf '%s' "$text" | tr '[:lower:]' '[:upper:]')"
 `,
 };
 
-/**
- * A plugin node: a component type the engine does not ship.
- *
- * The manifest declares the type as data, so the engine learns the flow's shape
- * while parsing it and never runs this source to find out. The source only says
- * what the node does — `serve()` is supplied by the engine.
- *
- * It also talks while it works, which is the other half of what a plugin can
- * do. `capabilities` is the ask: a reverse call the manifest does not name is
- * refused whatever the engine allows, so these two lines are what make the
- * `ctx.log` and `ctx.emitEvent` below run rather than throw.
- */
 const REVERSE_PLUGIN: RequestPlugin = {
   name: "reverse",
   manifest: {
@@ -453,15 +333,6 @@ $referenced_components:
   plugins: [REVERSE_PLUGIN],
 };
 
-/**
- * A guardrail, and the reason it is free to run.
- *
- * A transform is not a node: it hangs off `Agent.transforms` and sees the
- * agent's *messages* around the model call, which is what lets it refuse one.
- * A `pre` transform that rejects means the model is never called — so this
- * example reaches a real AgentNode without a credential, and the llm_config
- * below is never dialled.
- */
 const GUARDRAIL: Example = {
   id: "guardrail",
   title: "A guardrail that refuses",
@@ -572,7 +443,6 @@ $referenced_components:
   ],
 };
 
-/** Routing: a branch decides which of two paths a run takes. */
 const BRANCHING: Example = {
   id: "branching",
   title: "Routing on a branch",
@@ -711,17 +581,6 @@ printf '{"action":"filed a ticket for the morning"}'
   plugins: [],
 };
 
-/**
- * A real model call, with no signup.
- *
- * The llm_config names no credential, so the engine supplies its own — a free
- * OpenRouter key the operator configured. That fallback is deliberately narrow:
- * it only applies when the spec names neither a `url` nor an `api_key`. A spec
- * that chooses its own endpoint has to bring its own key, because filling one
- * in for a caller-chosen URL would post the operator's credential to it.
- *
- * To use your own provider instead, add both — see the comment in the flow.
- */
 const AGENT: Example = {
   id: "agent",
   title: "An agent",
@@ -806,17 +665,6 @@ $referenced_components:
   plugins: [],
 };
 
-/**
- * One tool, and the model decides what to put in it.
- *
- * The other examples hand a tool its input from an edge. Here the argument is
- * the model's own sentence, which is the whole point of an agent — and the
- * reason the tool below reads `exit_code` back rather than trusting that a
- * command it did not write worked.
- *
- * Python and Node are both on PATH inside the sandbox, so the agent can drop
- * into a language when the shell is the wrong instrument.
- */
 const BASH_TOOL: RequestTool = {
   name: "bash",
   interpreter: "python3",

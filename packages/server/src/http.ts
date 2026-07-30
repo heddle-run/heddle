@@ -1,16 +1,21 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { HttpError } from './errors.js';
 
-/** Read a JSON request body, enforcing a hard size ceiling. */
+const JSON_CONTENT_TYPE = 'application/json; charset=utf-8';
+const PROMETHEUS_CONTENT_TYPE = 'text/plain; version=0.0.4; charset=utf-8';
+
 export function readJsonBody(
   req: IncomingMessage,
   maxBytes: number,
 ): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
     const tooLarge = (): HttpError =>
-      new HttpError(413, `request body exceeds ${maxBytes} bytes`, 'PayloadTooLarge');
+      new HttpError(
+        413,
+        `request body exceeds ${maxBytes} bytes`,
+        'PayloadTooLarge',
+      );
 
-    // Reject on the declared length before reading anything, when it is given.
     const declared = Number(req.headers['content-length']);
     if (Number.isFinite(declared) && declared > maxBytes) {
       reject(tooLarge());
@@ -23,12 +28,10 @@ export function readJsonBody(
 
     req.on('data', (chunk: Buffer) => {
       if (settled) return;
+
       size += chunk.length;
       if (size > maxBytes) {
         settled = true;
-        // Stop consuming, but do not destroy the socket: the response still
-        // has to travel back over it, or the client sees a connection reset
-        // instead of a 413.
         req.pause();
         reject(tooLarge());
         return;
@@ -40,23 +43,12 @@ export function readJsonBody(
 
     req.on('end', () => {
       if (settled) return;
-      const raw = Buffer.concat(chunks).toString('utf-8').trim();
-      if (raw.length === 0) {
-        resolve({});
-        return;
-      }
-      let parsed: unknown;
+
       try {
-        parsed = JSON.parse(raw);
-      } catch {
-        reject(new HttpError(400, 'request body is not valid JSON'));
-        return;
+        resolve(parseJsonObject(Buffer.concat(chunks).toString('utf-8')));
+      } catch (err) {
+        reject(err);
       }
-      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-        reject(new HttpError(400, 'request body must be a JSON object'));
-        return;
-      }
-      resolve(parsed as Record<string, unknown>);
     });
   });
 }
@@ -70,13 +62,12 @@ export function sendJson(
   const payload = JSON.stringify(body);
   res.writeHead(status, {
     ...headers,
-    'content-type': 'application/json; charset=utf-8',
+    'content-type': JSON_CONTENT_TYPE,
     'content-length': Buffer.byteLength(payload),
   });
   res.end(payload);
 }
 
-/** Send a plain-text body — used for the Prometheus metrics exposition. */
 export function sendText(
   res: ServerResponse,
   status: number,
@@ -85,10 +76,25 @@ export function sendText(
 ): void {
   res.writeHead(status, {
     ...headers,
-    // The version token is the Prometheus text exposition content type; a
-    // scraper keys off it to parse the body.
-    'content-type': 'text/plain; version=0.0.4; charset=utf-8',
+    'content-type': PROMETHEUS_CONTENT_TYPE,
     'content-length': Buffer.byteLength(body),
   });
   res.end(body);
+}
+
+function parseJsonObject(raw: string): Record<string, unknown> {
+  const text = raw.trim();
+  if (text.length === 0) return {};
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new HttpError(400, 'request body is not valid JSON');
+  }
+
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new HttpError(400, 'request body must be a JSON object');
+  }
+  return parsed as Record<string, unknown>;
 }

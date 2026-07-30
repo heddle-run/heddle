@@ -2,8 +2,6 @@ import { WindowChrome, Icon } from "@/ds";
 import SectionLabel from "./SectionLabel";
 import { specimenSpread } from "@/lib/constants";
 
-/* Terminal lines carry weight and one accent — pink marks the tool calls,
- * which is the only part of a run worth looking at twice. */
 const lineTone: Record<string, string> = {
   prompt: "var(--text-strong)",
   cont: "var(--text-body)",

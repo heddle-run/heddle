@@ -3,7 +3,6 @@
 import { useEffect, useRef } from "react";
 import type { RunEvent } from "@/lib/playground";
 
-/** Runner event names, rendered as fixed-width mono labels. */
 const LABELS: Record<string, string> = {
   flow_start: "flow",
   flow_complete: "flow",
@@ -18,23 +17,12 @@ const LABELS: Record<string, string> = {
   plugin_log: "log",
 };
 
-/** Events that mark a failure. */
 const FAILED = new Set(["node_error", "error"]);
 
-/** Tool traffic is the interesting part of a run, so it takes the accent. */
 const ACCENTED = new Set(["tool_call", "tool_result"]);
 
-/** The prefix the engine puts in front of every event a plugin emits. */
 const PLUGIN = "plugin:";
 
-/**
- * The label for one event, in a column fourteen characters wide.
- *
- * A plugin's event arrives as `plugin:<componentType>:<name>`, which does not
- * fit and does not need to: the component is already on the row as
- * `event.nodeName`, so the last segment is the only part that says anything the
- * row does not already.
- */
 function label(type: string): string {
   if (type.startsWith(PLUGIN)) return type.slice(type.lastIndexOf(":") + 1);
   return LABELS[type] ?? type;
@@ -45,7 +33,6 @@ function formatDuration(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
-/** The one-line description of an event. */
 function describe(event: RunEvent): string {
   switch (event.type) {
     case "flow_start":
@@ -73,12 +60,7 @@ function describe(event: RunEvent): string {
     case "plugin_log":
       return event.message ?? "";
     default:
-      // A plugin's payload is its own shape, so there is nothing to format —
-      // the alternative to printing it raw is printing the type twice, which
-      // is what this row used to do.
       if (event.type.startsWith(PLUGIN)) {
-        // `emitEvent(name)` with no data is legal, and JSON.stringify of
-        // undefined is undefined, which would render as the word.
         return event.data === undefined ? "" : JSON.stringify(event.data);
       }
       return event.type;
@@ -98,12 +80,6 @@ export default function RunLog({
 }) {
   const endRef = useRef<HTMLDivElement>(null);
 
-  // Follow the tail while a run is in flight. Only during a run, so reading
-  // back through a finished log is not fought by an autoscroll.
-  //
-  // Keyed on the list itself and not its length: a streamed answer grows inside
-  // its own entry without adding one, so a length would sit still through the
-  // longest thing the log ever has to follow.
   useEffect(() => {
     if (status === "running") {
       endRef.current?.scrollIntoView({ block: "nearest" });
@@ -140,9 +116,6 @@ export default function RunLog({
         }}
       >
         {events.map((event, index) => {
-          // The set keys on type, and a plugin's log carries its urgency in a
-          // field instead — so an error a plugin reported can only be set in
-          // reverse here, not by adding anything to FAILED.
           const failed =
             FAILED.has(event.type) ||
             (event.type === "plugin_log" && event.level === "error");
@@ -185,8 +158,6 @@ export default function RunLog({
                   flex: 1,
                   overflowWrap: "break-word",
                   color: failed ? "var(--text-strong)" : "var(--text-body)",
-                  // A model's answer carries its own line breaks, and every
-                  // other row is a single line that has none to lose.
                   whiteSpace:
                     event.type === "token_delta" ? "pre-wrap" : undefined,
                 }}

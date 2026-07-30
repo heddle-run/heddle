@@ -1,20 +1,3 @@
-/**
- * The `provider` kind — a plugin answering as an `llm_config`.
- *
- * Two properties run through everything here, and they pull in opposite
- * directions, which is why each is pinned from both sides.
- *
- * **A spec can name a provider heddle does not ship.** That is the feature, and
- * it costs the closed `LlmConfigUnion` — a plugin's config type now parses in
- * four positions that used to admit five builtins and nothing else.
- *
- * **A plugin cannot take a name the SDK ships.** That is what keeps the feature
- * from being a capture: a flow writing `OpenAiConfig` reaches heddle's own
- * client whatever plugins are loaded. `PluginRegistry.claim` refuses the
- * registration and `providerFor` checks builtins before it consults the
- * registry, and both halves are tested because either alone would be a rule
- * that holds until someone reorders something.
- */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -42,9 +25,7 @@ import type { HeddlePlugin, PluginComponent } from '../types.js';
 let scratch: string;
 const open: PluginRegistry[] = [];
 
-/** Every request a plugin provider was asked to answer, in order. */
 let asked: ChatRequest[] = [];
-/** Every config a plugin provider was constructed from, in order. */
 let configs: PluginComponent[] = [];
 
 beforeEach(() => {
@@ -58,13 +39,6 @@ afterEach(() => {
   rmSync(scratch, { recursive: true, force: true });
 });
 
-/**
- * What heddle would build for a builtin config, stubbed.
- *
- * Present in every `Dependencies` below so that a case which *should* reach a
- * plugin can prove it did not reach here — a missing credential would otherwise
- * fail these tests for the wrong reason and read as the plugin path working.
- */
 const builtinCalls: LLMConfig[] = [];
 const builtinProvider = (config: LLMConfig): Provider => {
   builtinCalls.push(config);
@@ -77,7 +51,6 @@ beforeEach(() => {
   builtinCalls.length = 0;
 });
 
-/** An in-process plugin providing one custom `llm_config` type. */
 function providerPlugin(
   componentType: string,
   answer: (request: ChatRequest) => ChatResponse = () => ({
@@ -107,7 +80,6 @@ function providerPlugin(
   ]);
 }
 
-/** A flow: start -> an LlmNode carrying `config` -> end. */
 function flowWithLlmNode(config: Record<string, unknown>): string {
   return JSON.stringify({
     component_type: 'Flow',
@@ -147,7 +119,6 @@ function flowWithLlmNode(config: Record<string, unknown>): string {
   });
 }
 
-/** An `llm_config` naming a type only the plugin provides. */
 function pluginConfig(extra: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     component_type: 'AnthropicConfig',
@@ -176,10 +147,6 @@ async function runFlow(
   return state.toData() as Record<string, unknown>;
 }
 
-// ---------------------------------------------------------------------------
-// In process.
-// ---------------------------------------------------------------------------
-
 describe('a plugin provider answering a spec', () => {
   it('answers an LlmNode whose llm_config names it', async () => {
     const registry = providerPlugin('AnthropicConfig');
@@ -187,13 +154,8 @@ describe('a plugin provider answering a spec', () => {
     const state = await runFlow(registry, flowWithLlmNode(pluginConfig()));
 
     expect(state.generated_text).toBe('from the plugin');
-    // The model id is the spec's and reaches the plugin verbatim: a provider is
-    // the endpoint, so unlike `callModel` it does get to see which model was
-    // asked for — it is the thing that has to route it.
     expect(asked).toHaveLength(1);
     expect(asked[0].model).toBe('claude-sonnet-4-5');
-    // And heddle's own client was never built. Without this assertion a plugin
-    // path that silently fell through to the builtin would still pass above.
     expect(builtinCalls).toHaveLength(0);
   });
 
@@ -211,11 +173,6 @@ describe('a plugin provider answering a spec', () => {
       modelId: 'claude-sonnet-4-5',
       anthropicVersion: '2023-06-01',
     });
-    // `$VAR` is *not* resolved on the way. heddle reads its own environment for
-    // a config it is going to send itself; here the plugin sends it, and under
-    // `--safe` that plugin is confined precisely so it cannot see this
-    // process's environment — handing it a value from outside that confinement
-    // is the mistake `ExecuteParams.workspace` refuses to make with a path.
     expect(configs[0].apiKey).toBe('$ANTHROPIC_KEY');
   });
 
@@ -229,17 +186,10 @@ describe('a plugin provider answering a spec', () => {
       ),
     );
 
-    // Nothing about being a plugin makes a config's own settings the plugin's
-    // problem: `generationParams` runs before the provider is even chosen.
     expect(asked[0]).toMatchObject({ temperature: 0.2, maxTokens: 64 });
   });
 
   it('builds the provider once for a node executed twice', async () => {
-    // The precondition §7.6 names. `LLMExecutor` used to construct a provider
-    // per execution, so a plugin holding a token bucket, a connection pool or a
-    // response cache would have had it discarded between visits — the state it
-    // exists to keep, silently dropped. Driven directly rather than through a
-    // looping flow, because what is under test is the executor's lifetime.
     const registry = providerPlugin('AnthropicConfig');
     open.push(registry);
 
@@ -266,9 +216,6 @@ describe('a plugin provider answering a spec', () => {
   });
 
   it('serves a plugin component’s own callModel through the same seam', async () => {
-    // A judge node whose `llm_config` names another plugin's provider. Nothing
-    // in `PluginModel` knows the difference, which is the point of routing
-    // every provider construction through one function.
     const registry = providerPlugin('AnthropicConfig');
     registry.add({
       name: 'judge-plugin',
@@ -331,11 +278,6 @@ describe('a plugin provider answering a spec', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// What a provider may not be. Every case here is a way the feature could turn
-// into a capture, or into a message nobody can act on.
-// ---------------------------------------------------------------------------
-
 describe('what a provider may not take', () => {
   it('refuses a plugin claiming a builtin config type, at load', () => {
     expect(() =>
@@ -350,9 +292,6 @@ describe('what a provider may not take', () => {
   });
 
   it('sends a builtin config to the builtin path even with providers loaded', () => {
-    // The other half of the same guarantee, and the one that would survive a
-    // registry check being loosened: `providerFor` tests `isBuiltinConfigType`
-    // *before* it looks anything up, so there is no lookup to win.
     const registry = providerPlugin('AnthropicConfig');
     open.push(registry);
 
@@ -367,22 +306,10 @@ describe('what a provider may not take', () => {
   });
 
   it('agrees with the SDK about what a builtin config type is', () => {
-    // The double lock is only a lock while these two sets agree in this
-    // direction. `claim` refuses a registration using the SDK's
-    // `isBuiltinComponentType`; `providerFor` skips the registry using
-    // `isBuiltinConfigType`, which reads heddle's own OPENAI_COMPATIBLE_TYPES.
-    // A name in heddle's set but not the SDK's would be registrable by a plugin
-    // *and* never looked up — a config type a plugin could claim and then never
-    // be asked about, which is a confusing dead end rather than a capture, but
-    // the reverse of the property the two checks are supposed to share.
     for (const type of ['OpenAiConfig', 'OpenAiCompatibleConfig', 'VllmConfig', 'OllamaConfig']) {
       expect(isBuiltinConfigType(type)).toBe(true);
       expect(isBuiltinComponentType(type)).toBe(true);
     }
-    // The other direction does not hold and does not need to: `OciGenAiConfig`
-    // is an SDK builtin heddle cannot build a client for. A plugin still cannot
-    // claim it — `claim` reads the SDK — so it reaches `providerFor`'s
-    // no-plugin-provides branch and is refused there by name.
     expect(isBuiltinComponentType('OciGenAiConfig')).toBe(true);
     expect(isBuiltinConfigType('OciGenAiConfig')).toBe(false);
   });
@@ -403,10 +330,6 @@ describe('what a provider may not take', () => {
       ]),
     ).toThrow(/builtin Agent Spec type/);
 
-    // And it is refused as what it is — an Agent Spec type heddle has no client
-    // for — rather than as an unknown one. The difference is the advice: the
-    // "unsupported config type" branch ends with "load it with --plugin", which
-    // for a builtin sends an operator looking for a plugin `claim` would refuse.
     expect(() =>
       providerFor(
         { componentType: 'OciGenAiConfig', modelId: 'x' },
@@ -414,8 +337,6 @@ describe('what a provider may not take', () => {
       ),
     ).toThrow(/Agent Spec defines but heddle has no client for/);
 
-    // Same answer with no registry in play. The refusal is a property of the
-    // type, not of what happens to be loaded beside it.
     expect(() =>
       providerFor(
         { componentType: 'OciGenAiConfig', modelId: 'x' },
@@ -425,10 +346,6 @@ describe('what a provider may not take', () => {
   });
 
   it('never offers an SDK builtin to the registry at all', () => {
-    // The strengthened form of the double lock. Before this, the registry was
-    // skipped only for the four types heddle can build, so `OciGenAiConfig`
-    // reached the lookup and the invariant rested on `claim` alone. Now every
-    // SDK builtin stops first, whether or not heddle has a client for it.
     const registry = providerPlugin('AnthropicConfig');
     open.push(registry);
     const asked: string[] = [];
@@ -451,16 +368,12 @@ describe('what a provider may not take', () => {
           { plugins: spy, createProvider: builtinProvider },
         );
       } catch {
-        // OciGenAiConfig throws; OpenAiConfig does not. Neither may look up.
       }
     }
     expect(asked).toEqual([]);
   });
 
   it('refuses a plugin transform written as an llm_config, naming its kind', () => {
-    // The slot discipline the widened union gave up. Before widening this was
-    // `Invalid discriminator value`; now it is a sentence saying what the type
-    // actually is.
     const registry = PluginRegistry.fromPlugins([
       {
         name: 'guard-plugin',
@@ -496,10 +409,6 @@ describe('what a provider may not take', () => {
   });
 
   it('does not let an embedder’s factory shadow a provider plugin', () => {
-    // `Dependencies.createProvider` answers "how does heddle build its own
-    // client", not "who answers for AnthropicConfig". One field doing both
-    // would mean an embedder installing a stub had silently switched off every
-    // provider the operator loaded.
     const registry = providerPlugin('AnthropicConfig');
     open.push(registry);
 
@@ -513,10 +422,6 @@ describe('what a provider may not take', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// The union this rests on.
-// ---------------------------------------------------------------------------
-
 describe('the widened LlmConfigUnion', () => {
   it('parses a flow whose llm_config is a plugin type', () => {
     const registry = providerPlugin('AnthropicConfig');
@@ -527,31 +432,20 @@ describe('the widened LlmConfigUnion', () => {
       llmConfig?: { componentType?: string; modelId?: string };
     };
 
-    // The real component in place, not a stand-in swapped back afterwards:
-    // before the widening this position took a fabricated `OllamaConfig`
-    // pointing at localhost:11434.
     expect(node.llmConfig?.componentType).toBe('AnthropicConfig');
     expect(node.llmConfig?.modelId).toBe('claude-sonnet-4-5');
   });
 
   it('still refuses a builtin config missing a required field', () => {
-    // The safety argument. A builtin componentType never reaches the widened
-    // branch, so `OpenAiConfig` with no `model_id` fails exactly as it did.
     expect(() =>
       parseFlow(flowWithLlmNode({ component_type: 'OpenAiConfig', name: 'llm' })),
     ).toThrow();
   });
 
   it('still refuses an object that is no config at all', () => {
-    // No usable `componentType`, so the widened branch declines it and the
-    // original union's own issues are what a consumer sees.
     expect(() => parseFlow(flowWithLlmNode({ model_id: 'gpt-4o-mini' }))).toThrow();
   });
 });
-
-// ---------------------------------------------------------------------------
-// Out of process, where a model answer is a frame on a pipe.
-// ---------------------------------------------------------------------------
 
 function writeHelperPlugin(name: string, source: string): string {
   const entry = join(scratch, `${name}.mjs`);
@@ -607,9 +501,6 @@ describe('a provider in its own process', () => {
       { eventHandler: (e) => events.push(e) },
     );
 
-    // The accumulation of the stream is the answer the buffered call would have
-    // returned — that is `completeChat`'s whole contract, and a remote provider
-    // has to satisfy it through a pipe.
     expect(state.generated_text).toBe('a poem about hi');
     expect(events.filter((e) => e.type === 'token_delta').map((e) => e.delta)).toEqual([
       'a ',
@@ -620,9 +511,6 @@ describe('a provider in its own process', () => {
   });
 
   it('never streams a provider whose manifest did not declare it', async () => {
-    // `completeChat` decides by whether `chatCompletionStream` exists, and
-    // `remoteProviderDef` only defines it when the manifest said so. A provider
-    // that never implemented streaming must not be asked to.
     const entry = writeHelperPlugin(
       'nostream',
       `serve({ AnthropicConfig: { async chat(request, ctx) {
@@ -660,14 +548,6 @@ describe('a provider in its own process', () => {
   });
 
   it('runs its tools through a runner of its own, not a sibling’s', async () => {
-    // A provider owns no tool scope, so it gets the scopeless runner a
-    // transform gets — but passed explicitly. Left to `PluginHost`'s host-wide
-    // fallback it would have used whatever `setToolRunner` was first given, so
-    // a plugin shipping both a node and a provider would run the provider's
-    // tools inside the node's sandbox session, and the same provider loaded
-    // alone would get a throwaway one. The assertion that matters is not which
-    // session it lands in — it is that the tool resolves at all, from a
-    // component that installed no runner and has no sibling to borrow one from.
     const entry = writeHelperPlugin(
       'providertool',
       `serve({ AnthropicConfig: { async chat(request, ctx) {
@@ -708,9 +588,6 @@ describe('a provider in its own process', () => {
   });
 
   it('does not send the operator credential across the pipe', async () => {
-    // The rule `providerFor` states and the boundary that enforces it: `deps`
-    // holds the operator's key and `remoteProviderDef` sends the component and
-    // the request, so there is nothing on the wire for a plugin to find.
     const entry = writeHelperPlugin(
       'echo',
       `serve({ AnthropicConfig: { async chat(request, ctx) {
@@ -740,9 +617,6 @@ describe('a provider in its own process', () => {
   });
 
   it('refuses a stream chunk whose content is not a string', async () => {
-    // Chunks are concatenated, so a number here becomes `'' + 42` in the
-    // answer — a corruption that would surface as the node's output being
-    // wrong, several frames from the provider that caused it.
     const entry = writeHelperPlugin(
       'badchunk',
       `serve({ AnthropicConfig: { async chat(request, ctx) {
@@ -757,11 +631,6 @@ describe('a provider in its own process', () => {
   });
 
   it('fails the call when the final frame of a stream is malformed', async () => {
-    // The response is the last chunk, so it is read by the same reader as the
-    // partials — but it arrives on a `.then` callback with nothing above it to
-    // catch. Left to throw there it would be an unhandled rejection, the
-    // iterator would finish normally, and the node would get whatever had been
-    // streamed so far as a complete answer.
     const entry = writeHelperPlugin(
       'badfinal',
       `serve({ AnthropicConfig: { async chat(request, ctx) {
@@ -776,9 +645,6 @@ describe('a provider in its own process', () => {
   });
 
   it('fails the node when a plugin dies mid-stream rather than keeping the prefix', async () => {
-    // Rule 2: the response is what ends a stream. A process that emits chunks
-    // and then exits has produced no answer, however much text it sent — the
-    // same rule `completeChat` applies to a provider that throws.
     const entry = writeHelperPlugin(
       'diesmidstream',
       `serve({ AnthropicConfig: { async chat(request, ctx) {
@@ -803,10 +669,6 @@ describe('a provider in its own process', () => {
     ).rejects.toThrow(/serves no chat handler/);
   });
 });
-
-// ---------------------------------------------------------------------------
-// The manifest half.
-// ---------------------------------------------------------------------------
 
 describe('a manifest declaring a provider', () => {
   it('accepts the kind and the stream flag', () => {
@@ -860,10 +722,6 @@ describe('a manifest declaring a provider', () => {
   });
 });
 
-// A guard against the chunk reader drifting from what `collectStream` expects.
-// Kept beside the wire tests because it is the same contract read from the
-// other end: whatever a plugin sends as partials has to accumulate into the
-// response the buffered call would have given.
 describe('the chunk contract', () => {
   it('accumulates tool call fragments by index, as a builtin stream does', async () => {
     const entry = writeHelperPlugin(

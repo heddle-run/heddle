@@ -1,15 +1,3 @@
-/**
- * The broker: the only public face of the heddle playground.
- *
- * The engine behind it executes code its callers wrote, so this worker owns
- * every question the engine deliberately does not answer — who is calling, how
- * often they may, and what the thing they start is allowed to reach. The
- * engine's own README is blunt that it has no authentication; this is where
- * that is supposed to be terminated.
- *
- * Runs get a container of their own, addressed by run id, destroyed when the
- * response stream closes.
- */
 import { getContainer } from "@cloudflare/containers";
 import { corsHeaders, error, json, preflight, withCors } from "./cors";
 import { intVar, origins, type Env } from "./env";
@@ -21,29 +9,77 @@ import { mintToken } from "./token";
 export { HeddleEngine } from "./container";
 export { RateLimiter } from "./ratelimit";
 
-/** How long a run's proxy credential stays valid. */
 const TOKEN_TTL_SECONDS = 300;
+const SECONDS_PER_MINUTE = 60;
+const DEFAULT_RUNS_PER_MINUTE = 6;
+const DEFAULT_MODEL_CALLS_PER_RUN = 20;
+const LLM_PROXY_PREFIX = "/llm/";
+const TRAILING_SLASHES = /\/+$/;
+const TURNSTILE_VERIFY_URL =
+  "https://challenges.cloudflare.com/turnstile/v0/siteverify";
 
-/**
- * What this deployment permits, answered by the broker rather than the engine.
- *
- * Starting a container to answer a capabilities probe would mean a cold start
- * on every page load, for a response that is a property of the deployment and
- * not of any instance. The limits mirror the CMD in Dockerfile.cloudflare —
- * keep the two in step.
- *
- * `maxConcurrentRuns` is the exception, and deliberately so: the CMD passes
- * `--max-concurrent 8`, but an engine here is addressed by run id and destroyed
- * with the run, so a caller never gets more than one run out of an instance.
- * The flag is a ceiling; 1 is what a caller can actually plan against.
- */
+export default {
+  async fetch(
+    request: Request,
+    env: Env,
+    ctx: ExecutionContext,
+  ): Promise<Response> {
+    const allowed = origins(env);
+    const early = preflight(request, allowed);
+    if (early) return early;
+
+    const cors = corsHeaders(request, allowed);
+    const url = new URL(request.url);
+    const path = url.pathname.replace(TRAILING_SLASHES, "") || "/";
+
+    if (path.startsWith(LLM_PROXY_PREFIX)) {
+      return handleLlmProxy(request, env, path.slice(LLM_PROXY_PREFIX.length));
+    }
+
+    if (request.method === "GET" && (path === "/healthz" || path === "/")) {
+      return json({ status: "ok", role: "broker" }, 200, cors);
+    }
+
+    if (path === "/v1/capabilities") {
+      if (request.method !== "GET") {
+        return error("MethodNotAllowed", "use GET", 405, cors);
+      }
+      return json(capabilities(env), 200, cors);
+    }
+
+    if (path !== "/v1/runs" && path !== "/v1/validate") {
+      return error(
+        "NotFound",
+        `no route for ${request.method} ${path}`,
+        404,
+        cors,
+      );
+    }
+    if (request.method !== "POST") {
+      return error("MethodNotAllowed", "use POST", 405, cors);
+    }
+
+    if (!(await turnstileOk(request, env))) {
+      return error(
+        "ChallengeRequired",
+        "this request needs a solved challenge",
+        403,
+        cors,
+      );
+    }
+
+    const throttled = await rateLimit(request, env, cors);
+    if (throttled) return throttled;
+
+    return runInContainer(request, env, ctx, cors);
+  },
+} satisfies ExportedHandler<Env>;
+
 function capabilities(env: Env): Record<string, unknown> {
   return {
     version: "0.2.0-beta.1",
     allowRequestCode: true,
     acceptsFlowPath: false,
-    // No bubblewrap on this platform: it needs user namespaces the runtime
-    // does not grant. The container is the boundary instead.
     sandbox: null,
     tools: [],
     limits: {
@@ -54,19 +90,17 @@ function capabilities(env: Env): Record<string, unknown> {
       maxRequestPlugins: 5,
       maxRequestCodeBytes: 256 * 1024,
       maxConcurrentRuns: 1,
-      runsPerMinute: intVar(env.RUNS_PER_MINUTE, 6),
-      modelCallsPerRun: intVar(env.MODEL_CALLS_PER_RUN, 20),
+      runsPerMinute: intVar(env.RUNS_PER_MINUTE, DEFAULT_RUNS_PER_MINUTE),
+      modelCallsPerRun: intVar(
+        env.MODEL_CALLS_PER_RUN,
+        DEFAULT_MODEL_CALLS_PER_RUN,
+      ),
     },
     runsInFlight: 0,
     via: "broker",
   };
 }
 
-/**
- * Turnstile, when configured. Absent a secret this is a no-op, and the rate
- * limiter is the only thing between the internet and the engine — workable for
- * a playground, but the weaker of the two arrangements.
- */
 async function turnstileOk(request: Request, env: Env): Promise<boolean> {
   if (!env.TURNSTILE_SECRET) return true;
 
@@ -76,24 +110,38 @@ async function turnstileOk(request: Request, env: Env): Promise<boolean> {
   const body = new FormData();
   body.append("secret", env.TURNSTILE_SECRET);
   body.append("response", token);
+
   const ip = request.headers.get("cf-connecting-ip");
   if (ip) body.append("remoteip", ip);
 
-  const verify = await fetch(
-    "https://challenges.cloudflare.com/turnstile/v0/siteverify",
-    { method: "POST", body },
-  );
+  const verify = await fetch(TURNSTILE_VERIFY_URL, { method: "POST", body });
   const result = (await verify.json()) as { success?: boolean };
+
   return result.success === true;
 }
 
-/**
- * Run one request against a container of its own.
- *
- * The container is destroyed once the response body finishes, which for a
- * streamed run is when the last event has been written. `sleepAfter` on the
- * class is the backstop for the paths this does not see.
- */
+async function rateLimit(
+  request: Request,
+  env: Env,
+  cors: Record<string, string>,
+): Promise<Response | undefined> {
+  const perMinute = intVar(env.RUNS_PER_MINUTE, DEFAULT_RUNS_PER_MINUTE);
+  const limiter = env.RATE_LIMITER.getByName(`ip:${callerKey(request)}`);
+
+  const verdict = await limiter.take(
+    perMinute,
+    SECONDS_PER_MINUTE / perMinute,
+  );
+  if (verdict.ok) return undefined;
+
+  return error(
+    "TooManyRequests",
+    `at most ${perMinute} runs a minute. Try again in ${verdict.retryAfter}s.`,
+    429,
+    { ...cors, "retry-after": String(verdict.retryAfter) },
+  );
+}
+
 async function runInContainer(
   request: Request,
   env: Env,
@@ -102,7 +150,6 @@ async function runInContainer(
 ): Promise<Response> {
   const runId = crypto.randomUUID();
   const token = await mintToken(env.RUN_TOKEN_SECRET, runId, TOKEN_TTL_SECONDS);
-
   const stub = getContainer(env.ENGINE, runId);
 
   const forwarded = new Request(request);
@@ -126,18 +173,25 @@ async function runInContainer(
     return withCors(response, cors);
   }
 
-  // Pipe rather than return the body directly, so the container's life can be
-  // tied to the stream's rather than to this handler's.
+  return pipeUntilStreamEnds(response, stub, ctx, cors);
+}
+
+function pipeUntilStreamEnds(
+  response: Response,
+  stub: { destroy: () => Promise<unknown> },
+  ctx: ExecutionContext,
+  cors: Record<string, string>,
+): Response {
   const { readable, writable } = new TransformStream();
+
   ctx.waitUntil(
-    response.body
+    (response.body as ReadableStream)
       .pipeTo(writable)
-      .catch(() => {
-        // A caller that hangs up mid-stream is ordinary. The container is torn
-        // down either way, which is the point of the finally below.
-      })
+      .catch(() => {})
       .then(() => stub.destroy())
-      .catch((err: unknown) => console.error("failed to destroy container", err)),
+      .catch((err: unknown) =>
+        console.error("failed to destroy container", err),
+      ),
   );
 
   const headers = new Headers(response.headers);
@@ -149,73 +203,3 @@ async function runInContainer(
     headers,
   });
 }
-
-export default {
-  async fetch(
-    request: Request,
-    env: Env,
-    ctx: ExecutionContext,
-  ): Promise<Response> {
-    const allowed = origins(env);
-    const early = preflight(request, allowed);
-    if (early) return early;
-
-    const cors = corsHeaders(request, allowed);
-    const url = new URL(request.url);
-    const path = url.pathname.replace(/\/+$/, "") || "/";
-
-    // The model proxy is called by containers, not browsers, and authenticates
-    // with a run token rather than the caller's identity. It is checked first
-    // so it never reaches the per-IP limiter — every container shares the
-    // worker's view of the network.
-    if (path.startsWith("/llm/")) {
-      return handleLlmProxy(request, env, path.slice("/llm/".length));
-    }
-
-    if (request.method === "GET" && (path === "/healthz" || path === "/")) {
-      return json({ status: "ok", role: "broker" }, 200, cors);
-    }
-
-    if (path === "/v1/capabilities") {
-      if (request.method !== "GET") {
-        return error("MethodNotAllowed", "use GET", 405, cors);
-      }
-      return json(capabilities(env), 200, cors);
-    }
-
-    const isRun = path === "/v1/runs";
-    const isValidate = path === "/v1/validate";
-    if (!isRun && !isValidate) {
-      return error("NotFound", `no route for ${request.method} ${path}`, 404, cors);
-    }
-    if (request.method !== "POST") {
-      return error("MethodNotAllowed", "use POST", 405, cors);
-    }
-
-    if (!(await turnstileOk(request, env))) {
-      return error(
-        "ChallengeRequired",
-        "this request needs a solved challenge",
-        403,
-        cors,
-      );
-    }
-
-    // Both routes start a container, so both are metered. Validation compiles
-    // the flow, and compiling calls a submitted plugin's createExecutor — it is
-    // no cheaper or safer than a run.
-    const limiter = env.RATE_LIMITER.getByName(`ip:${callerKey(request)}`);
-    const perMinute = intVar(env.RUNS_PER_MINUTE, 6);
-    const verdict = await limiter.take(perMinute, 60 / perMinute);
-    if (!verdict.ok) {
-      return error(
-        "TooManyRequests",
-        `at most ${perMinute} runs a minute. Try again in ${verdict.retryAfter}s.`,
-        429,
-        { ...cors, "retry-after": String(verdict.retryAfter) },
-      );
-    }
-
-    return runInContainer(request, env, ctx, cors);
-  },
-} satisfies ExportedHandler<Env>;

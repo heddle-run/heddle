@@ -1,8 +1,6 @@
 import { BoxedFrame } from "@/ds";
 import { stats } from "@/lib/constants";
 
-/** Four countable claims. The design system states numbers plainly — semibold
- *  numerals at display size, tight tracking, the label in micro-caps beneath. */
 export default function Stats() {
   return (
     <section style={{ paddingBottom: "var(--space-16)" }}>

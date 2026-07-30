@@ -10,7 +10,6 @@ afterEach(() => {
   while (opened.length) opened.pop()!.dispose();
 });
 
-/** Opens a bubblewrap session that the suite disposes after each test. */
 function session(overrides: Partial<SandboxPolicy> = {}): SandboxSession {
   const policy: SandboxPolicy = { ...DEFAULT_SANDBOX_POLICY, cwd: '/work', ...overrides };
   const s = new BubblewrapSandbox(policy).session('test-agent');
@@ -18,7 +17,6 @@ function session(overrides: Partial<SandboxPolicy> = {}): SandboxSession {
   return s;
 }
 
-/** Index of the first occurrence of a flag/value pair in an argv array. */
 function pairIndex(args: string[], flag: string, value: string): number {
   for (let i = 0; i < args.length - 1; i++) {
     if (args[i] === flag && args[i + 1] === value) return i;

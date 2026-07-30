@@ -21,7 +21,6 @@ describe('FileRegistry', () => {
       writeFileSync(join(dir, name), '#!/bin/bash\n', { mode: 0o755 });
     }
 
-    // Non-executable file
     writeFileSync(join(dir, 'readme.txt'), 'not a tool', { mode: 0o644 });
 
     const reg = FileRegistry.create(dir);

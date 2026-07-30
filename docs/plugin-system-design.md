@@ -47,19 +47,19 @@ the component-type namespace a document writes into.
 What the goal does **not** mean:
 
 - **Not in-process extension.** `packages/core/src/plugin/loader.ts` still exists and the CLI still
-  uses it (`packages/cli/src/cli/run.ts:174`, `packages/cli/src/cli/validate.ts:26`), but the server
+  uses it (`packages/cli/src/cli/run.ts`, `packages/cli/src/cli/validate.ts`), but the server
   offers exactly one path — `buildPlugins` only ever calls `loadRemotePlugin`
-  (`packages/server/src/plugins.ts:29`), and the reason is written there at
-  `packages/server/src/plugins.ts:9-18`. Nothing in this design walks that back. Widening the
+  (`packages/server/src/plugins.ts`), and the reason is written there at
+  `packages/server/src/plugins.ts`. Nothing in this design walks that back. Widening the
   protocol is the *only* way forward that keeps that property.
-- **Not code in specs.** `packages/core/src/plugin/loader.ts:5-7` states the rule: plugins are
+- **Not code in specs.** `packages/core/src/plugin/loader.ts` states the rule: plugins are
   named by the operator, never inside a flow file, so sharing a spec can never cause code to be
   executed. Several proposals below are spec-*named* (a flow writes `component_type: RegexNode`),
   but a spec never names a *module*. The operator still decides which code is loaded; the spec only
   selects among what was loaded.
 - **Not "every internal type becomes public API."** `State` is a concrete class that `NodeExecutor`
-  is typed against (`packages/core/src/node/types.ts:7`), the sandbox deliberately stays inside the
-  executor (`packages/core/src/sandbox/types.ts:1-8`), and neither is on the table. See §10.
+  is typed against (`packages/core/src/node/types.ts`), the sandbox deliberately stays inside the
+  executor (`packages/core/src/sandbox/types.ts`), and neither is on the table. See §10.
 - **Not an Agent Spec conformance goal.** Agent Spec has nothing to say about any of this — see §2.
   It does not follow that the SDK is immovable: `vendor/agentspec` is a local tree and §8.1 proposes
   extending it. The conformance that matters is the *format* — a heddle spec stays a valid Agent Spec
@@ -143,7 +143,7 @@ if (!isBuiltinComponentType(componentType)) {
 ```
 
 Nothing reads them back. heddle's own deserializer treats them as envelope and drops them
-(`packages/core/src/plugin/deserializer.ts:40-43`). **There is no plugin version enforcement
+(`packages/core/src/plugin/deserializer.ts`). **There is no plugin version enforcement
 anywhere in the system** — loading a spec that records version `1.0` against a plugin at version
 `9.0` produces no warning. If heddle wants version compatibility, heddle invents it.
 
@@ -160,9 +160,9 @@ Additive-only, enforced socially.
 |---|---|---|---|
 | Language | Python-first throughout; `grep -ci typescript` over the language spec page returns **0** | `vendor/agentspec/` exists and is what heddle imports | The documented workflow is not the one heddle runs. Treat the docs as intent, the source as contract. |
 | Base class vs interface | Two ABCs (`ComponentSerializationPlugin`, `ComponentDeserializationPlugin`) you subclass | Two structural `interface`s — nothing to extend, just satisfy the shape | heddle's `HeddleDeserializationPlugin` (`packages/core/src/plugin/deserializer.ts`) is a hand-written class, correctly. |
-| The easy path | `PydanticComponentSerializationPlugin(component_types_and_models={...})` — a ~8-line, logic-free plugin | **No equivalent exists.** There is no zod-driven "give me a schema map" plugin. | Every heddle custom type needs a hand-written deserializer. That is what `packages/core/src/plugin/deserializer.ts` is — 207 lines re-declaring the SDK's protocol/dangerous/opaque field sets and hand-rolling the field walk. The SDK's `snakeToCamel` and `propertyFromJsonSchema` *are* exported from the root (`vendor/agentspec/src/index.ts:306` and `:30`) and are reused (`packages/core/src/plugin/deserializer.ts:10`, called at `:125` and `:66`/`:205`); what cannot be reused is the builtin plugin's own field-filtering logic — see the row below. |
-| Reusing the builtin plugin | n/a | `BuiltinsComponentDeserializationPlugin` is exported from `vendor/agentspec/src/serialization/index.ts` but **not** from `vendor/agentspec/src/index.ts:300-312` | Cannot wrap or delegate to it. Hence the local re-declaration of `PROTOCOL_FIELDS` / `DANGEROUS_KEYS` / `OPAQUE_FIELDS` at `packages/core/src/plugin/deserializer.ts:35-59`. |
-| Implementation types | n/a | `SerializedDict` / `SerializedFields` are used by the exported interfaces but are **not** exported (`vendor/agentspec/src/index.ts:300-312`) | `packages/core/src/plugin/deserializer.ts:17-20` recovers it with `Parameters<ComponentDeserializationPlugin['deserialize']>[0]`. Worth upstreaming. |
+| The easy path | `PydanticComponentSerializationPlugin(component_types_and_models={...})` — a ~8-line, logic-free plugin | **No equivalent exists.** There is no zod-driven "give me a schema map" plugin. | Every heddle custom type needs a hand-written deserializer. That is what `packages/core/src/plugin/deserializer.ts` is — 207 lines re-declaring the SDK's protocol/dangerous/opaque field sets and hand-rolling the field walk. The SDK's `snakeToCamel` and `propertyFromJsonSchema` *are* exported from the root (`vendor/agentspec/src/index.ts:306` and `:30`) and are reused (`packages/core/src/plugin/deserializer.ts`, called at `:125` and `:66`/`:205`); what cannot be reused is the builtin plugin's own field-filtering logic — see the row below. |
+| Reusing the builtin plugin | n/a | `BuiltinsComponentDeserializationPlugin` is exported from `vendor/agentspec/src/serialization/index.ts` but **not** from `vendor/agentspec/src/index.ts:300-312` | Cannot wrap or delegate to it. Hence the local re-declaration of `PROTOCOL_FIELDS` / `DANGEROUS_KEYS` / `OPAQUE_FIELDS` at `packages/core/src/plugin/deserializer.ts`. |
+| Implementation types | n/a | `SerializedDict` / `SerializedFields` are used by the exported interfaces but are **not** exported (`vendor/agentspec/src/index.ts:300-312`) | `packages/core/src/plugin/deserializer.ts` recovers it with `Parameters<ComponentDeserializationPlugin['deserialize']>[0]`. Worth upstreaming. |
 | Runtime binding | The how-to's execution snippet has the loader construction **commented out**, so `agentspec_loader` is undefined | n/a | The runtime side of Agent Spec plugins is the least-exercised part of the whole system. There is no prior art to copy. |
 
 ### 2.4 The closed-union problem
@@ -177,8 +177,8 @@ function at all.
 |---|---|---|---|
 | `NodeUnion` | `vendor/agentspec/src/flows/nodes/index.ts:22-37` | 14 | `Flow.startNode`, `Flow.nodes`, and both edge endpoint types, via `LazyNodeRef` |
 | `MessageTransformUnion` | `vendor/agentspec/src/transforms/message-transform.ts:75-78` | 2 | `Agent.transforms` (`vendor/agentspec/src/agents/agent.ts:22`) |
-| `LlmConfigUnion` | `vendor/agentspec/src/llms/index.ts:12-18` | 5 | `Agent.llmConfig` (`agents/agent.ts:17`), `LlmNode.llmConfig`, both transforms' `llm` (`transforms/message-transform.ts:29,53`) |
-| `ToolUnion` | `vendor/agentspec/src/tools/index.ts:12-18` | 5 | `Agent.tools` (`agents/agent.ts:19`), `ToolNode.tool` (`flows/nodes/tool-node.ts:11`), `AgentSpecializationParameters.additionalTools` (`agents/specialized-agent.ts:16`) |
+| `LlmConfigUnion` | `vendor/agentspec/src/llms/index.ts:12-18` | 5 | `Agent.llmConfig` (`agents/agent.ts`), `LlmNode.llmConfig`, both transforms' `llm` (`transforms/message-transform.ts:29,53`) |
+| `ToolUnion` | `vendor/agentspec/src/tools/index.ts:12-18` | 5 | `Agent.tools` (`agents/agent.ts`), `ToolNode.tool` (`flows/nodes/tool-node.ts`), `AgentSpecializationParameters.additionalTools` (`agents/specialized-agent.ts`) |
 | `SupportedDatastoresSchema` | `vendor/agentspec/src/transforms/message-transform.ts:16-20` | 3 | transform `datastore`; not exported from the package root |
 
 There is no base `MessageTransformSchema` at all — both transforms extend `ComponentBaseSchema`
@@ -229,20 +229,20 @@ self-imposed.
 
 ### 3.1 The three kinds
 
-`kind` is the only switch, declared at `packages/core/src/plugin/manifest.ts:31` and validated at
-`:123-128`; dispatched at `packages/core/src/plugin/remote-loader.ts:121-133`; grouped identically
-for the in-process path at `packages/core/src/plugin/registry.ts:55-59`.
+`kind` is the only switch, declared at `packages/core/src/plugin/manifest.ts` and validated at
+`:123-128`; dispatched at `packages/core/src/plugin/remote-loader.ts`; grouped identically
+for the in-process path at `packages/core/src/plugin/registry.ts`.
 
 | `kind` | Author writes | Manifest supplies | RPC | Engine wiring |
 |---|---|---|---|---|
-| `node` | `createExecutor(node, deps) -> { execute(input, ctx) }` (`plugin/types.ts`, `PluginNodeDef`) | `inputs`, `outputs`, `branches`, `schema` (`manifest.ts:32-48`) | `execute` (`plugin/remote.ts`, `remoteNodeDef`) | `graph/compile.ts:77-80` → `PluginNodeAdapter` (`plugin/executor.ts`, `PluginNodeAdapter`), result becomes the node's output `State` (`plugin/executor.ts`'s `runNode`) |
-| `transform` | `createTransform(component, deps) -> { apply(messages, ctx) }` (`plugin/types.ts`, `PluginTransformDef`) | `phase`, `schema` (`manifest.ts:48-50`) | `apply` (`plugin/remote.ts`, `remoteTransformDef`) | `TransformChain` (`plugin/transform.ts`, `TransformChain` / `apply`) around the model call at `node/agent.ts:125` (pre) and `:158-162` (post) |
+| `node` | `createExecutor(node, deps) -> { execute(input, ctx) }` (`plugin/types.ts`, `PluginNodeDef`) | `inputs`, `outputs`, `branches`, `schema` (`manifest.ts`) | `execute` (`plugin/remote.ts`, `remoteNodeDef`) | `graph/compile.ts` → `PluginNodeAdapter` (`plugin/executor.ts`, `PluginNodeAdapter`), result becomes the node's output `State` (`plugin/executor.ts`'s `runNode`) |
+| `transform` | `createTransform(component, deps) -> { apply(messages, ctx) }` (`plugin/types.ts`, `PluginTransformDef`) | `phase`, `schema` (`manifest.ts`) | `apply` (`plugin/remote.ts`, `remoteTransformDef`) | `TransformChain` (`plugin/transform.ts`, `TransformChain` / `apply`) around the model call at `node/agent.ts` (pre) and `:158-162` (post) |
 | `component` | `validate?(component)` only (`plugin/types.ts`, `PluginComponentDef`) | `schema` | **none** | **none** |
 
 **`kind: 'component'` does nothing at runtime.** `remoteComponentDef` returns `{ componentType }`
 plus at most a `validate` (`plugin/remote.ts`, `remoteComponentDef`). `nodeDef` and `transformDef` both return
 `undefined` unless the kind matches (`plugin/registry.ts`, `nodeDef` / `transformDef`), so a `component` is unreachable
-from `graph/compile.ts:77` and from `plugin/transform.ts`, `TransformChain.build`. `flow-preprocess.ts:128-130` leaves it
+from `graph/compile.ts` and from `plugin/transform.ts`, `TransformChain.build`. `flow-preprocess.ts` leaves it
 in the document with no stand-in, on the stated grounds that it is "deserialized with their parent".
 
 That is the whole contract, and it is narrower than it looks: a `component` survives *only* because
@@ -304,7 +304,7 @@ verb. `HostVerbs` is the union of the two maps and is what that function is gene
 
 ### 3.3 The manifest
 
-The rationale is at `packages/core/src/plugin/manifest.ts:1-19` and it is the design's best idea:
+The rationale is at `packages/core/src/plugin/manifest.ts` and it is the design's best idea:
 every question the parser and compiler need answered is answered *as data*, so only `execute` and
 `apply` cross the boundary. Two properties fall out — `parseFlow` stays synchronous, and a spec's
 shape can be inspected without running the author's code. `/v1/validate` depends on the second one.
@@ -315,11 +315,11 @@ collapses them to constants (`plugin/remote.ts`'s `remoteNodeDef` / `remoteTrans
 configuration is not expressible out of process — including the shipped guardrails plugin, whose
 `phase` is read from a spec field (`examples/guardrails/plugin.js:136`).
 
-`manifest.command` (`manifest.ts:62`, resolved at `remote-loader.ts:90-98`) is one of two routes to
+`manifest.command` (`manifest.ts`, resolved at `remote-loader.ts`) is one of two routes to
 a non-JavaScript plugin — the other being an executable entry point with a shebang, invoked by path
-(`defaultCommand`, `remote-loader.ts:56-74`), which is the form the loader prefers under `--safe`
-(`remote-loader.ts:41-55`). `manifest.command` is needed only when the entry point cannot be made a
-self-contained executable — the `python3 plugin.py` case named at `sandbox/types.ts:64-67`. Both
+(`defaultCommand`, `remote-loader.ts`), which is the form the loader prefers under `--safe`
+(`remote-loader.ts`). `manifest.command` is needed only when the entry point cannot be made a
+self-contained executable — the `python3 plugin.py` case named at `sandbox/types.ts`. Both
 routes are the justification for JSON Lines (`plugin/protocol.ts`, module docblock). Both are now covered — a shell
 plugin invoked by path and the same one started through `manifest.command`, in
 `plugin/__tests__/remote.test.ts`'s "a plugin that is not a JavaScript module" — where before, the
@@ -328,16 +328,16 @@ only tests of `loadRemotePlugin` wrote a non-executable `.mjs` and exercised the
 
 ### 3.4 The placeholder-substitution workaround
 
-`packages/core/src/plugin/flow-preprocess.ts:1-21` explains it. Deserialize each custom component on
+`packages/core/src/plugin/flow-preprocess.ts` explains it. Deserialize each custom component on
 its own (where the SDK's plugin path does work), hand the SDK an inert builtin stand-in carrying the
 same `id` and `name`, let the SDK check every invariant it normally would, then swap the real
 components back by id.
 
 | | Node | Transform |
 |---|---|---|
-| Stand-in type | `InputMessageNode` (`flow-preprocess.ts:32`) | `MessageSummarizationTransform` (`:39`) |
+| Stand-in type | `InputMessageNode` (`flow-preprocess.ts`) | `MessageSummarizationTransform` (`:39`) |
 | Synthesized fields | `component_type, id, name, inputs, outputs` (`:109-115`) | `component_type, id, name, llm` (`:120-125`), with `llm` a fake `OllamaConfig` (`:41-46`) |
-| Restore | `spec/adapter.ts:166-169`, one lookup by id | `spec/adapter.ts:131-160`, rebuilds the frozen `Agent` |
+| Restore | `spec/adapter.ts`, one lookup by id | `spec/adapter.ts`, rebuilds the frozen `Agent` |
 | Identity key | `${componentType}:${name}` (`:165`) so an inlined component resolves to one id | same |
 
 Covered: `Flow.nodes` and `Agent.transforms`. Not covered: `Agent.tools`, `Agent.llmConfig`, the
@@ -346,13 +346,13 @@ Covered: `Flow.nodes` and `Agent.transforms`. Not covered: `Agent.tools`, `Agent
 neither swapped nor reported.
 
 The walk is also where an unrecognised `component_type` is caught (`:130-137`), which is why every
-document takes this path whether or not plugins are configured (`spec/parser.ts:24-31`).
+document takes this path whether or not plugins are configured (`spec/parser.ts`).
 
 One real defect fell out of this, and Phase 0 fixed it. `parseAgent`, the `Agent` branch of
 `parseComponent`, and both `parseComponent*` functions discarded `substitution.pluginTransforms`,
 so they returned the synthetic `MessageSummarizationTransform` pointing at the fake Ollama config.
-`loadComponent` (`spec/load.ts:32-40`) goes through that path, and it is what
-`heddle validate <spec>` uses (`packages/cli/src/cli/validate.ts:29`). The plugin's own `validate()`
+`loadComponent` (`spec/load.ts`) goes through that path, and it is what
+`heddle validate <spec>` uses (`packages/cli/src/cli/validate.ts`). The plugin's own `validate()`
 still ran, so it was never a soundness hole — but the object was wrong, and any future
 standalone-Agent execution path would have silently run zero transforms. The restore now happens in
 `spec/parser.ts`'s `toComponent`/`restoreAgentTransforms`, covered by
@@ -367,10 +367,10 @@ The whole model is the process boundary, argued at `plugin/host.ts`, module docb
 | Chosen, not inherited, environment | `PluginHost.resolveCommand` → `env: launch.env`, defaulted on `PluginHostOptions.env` | The server passes literally `env: {}` — `packages/server/src/plugins.ts`, with the reasoning in the comment above it |
 | Lazy start | `loadRemotePlugin` reads only the manifest; the process starts inside `PluginHost.call` | Parsing and validating a flow executes zero lines of the author's code |
 | Optional sandbox | `host.ts`'s `resolveCommand`; wired at `server/plugins.ts` | Covered by "spawning a plugin under a sandbox" in `plugin/__tests__/remote.test.ts`, against a stub `SandboxSession` — the whole `SandboxCommand` crosses, not just its argv |
-| Per-run registry | `server/runs.ts:157`, disposed in `finally` at `:175` | Plus `rmSync` of the run's mkdtemp dir (`server/request-code.ts:239-240`) |
+| Per-run registry | `server/runs.ts`, disposed in `finally` at `:175` | Plus `rmSync` of the run's mkdtemp dir (`server/request-code.ts`) |
 | Teardown that cannot be declined | `dispose` → `stopProcess` (`host.ts`) | `shutdown` then a closed stdin, then SIGKILL. The kill is armed *before* either is sent and only the process actually ending disarms it, so a plugin that ignores both dies as it always did, `SHUTDOWN_GRACE` later |
-| Source is never imported | `server/request-code.ts:277-280` | Written `0500` with an absolute `#!node` shebang; the interpreter is absolute because the plugin's env has no `PATH` |
-| No `$VAR` deref in submitted specs | `server/runs.ts` → `provider.ts:32-53` | See §7.3 |
+| Source is never imported | `server/request-code.ts` | Written `0500` with an absolute `#!node` shebang; the interpreter is absolute because the plugin's env has no `PATH` |
+| No `$VAR` deref in submitted specs | `server/runs.ts` → `provider.ts` | See §7.3 |
 | Bounded stderr | `host.ts`'s `STDERR_LIMIT`, applied in the `stderr` handler in `start` | A logging loop cannot grow the server's heap |
 | Only declared verbs are served, and only granted ones answered | `plugin/protocol.ts`'s `SERVED` / `PLUGIN_METHODS`; `host.ts`, `serve()` | Two stages, kept separate on purpose: "heddle does not serve X. It serves: …", then "X is not granted to this plugin". A missing runner is a third message, about heddle's own wiring. The served set and the granted set are now different: heddle serves `runTool`, `emitEvent`, `log`, and the server grants all three to a submitted plugin (`packages/server/src/plugins.ts`'s `GRANTED`), with its own reasoning about a plugin pushing bytes down its caller's stream written above that constant |
 
@@ -385,10 +385,10 @@ submitted *tool scripts* run unsandboxed on that platform.
 
 | Extension point | Exists? | Spec-named? | Runs out of process? | Evidence |
 |---|---|---|---|---|
-| Custom node | yes | yes | yes | `graph/compile.ts:77-80` |
+| Custom node | yes | yes | yes | `graph/compile.ts` |
 | Custom transform | yes | yes | yes | `plugin/transform.ts`, `TransformChain.build` |
 | Custom sub-component | nominal | only under a plugin parent | n/a — never executed | `plugin/remote.ts`, `remoteComponentDef` |
-| Custom tool *type* | no | — | — | `ToolUnion` closed; `registry.claim` forbids builtin names (`plugin/registry.ts:77-83`) |
+| Custom tool *type* | no | — | — | `ToolUnion` closed; `registry.claim` forbids builtin names (`plugin/registry.ts`) |
 | Custom LLM provider | yes — Phase 5 | yes, as an `llm_config` | yes, verb `chat`, streaming optional | `llm/provider.ts`, `providerFor`; `plugin/remote.ts`, `remoteProviderDef` |
 | Custom tool source / registry | no | — | — | `Registry` is an interface (`tool/types.ts`, `Registry`) with no plugin route |
 | Custom wire protocol / encoder | no | — | — | `serializeEvent` (`packages/server/src/sse.ts`, `serializeEvent`) is a free function with one hardcoded rendering |
@@ -398,19 +398,19 @@ submitted *tool scripts* run unsandboxed on that platform.
 
 ## 4. The ceiling
 
-Suppose you add `kind: 'provider'` to `manifest.ts:31` and let it through the validator at `:123-128`.
+Suppose you add `kind: 'provider'` to `manifest.ts` and let it through the validator at `:123-128`.
 What happens next:
 
-1. `remote-loader.ts:121-133` has a three-arm switch with nowhere to put it. Add a fourth arm — it
+1. `remote-loader.ts` has a three-arm switch with nowhere to put it. Add a fourth arm — it
    pushes into… what? `HeddlePlugin` has exactly `components`, `nodes`, `transforms`
    (`plugin/types.ts`, `HeddlePlugin`).
-2. Add `providers?: PluginProviderDef[]`. Now `PluginRegistry.add` (`registry.ts:55-59`) groups it
+2. Add `providers?: PluginProviderDef[]`. Now `PluginRegistry.add` (`registry.ts`) groups it
    and `kindOf` reports it. Fine so far.
-3. `flow-preprocess.ts:107-127` has no arm for it, so the component has no stand-in and
+3. `flow-preprocess.ts` has no arm for it, so the component has no stand-in and
    `LlmConfigUnion` rejects the document (`vendor/agentspec/src/llms/index.ts:12-18`). Add a third
    placeholder — see §8.
 4. Now the component parses. `createProvider` is a free function imported directly at
-   `node/agent.ts:17` and `node/llm.ts:5`; it gates on a module-level `Set`
+   `node/agent.ts` and `node/llm.ts`; it gates on a module-level `Set`
    (`llm/provider.ts:10-15,122`) and returns `new OpenAIProvider(opts)` unconditionally (`:141`).
    Nothing consults a registry. Add the lookup.
 5. Now the plugin is asked for a provider. **`HostMethod` is `'execute' | 'apply'`
@@ -491,7 +491,7 @@ try {
 
 There is no position in the spec that means "around every node". You cannot name that slot; you can
 only intercept it. Everything blocked by this one un-wrappable await: per-node retry, per-node
-timeout (the only timeout is whole-run, `runner.ts:17`), node-result caching, dry-run substitution,
+timeout (the only timeout is whole-run, `runner.ts`), node-result caching, dry-run substitution,
 approval gates, checkpointing.
 
 And line 72 was unconditional: **every node error was fatal, and heddle had no error-handling
@@ -508,14 +508,14 @@ than a slot, and per-node timeout, memoization, dry-run and approval gates are s
 
 ### 5.2 The agent loop fuses eight policies into one function
 
-`AgentExecutor.runAgent` (`node/agent.ts:86-254`) is a single 169-line method containing, in order:
+`AgentExecutor.runAgent` (`node/agent.ts`) is a single 169-line method containing, in order:
 
 | Policy | Line | Currently |
 |---|---|---|
 | Round cap | `agent.ts:21,134` | Module const `MAX_TOOL_ROUNDS = 10`; not a `RunnerOption`, not a spec field, not per-agent |
 | Message construction | `:114-121` | system + history + one user turn that is `JSON.stringify(inputData)` |
 | Chat history ingress | `:105,112` | Magic `_chat_history` state key, produced only by `packages/cli/src/chat/ui.tsx` |
-| Termination | `:155` | "no `tool_calls`" only. `finish_reason` is captured (`llm/openai.ts:41`, and again in `collectStream`) and read nowhere — a `length`-truncated answer is silently accepted as final |
+| Termination | `:155` | "no `tool_calls`" only. `finish_reason` is captured (`llm/openai.ts`, and again in `collectStream`) and read nowhere — a `length`-truncated answer is silently accepted as final |
 | Tool dispatch | `:190` | Serial `for…of`, no concurrency, no per-call policy |
 | Tool result serialization | `:214` | `JSON.stringify`, no truncation or summarization |
 | Tool error feedback | `:242-246` | `content: \`Error: ${err}\`` — no retry, no structure |
@@ -527,18 +527,18 @@ serialized." It can only wrap the call.
 The double parse this section originally named here — `tc.arguments` read leniently for the event
 payload and again strictly inside `executeTool`, so a malformed blob left the observer's record
 disagreeing with what executed — **landed as fixed in Phase 0**. There is now one reading,
-`parseToolArguments`, called at `agent.ts:194` and used by both. It is still worth knowing about,
+`parseToolArguments`, called at `agent.ts` and used by both. It is still worth knowing about,
 because the constraint it was named for survives the fix: a `toolCall` hook must receive that one
-authoritative parse (`agent.ts:195`), and anything that reintroduces a second reading breaks the hook
+authoritative parse (`agent.ts`), and anything that reintroduces a second reading breaks the hook
 rather than just the log.
 
 ### 5.3 Provider construction is not even injectable
 
-`Provider` (`llm/types.ts:98-122`) is a one-required-method interface — the cheapest possible seam.
+`Provider` (`llm/types.ts`) is a one-required-method interface — the cheapest possible seam.
 Phase 2 added a second, *optional* method (`chatCompletionStream?`), which strengthens the argument
 rather than weakening it: the interface absorbed a whole new transport without a breaking change and
 without a second implementation existing yet. But `createProvider` is a free function imported
-directly (`node/agent.ts:17`, `node/llm.ts:5`), and `Dependencies` (`node/types.ts:12-49`) has no
+directly (`node/agent.ts`, `node/llm.ts`), and `Dependencies` (`node/types.ts`) has no
 provider or factory field. **Even a library embedder who controls `Dependencies` cannot substitute or
 wrap provider construction without patching source.** Retry, caching, rate limiting, token
 accounting, record/replay for CI — all unreachable.
@@ -547,11 +547,11 @@ accounting, record/replay for CI — all unreachable.
 
 `TransformChain.apply` (`plugin/transform.ts`, `TransformChain.apply`) returns `pass | modify | reject`
 (`plugin/types.ts`, `TransformResult`) and that return value genuinely changes control flow: a `pre` rejection
-skips the model call entirely (`node/agent.ts:125-128`), which is why the playground can demo
+skips the model call entirely (`node/agent.ts`), which is why the playground can demo
 guardrails with no credential.
 
 So the mechanism is proven in this codebase. Its limitation is the **number of taps**: exactly two,
-both outside the tool loop (`agent.ts:125`, `:158`). A transform never sees a tool call, a tool
+both outside the tool loop (`agent.ts`, `:158`). A transform never sees a tool call, a tool
 result, a tool error, or a round boundary. **Adding taps to a proven mechanism is a smaller change
 than inventing one**, and the verdict vocabulary should stay recognisably the same.
 
@@ -571,42 +571,42 @@ a handful of call sites; **L** = touches the protocol, the event system, or the 
 | # | Seam | Location | What an author wants | Shape | Diff |
 |---|---|---|---|---|---|
 | 1 | Provider selection | `llm/provider.ts:10-15,122,141` | Anthropic/Bedrock provider; record-replay provider for free deterministic CI | component | S |
-| 2 | Provider wrapping | `llm/provider.ts:141`; no `Dependencies` field (`node/types.ts:12-49`) | retry+backoff, response cache, rate limit, audit log, PII redaction | middleware | S |
-| 3 | Node dispatch | `runner/runner.ts:61-62` | per-node timeout, memoization, dry-run, approval gate | middleware | M |
-| 4 | Node error | `runner/runner.ts:63-73` | ~~retry, degrade to a canned answer~~ **landed, Phase 6** — the `nodeError` seam. Routing to a *fallback node* did not: a middleware supplies a result, never a route | middleware | S |
-| 5 | Tool call | `node/agent.ts:190-249` | deny, rewrite args, return cached result — this is `humanInTheLoop` | middleware | M |
-| 6 | Tool result | `node/agent.ts:214` | truncate/summarize a 2 MB blob before it eats the context window | middleware | S |
-| 7 | Tool error | `node/agent.ts:242-246` | retry a 429 instead of narrating it to the model | middleware | S |
-| 8 | Agent termination | `node/agent.ts:155`; `finish_reason` unread (`llm/openai.ts:41`, and in `collectStream`) | stop on truncation; stop when a `submit_answer` tool is called | middleware | S |
-| 9 | Output shaping | `node/agent.ts:168-175` | enforce declared `outputs` as a schema; repair non-conforming answers | middleware | S |
-| 10 | Round cap | `node/agent.ts:21` | a research agent needing 40 rounds; partial results instead of `:251` throwing | config, not a plugin | S |
+| 2 | Provider wrapping | `llm/provider.ts`; no `Dependencies` field (`node/types.ts`) | retry+backoff, response cache, rate limit, audit log, PII redaction | middleware | S |
+| 3 | Node dispatch | `runner/runner.ts` | per-node timeout, memoization, dry-run, approval gate | middleware | M |
+| 4 | Node error | `runner/runner.ts` | ~~retry, degrade to a canned answer~~ **landed, Phase 6** — the `nodeError` seam. Routing to a *fallback node* did not: a middleware supplies a result, never a route | middleware | S |
+| 5 | Tool call | `node/agent.ts` | deny, rewrite args, return cached result — this is `humanInTheLoop` | middleware | M |
+| 6 | Tool result | `node/agent.ts` | truncate/summarize a 2 MB blob before it eats the context window | middleware | S |
+| 7 | Tool error | `node/agent.ts` | retry a 429 instead of narrating it to the model | middleware | S |
+| 8 | Agent termination | `node/agent.ts`; `finish_reason` unread (`llm/openai.ts`, and in `collectStream`) | stop on truncation; stop when a `submit_answer` tool is called | middleware | S |
+| 9 | Output shaping | `node/agent.ts` | enforce declared `outputs` as a schema; repair non-conforming answers | middleware | S |
+| 10 | Round cap | `node/agent.ts` | a research agent needing 40 rounds; partial results instead of `:251` throwing | config, not a plugin | S |
 | 11 | Tool registry | `tool/types.ts`, `Registry`; only `FileRegistry` | MCP discovery, HTTP tool catalogue, inline spec tools | component | S |
 | 12 | Tool executor / protocol | `tool/executor.ts:6,137,151,173` | wrap an existing CLI (argv in, exit code out) without a JSON shim | component | M |
 | 13 | Tool discovery metadata | `tool/registry.ts:35,46,52-56` | descriptions and schemas from the tool itself, not duplicated in the spec | component | S |
-| 14 | Tool JSON Schema | `buildToolSchema` (`node/agent.ts:527-551`), `:542` | optional parameters — today every input is `required` | middleware | S |
-| 15 | Message construction | `node/agent.ts:114-121`; `Message.content: string` (`llm/types.ts:10`) | few-shot exemplars, templated user turn, prompt-cache markers, multimodal | middleware | M |
+| 14 | Tool JSON Schema | `buildToolSchema` (`node/agent.ts`), `:542` | optional parameters — today every input is `required` | middleware | S |
+| 15 | Message construction | `node/agent.ts`; `Message.content: string` (`llm/types.ts`) | few-shot exemplars, templated user turn, prompt-cache markers, multimodal | middleware | M |
 | 16 | Chat history store | `node/agent.ts:105,112` | server-side threads in Redis/Postgres; sliding window | component | S |
-| 17 | State merge | `state/state.ts:36-38`, applied `runner.ts:89` | namespace by node, append, or error on collision instead of silent clobber | component | S |
-| 18 | Input resolution | `runner/runner.ts:107-126` | strict mode: a node sees only its declared `inputs`; fail loudly on a missing source | middleware | S |
-| 19 | Flow termination | `runner/runner.ts:84-87`; `branchName` unread (`spec/types.ts:88`) | a plugin `AbortNode`; reporting *which* exit a multi-exit flow took | capability flag | S |
-| 20 | Template engine | `substituteTemplate` (`node/agent.ts:498-504`); `getString` (`state/state.ts:27-30`) | dotted paths, loops, rendering objects instead of blanking them | component | S |
+| 17 | State merge | `state/state.ts`, applied `runner.ts` | namespace by node, append, or error on collision instead of silent clobber | component | S |
+| 18 | Input resolution | `runner/runner.ts` | strict mode: a node sees only its declared `inputs`; fail loudly on a missing source | middleware | S |
+| 19 | Flow termination | `runner/runner.ts`; `branchName` unread (`spec/types.ts`) | a plugin `AbortNode`; reporting *which* exit a multi-exit flow took | capability flag | S |
+| 20 | Template engine | `substituteTemplate` (`node/agent.ts`); `getString` (`state/state.ts`) | dotted paths, loops, rendering objects instead of blanking them | component | S |
 | 21 | Branch matcher | `node/branching.ts:6,25,28-34,42-48` | numeric ranges, regex, LLM-decided routing. Also fixes the order-dependent fallback at `:28-34` | component | S |
-| 22 | Graph rewrite | `graph/compile.ts:70` | wrap every `AgentNode` in a guardrail; insert checkpoints. The generic escape hatch | middleware | M |
-| 23 | Graph validation | `graph/validate.ts:5-56` | org policy rules; warnings that don't block | component | S |
+| 22 | Graph rewrite | `graph/compile.ts` | wrap every `AgentNode` in a guardrail; insert checkpoints. The generic escape hatch | middleware | M |
+| 23 | Graph validation | `graph/validate.ts` | org policy rules; warnings that don't block | component | S |
 | 24 | Event emission | `runner/events.ts`, `EventHandler`, 9 emit sites | any two-way hook at all — a plugin that *observes* or intercepts the engine's events (Phase 6). ~~`EventType` is closed so a plugin cannot even emit~~ **emission landed, Phase 3**: `EventType = BuiltinEventType \| PluginEventType` (`runner/events.ts`), `pluginReporter` (`plugin/executor.ts`), the `emitEvent`/`log` verbs (`plugin/protocol.ts`'s `PluginMethods`, served in `plugin/host.ts`'s `serve`) | protocol | M |
 | 25 | Plugin context | `plugin/types.ts`, `PluginServices`; built at `plugin/executor.ts`'s `runNode` and `plugin/transform.ts`'s `apply` | ~~`emitEvent`, workspace handle~~ **landed, Phase 3**; ~~`callModel`~~ **landed, Phase 4**, on both context types. Still wanted: run-scoped state | protocol | S |
-| 26 | Generation params | ~~`spec/types.ts:24` unread~~ **landed, Phase 4**: `generationParams` (`llm/provider.ts`) reads `defaultGenerationParameters` into `ChatRequest` (`llm/types.ts`), read by `AgentExecutor` and `LLMExecutor` | temperature, maxTokens, topP, JSON mode. Still absent: seed, stop | data widening | S |
+| 26 | Generation params | ~~`spec/types.ts` unread~~ **landed, Phase 4**: `generationParams` (`llm/provider.ts`) reads `defaultGenerationParameters` into `ChatRequest` (`llm/types.ts`), read by `AgentExecutor` and `LLMExecutor` | temperature, maxTokens, topP, JSON mode. Still absent: seed, stop | data widening | S |
 | 27 | Streaming | ~~absent from `Provider`~~ **landed, Phase 2**: `chatCompletionStream?` (`llm/types.ts`), `llm/openai.ts`, `token_delta` (`runner/events.ts`) | token-by-token rendering | protocol | L |
 | 28 | Sandbox backend | `sandbox/index.ts:7,50-68` | Docker/gVisor for the playground; a recording no-op for CI | component | S |
-| 29 | Sandbox policy | global at startup (`server/runs.ts:74-77`) | "fetch needs network, file-writer must not" — unexpressible | middleware | M |
+| 29 | Sandbox policy | global at startup (`server/runs.ts`) | "fetch needs network, file-writer must not" — unexpressible | middleware | M |
 | 30 | Spec format / source | `spec/parser.ts:21,71`; `spec/load.ts:13-15,22` | TOML, a DSL; load from a URL or a git ref | component | S |
-| 31 | Builtin override | `plugin/registry.ts:77-83`; skip list `plugin/transform.ts`, `BUILTIN_TRANSFORMS` | ship a real `MessageSummarizationTransform`; "AgentNode with retries" | precedence rule | M |
+| 31 | Builtin override | `plugin/registry.ts`; skip list `plugin/transform.ts`, `BUILTIN_TRANSFORMS` | ship a real `MessageSummarizationTransform`; "AgentNode with retries" | precedence rule | M |
 | 32 | Placeholder slots | `plugin/flow-preprocess.ts:32,39,107,118` | **the ceiling on every "component" row above** | vendored SDK | M |
 | 33 | Wire protocol / event encoding | `serializeEvent` (`packages/server/src/sse.ts`, `serializeEvent`), `SseStream.send` | render a run as AG-UI, OpenAI-compatible chunks, or OTLP spans instead of heddle's own frames | encoder | S |
 
 ### Ranked shortlist
 
-1. **#4 node error** (`runner.ts:63-73`) — largest capability gap in the engine (heddle cannot
+1. **#4 node error** (`runner.ts`) — largest capability gap in the engine (heddle cannot
    recover from *any* failure), smallest diff, and it is the cleanest place to prove the middleware
    verdict vocabulary.
 2. ~~**#25 plugin context**~~ **done.** The reporting and workspace half landed in Phase 3, and
@@ -615,14 +615,14 @@ a handful of call sites; **L** = touches the protocol, the event system, or the 
 3. **#1+#2 providers** (`llm/provider.ts`, `createProvider`) — best leverage/cost ratio in the
    codebase; the interface is already one method. #26 was its precondition and landed with Phase 4,
    so a provider plugin now receives a request worth differing on.
-4. **#5 tool call** (`agent.ts:190-249`) — this is the mechanism `Agent.humanInTheLoop`
-   (`spec/types.ts:46`) promises and nothing implements. Grep confirms the field is read nowhere.
+4. **#5 tool call** (`agent.ts`) — this is the mechanism `Agent.humanInTheLoop`
+   (`spec/types.ts`) promises and nothing implements. Grep confirms the field is read nowhere.
 5. **#11 tool registry** (`tool/types.ts`, `Registry`) — two methods, and the demand is already proven:
-   the server had to write `mergeRegistries` *outside* core (`packages/server/src/tools.ts:15-29`)
+   the server had to write `mergeRegistries` *outside* core (`packages/server/src/tools.ts`)
    because no composition existed inside.
 6. **#6+#7 tool result / error** (`agent.ts:214,242-246`) — result-size management is the most common
    production agent problem and today there is no answer at all.
-7. **#3 node dispatch** (`runner.ts:61-62`) — the generic seam; do it after #4 has settled the shape.
+7. **#3 node dispatch** (`runner.ts`) — the generic seam; do it after #4 has settled the shape.
 8. **#32 SDK unions** — `vendor/agentspec` is ours to patch (§8), so this is an early cheap track
    rather than a parallel hope. Unblocks every remaining "component" row.
 9. **#33 encoder** (`serializeEvent`) — the only kind with *no* placeholder cost and *no* capability
@@ -818,7 +818,7 @@ The set is therefore closed at four, and `PLUGIN_METHODS` in `plugin/protocol.ts
 | `callModel` | **Landed.** The single highest-value addition. Without it, an LLM-as-judge node, a semantic router or a summarizer must ship its own SDK *and* obtain its own credential — and a submitted plugin has an empty environment (`PluginHost.resolveCommand`), so it cannot. | `PluginModel` (`plugin/services.ts`), bound per execution and served in `plugin/host.ts`'s `serveCallModel` against the caller the call was dispatched with — per component, and with no host-wide fallback at all. See below for why. |
 | `emitEvent` | **Landed.** A plugin node was silent between `node_start` and `node_complete` (`runner.ts:47,77`). Required opening `EventType` (`runner/events.ts`) to a namespaced string plus a `data?: unknown` payload, which is what `PluginEventType` is. | `pluginReporter` (`plugin/executor.ts`), served in `plugin/host.ts`'s `serveEmitEvent` against the reporter the call was dispatched with. |
 | `log` | **Landed.** `console.log` is silently redirected to stderr (the generated runtime's `console` shim, `plugin/runtime-source.ts`) and stderr is bounded to 4096 bytes and only surfaced on failure (`host.ts`'s `STDERR_LIMIT`). There was no way for a working plugin to say anything. | Same reporter as `emitEvent`, published as `plugin_log` carrying `level` and `message`. |
-| ~~`getState`~~ | **Withdrawn, never built.** The argument was that `execute` receives only the node's resolved input (`plugin/remote.ts`, `remoteNodeDef`), which after `resolveInputs` is *usually* the whole state (`runner.ts:112-114`) but is not guaranteed to be — so explicit beats incidental. What it would have cost is threading `currentState` through `Dependencies` per node, and what it buys is a case nobody has brought: a plugin that needs a value its node was not given is a plugin whose node should have been given it, which the spec's data-flow edges already express. Withdrawn rather than deferred, because a proposal that survives four phases without a caller is not waiting for its turn. | — |
+| ~~`getState`~~ | **Withdrawn, never built.** The argument was that `execute` receives only the node's resolved input (`plugin/remote.ts`, `remoteNodeDef`), which after `resolveInputs` is *usually* the whole state (`runner.ts`) but is not guaranteed to be — so explicit beats incidental. What it would have cost is threading `currentState` through `Dependencies` per node, and what it buys is a case nobody has brought: a plugin that needs a value its node was not given is a plugin whose node should have been given it, which the spec's data-flow edges already express. Withdrawn rather than deferred, because a proposal that survives four phases without a caller is not waiting for its turn. | — |
 
 Note what is *not* here: no `readFile`, no `fetch`, no `getEnv`. The process boundary denies those,
 and re-granting them over RPC would hand back exactly what `plugin/host.ts`, module docblock bought.
@@ -939,7 +939,7 @@ first stage also makes the `switch` below it exhaustive against `PluginMethod`, 
 added without a handler fails to compile rather than leaving its caller waiting for a reply. Both
 messages are asserted in `plugin/__tests__/remote.test.ts`'s capabilities block.
 
-**Why this must precede the protocol widening.** `packages/core/src/llm/provider.ts:92-113` closed a
+**Why this must precede the protocol widening.** `packages/core/src/llm/provider.ts` closed a
 specific hole, and its own comment states it precisely:
 
 ```ts
@@ -954,7 +954,7 @@ if (config.url) {
 ```
 
 The operator's key is attached only when the spec brought no credential *and* named no URL
-(`provider.ts:98-112`), because otherwise `llm_config: { url: https://attacker.example }` with no
+(`provider.ts`), because otherwise `llm_config: { url: https://attacker.example }` with no
 `api_key` would have the operator's key posted to that host.
 
 Now add `callModel` with no gate. The plugin never sees the key — the host holds it — but it
@@ -1144,7 +1144,7 @@ path, and `{ action: 'retry' }` is the whole feature.
 
 **Ordering and composition.** Registration order is load order — `PluginRegistry.add` pushes in the
 order plugins were passed (`plugin/registry.ts:47,55-65`), and `buildPlugins` iterates
-`code.plugins` in submission order (`packages/server/src/plugins.ts:27`).
+`code.plugins` in submission order (`packages/server/src/plugins.ts`).
 
 - `before` is evaluated in registration order; `after` is evaluated in **reverse** registration
   order — the onion, even without `next`.
@@ -1171,11 +1171,11 @@ order plugins were passed (`plugin/registry.ts:47,55-65`), and `buildPlugins` it
   B's value. C is never consulted in either phase.
 - **`retry` re-enters from the top.** A `retry` verdict re-invokes the seam as a new invocation: a
   fresh `callId`, the full `before` chain again, and `attempt` incremented. It does not resume the
-  underlying call in place, because at `runner.ts:61` there is nothing to resume. The host enforces
+  underlying call in place, because at `runner.ts` there is nothing to resume. The host enforces
   its own attempt ceiling and stops honouring `retry` past it, so a miscounting or malicious
   middleware cannot loop a run indefinitely; the manifest's `maxAttempts` cap (§7.8a,
   `"maximum": 10`) is author-declared config and guarantees nothing on its own.
-- A middleware may **not** introduce a branch. `graph/validate.ts:26-51` checks reachability before
+- A middleware may **not** introduce a branch. `graph/validate.ts` checks reachability before
   anything executes, and `PluginNodeAdapter` already enforces declared branches for the same reason
   (`plugin/executor.ts`'s `runNode` branch check). A `replace` verdict on `node` supplies a `State`, never a route.
 
@@ -1191,7 +1191,7 @@ order plugins were passed (`plugin/registry.ts:47,55-65`), and `buildPlugins` it
 ```
 
 **Spec-named or host-configured?** Middleware is **host-configured**: the operator loads it, it is
-not written into the flow. That preserves `plugin/loader.ts:5-7` and it is the honest answer for
+not written into the flow. That preserves `plugin/loader.ts` and it is the honest answer for
 something that runs on every node whether the flow asked or not. A middleware that a flow *does*
 select is just a transform, which already exists.
 
@@ -1407,11 +1407,11 @@ Under placeholders, this would have been the most expensive stand-in yet:
 - `LlmConfigUnion` gates three distinct positions: `Agent.llmConfig` (`vendor/agentspec/src/agents/agent.ts:17`),
   `LlmNode.llmConfig`, and both transforms' `llm` (`vendor/agentspec/src/transforms/message-transform.ts:29,53`).
 - The stand-in must be a real member of that union with its required fields synthesized — exactly
-  what `PLACEHOLDER_LLM` already does (`plugin/flow-preprocess.ts:41-46`, an `OllamaConfig` with a
+  what `PLACEHOLDER_LLM` already does (`plugin/flow-preprocess.ts`, an `OllamaConfig` with a
   fake `url` and `model_id`).
-- Restoration is the expensive half. A node stand-in restores in one lookup (`spec/adapter.ts:166-169`)
+- Restoration is the expensive half. A node stand-in restores in one lookup (`spec/adapter.ts`)
   because it is a top-level element. A transform stand-in already costs ~30 lines because it must
-  **rebuild the frozen `Agent`** (`spec/adapter.ts:131-160`; the comment at `:128-129` notes the SDK
+  **rebuild the frozen `Agent`** (`spec/adapter.ts`; the comment at `:128-129` notes the SDK
   freezes what it builds). An `llmConfig` is nested one level deeper still and appears in three
   places, so it needs a third restore path that rebuilds the same frozen ancestor for a different
   field.
@@ -1434,25 +1434,25 @@ the kind for something the operator installs and a flow does not mention, and it
 
 `Registry` is two methods (`packages/core/src/tool/types.ts`, `Registry`) — the cheapest component kind on
 the list, and demand is proven: the server had to write registry composition *outside* core
-(`packages/server/src/tools.ts:15-29`) because none existed inside.
+(`packages/server/src/tools.ts`, `mergeRegistries`) because none existed inside.
 
 The one real constraint: **`lookup` must stay synchronous.** It is called inside execution at
-`node/agent.ts:267` and `plugin/remote.ts`'s `toolRunner`, and at request-validation time by
-`assertToolsAvailable` (`packages/server/src/tools.ts:39`). A synchronous call cannot cross the pipe.
+`node/agent.ts` and `plugin/remote.ts`'s `toolRunner`, and at request-validation time by
+`assertToolsAvailable` (`packages/server/src/tools.ts`). A synchronous call cannot cross the pipe.
 
 So a registry plugin is a **discovery** plugin, not a live registry:
 
 - The manifest declares its tools as data — the same trick as `inputs`/`outputs`
-  (`plugin/manifest.ts:1-19`), and it keeps `parseFlow` synchronous.
+  (`plugin/manifest.ts`), and it keeps `parseFlow` synchronous.
 - An optional `listTools` `HostMethod` covers genuinely dynamic sources (MCP server discovery), but
-  it starts the process during load, which is exactly the property `remote-loader.ts:109-111`
+  it starts the process during load, which is exactly the property `remote-loader.ts`
   protects. So it is opt-in per plugin, and it does *not* run on the `/v1/validate` path.
 - Results are cached for the run. `lookup` is served from the cache.
 
 This also fixes a smaller annoyance: `FileRegistry` gives every discovered tool
-`description: ''` (`packages/core/src/tool/registry.ts:52-56`) and never populates `inputSchema`
-(`tool/types.ts:8-9`), so a tool's description reaches the model only if the spec repeats it
-(`node/agent.ts:100`). A manifest-driven registry has one source of truth.
+`description: ''` (`packages/core/src/tool/registry.ts`) and never populates `inputSchema`
+(`tool/types.ts`), so a tool's description reaches the model only if the spec repeats it
+(`node/agent.ts`). A manifest-driven registry has one source of truth.
 
 ### 7.8 Worked examples
 
@@ -1569,10 +1569,10 @@ serve({
 });
 ```
 
-`branches` is declared in the manifest because `graph/validate.ts:26-42` checks reachability before
+`branches` is declared in the manifest because `graph/validate.ts` checks reachability before
 anything runs, and `PluginNodeAdapter` rejects an undeclared branch with a message that names the
 declared set (`plugin/executor.ts`'s `runNode` branch check) rather than letting it surface as a confusing
-"no next node" from `runner.ts:94-97`.
+"no next node" from `runner.ts`.
 
 **(c) An Anthropic provider (host-configured form).**
 
@@ -1749,12 +1749,12 @@ agent↔UI interaction. heddle's runner events already carry most of its lifecyc
 
 | heddle `Event` | AG-UI event |
 |---|---|
-| `flow_start` (`runner.ts:26`) | `RunStarted { threadId, runId }` |
-| `flow_complete` (`runner.ts:85`) | `RunFinished { outcome?, result? }` |
-| `node_error` (`runner.ts:66`) | `RunError { message, code? }` |
+| `flow_start` (`runner.ts`) | `RunStarted { threadId, runId }` |
+| `flow_complete` (`runner.ts`) | `RunFinished { outcome?, result? }` |
+| `node_error` (`runner.ts`) | `RunError { message, code? }` |
 | `node_start` / `node_complete` (`runner.ts:47,77`) | `StepStarted` / `StepFinished { stepName }` |
-| `tool_call` (`node/agent.ts:199`) | `ToolCallStart` + `ToolCallArgs` + `ToolCallEnd` |
-| `tool_result` (`node/agent.ts:217`) | `ToolCallResult { messageId, toolCallId, content }` |
+| `tool_call` (`node/agent.ts`) | `ToolCallStart` + `ToolCallArgs` + `ToolCallEnd` |
+| `tool_result` (`node/agent.ts`) | `ToolCallResult { messageId, toolCallId, content }` |
 | `node_complete.state` | `StateSnapshot { snapshot }` |
 | `token_delta` (`node/agent.ts`, Phase 2) | `TextMessageContent { delta }` |
 
@@ -1817,7 +1817,7 @@ Two properties make this the cheapest kind on the board:
 
 The one genuine cost is that opening this layer makes the `Event` shape a **public contract**. `Event`
 (`runner/events.ts`, `Event`) is a struct that `serializeEvent` mirrors by spreading;
-`packages/server/src/sse.ts:4-18` is explicit that the wire form is the engine's own model. Once
+`packages/server/src/sse.ts` is explicit that the wire form is the engine's own model. Once
 third-party encoders consume it, adding a field is fine and changing one is a break. That argues for
 versioning `Event` at the same time.
 
@@ -1966,9 +1966,9 @@ A placeholder is not one constant. It is four things:
 
 | Requirement | Node today | Transform today | An `LlmConfig` would need |
 |---|---|---|---|
-| A builtin inert enough to survive validation | `InputMessageNode`, chosen because its factory passes `inputs`/`outputs` through untouched (`flow-preprocess.ts:27-32`) | `MessageSummarizationTransform` (`:34-39`) | one of five `LlmConfigUnion` members |
+| A builtin inert enough to survive validation | `InputMessageNode`, chosen because its factory passes `inputs`/`outputs` through untouched (`flow-preprocess.ts`) | `MessageSummarizationTransform` (`:34-39`) | one of five `LlmConfigUnion` members |
 | Synthesized required fields | 5 (`:109-115`) | 4, including a whole fake `OllamaConfig` (`:41-46,120-125`) | at minimum `model_id` + `url` |
-| A restore path | 1 lookup, `spec/adapter.ts:166-169` | ~30 lines rebuilding the frozen `Agent`, `spec/adapter.ts:131-160` | a third path, rebuilding the same frozen ancestor for a different field, in three positions |
+| A restore path | 1 lookup, `spec/adapter.ts` | ~30 lines rebuilding the frozen `Agent`, `spec/adapter.ts` | a third path, rebuilding the same frozen ancestor for a different field, in three positions |
 | A guarantee it never serializes | holds because restore precedes any export | holds | would need checking — the placeholder points at `localhost:11434` |
 
 The scaling is bad in a specific way. It is not that four placeholders are worse than three; it is
@@ -2007,7 +2007,7 @@ The work, in two tiers:
 | 2 | Add the `LazyNodeRef` indirection + a registration function for `MessageTransformUnion`, `LlmConfigUnion`, `ToolUnion` | real work — none of the three has any lazy indirection today | every remaining component kind, including providers, at zero placeholder cost |
 
 Tier 1 alone deletes the node half of `plugin/flow-preprocess.ts`. Tier 2 deletes the module. The
-prize is stated in its own docblock (`flow-preprocess.ts:19-21`): it collapses into registering the
+prize is stated in its own docblock (`flow-preprocess.ts`): it collapses into registering the
 plugin's schemas.
 
 Three more gaps are worth closing in the same pass, all of which cost heddle code today:
@@ -2015,8 +2015,8 @@ Three more gaps are worth closing in the same pass, all of which cost heddle cod
 | Gap | What it costs now |
 |---|---|
 | No zod analogue of Python's `PydanticComponentSerializationPlugin` | every custom type needs a hand-written deserializer |
-| `BuiltinsComponentDeserializationPlugin` not exported from the root | `plugin/deserializer.ts:35-59` re-declares `PROTOCOL_FIELDS` / `DANGEROUS_KEYS` / `OPAQUE_FIELDS` |
-| `SerializedDict` / `SerializedFields` not exported | `plugin/deserializer.ts:17-20` recovers them via `Parameters<>` |
+| `BuiltinsComponentDeserializationPlugin` not exported from the root | `plugin/deserializer.ts` re-declares `PROTOCOL_FIELDS` / `DANGEROUS_KEYS` / `OPAQUE_FIELDS` |
+| `SerializedDict` / `SerializedFields` not exported | `plugin/deserializer.ts` recovers them via `Parameters<>` |
 
 Between them, most of `deserializer.ts`'s 207 lines.
 
@@ -2312,7 +2312,7 @@ type, and heddle bounds how often it is called — which is more than can be sai
 
 ### Phase 6 — Middleware kind — **landed at `nodeError`; five seams reserved**
 
-The advice held: `nodeError` alone, and the cost estimate held too — restructuring `runner.ts:61-73`
+The advice held: `nodeError` alone, and the cost estimate held too — restructuring `runner.ts`
 was the easy part, and the policy questions were the phase.
 
 | Landed | Where |
@@ -2344,7 +2344,7 @@ engine.heddle.run.
 One smaller gap worth knowing about. `heddle chat` builds its own `Runner`
 (`packages/cli/src/chat/ui.tsx`) from the same options object, so the chain *is* installed there and
 a retry works — but the TUI reads four event types and has no `warning` arm, so the retry happens
-silently. `heddle run` renders it, via `cli/progress.ts:55`. Recorded for the same reason Phase 3
+silently. `heddle run` renders it, via `cli/progress.ts`. Recorded for the same reason Phase 3
 recorded the TUI's silence about `plugin_log`: a contract nothing draws is not yet a feature.
 
 **Depends on:** Phases 1, 2, 3.
@@ -2605,26 +2605,26 @@ Two new contracts appear in this revision and both are easy to create by acciden
 This is the sharpest new risk and it has no precedent in the current design. A `transform` only
 affects agents that declare it (`plugin/transform.ts`, `TransformChain.build`). A middleware on `node` affects
 **everything**, including flows written before the middleware existed and by people who have never
-heard of it. A middleware that throws at `runner.ts:61` fails runs it has nothing to do with.
+heard of it. A middleware that throws at `runner.ts` fails runs it has nothing to do with.
 
 Mitigations, all of which should ship *with* Phase 6 and not after:
 
 - Seams are declared per component in the manifest, so the blast radius is inspectable as data
-  before anything runs — the same property `manifest.ts:1-19` already buys.
+  before anything runs — the same property `manifest.ts` already buys.
 - An error policy, decided rather than defaulted (§7.10 Q3).
-- A middleware may not introduce a branch: `graph/validate.ts:26-51` checks reachability before
+- A middleware may not introduce a branch: `graph/validate.ts` checks reachability before
   execution, and `plugin/executor.ts`'s `runNode` branch check already enforces the analogous rule for nodes.
 - A `replace` verdict is reported as a `warning` event, so "the flow returned something odd" is
   traceable to the middleware that did it.
 
 ### Performance of per-call IPC
 
-`runner.ts:61-62` costs one `await` today. With two middlewares on the `node` seam it costs four JSON
+`runner.ts` costs one `await` today. With two middlewares on the `node` seam it costs four JSON
 Lines round trips through a pipe, plus four full serializations of the node's `State` — and
 `plugin/remote.ts`'s `serializable` already does a complete `JSON.parse(JSON.stringify(...))` round trip of the
 component's spec fields once per compiled node (`remote.ts`, `createExecutor`), on top of the per-call framing in
 `encode` (`protocol.ts`, `encode`). A 20-node flow with two middlewares is 80 round trips carrying the accumulated
-state each time, and `State.merge` is a shallow spread that only grows (`state/state.ts:36-38`).
+state each time, and `State.merge` is a shallow spread that only grows (`state/state.ts`).
 
 `modelCall` and `toolCall` middleware are less alarming because the underlying operation is already
 network- or process-bound. `node` middleware on a fast graph is the case that will hurt. Two
@@ -2656,12 +2656,12 @@ better than this paragraph can.
 
 | Closed | Where | Why |
 |---|---|---|
-| `State` as a replaceable type | `state/state.ts`; `NodeExecutor` is typed against the concrete class (`node/types.ts:7`) | A merge-*policy* slot (seam #17) gets the value at one call site (`runner.ts:89`). Replacing `State` wholesale touches every executor for no proportionate gain. |
-| Sandbox confinement moving out of the executor | `sandbox/types.ts:1-8` | The design's whole point is that nothing in the graph, node or spec layers knows a sandbox exists. Per-tool *policy* (seam #29) is reachable without breaking that. |
+| `State` as a replaceable type | `state/state.ts`; `NodeExecutor` is typed against the concrete class (`node/types.ts`) | A merge-*policy* slot (seam #17) gets the value at one call site (`runner.ts`). Replacing `State` wholesale touches every executor for no proportionate gain. |
+| Sandbox confinement moving out of the executor | `sandbox/types.ts` | The design's whole point is that nothing in the graph, node or spec layers knows a sandbox exists. Per-tool *policy* (seam #29) is reachable without breaking that. |
 | Prototype-pollution key filtering | `plugin/deserializer.ts:50,124-126` | Applied both before and after camelCasing, on a path that parses caller-supplied JSON. Not negotiable. |
-| Builtin type shadowing | `plugin/registry.ts:77-83` | Only with an explicit `implements: "builtin"` opt-in and a stated precedence rule (§7.10 Q7). The default stays: a plugin cannot silently become `AgentNode`. |
-| `$VAR` dereference for submitted specs | `llm/provider.ts:32-53` | The reference is not restricted to model credentials, and the "is not set" error is an enumeration oracle. |
-| Plugins in the server's process | `packages/server/src/plugins.ts:9-18` | Everything above is designed *around* this constraint. If a proposal is easier in-process, that is a reason to reject the proposal. |
+| Builtin type shadowing | `plugin/registry.ts` | Only with an explicit `implements: "builtin"` opt-in and a stated precedence rule (§7.10 Q7). The default stays: a plugin cannot silently become `AgentNode`. |
+| `$VAR` dereference for submitted specs | `llm/provider.ts` | The reference is not restricted to model credentials, and the "is not set" error is an enumeration oracle. |
+| Plugins in the server's process | `packages/server/src/plugins.ts` | Everything above is designed *around* this constraint. If a proposal is easier in-process, that is a reason to reject the proposal. |
 | Environment inheritance | `PluginHost.resolveCommand` (`plugin/host.ts`, `resolveCommand`), `packages/server/src/plugins.ts` | Named capabilities grant heddle-mediated *operations*, never raw process access. There is no `getEnv`, and there should not be one. |
 | An encoder that can alter the run | §7.9; `plugin/types.ts`, `PluginEncoder` | `Event → WireFrame[]` is one-directional on purpose. An encoder renders what happened; giving it a return path would make it middleware with none of §7.4's ordering rules, and a rendering layer that can change the thing it renders is not a rendering layer. Held after Phase 9, and it paid: AG-UI's mutually exclusive terminal events forced the example to *infer* the outcome from the stream, which works because `flow_complete` is emitted only on success. The one place an encoder does affect the run is by failing — the stream and the run end together — and that is the transport reporting a broken response, not a verdict. |
 | A plugin answering for heddle's own protocol | `plugin/registry.ts`, `claimProtocol`; `server/encoders.ts`, `resolveEncoder` | `?protocol=heddle` is a client asking for the frames heddle documents, and a browser written against `flow_complete` is switching on them. Refused at load *and* unreachable by lookup order, which is the same two-sided guarantee Phase 5 gave a builtin `llm_config` type. |

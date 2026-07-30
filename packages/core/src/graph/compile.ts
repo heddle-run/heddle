@@ -6,80 +6,94 @@ import { PassthroughExecutor, BranchingExecutor } from '../node/branching.js';
 import { AgentExecutor } from '../node/agent.js';
 import { LLMExecutor } from '../node/llm.js';
 import { ToolNodeExecutor } from '../node/tool.js';
-import { CompiledGraph, type CompiledNode, type DataSource } from './types.js';
+import { CompiledGraph, type CompiledNode } from './types.js';
 import { CompileError } from '../errors.js';
 
-/** Compile converts a ParsedFlow into a CompiledGraph ready for execution. */
-export function compile(
-  pf: ParsedFlow,
+export function compile(flow: ParsedFlow, deps: Dependencies): CompiledGraph {
+  const nodes = compileNodes(flow, deps);
+  const start = findStartNode(nodes);
+
+  attachControlFlowEdges(flow, nodes);
+  attachDataFlowEdges(flow, nodes);
+
+  return new CompiledGraph(
+    flow.name,
+    nodes,
+    start,
+    flow.dataFlowConnections ?? [],
+  );
+}
+
+function compileNodes(
+  flow: ParsedFlow,
   deps: Dependencies,
-): CompiledGraph {
+): Map<string, CompiledNode> {
   const nodes = new Map<string, CompiledNode>();
-  let start = '';
 
-  for (const n of pf.parsedNodes) {
-    const name = n.name;
-    const executor = buildExecutor(n, deps);
-
-    const cn: CompiledNode = {
-      name,
-      type: n.componentType,
-      specNode: n,
-      executor,
+  for (const specNode of flow.parsedNodes) {
+    nodes.set(specNode.name, {
+      name: specNode.name,
+      type: specNode.componentType,
+      specNode,
+      executor: buildExecutor(specNode, deps),
       edges: [],
       inputMappings: new Map(),
-    };
-
-    if (n.componentType === 'StartNode') {
-      start = name;
-    }
-
-    nodes.set(name, cn);
+    });
   }
 
-  if (!start) {
-    throw new CompileError('no StartNode found');
-  }
+  return nodes;
+}
 
-  // Attach control flow edges to nodes
-  for (const edge of pf.controlFlowConnections) {
-    const cn = nodes.get(edge.fromNode);
-    if (!cn) {
+function findStartNode(nodes: Map<string, CompiledNode>): string {
+  for (const [name, node] of nodes) {
+    if (node.type === 'StartNode') return name;
+  }
+  throw new CompileError('no StartNode found');
+}
+
+function attachControlFlowEdges(
+  flow: ParsedFlow,
+  nodes: Map<string, CompiledNode>,
+): void {
+  for (const edge of flow.controlFlowConnections) {
+    const source = nodes.get(edge.fromNode);
+    if (!source) {
       throw new CompileError(
         `control flow edge fromNode "${edge.fromNode}" not found`,
       );
     }
-    cn.edges.push(edge);
+    source.edges.push(edge);
   }
+}
 
-  // Build data flow input mappings per node
-  const dataEdges = pf.dataFlowConnections ?? [];
-  for (const edge of dataEdges) {
-    const cn = nodes.get(edge.destinationNode);
-    if (!cn) {
+function attachDataFlowEdges(
+  flow: ParsedFlow,
+  nodes: Map<string, CompiledNode>,
+): void {
+  for (const edge of flow.dataFlowConnections ?? []) {
+    const destination = nodes.get(edge.destinationNode);
+    if (!destination) {
       throw new CompileError(
         `data flow edge destinationNode "${edge.destinationNode}" not found`,
       );
     }
-    cn.inputMappings.set(edge.destinationInput, {
+    destination.inputMappings.set(edge.destinationInput, {
       sourceNode: edge.sourceNode,
       sourceOutput: edge.sourceOutput,
     });
   }
-
-  return new CompiledGraph(pf.name, nodes, start, dataEdges);
 }
 
-function buildExecutor(n: AnyNode, deps: Dependencies): NodeExecutor {
-  // Plugin types are checked first so the builtin switch below keeps its
-  // discriminated-union narrowing. A plugin cannot shadow a builtin: the
-  // registry rejects builtin component type names at registration.
-  const pluginDef = deps.plugins?.nodeDef(n.componentType);
+function buildExecutor(node: AnyNode, deps: Dependencies): NodeExecutor {
+  const pluginDef = deps.plugins?.nodeDef(node.componentType);
   if (pluginDef) {
-    return new PluginNodeAdapter(n as unknown as PluginNode, pluginDef, deps);
+    return new PluginNodeAdapter(node as unknown as PluginNode, pluginDef, deps);
   }
+  return buildBuiltinExecutor(node, deps);
+}
 
-  const builtin = n as SpecNode;
+function buildBuiltinExecutor(node: AnyNode, deps: Dependencies): NodeExecutor {
+  const builtin = node as SpecNode;
   switch (builtin.componentType) {
     case 'StartNode':
     case 'EndNode':
@@ -93,9 +107,14 @@ function buildExecutor(n: AnyNode, deps: Dependencies): NodeExecutor {
     case 'BranchingNode':
       return new BranchingExecutor(builtin, deps);
     default:
-      throw new CompileError(
-        `node "${n.name}" has type "${n.componentType}", which no builtin or ` +
-          `plugin provides. Loaded plugins: ${deps.plugins?.describe() ?? 'none'}`,
-      );
+      throw new CompileError(unknownNodeTypeMessage(node, deps));
   }
+}
+
+function unknownNodeTypeMessage(node: AnyNode, deps: Dependencies): string {
+  const loaded = deps.plugins?.describe() ?? 'none';
+  return (
+    `node "${node.name}" has type "${node.componentType}", which no builtin or ` +
+    `plugin provides. Loaded plugins: ${loaded}`
+  );
 }
