@@ -180,13 +180,28 @@ The section numbers are contiguous by hand, not computed. Adding or removing a
 section means renumbering the ones after it, and any nav link that points at
 the anchor.
 
-`/playground` is not composed this way, and is the one page that is not. It is
-an application: it fills the viewport, carries its own bar and status bar
-instead of the site's nav and footer, and has no numbered sections, no prose
-and no marketing copy. The wordmark in its bar is the way back to the site. Its
-two panes scroll independently and the page itself does not scroll; below 900px
-they stack and it does. The security paragraph about submitted code and API
-keys is the one piece of prose it keeps — verbatim, in the status bar.
+`/playground` and `/compare` are not composed this way. They are applications:
+each fills the viewport, carries its own bar and status bar instead of the
+site's nav and footer, and has no numbered sections and no marketing copy. The
+wordmark in the bar is the way back to the site. Two panes scroll
+independently and the page itself does not scroll; below 900px they stack and
+it does. Both share the `hd-playground*` layout classes in `globals.css`.
+
+`/playground` keeps exactly one piece of prose — the security paragraph about
+submitted code and API keys, verbatim, in the status bar.
+
+`/compare` puts the same use case in heddle and in one other framework, side
+by side: heddle is pinned to the left pane and the picker in the bar chooses
+what fills the right one. **Its credibility rests on the other columns being
+right**, so treat competitor code as load-bearing in the same way security
+copy is. Each column must be the shortest version that framework's own
+documentation would write — never padded, never using a deprecated API where a
+current one is nicer — and must be checked against that framework's current
+release before it changes. The heddle specs in `lib/compare/heddle.ts` are
+checked with `heddle validate`, and the guardrail and routing flows run end to
+end without a credential; keep it that way. The ledger in the status bar
+states countable facts only, and the closing line invites readers to report
+anything unfair — honour that, or remove the line.
 
 ## Theme
 

@@ -11,6 +11,7 @@ const columns = [
       { label: "Getting started", href: "/docs/getting-started" },
       { label: "CLI reference", href: "/docs/cli-reference" },
       { label: "Playground", href: "/playground" },
+      { label: "Compare", href: "/compare" },
     ],
   },
   {
