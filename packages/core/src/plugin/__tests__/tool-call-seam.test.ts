@@ -411,3 +411,92 @@ describe('what the seam will not admit', () => {
     await expect(agent.execute()).rejects.toThrow(/no before handler/);
   });
 });
+
+describe('the after half, which the seam also declares', () => {
+  const afterGate = (verdict: Record<string, unknown>): PluginMiddlewareDef => ({
+    componentType: 'Auditor',
+    seams: { toolCall: ['after'] },
+    createMiddleware: () => ({
+      after: () => verdict as never,
+    }),
+  });
+
+  it('is consulted when the tool returned', async () => {
+    let saw: unknown;
+    const chain = chainOf({
+      componentType: 'Auditor',
+      seams: { toolCall: ['after'] },
+      createMiddleware: () => ({
+        after: ({ outcome }) => {
+          saw = outcome;
+          return { action: 'pass' };
+        },
+      }),
+    });
+
+    const agent = agentWith(chain, askingProvider().provider);
+    await agent.execute();
+
+    expect(saw).toEqual({ ok: true, value: { ok: true } });
+  });
+
+  it('is consulted when the tool threw', async () => {
+    let saw: { ok: boolean } | undefined;
+    const chain = chainOf({
+      componentType: 'Auditor',
+      seams: { toolCall: ['after'] },
+      createMiddleware: () => ({
+        after: ({ outcome }) => {
+          saw = outcome;
+          return { action: 'pass' };
+        },
+      }),
+    });
+
+    const agent = agentWith(chain, askingProvider().provider, () => {
+      throw new Error('tool blew up');
+    });
+    await agent.execute();
+
+    expect(saw?.ok).toBe(false);
+  });
+
+  it('can substitute a result the tool did not produce', async () => {
+    const { provider, seen } = askingProvider();
+    const agent = agentWith(chainOf(afterGate({ action: 'replace', value: { tidied: true } })), provider);
+
+    await agent.execute();
+
+    expect(toolReplies(seen())[0].content).toBe('{"tidied":true}');
+    expect(toolReplies(seen())[0].tool_call_id).toBe('call_1');
+  });
+
+  it('can fail the run', async () => {
+    const agent = agentWith(
+      chainOf(afterGate({ action: 'fail', reason: 'output contained a secret' })),
+      askingProvider().provider,
+    );
+
+    await expect(agent.execute()).rejects.toThrow(/output contained a secret/);
+  });
+
+  it('is not consulted when nothing subscribes to it', async () => {
+    let asked = 0;
+    const chain = chainOf({
+      componentType: 'BeforeOnly',
+      seams: { toolCall: ['before'] },
+      createMiddleware: () => ({
+        before: () => ({ action: 'proceed' }),
+        after: () => {
+          asked++;
+          return { action: 'pass' };
+        },
+      }),
+    });
+
+    const agent = agentWith(chain, askingProvider().provider);
+    await agent.execute();
+
+    expect(asked).toBe(0);
+  });
+});
