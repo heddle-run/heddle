@@ -220,6 +220,23 @@ function serve(handlers, options) {
       }
       return await handler.chat(params.request || {}, ctx);
     }
+    if (request.method === 'before') {
+      const hook = handler[params.seam] && handler[params.seam].before;
+      if (!hook) {
+        missingHandler(
+          request,
+          '"' + params.componentType + '" hooks the "before" half of "' +
+            params.seam + '" in its manifest but provides no handler for it. ' +
+            'Write serve({ ' + params.componentType + ': { ' + params.seam +
+            ': { before(input, ctx) { … } } } }).',
+        );
+        return undefined;
+      }
+      return await hook(
+        { subject: params.subject || {}, input: params.input || {} },
+        ctx,
+      );
+    }
     if (request.method === 'after') {
       const hook = handler[params.seam] && handler[params.seam].after;
       if (!hook) {

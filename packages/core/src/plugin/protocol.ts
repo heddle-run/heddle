@@ -11,7 +11,12 @@ import type {
   ToolDefinition,
 } from '../llm/types.js';
 import type { LogLevel } from '../runner/events.js';
-import { SEAMS, type AfterAction, type Seam } from './seams.js';
+import {
+  SEAMS,
+  type AfterAction,
+  type BeforeAction,
+  type Seam,
+} from './seams.js';
 import type { WireFrame } from './types.js';
 
 export const PROTOCOL_VERSION = 1;
@@ -24,6 +29,7 @@ export interface HostMethods {
   callTool: CallToolParams;
   chat: ChatParams;
   after: AfterParams;
+  before: BeforeParams;
   encode: EncodeParams;
   finishEncode: FinishEncodeParams;
   listTools: ListToolsParams;
@@ -142,6 +148,9 @@ export interface ApplyParams extends Record<string, unknown> {
 export interface SeamSubject {
   nodeName?: string;
   nodeType?: string;
+  /** For `toolCall`: which tool, and which of the model's calls asked for it. */
+  toolName?: string;
+  toolCallId?: string;
 }
 
 export interface AfterParams extends Record<string, unknown> {
@@ -161,6 +170,44 @@ export type AfterVerdict =
   | { action: 'replace'; value: Record<string, unknown> }
   | { action: 'retry'; delayMs?: number }
   | { action: 'fail'; reason: string };
+
+/**
+ * Params for `before`: a call site is about to do something, and is asking.
+ *
+ * The mirror of {@link AfterParams}, and the asymmetry is the whole difference
+ * between the halves. `after` reports an `outcome` — the work is done and a
+ * middleware is deciding what to make of it. `before` carries the `input` the
+ * call site is about to use, because the work has not happened and the decision
+ * is whether, and with what, it should.
+ *
+ * There is no `attempt` here. Attempts are a property of a node's arrival, which
+ * `nodeError` counts; a tool call is made once per model request and re-issuing
+ * one is not re-entering a clean state — see the note on `toolCall.after` in
+ * `seams.ts`.
+ */
+export interface BeforeParams extends Record<string, unknown> {
+  seam: Seam;
+  componentType: string;
+  component: Record<string, unknown>;
+  subject: SeamSubject;
+  /** What the call site is about to be given. For `toolCall`, the arguments. */
+  input: Record<string, unknown>;
+}
+
+/**
+ * What a middleware may say before a call site acts.
+ *
+ * `replace` and `reject` both mean the work does not happen, and they are
+ * different claims about why. `replace` supplies a result and the call site
+ * carries on as though the work had produced it. `reject` says it must not
+ * happen at all, and the reason is reported to whoever asked — for a tool call,
+ * to the model, which is what makes an approval gate expressible.
+ */
+export type BeforeVerdict =
+  | { action: 'proceed' }
+  | { action: 'modify'; input: Record<string, unknown> }
+  | { action: 'replace'; value: Record<string, unknown> }
+  | { action: 'reject'; reason: string };
 
 interface InFlight extends Record<string, unknown> {
   call: number | string;
@@ -387,6 +434,50 @@ export function readAfterVerdict(
       return readRetry(raw.delayMs, where);
     case 'fail':
       return { action: 'fail', reason: readFailReason(raw.reason, where) };
+  }
+}
+
+/**
+ * Read what a middleware said before a call site acted.
+ *
+ * `readAfterVerdict`'s shape, checked against the other half of the same table,
+ * so a seam that admits `modify` and one that does not are distinguished by data
+ * rather than by whoever wrote the call site.
+ */
+export function readBeforeVerdict(
+  seam: Seam,
+  raw: unknown,
+  where: string,
+): BeforeVerdict {
+  if (!isObject(raw)) {
+    throw new PluginError(
+      `${where}: returned ${typeName(raw)}, expected { action }`,
+    );
+  }
+
+  const admitted = SEAMS[seam].before;
+  const { action } = raw;
+  if (
+    typeof action !== 'string' ||
+    !admitted.includes(action as BeforeAction)
+  ) {
+    throw new PluginError(
+      `${where}: returned action ${JSON.stringify(action)}. The "before" half of ` +
+        `"${seam}" admits: ${admitted.join(', ')}.`,
+    );
+  }
+
+  switch (action as BeforeAction) {
+    case 'proceed':
+      return { action: 'proceed' };
+    case 'modify':
+      // The same check `replace` gets, for the same reason: this becomes a
+      // tool's arguments, and a non-object would surface as the tool failing.
+      return { action: 'modify', input: readReplacement(raw.input, where) };
+    case 'replace':
+      return { action: 'replace', value: readReplacement(raw.value, where) };
+    case 'reject':
+      return { action: 'reject', reason: readFailReason(raw.reason, where) };
   }
 }
 

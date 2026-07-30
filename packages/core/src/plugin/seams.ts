@@ -54,7 +54,7 @@ export const SEAMS: Record<Seam, SeamDef> = {
     when: 'always',
     before: ['proceed', 'modify', 'replace', 'reject'],
     after: ['pass', 'replace', 'fail'],
-    implemented: false,
+    implemented: true,
   },
   toolResult: {
     position: 'toolResult',
