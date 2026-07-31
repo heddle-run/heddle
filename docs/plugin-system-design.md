@@ -2140,6 +2140,7 @@ numbering was left alone so cross-references stay valid. The actual order:
 | 11 Dynamic tools | 7 | landed; resolves §7.10 Q6; MCP is the caller |
 | 12 Installed plugins on the server | 6, 7, 9, 11 | landed; makes the middleware seams reachable from `heddle-server` |
 | 13 The `node` seam | 6, 12 | landed; the widest seam, around every node of every flow |
+| 15 `--protocol` on the CLI | 9 | landed; an encoder is reachable without starting a server |
 
 Phases 0 through V have all landed — that was the original roadmap, and it is
 closed. Phases 10 and 11 are new, and neither came out of the original list: each
@@ -2147,11 +2148,10 @@ is an open question from §7.10 that acquired an answer and therefore acquired
 work. They are numbered after V rather than slotted in, for the reason the header
 gives — phase numbers are identities, not an order.
 
-What else remains is recorded per phase below: Phase 6's three still-reserved
-seams, and the surface Phase 9 does not reach — the CLI selects no encoder. The
-server installed no middleware until Phase 12, which is where that gap and its
-consequences are written up. Of the questions in §7.10 only Q8 is still open, and
-it is the one with no obvious answer rather than the one with no demand.
+What remains is recorded per phase below. Two gaps named here have since closed:
+the server installed no middleware until Phase 12, and the CLI selected no encoder
+until Phase 15. Of the questions in §7.10 only Q8 is still open, and it is the one
+with no obvious answer rather than the one with no demand.
 
 Three things moved after the first draft:
 
@@ -2771,6 +2771,42 @@ widest view of a caller's data any seam offers.
 **Depends on:** Phase 6 for the shape, Phase 12 for somewhere to install one. **Unblocks:** caching,
 dry runs and per-node audit. Remaining: `toolResult`, which overlaps `toolCall`'s `after` half and
 should be dropped rather than built, and `agentRound`.
+
+### Phase 15 — `--protocol` on the CLI — **landed**
+
+The surface Phase 9 did not reach. An encoder was selectable only by a request, with `?protocol=` on
+`heddle-server`, so an encoder author had to start a server to see their own work. `heddle run
+--protocol <name>` now renders a run through one, writing frames to stdout instead of the human
+progress output.
+
+Four decisions, each argued in a comment where it is made:
+
+- **JSON Lines, and the whole frame rather than its payload.** SSE's `event:`/`data:` framing is how
+  an HTTP *response body* carries a name beside a payload, and stdout is not a response body. Writing
+  the frame keeps the two shapes distinguishable — heddle's own frames name the type in `event`,
+  AG-UI puts it inside `data` and leaves `event` unset, and a line carrying only the payload would
+  render those identically.
+- **`--protocol heddle` is accepted**, matching the server, where the builtin is one encoder among
+  however many are loaded rather than a privileged path. It is the baseline an encoder author diffs
+  against. Omitting the flag is byte-for-byte the old behaviour.
+- **The final state JSON is suppressed** when a protocol is selected: stdout is the frame stream, and
+  a pretty-printed object appended to it is a parse error for anything reading a line at a time.
+  `flow_complete` carries the whole run state anyway.
+- **`--chat` plus `--protocol` is refused**, before `loadFlow` so a missing file is never blamed for
+  a flag conflict.
+
+`contentType` is deliberately dropped on this path: it is the header a *server* sends, and carrying
+it here would be a field nothing reads.
+
+**What the phase found by actually running it.** `examples/ag-ui/manifest.json` could never be loaded
+from disk. `entryFor` pairs `<basename>.json` with `<basename>.mjs` beside it, and
+`manifest.json`/`encoder.mjs` do not pair — the example had only ever been *submitted* to a server as
+`source`, so the on-disk path had never been exercised. It is `encoder.json` now, matching the
+`policies.json`/`policies.mjs` precedent. Declaring `command` in the manifest is not a workaround:
+`commandFor` returns a manifest-declared command verbatim and only `defaultCommand` injects
+`RUNTIME_IMPORT`, so such a plugin gets no `serve` global unless it brings its own runtime.
+
+**Depends on:** Phase 9. **Unblocks:** writing an encoder without a server in the loop.
 
 ---
 
