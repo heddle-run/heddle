@@ -24,7 +24,11 @@ export function handleCapabilities(
       acceptsFlowPath: Boolean(config.flowsRoot),
       sandbox: config.sandbox?.name ?? null,
       tools: serverToolNames(config),
-      protocols: [BUILTIN_PROTOCOL],
+      protocols: [BUILTIN_PROTOCOL, ...(config.plugins?.encoderProtocols() ?? [])],
+      // What is installed and will run whether or not a caller asked for it.
+      // A caller cannot select middleware, but it can reject their tool call or
+      // end their run, and the name they would see in that error is this one.
+      middleware: installedMiddleware(config),
       eventContract: EVENT_CONTRACT_VERSION,
       limits: {
         maxIterations: config.maxIterations,
@@ -45,14 +49,33 @@ export function handleCapabilities(
   );
 }
 
+function installedMiddleware(config: ServerConfig): string[] {
+  return (config.plugins?.middlewareDefs() ?? [])
+    .map(({ def }) => def.componentType)
+    .sort();
+}
+
+/**
+ * Every tool a flow can name without bringing one.
+ *
+ * The directory and the installed plugins, which is what a run resolves against
+ * before it adds anything the request submitted.
+ */
 function serverToolNames(config: ServerConfig): string[] {
+  const fromPlugins = (config.plugins?.toolRegistry().all() ?? []).map(
+    (tool) => tool.name,
+  );
+
+  return [...fromDirectory(config), ...fromPlugins].sort();
+}
+
+function fromDirectory(config: ServerConfig): string[] {
   if (!config.toolsDir) return [];
 
   try {
     return FileRegistry.create(config.toolsDir)
       .all()
-      .map((tool) => tool.name)
-      .sort();
+      .map((tool) => tool.name);
   } catch {
     return [];
   }

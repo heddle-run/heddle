@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { Command } from 'commander';
 import {
@@ -16,6 +15,7 @@ import {
   missingTools,
   PluginRegistry,
   MiddlewareChain,
+  parsePluginConfig,
   SandboxError,
   DEFAULT_RUNNER_OPTIONS,
   type Dependencies,
@@ -31,7 +31,6 @@ import { createProgressWriter, renderEvent } from './progress.js';
 const SANDBOX_BACKENDS = new Set(['auto', 'bubblewrap', 'seatbelt']);
 const DEFAULT_SANDBOX_BACKEND = 'auto';
 const DEFAULT_INPUT_KEY = 'query';
-const FILE_PREFIX = '@';
 
 interface SafeOptions {
   safe?: boolean;
@@ -111,7 +110,9 @@ export const runCommand = new Command('run')
   .action(async (flowPath: string, options: RunOptions, command: Command) => {
     const verbose = command.parent?.opts().verbose ?? false;
 
-    const plugins = await loadPlugins(options.plugin, options.discoverTools === true);
+    const plugins = await loadPlugins(options.plugin, {
+      discovery: options.discoverTools === true,
+    });
     let interactive = false;
     try {
       interactive = await runFlow(flowPath, options, plugins, verbose);
@@ -322,83 +323,6 @@ function pluginToolPaths(plugins: PluginRegistry): string[] {
   }
 
   return [...dirs];
-}
-
-function parsePluginConfig(
-  values: string[] | undefined,
-): Record<string, Record<string, unknown>> {
-  const config: Record<string, Record<string, unknown>> = {};
-
-  for (const entry of values ?? []) {
-    const { componentType, settings } = parseConfigEntry(entry);
-    if (config[componentType]) {
-      throw new Error(`--plugin-config was given twice for "${componentType}"`);
-    }
-    config[componentType] = settings;
-  }
-
-  return config;
-}
-
-function parseConfigEntry(entry: string): {
-  componentType: string;
-  settings: Record<string, unknown>;
-} {
-  const separator = entry.indexOf('=');
-  if (separator <= 0) {
-    throw new Error(
-      `--plugin-config expects <ComponentType>=<json>, got "${entry}". ` +
-        `For example: --plugin-config RetryPolicy='{"maxAttempts":3}'`,
-    );
-  }
-
-  const componentType = entry.slice(0, separator);
-  const raw = entry.slice(separator + 1);
-  const text = raw.startsWith(FILE_PREFIX)
-    ? readConfigFile(componentType, raw.slice(FILE_PREFIX.length))
-    : raw;
-
-  return { componentType, settings: parseConfigJson(componentType, text) };
-}
-
-function readConfigFile(componentType: string, path: string): string {
-  try {
-    return readFileSync(path, 'utf-8');
-  } catch (err) {
-    throw new Error(
-      `--plugin-config ${componentType}=@${path}: the file is not readable ` +
-        `(${err instanceof Error ? err.message : String(err)})`,
-    );
-  }
-}
-
-function parseConfigJson(
-  componentType: string,
-  text: string,
-): Record<string, unknown> {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch (err) {
-    throw new Error(
-      `--plugin-config ${componentType}: the value is not JSON ` +
-        `(${err instanceof Error ? err.message : String(err)})`,
-    );
-  }
-
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    const got =
-      parsed === null
-        ? 'null'
-        : Array.isArray(parsed)
-          ? 'an array'
-          : typeof parsed;
-    throw new Error(
-      `--plugin-config ${componentType}: expected a JSON object of settings, got ${got}`,
-    );
-  }
-
-  return parsed as Record<string, unknown>;
 }
 
 function disposeOnExit(plugins: PluginRegistry): void {

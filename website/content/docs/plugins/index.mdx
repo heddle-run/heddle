@@ -85,6 +85,10 @@ heddle run flow.json --plugin ./my-plugin/manifest.json
 of process; anything else is imported as an ES module. Both forms are repeatable, and
 both are accepted by `heddle validate` too.
 
+`heddle-server` takes the same flag, with one difference of lifetime: it loads its plugins
+before the port opens and one process serves every request, rather than one run. See
+[Server](/docs/server#installed-plugins).
+
 Two properties follow from the process boundary, and neither is available in process:
 
 - **The environment is chosen, not inherited.** A plugin sees only what it is given.

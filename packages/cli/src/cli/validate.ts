@@ -35,7 +35,9 @@ export const validateCommand = new Command('validate')
     'Let a plugin that declares "discoverTools" be started so heddle can ask what tools it has. Off by default: reading a manifest runs nothing.',
   )
   .action(async (specPath: string, options: ValidateOptions) => {
-    const plugins = await loadPlugins(options.plugin, options.discoverTools === true);
+    const plugins = await loadPlugins(options.plugin, {
+      discovery: options.discoverTools === true,
+    });
     try {
       const component = loadComponent(specPath, plugins) as unknown as {
         componentType: string;

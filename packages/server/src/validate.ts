@@ -27,8 +27,11 @@ export async function handleValidate(
   try {
     if (config.allowRequestCode) {
       code = materializeRequestCode(body as RequestCode, config);
-      plugins = buildPlugins(config, code);
     }
+    // Unconditionally: a flow naming an installed plugin's component type has
+    // to validate here or it would be refused by the endpoint that runs nothing
+    // and then run perfectly well, which is the worst answer available.
+    plugins = buildPlugins(config, code);
 
     const flow = resolveFlow(body as FlowRequest, config, plugins);
     const graph = compile(flow, { plugins });

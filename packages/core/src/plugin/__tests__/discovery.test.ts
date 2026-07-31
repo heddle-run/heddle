@@ -185,7 +185,7 @@ describe('who may start a plugin', () => {
   it('starts it and takes the answer once the operator opts in', async () => {
     const path = writePlugin(SERVES_TWO, PROXY);
 
-    const registry = await loadPlugins([path], true);
+    const registry = await loadPlugins([path], { discovery: true });
     open.push(registry);
 
     expect(registry.toolRegistry().all().map((t) => t.name).sort()).toEqual([
@@ -207,7 +207,7 @@ describe('who may start a plugin', () => {
 
     // Opting in does not mean asking everybody: discovery is per plugin, and one
     // that did not declare it is never called even with the flag on.
-    const registry = await loadPlugins([path], true);
+    const registry = await loadPlugins([path], { discovery: true });
     open.push(registry);
 
     expect(registry.toolRegistry().all().map((t) => t.name)).toEqual(['declared']);
@@ -217,7 +217,7 @@ describe('who may start a plugin', () => {
 describe('what a plugin may answer', () => {
   const load = async (source: string, manifest = PROXY) => {
     const path = writePlugin(source, manifest);
-    const registry = await loadPlugins([path], true);
+    const registry = await loadPlugins([path], { discovery: true });
     open.push(registry);
     return registry;
   };
@@ -235,7 +235,7 @@ describe('what a plugin may answer', () => {
       ...PROXY,
       tools: [{ name: 'declared', componentType: 'Proxy' }],
     });
-    const registry = await loadPlugins([path], true);
+    const registry = await loadPlugins([path], { discovery: true });
     open.push(registry);
 
     expect(registry.toolRegistry().all().map((t) => t.name).sort()).toEqual([
@@ -256,7 +256,7 @@ describe('what a plugin may answer', () => {
     // Caught as the duplicate it is, naming the tool — rather than reaching the
     // registry and being reported as two plugins colliding, which is not what
     // happened.
-    await expect(loadPlugins([path], true)).rejects.toThrow(/declared/);
+    await expect(loadPlugins([path], { discovery: true })).rejects.toThrow(/declared/);
   });
 
   it('holds a discovered tool to the same rules a declared one meets', async () => {
@@ -270,7 +270,7 @@ describe('what a plugin may answer', () => {
     // A discovered tool is a manifest tool that arrived late. Anything weaker
     // would make discovery a way around the validator rather than an input to
     // it — and this list came out of a process.
-    await expect(loadPlugins([path], true)).rejects.toThrow(/name/);
+    await expect(loadPlugins([path], { discovery: true })).rejects.toThrow(/name/);
   });
 
   it('refuses a tool naming a component the plugin does not provide', async () => {
@@ -281,7 +281,7 @@ describe('what a plugin may answer', () => {
       PROXY,
     );
 
-    await expect(loadPlugins([path], true)).rejects.toThrow(/Nonexistent/);
+    await expect(loadPlugins([path], { discovery: true })).rejects.toThrow(/Nonexistent/);
   });
 
   it('refuses an answer that is not a tool list', async () => {
@@ -290,13 +290,13 @@ describe('what a plugin may answer', () => {
       PROXY,
     );
 
-    await expect(loadPlugins([path], true)).rejects.toThrow(/no "tools"/);
+    await expect(loadPlugins([path], { discovery: true })).rejects.toThrow(/no "tools"/);
   });
 
   it('reports a plugin that declared discovery but serves no handler', async () => {
     const path = writePlugin(`serve({ Proxy: {} });`, PROXY);
 
-    await expect(loadPlugins([path], true)).rejects.toThrow(
+    await expect(loadPlugins([path], { discovery: true })).rejects.toThrow(
       /serves no listTools handler/,
     );
   });
@@ -330,7 +330,7 @@ describe('the property discovery spends, and no more', () => {
       PROXY,
     );
 
-    const registry = await loadPlugins([path], true);
+    const registry = await loadPlugins([path], { discovery: true });
     open.push(registry);
 
     registry.toolRegistry().all();
@@ -340,7 +340,7 @@ describe('the property discovery spends, and no more', () => {
 
   it('keeps lookup synchronous, which three call sites depend on', async () => {
     const path = writePlugin(SERVES_TWO, PROXY);
-    const registry = await loadPlugins([path], true);
+    const registry = await loadPlugins([path], { discovery: true });
     open.push(registry);
 
     // Not a promise. Discovery happens before the registry is built rather than
@@ -366,7 +366,7 @@ describe('what a failed discovery leaves behind', () => {
       PROXY,
     );
 
-    await expect(loadPlugins([path], true)).rejects.toThrow();
+    await expect(loadPlugins([path], { discovery: true })).rejects.toThrow();
 
     expect(await leakedSince(before)).toEqual([]);
   }, 15_000);
@@ -384,7 +384,7 @@ describe('what a failed discovery leaves behind', () => {
       PROXY,
     );
 
-    await expect(loadPlugins([good, bad], true)).rejects.toThrow();
+    await expect(loadPlugins([good, bad], { discovery: true })).rejects.toThrow();
 
     expect(await leakedSince(before)).toEqual([]);
   }, 15_000);

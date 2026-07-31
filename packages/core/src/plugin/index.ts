@@ -11,5 +11,9 @@ export type {
   PluginResult,
 } from './types.js';
 export { PluginRegistry } from './registry.js';
-export { loadPlugin, loadPlugins } from './loader.js';
+export {
+  loadPlugin,
+  loadPlugins,
+  type LoadPluginsOptions,
+} from './loader.js';
 export { PluginNodeAdapter } from './executor.js';
