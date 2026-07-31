@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { dirname } from 'node:path';
 import { Command } from 'commander';
 import {
@@ -6,6 +7,7 @@ import {
   loadFlow,
   collectToolNames,
   propertyTitle,
+  EncoderStream,
   FileRegistry,
   SubprocessExecutor,
   Runner,
@@ -18,6 +20,7 @@ import {
   parsePluginConfig,
   SandboxError,
   DEFAULT_RUNNER_OPTIONS,
+  type CompiledGraph,
   type Dependencies,
   type Registry,
   type RunnerOptions,
@@ -26,6 +29,7 @@ import {
   type Sandbox,
   type SandboxBackend,
 } from '@heddle/core';
+import { frameLine, resolveEncoder, type EncoderFactory } from './encoders.js';
 import { createProgressWriter, renderEvent } from './progress.js';
 
 const SANDBOX_BACKENDS = new Set(['auto', 'bubblewrap', 'seatbelt']);
@@ -50,6 +54,7 @@ interface RunOptions extends SafeOptions {
   pluginConfig?: string[];
   maxNodeAttempts?: string;
   stream?: boolean;
+  protocol?: string;
 }
 
 export const runCommand = new Command('run')
@@ -82,6 +87,12 @@ export const runCommand = new Command('run')
   .option(
     '--no-stream',
     'Ask the model for one buffered response instead of a token stream',
+  )
+  .option(
+    '--protocol <name>',
+    'Render the run through an installed encoder, one JSON frame per line on ' +
+      'stdout, instead of the human progress output. "heddle" is heddle\'s own ' +
+      'frames; any other name comes from a plugin',
   )
   .option('--safe', 'Run tools inside an OS sandbox')
   .option(
@@ -127,6 +138,11 @@ async function runFlow(
   plugins: PluginRegistry,
   verbose: boolean,
 ): Promise<boolean> {
+  const isChat = options.chat ?? false;
+  // Before `loadFlow`, so two flags that cannot both hold are refused without
+  // first blaming a file for it.
+  const encoder = chooseEncoder(options.protocol, isChat, plugins);
+
   const flow = loadFlow(flowPath, plugins);
   const sandbox = buildSandbox(
     options,
@@ -142,8 +158,7 @@ async function runFlow(
   const registry = buildRegistry(options, plugins);
   assertToolsAvailable(registry, collectToolNames(flow));
 
-  const isChat = options.chat ?? false;
-  const runnerOpts = buildRunnerOpts(verbose, isChat);
+  const runnerOpts = buildRunnerOpts(verbose, !isChat && encoder === undefined);
   applyMaxNodeAttempts(runnerOpts, options.maxNodeAttempts);
 
   const deps: Dependencies = {
@@ -177,11 +192,79 @@ async function runFlow(
     return true;
   }
 
+  const inputs = parseInputs(options.input);
+  if (encoder) {
+    await runEncoded(graph, runnerOpts, encoder, inputs);
+    return false;
+  }
+
   const runner = new Runner(graph, runnerOpts);
-  const result = await runner.run(undefined, parseInputs(options.input));
+  const result = await runner.run(undefined, inputs);
   console.log(JSON.stringify(result.toData(), null, 2));
 
   return false;
+}
+
+function chooseEncoder(
+  protocol: string | undefined,
+  isChat: boolean,
+  plugins: PluginRegistry,
+): EncoderFactory | undefined {
+  if (protocol === undefined) return undefined;
+  if (isChat) {
+    throw new Error(
+      '--protocol and --chat cannot be combined. --chat runs the flow once per ' +
+        'message and paints the answers in a terminal UI, so there is no single ' +
+        'stream of frames for an encoder to render and no stdout left to write ' +
+        'them to. Drop one of the two.',
+    );
+  }
+
+  return resolveEncoder(protocol, plugins);
+}
+
+/**
+ * The final state is *not* printed here, unlike a plain run.
+ *
+ * With a protocol selected stdout is the frame stream, and a pretty-printed
+ * object appended to it is a parse error for anything reading a frame per line.
+ * Nothing is lost either: `flow_complete` carries the run's whole state, so an
+ * encoder that wants to render the answer already has it.
+ */
+async function runEncoded(
+  graph: CompiledGraph,
+  runnerOpts: RunnerOptions,
+  encoder: EncoderFactory,
+  inputs: Record<string, unknown>,
+): Promise<void> {
+  const abort = new AbortController();
+  const events = new EncoderStream(
+    encoder(randomUUID()),
+    (frame) => process.stdout.write(frameLine(frame)),
+    () => abort.abort(),
+  );
+  runnerOpts.eventHandler = events.handler();
+
+  const runner = new Runner(graph, runnerOpts);
+
+  let failure: unknown;
+  try {
+    await runner.run(abort.signal, inputs);
+  } catch (err) {
+    failure = err;
+  }
+
+  // Awaited on both paths, so the queue is drained and `finish()` reaches the
+  // encoder even when the run threw. `close()` rethrows an encoder that failed
+  // mid-run, and that failure replaces the run's — the abort it triggered is
+  // downstream of it, and "operation was aborted" is not the useful message.
+  try {
+    await events.close();
+  } catch (err) {
+    failure = err;
+  }
+
+  if (failure) throw failure;
 }
 
 async function startChatSession(
@@ -225,9 +308,12 @@ function assertToolsAvailable(registry: Registry, names: string[]): void {
   }
 }
 
-function buildRunnerOpts(verbose: boolean, chat: boolean): RunnerOptions {
+// Chat and an encoder each own the event stream — chat's UI reads it, an
+// encoder renders it — so the progress writer belongs only to the run that has
+// neither.
+function buildRunnerOpts(verbose: boolean, progress: boolean): RunnerOptions {
   const opts = { ...DEFAULT_RUNNER_OPTIONS, verbose };
-  if (chat) return opts;
+  if (!progress) return opts;
 
   const writeProgress = createProgressWriter((text) =>
     process.stderr.write(text),

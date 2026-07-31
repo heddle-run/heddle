@@ -575,7 +575,7 @@ function remoteRegistry(entry: string): PluginRegistry {
 async function shippedEncoder(label: string, runId: string): Promise<PluginEncoder> {
   const source = readFileSync(join(repoRoot, 'examples/ag-ui/encoder.mjs'), 'utf-8');
   const manifest = JSON.parse(
-    readFileSync(join(repoRoot, 'examples/ag-ui/manifest.json'), 'utf-8'),
+    readFileSync(join(repoRoot, 'examples/ag-ui/encoder.json'), 'utf-8'),
   );
   const entry = writeHelperPlugin(`shipped-${label}`, source);
 
