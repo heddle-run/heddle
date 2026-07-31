@@ -708,10 +708,14 @@ describe('declaring a middleware', () => {
     ).toThrow(/"onVibes", which is not a seam/);
   });
 
-  it('refuses a seam heddle knows but does not consult yet', () => {
+  it('refuses "toolResult" as a name it has never heard of, not a seam in waiting', () => {
+    // It was reserved until `toolCall` grew an `after` half that sees the call,
+    // its arguments, its id and the result. A seam seeing the result alone is
+    // strictly less, so the name was dropped rather than built and now means
+    // nothing at all.
     expect(
       withComponent({ componentType: 'M', kind: 'middleware', seams: { toolResult: ['after'] } }),
-    ).toThrow(/does not consult yet/);
+    ).toThrow(/"toolResult", which is not a seam/);
   });
 
   it('refuses a half the seam does not have', () => {
@@ -953,11 +957,11 @@ describe('what a middleware is not asked about', () => {
   it('refuses an in-process subscription the manifest path would have refused', () => {
     expect(() =>
       chainOf({
-        componentType: 'TooEarly',
+        componentType: 'NoSuchSeam',
         seams: { toolResult: ['after'] },
         createMiddleware: () => ({ after: () => ({ action: 'pass' }) }),
       }),
-    ).toThrow(/does not consult yet/);
+    ).toThrow(/which is not a seam/);
 
     expect(() =>
       chainOf({

@@ -1,7 +1,7 @@
 /**
  * The `node` seam.
  *
- * The widest of the six: consulted around every node of every flow, not only
+ * The widest of the five: consulted around every node of every flow, not only
  * around a failure, a tool call or a model call. That is what makes it the one a
  * cache, a dry run or an audit hangs off, and it is also why the cost when
  * nobody subscribes matters more here than anywhere else.

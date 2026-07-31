@@ -18,7 +18,7 @@ heddle run flow.json \
 ```
 
 Four worked policies — a retry, an approval gate, a per-node audit and a rate limit,
-one per seam — ship in
+one seam each — ship in
 [`examples/policies`](https://github.com/heddle-run/heddle/tree/main/examples/policies),
 with flows that run them without a credential.
 
@@ -40,12 +40,11 @@ validator, the verdict reader and the handshake alike.
 | `node` | a node | `before` `after` | before: `proceed` `modify` `replace` `reject`<br/>after: `pass` `replace` `fail` | yes |
 | `toolCall` | a tool call | `before` `after` | before: `proceed` `modify` `replace` `reject`<br/>after: `pass` `replace` `fail` | yes |
 | `modelCall` | a model call | `before` `after` | before: `proceed` `modify` `replace` `reject`<br/>after: `pass` `replace` `retry` `fail` | yes |
-| `toolResult` | a tool's result | `after` | `pass` `replace` | no |
-| `agentRound` | an agent round | `before` `after` | `pass` `fail` | no |
+| `agentRound` | an agent's round | `before` `after` | before: `proceed` `reject`<br/>after: `pass` `fail` | yes |
 
-Four are consulted today. The other two are reserved so that their arrival changes no
-meaning — a manifest subscribing to one that is not built is refused at load, naming the
-seams that are.
+All five are consulted. The set is closed and nothing is held in reserve: a manifest
+subscribing to a name that is not in the table is refused at load as a name heddle does
+not have, listing the ones it does.
 
 Note what `toolCall` does *not* admit: `retry`. By the time a tool call is decided, the
 assistant message that asked for it is already in the conversation, so re-issuing the call
@@ -178,10 +177,11 @@ run.
 
 **A middleware is given the thing it is deciding about, and nothing wider.** At
 `nodeError` and `toolCall` that is metadata: `subject` names which node or tool, `outcome`
-says how it went. At `modelCall` it is the request, conversation included, because a
-policy that may `modify` what is sent has to see what is being sent. At `node` it is that
-node's input state and its output — for the same reason, and it is the widest view any
-seam offers.
+says how it went. At `agentRound` it is narrower still — a round number, and the names of
+the tools that round ran. At `modelCall` it is the request, conversation included, because
+a policy that may `modify` what is sent has to see what is being sent. At `node` it is
+that node's input state and its output — for the same reason, and it is the widest view
+any seam offers.
 
 That is worth being deliberate about on a server, where a middleware is named nowhere in
 the caller's document. An installed `node` policy sees every caller's data flowing through
@@ -346,10 +346,64 @@ A replaced node takes the unbranched edge, for the same reason a `nodeError` sub
 does: a supplied result is a result and never a route. A node whose every edge is labelled
 reports that the run cannot continue past it.
 
+## Around an agent's rounds
+
+A round is one model call plus the tool calls it asked for. `agentRound` is consulted
+before each round and after each round that ran tools, and it is the narrowest seam heddle
+has: it may stop a round or let it happen, and nothing else.
+
+The narrowness is the design. The two seams inside a round already own what is sent
+(`modelCall`) and what runs (`toolCall`), so the one thing neither of them can say is that
+there should not be another round — which is the thing an agent looping on tools costs
+money for. heddle's own ceiling is ten rounds and an operator cannot move it; this is
+where a lower one hangs.
+
+```js
+serve({
+  RoundBudget: {
+    agentRound: {
+      before: ({ input }, ctx) => {
+        // Never above the engine's own ceiling, and usually far below it.
+        const cap = Math.min(ctx.component.maxRounds ?? 3, input.maxRounds);
+        return input.round > cap
+          ? { action: 'reject', reason: `${cap} rounds is the budget` }
+          : { action: 'proceed' };
+      },
+
+      after: ({ outcome }, ctx) => {
+        ctx.emitEvent('round', outcome.value);
+        return { action: 'pass' };
+      },
+    },
+  },
+});
+```
+
+`before` is given `{ round, maxRounds }`: the round about to start, counted from 1, and
+heddle's own ceiling, so a policy tightening it need not write `10` down and drift when it
+moves. `after` is given `{ round, toolCalls }`, the names of the tools that round ran.
+`reject` ends the node before the model is called and `fail` ends it after the round; both
+errors name the middleware, the round and the stated reason.
+
+<Callout>
+**`after` is not consulted for the round that produced the answer.** Stopping the next
+round is all that half can do, and there is no next round once the agent is finishing
+rather than looping. A policy counting rounds should count `before`, which is asked about
+every round; what the final answer is *worth* belongs to `node`, which is shown the whole
+output rather than a list of tool names.
+</Callout>
+
 ## What is not available yet
 
-The two seams above marked no are unbuilt. A verdict vocabulary with no call site is a
-contract nobody can test, so the names are reserved and the behaviour is not.
+Nothing is reserved. Every seam in the table is consulted, and a name outside it is
+refused as a name heddle does not have rather than one it has not reached.
+
+`toolResult` was the last reserved name, and it was dropped rather than built. It was
+written down before `toolCall` had an `after` half; now that it has one, that half is
+shown the call, its arguments, its id **and** the result, so a seam shown the result
+without the call that asked for it would be strictly less. Leaving it reserved was worse
+than deleting it, because a load-time refusal saying heddle does not consult it *yet*
+promises something that should never ship.
 
 One smaller gap worth knowing: `heddle run --chat` builds its own runner from the same
 options, so the chain is installed and a retry works — but the chat interface reads four
