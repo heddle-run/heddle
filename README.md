@@ -334,6 +334,13 @@ this CLI, which renders events with its own progress writer.
 See [examples/ag-ui](examples/ag-ui) for one that speaks
 [AG-UI](https://docs.ag-ui.com), the protocol CopilotKit uses.
 
+A plugin can also supply **middleware**, the one kind no document may name.
+It is installed with `--plugin` by whoever runs heddle, takes its settings from
+`--plugin-config`, and is consulted at the seams inside a run: a node that failed,
+a tool the model asked for, a request about to go to the model. See
+[examples/policies](examples/policies) for a retry policy, an approval gate and a
+rate limit, each runnable without a credential.
+
 ### Execution Pipeline
 
 ```

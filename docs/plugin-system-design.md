@@ -2672,6 +2672,8 @@ component nobody can ask for was also the component nobody could install, which 
 | `loadPlugins` taking an options object, and `parsePluginConfig` moved to core so both CLIs read the flag the same way | `plugin/loader.ts`, `plugin/config.ts` |
 | A shared host restarted on the next call after its process closes; its stderr forwarded to the server's log rather than kept for a caller's error | `plugin/host.ts` |
 | Each `--plugin` directory in the sandbox read paths, and `SandboxSession.dispose` finally called — nothing had ever called it, so every confined plugin leaked a workspace | `server/heddle-server.ts`, `plugin/host.ts` |
+| The runtime handed to a disk plugin on the command line, so `serve` is real off a server too | `plugin/remote-loader.ts` |
+| Three policies over three seams, run by the tests that document them | `examples/policies/` |
 | Installed encoders, tools and middleware reported on `/v1/capabilities`; installed components resolvable from `/v1/validate` with request code refused | `server/capabilities.ts`, `server/validate.ts` |
 
 **The one property the process boundary stopped providing.** Everywhere else a plugin process serves
@@ -2713,6 +2715,23 @@ invariant heddle holds can catch it.
 
 **Depends on:** Phases 6, 7, 9, 11. **Unblocks:** retry policy, approval gates, spend limits and
 caching on engine.heddle.run — the deployments that wanted the seams in the first place.
+
+**And then the on-ramp, which found the last thing wrong.** Nothing shipped that an operator could
+install: eight examples, one of them an encoder, and no middleware — so the kind with three seams,
+a manifest format and a flag had no artifact anyone could copy. Writing `examples/policies/` turned
+up the reason it had never been tried. A plugin on disk was launched as `node <entry>` and got no
+runtime, so `serve(...)` — which every page of the authoring documentation shows — was true only of
+a plugin *submitted to a server*, where the source is rewritten before it is written out. An
+operator's file cannot be rewritten, so the runtime now arrives on the command line as a `data:`
+URL: no file, therefore no read grant, therefore identical under `--safe`. The documented API is
+the real one for the first time, and `--plugin <manifest>.json` is usable by somebody who has not
+read the protocol.
+
+Two smaller things the example broke on its way in, both the same mistake in a test: identifying a
+manifest by its filename, and looking for an example's plugin only at `plugin.js`. A manifest loaded
+from disk is named after the program beside it, so `manifest.json` is exactly what it cannot be
+called — and `examples.test.ts` duly reported a valid manifest as a broken spec. Both now read the
+file rather than the name.
 
 ---
 

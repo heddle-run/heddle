@@ -984,7 +984,17 @@ describe('spawning a plugin under a sandbox', () => {
     });
 
     expect(result).toMatchObject({ output: { ok: true } });
-    expect(stub.wraps).toEqual([{ toolPath: process.execPath, args: [entry] }]);
+    expect(stub.wraps).toHaveLength(1);
+    expect(stub.wraps[0].toolPath).toBe(process.execPath);
+
+    // The program and its arguments stay apart, which is the property here: a
+    // backend that had to re-split a command line would have to guess at
+    // quoting. The runtime rides in the arguments as a `data:` URL rather than
+    // as a path, so a confined plugin needs no read grant to receive it.
+    const args = stub.wraps[0].args;
+    expect(args[0]).toBe('--import');
+    expect(args[1]).toMatch(/^data:text\/javascript,/);
+    expect(args[2]).toBe(entry);
   });
 
   it('gives the plugin the environment the backend built for it', async () => {

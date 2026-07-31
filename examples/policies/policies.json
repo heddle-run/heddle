@@ -1,0 +1,85 @@
+{
+  "name": "policies",
+  "version": "1.0.0",
+  "capabilities": ["emitEvent", "log"],
+  "components": [
+    {
+      "componentType": "RetryPolicy",
+      "kind": "middleware",
+      "seams": { "nodeError": ["after"] },
+      "schema": {
+        "type": "object",
+        "properties": {
+          "retryOn": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Substrings that mark an error as worth another go. A regex would be more expressive and less reviewable; an operator reads this list and knows what it does."
+          },
+          "backoffMs": {
+            "type": "number",
+            "description": "Base delay, multiplied by the attempt number. heddle clamps any single wait to 30s."
+          },
+          "substitute": {
+            "type": "object",
+            "description": "The output to stand in when the retries are spent. Omit it and the error stands.",
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "componentType": "ApprovalGate",
+      "kind": "middleware",
+      "seams": { "toolCall": ["before", "after"] },
+      "schema": {
+        "type": "object",
+        "properties": {
+          "guard": {
+            "type": "object",
+            "description": "Tool name to the argument patterns it may not carry.",
+            "additionalProperties": {
+              "type": "array",
+              "items": { "type": "string" }
+            }
+          },
+          "maxResultBytes": {
+            "type": "number",
+            "description": "A result longer than this is replaced with a note. The model pays for every byte of it."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "componentType": "StubModelConfig",
+      "kind": "provider",
+      "schema": {
+        "type": "object",
+        "properties": { "callTool": { "type": "string" } },
+        "additionalProperties": true
+      }
+    },
+    {
+      "componentType": "RateLimit",
+      "kind": "middleware",
+      "seams": { "modelCall": ["before", "after"] },
+      "schema": {
+        "type": "object",
+        "properties": {
+          "callsPerMinute": {
+            "type": "number",
+            "description": "Model calls this process may make in a rolling minute, across every run it is serving."
+          },
+          "retryOn": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Substrings that mark a failed model call as worth re-issuing. Admitted here and nowhere else: a failed model call has changed nothing."
+          },
+          "backoffMs": { "type": "number" }
+        },
+        "additionalProperties": false
+      }
+    }
+  ]
+}
