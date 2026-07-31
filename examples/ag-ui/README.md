@@ -12,14 +12,14 @@ commented in `encoder.mjs` where they happen.
 
 | File | What it is |
 |------|------------|
-| `manifest.json` | Declares the encoder: its `protocol` name and the `contentType` it produces |
+| `encoder.json` | Declares the encoder: its `protocol` name and the `contentType` it produces |
 | `encoder.mjs` | The rendering: `encode(event)` per run event, `finish()` at the end |
 | `flow.json` | A minimal flow, so there is a lifecycle to render |
 
 ## How an encoder is selected
 
-Not by the spec, and not by the operator. **The request picks it**, with
-`?protocol=`:
+Not by the spec, and not by the operator. **Whoever asked for the run picks it** —
+`--protocol` on the CLI, `?protocol=` over HTTP:
 
 ```
 POST /v1/runs?stream=true&protocol=ag-ui
@@ -30,14 +30,38 @@ different renderings of it, and neither the flow's author nor the person running
 the server is in a position to know which. A spec that names `AgUiEncoder` as a
 `component_type` is refused, saying so.
 
-`?protocol=heddle` — or saying nothing — gets heddle's own frames, which are now
-one encoder among however many are loaded rather than a privileged path beside
-them. A plugin may not claim that name.
+`heddle` — or saying nothing — gets heddle's own frames, which are now one
+encoder among however many are loaded rather than a privileged path beside them.
+A plugin may not claim that name.
 
 ## Run it
 
-Start a server that accepts submitted code, since the encoder arrives with the
-request:
+One command, no server:
+
+```bash
+node packages/cli/dist/heddle.js run examples/ag-ui/flow.json --plugin ./examples/ag-ui/encoder.json --protocol ag-ui --input '{"query":"hello"}'
+```
+
+```
+{"data":{"type":"RUN_STARTED","threadId":"5d4ed795-86dc-4b50-a1ea-a08e1cd2b3f8","runId":"5d4ed795-86dc-4b50-a1ea-a08e1cd2b3f8"}}
+{"data":{"type":"STEP_STARTED","stepName":"start"}}
+{"data":{"type":"STEP_FINISHED","stepName":"start"}}
+{"data":{"type":"STATE_SNAPSHOT","snapshot":{"query":"hello"}}}
+{"data":{"type":"STEP_STARTED","stepName":"end"}}
+{"data":{"type":"STEP_FINISHED","stepName":"end"}}
+{"data":{"type":"STATE_SNAPSHOT","snapshot":{"query":"hello"}}}
+{"data":{"type":"RUN_FINISHED","threadId":"5d4ed795-86dc-4b50-a1ea-a08e1cd2b3f8","runId":"5d4ed795-86dc-4b50-a1ea-a08e1cd2b3f8"}}
+```
+
+One JSON frame per line, because stdout is not an HTTP response body and SSE's
+blank-line records buy nothing here. The final state a plain `heddle run` prints
+is not appended: stdout is the frame stream, and `flow_complete` already carries
+the run state for an encoder that wants it.
+
+## Run it over HTTP
+
+Same encoder, same frames, different framing. Start a server that accepts
+submitted code, since here the encoder arrives with the request:
 
 ```bash
 node packages/server/dist/heddle-server.js --allow-request-code --port 8080
@@ -47,7 +71,7 @@ Then submit the flow and the encoder together, and read the frames as they
 arrive. `jq` builds the body so the files below are the ones actually sent:
 
 ```bash
-jq -n --arg source "$(cat examples/ag-ui/encoder.mjs)" --argjson manifest "$(cat examples/ag-ui/manifest.json)" --arg flow "$(cat examples/ag-ui/flow.json)" '{flow: $flow, inputs: {query: "hello"}, plugins: [{name: "ag-ui", manifest: $manifest, source: $source}]}' | curl -sN -X POST 'http://127.0.0.1:8080/v1/runs?stream=true&protocol=ag-ui' -H 'content-type: application/json' -d @-
+jq -n --arg source "$(cat examples/ag-ui/encoder.mjs)" --argjson manifest "$(cat examples/ag-ui/encoder.json)" --arg flow "$(cat examples/ag-ui/flow.json)" '{flow: $flow, inputs: {query: "hello"}, plugins: [{name: "ag-ui", manifest: $manifest, source: $source}]}' | curl -sN -X POST 'http://127.0.0.1:8080/v1/runs?stream=true&protocol=ag-ui' -H 'content-type: application/json' -d @-
 ```
 
 ```
@@ -68,13 +92,19 @@ data: {"type":"STATE_SNAPSHOT","snapshot":{"query":"hello"}}
 data: {"type":"RUN_FINISHED","threadId":"…","runId":"…"}
 ```
 
-Every frame is **nameless** — no `event:` line — with its type inside the
-payload. That is what AG-UI requires, and it is why `WireFrame.event` is
-optional: heddle's own frames put the type in the name so a browser can subscribe
-to it, and AG-UI does the opposite.
+Every frame is **nameless** — no `event:` line here, no `"event"` key on the CLI —
+with its type inside the payload. That is what AG-UI requires, and it is why
+`WireFrame.event` is optional: heddle's own frames put the type in the name so a
+browser can subscribe to it, and AG-UI does the opposite.
 
 For comparison, drop the `protocol` parameter and the same run comes back as
-`event: flow_start` / `data: {"type":"flow_start",…}`.
+`event: flow_start` / `data: {"type":"flow_start",…}`. `--protocol heddle` on the
+CLI is the same thing a line at a time:
+
+```
+{"event":"flow_start","data":{"type":"flow_start"}}
+{"event":"node_start","data":{"type":"node_start","nodeName":"start","nodeType":"StartNode","attempt":1,"state":{"query":"hello"}}}
+```
 
 ## What an encoder gets, and what it cannot do
 

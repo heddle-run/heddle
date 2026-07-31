@@ -40,6 +40,7 @@ heddle run <flow> [options]
 | `--plugin-config <Type>=<json>` | Configuration for a middleware component type (repeatable, once per type). `@path` reads the JSON from a file |
 | `--max-node-attempts <n>` | How many times one arrival at a node may be attempted when middleware retries. Whole number ≥ 1, default 3 |
 | `--no-stream` | Ask the model for one buffered response instead of a token stream |
+| `--protocol <name>` | Render the run through an installed [encoder](/docs/plugins/encoders), one JSON frame per line on stdout, instead of the human progress output |
 | `--safe` | Run tools inside an OS sandbox |
 | `--sandbox <backend>` | Sandbox backend: `auto` (default), `bubblewrap`, or `seatbelt` |
 | `--allow-read <path>` | Grant sandboxed tools read access to a path (repeatable) |
@@ -82,7 +83,9 @@ heddle run flow.yaml --tools-dir ./tools --safe --deny-net --allow-write ./out
 
 ### Output
 
-The final state is printed to stdout as formatted JSON. Progress, tool activity, and errors go to stderr, so stdout stays pipeable:
+The final state is printed to stdout as formatted JSON — unless `--protocol` is given, which
+replaces it with a frame stream. Progress, tool activity, and errors go to stderr, so stdout
+stays pipeable:
 
 ```bash
 heddle run flow.json --input '{"query": "hello"}' | jq .result
@@ -93,6 +96,53 @@ node's declared outputs: malformed JSON fails immediately, but a key nothing dec
 carried and is readable — an agent is sent its whole input state as JSON, and `{{key}}`
 substitution reads whatever the state holds. A declared key you omit is simply absent, and
 a prompt referencing it keeps the placeholder.
+
+### Rendering the run in another protocol
+
+`--protocol <name>` hands the run's events to an [encoder](/docs/plugins/encoders) and writes
+its frames to stdout, one JSON object per line. The human progress output is replaced, not
+merely redirected — the encoder is the only thing rendering the run.
+
+```bash
+heddle run examples/ag-ui/flow.json --plugin ./examples/ag-ui/encoder.json \
+  --protocol ag-ui --input '{"query": "hello"}'
+```
+
+```
+{"data":{"type":"RUN_STARTED","threadId":"5d4ed795-…","runId":"5d4ed795-…"}}
+{"data":{"type":"STEP_STARTED","stepName":"start"}}
+{"data":{"type":"STEP_FINISHED","stepName":"start"}}
+{"data":{"type":"STATE_SNAPSHOT","snapshot":{"query":"hello"}}}
+{"data":{"type":"STEP_STARTED","stepName":"end"}}
+{"data":{"type":"STEP_FINISHED","stepName":"end"}}
+{"data":{"type":"STATE_SNAPSHOT","snapshot":{"query":"hello"}}}
+{"data":{"type":"RUN_FINISHED","threadId":"5d4ed795-…","runId":"5d4ed795-…"}}
+```
+
+JSON Lines rather than the server's `event:`/`data:` framing, because SSE is how an HTTP
+response body carries a name beside a payload and stdout is not one. The name is not lost:
+each line is the frame, so `event` is present when the protocol names its frames and absent
+when it carries the type inside `data`. `--protocol heddle` shows the named half — heddle's
+own frames, with no plugin loaded at all:
+
+```
+{"event":"flow_start","data":{"type":"flow_start"}}
+{"event":"node_start","data":{"type":"node_start","nodeName":"start","nodeType":"StartNode","attempt":1,"state":{"query":"hello"}}}
+```
+
+The final state is **not** appended. With a protocol selected stdout is the frame stream, and
+a pretty-printed object after it is a parse error for anything reading a line at a time.
+Nothing is lost either — `flow_complete` carries the whole run state, so an encoder that wants
+the answer already has it.
+
+A protocol nothing provides is an error listing what is available; the encoder for one comes
+from `--plugin`, and a plugin may not claim the name `heddle`.
+
+<Callout type="warn">
+`--protocol` and `--chat` are refused together. Chat runs the flow once per message and paints
+the answers in a terminal UI, so there is no single stream of frames to render and no stdout
+left to write them to.
+</Callout>
 
 ### Chat Mode
 

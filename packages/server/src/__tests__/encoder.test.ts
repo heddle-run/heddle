@@ -13,7 +13,7 @@ const FLOW = JSON.parse(
 
 const AG_UI = {
   name: 'ag-ui',
-  manifest: JSON.parse(readFileSync(join(repoRoot, 'examples/ag-ui/manifest.json'), 'utf-8')),
+  manifest: JSON.parse(readFileSync(join(repoRoot, 'examples/ag-ui/encoder.json'), 'utf-8')),
   source: readFileSync(join(repoRoot, 'examples/ag-ui/encoder.mjs'), 'utf-8'),
 };
 
