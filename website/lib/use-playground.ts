@@ -1,11 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   API_BASE,
+  BUILTIN_PROTOCOL,
   DEFAULT_EXAMPLE,
   EngineError,
   appendEvent,
+  encoderProtocols,
   fetchCapabilities,
   streamRun,
   validateFlow,
@@ -38,8 +40,13 @@ export function usePlayground() {
     DEFAULT_EXAMPLE.plugins,
   );
 
+  const [protocol, setProtocol] = useState(
+    DEFAULT_EXAMPLE.protocol ?? BUILTIN_PROTOCOL,
+  );
+
   const [tab, setTab] = useState("spec");
   const [events, setEvents] = useState<RunEvent[]>([]);
+  const [renderedIn, setRenderedIn] = useState(BUILTIN_PROTOCOL);
   const [status, setStatus] = useState<Status>("idle");
   const [result, setResult] = useState<Record<string, unknown>>();
   const [error, setError] = useState<{ type: string; message: string }>();
@@ -71,9 +78,24 @@ export function usePlayground() {
     return parsed as Record<string, unknown>;
   }, [inputs]);
 
+  /* The renderings this request could ask for. heddle's own is always one of
+     them; the rest come from encoders the submitted plugins declare, because
+     the engine has not heard of a protocol until it is sent the plugin that
+     provides it — so this reads the manifests here rather than /v1/capabilities.
+
+     It follows the plugins, and the choice has to follow it: deleting the
+     encoder from the Plugins tab while its protocol was selected would
+     otherwise leave the run asking for a rendering nothing provides, which is
+     a 400 rather than a fallback. */
+  const protocols = useMemo(
+    () => [BUILTIN_PROTOCOL, ...encoderProtocols(plugins)],
+    [plugins],
+  );
+  const chosen = protocols.includes(protocol) ? protocol : BUILTIN_PROTOCOL;
+
   const payload = useCallback(
-    () => ({ flow, inputs: readInputs(), tools, plugins }),
-    [flow, readInputs, tools, plugins],
+    () => ({ flow, inputs: readInputs(), tools, plugins, protocol: chosen }),
+    [flow, readInputs, tools, plugins, chosen],
   );
 
   const fail = (err: unknown) => {
@@ -102,6 +124,11 @@ export function usePlayground() {
 
   const run = async () => {
     reset();
+    /* Recorded when the run starts rather than read while rendering. The pane
+       has to describe the events it is holding, and a reader who moves the
+       protocol afterwards would otherwise see this run relabelled as the one
+       they have not made yet. */
+    setRenderedIn(chosen);
     setStatus("running");
 
     const ac = new AbortController();
@@ -133,6 +160,9 @@ export function usePlayground() {
 
   const check = async () => {
     reset();
+    /* Validation runs nothing, so there is no stream and no encoder: the rows
+       below are heddle's own vocabulary whatever the protocol says. */
+    setRenderedIn(BUILTIN_PROTOCOL);
     setStatus("running");
     try {
       const validation = await validateFlow(payload());
@@ -163,6 +193,7 @@ export function usePlayground() {
     setInputs(next.inputs);
     setTools(next.tools);
     setPlugins(next.plugins);
+    setProtocol(next.protocol ?? BUILTIN_PROTOCOL);
     setTab("spec");
     reset();
     setStatus("idle");
@@ -180,6 +211,10 @@ export function usePlayground() {
     setTools,
     plugins,
     setPlugins,
+    protocol: chosen,
+    setProtocol,
+    protocols,
+    renderedIn,
     tab,
     setTab,
     events,
