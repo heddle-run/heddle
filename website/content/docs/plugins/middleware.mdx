@@ -34,11 +34,11 @@ validator, the verdict reader and the handshake alike.
 | `nodeError` | a node | `after` | `pass` `replace` `retry` `fail` | yes |
 | `toolCall` | a tool call | `before` `after` | before: `proceed` `modify` `replace` `reject`<br/>after: `pass` `replace` `fail` | yes |
 | `node` | a node | `before` `after` | `pass` `replace` `fail` | no |
-| `modelCall` | a model call | `before` `after` | `pass` `replace` `retry` `fail` | no |
+| `modelCall` | a model call | `before` `after` | before: `proceed` `modify` `replace` `reject`<br/>after: `pass` `replace` `retry` `fail` | yes |
 | `toolResult` | a tool's result | `after` | `pass` `replace` | no |
 | `agentRound` | an agent round | `before` `after` | `pass` `fail` | no |
 
-Two are consulted today. The other four are reserved so that their arrival changes no
+Three are consulted today. The other three are reserved so that their arrival changes no
 meaning — a manifest subscribing to one that is not built is refused at load, naming the
 seams that are.
 
@@ -203,6 +203,43 @@ A `replace` supplies a result, never a route. Branch state is written by a node'
 visit. A replaced node therefore takes the unbranched edge, and a node whose every edge
 is labelled reports that the run cannot continue past it.
 </Callout>
+
+## Around a model call
+
+`modelCall` wraps every request heddle sends — an agent's rounds and an `LlmNode`'s single
+call alike. It is the only seam that admits `retry`, and the reason is what has already
+been said: a failed *tool* call leaves an assistant message asking for it in the
+conversation, so re-issuing is not re-entering a clean state, while a failed *model* call
+has changed nothing. That makes this the seam a 429 policy hangs off.
+
+```js
+serve({
+  RateLimitPolicy: {
+    modelCall: {
+      after: ({ outcome }) => {
+        if (outcome.ok) return { action: 'pass' };
+        if (!/429|timed out/.test(outcome.error.message)) return { action: 'pass' };
+        return { action: 'retry', delayMs: 1000 };
+      },
+    },
+  },
+});
+```
+
+`before` sees the request and may `proceed`, `modify` it, `replace` it with an answer —
+a cache hit, where nothing is sent at all — or `reject` it, which fails the node with the
+stated reason.
+
+<Callout>
+`modify` is the one verdict that hands heddle something it then **sends somewhere**, so it
+is checked hardest: every field is type-checked, and anything you do not supply keeps the
+value you were shown. A returned object is an edit, not a replacement — `{ ...input,
+temperature: 0 }` does what it looks like.
+</Callout>
+
+Retries are bounded at three attempts by heddle, not by the chain. A ceiling a middleware
+can raise is not a ceiling; a refused retry is reported as a `warning` and the outcome
+stands.
 
 ## Configuration
 

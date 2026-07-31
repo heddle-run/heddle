@@ -15,11 +15,16 @@ import type { NodeExecutor, Dependencies } from './types.js';
 import type { EventHandler } from '../runner/events.js';
 import type { Executor, Registry } from '../tool/types.js';
 import { invokeTool } from '../tool/invoke.js';
-import type { ChainBefore, ChainVerdict } from '../plugin/middleware.js';
+import type {
+  ChainBefore,
+  ChainVerdict,
+  MiddlewareChain,
+} from '../plugin/middleware.js';
+import { readChatRequest, readChatResponse } from '../plugin/protocol.js';
 import type { SeamOutcome } from '../plugin/types.js';
 import { generationParams, providerFor } from '../llm/provider.js';
 import { TransformChain } from '../plugin/transform.js';
-import { RunError, ToolError } from '../errors.js';
+import { LLMError, RunError, ToolError } from '../errors.js';
 
 const MAX_TOOL_ROUNDS = 10;
 const CHAT_HISTORY_KEY = '_chat_history';
@@ -158,6 +163,8 @@ export class AgentExecutor implements NodeExecutor {
       },
       {
         nodeName: this.node.name,
+        nodeType: 'AgentNode',
+        middleware: this.deps.middleware,
         eventHandler: this.deps.eventHandler,
         allowStream:
           this.deps.stream !== false && !this.transforms.hasPhase('post'),
@@ -415,12 +422,138 @@ export class AgentExecutor implements NodeExecutor {
 
 export interface ModelCallContext {
   nodeName: string;
+  nodeType?: string;
   eventHandler?: EventHandler;
   allowStream?: boolean;
   turn?: TurnCounter;
+  /**
+   * The chain, for the `modelCall` seam.
+   *
+   * Threaded to this function rather than consulted by its callers because this
+   * is the one place a model call goes out: an `AgentNode`'s round, an
+   * `LlmNode`'s single call, and every retry of either. A seam consulted by the
+   * callers instead would have to be added to each of them, and missed by the
+   * next one.
+   */
+  middleware?: MiddlewareChain;
 }
 
+/** How many times one model call may be re-issued at a middleware's request. */
+const MAX_MODEL_ATTEMPTS = 3;
+
+/**
+ * Make one model call, with the `modelCall` seam around it.
+ *
+ * The seam admits `retry` where `toolCall` does not, and the difference is what
+ * has already been said. A failed tool call has an assistant message in
+ * `messages` asking for it, so re-issuing is not re-entering a clean state; a
+ * failed model call has changed nothing, so it is. That makes this the seam a
+ * 429 policy hangs off, which is the most asked-for middleware there is.
+ *
+ * Attempts are bounded here rather than by the chain, for `maxNodeAttempts`'
+ * reason: a ceiling a middleware cannot raise is the only kind that bounds a
+ * middleware. A refused retry is reported as a warning and the outcome stands.
+ */
 export async function completeChat(
+  provider: Provider,
+  signal: AbortSignal | undefined,
+  request: ChatRequest,
+  ctx: ModelCallContext,
+): Promise<ChatResponse> {
+  const chain = ctx.middleware;
+  const subject = { nodeName: ctx.nodeName, nodeType: ctx.nodeType };
+  let current = request;
+
+  if (chain?.hasBefore('modelCall')) {
+    const gate = await chain.consultBefore(
+      'modelCall',
+      subject,
+      current as unknown as Record<string, unknown>,
+      signal,
+      ctx.eventHandler,
+    );
+
+    if (gate.action === 'reject') {
+      throw new LLMError(
+        `"${gate.by}" refused the model call for "${ctx.nodeName}": ${gate.reason}`,
+      );
+    }
+    if (gate.action === 'replace') {
+      // A cache hit, and the reason `replace` is admitted before the call at
+      // all: the answer is supplied and nothing is sent.
+      warnOf(ctx, `"${gate.by}" answered for "${ctx.nodeName}" without calling the model.`);
+      return readChatResponse(gate.value, `middleware "${gate.by}"`);
+    }
+    if (gate.action === 'modify') {
+      current = readChatRequest(current, gate.input, `middleware`);
+    }
+  }
+
+  for (let attempt = 1; ; attempt++) {
+    let outcome: SeamOutcome;
+    try {
+      outcome = { ok: true, value: await sendChat(provider, signal, current, ctx) };
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      outcome = { ok: false, error: { name: error.name, message: error.message } };
+    }
+
+    if (!chain?.has('modelCall')) {
+      return settleChat(outcome);
+    }
+
+    const verdict = await chain.consult(
+      'modelCall',
+      {
+        subject,
+        outcome,
+        attempt,
+        maxAttempts: MAX_MODEL_ATTEMPTS,
+        allowRetry: attempt < MAX_MODEL_ATTEMPTS,
+      },
+      signal,
+      ctx.eventHandler,
+    );
+
+    if (verdict.action === 'retry') {
+      warnOf(
+        ctx,
+        `"${verdict.by}" is retrying the model call for "${ctx.nodeName}" ` +
+          `(attempt ${attempt} of ${MAX_MODEL_ATTEMPTS})` +
+          `${verdict.delayMs > 0 ? `, in ${verdict.delayMs}ms` : ''}.`,
+      );
+      if (verdict.delayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, verdict.delayMs));
+      }
+      continue;
+    }
+    if (verdict.action === 'replace') {
+      warnOf(ctx, `"${verdict.by}" supplied an answer for "${ctx.nodeName}".`);
+      return readChatResponse(verdict.value, `middleware "${verdict.by}"`);
+    }
+    if (verdict.action === 'fail') {
+      throw new LLMError(
+        `the model call for "${ctx.nodeName}" was ended by middleware ` +
+          `"${verdict.by}": ${verdict.reason}`,
+      );
+    }
+
+    return settleChat(outcome);
+  }
+}
+
+/** The outcome as the caller sees it: a response, or the error that stands. */
+function settleChat(outcome: SeamOutcome): ChatResponse {
+  if (outcome.ok) return outcome.value as ChatResponse;
+  throw new LLMError(outcome.error.message);
+}
+
+function warnOf(ctx: ModelCallContext, message: string): void {
+  ctx.eventHandler?.({ type: 'warning', nodeName: ctx.nodeName, message });
+}
+
+/** The call itself, streamed or buffered, unchanged by the seam around it. */
+async function sendChat(
   provider: Provider,
   signal: AbortSignal | undefined,
   request: ChatRequest,

@@ -2408,9 +2408,17 @@ was the easy part, and the policy questions were the phase.
 | Seam-keyed handlers and `ctx.component` in the emitted runtime | `plugin/runtime-source.ts` |
 | A spec naming a middleware refused with the reason; a *submitted* middleware refused 400 | `plugin/flow-preprocess.ts`, `server/plugins.ts` |
 
-**What deliberately did not land.** `before` — with `modify` and `reject` — is unbuilt, because
-nothing subscribes to one yet and a verdict vocabulary with no call site is a contract nobody can
-test. The names are reserved in `SEAMS` so `node`'s arrival changes no meaning.
+**What deliberately did not land, and has since.** `before` was unbuilt when this phase shipped,
+because nothing subscribed to one and a verdict vocabulary with no call site is a contract nobody can
+test. `toolCall` gave it a call site — an approval gate, where a refused call is still *answered*
+because a provider refuses a request whose assistant message asked for one that no tool message
+answers. `modelCall` followed, and is the seam that admits `retry`: a failed tool call leaves the
+request in the conversation, while a failed model call has changed nothing. Three of six seams are
+consulted now; `node`, `toolResult` and `agentRound` remain reserved.
+
+`toolResult` now overlaps `toolCall`'s `after` half, which is a decision owed rather than a gap:
+both are consulted about a tool's outcome, and unless seeing a result without seeing the call turns
+out to matter, the reserved name should be dropped rather than built.
 
 **And what an operator cannot do yet, stated rather than papered over: the server installs no
 middleware.** It has no operator-plugin path at all — `buildPlugins` loads only what a request
