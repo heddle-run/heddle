@@ -2132,13 +2132,14 @@ numbering was left alone so cross-references stay valid. The actual order:
 | 3 `PluginContext` | 1, 2 | landed |
 | 4 `callModel` | 1, 3 | landed; also carried seam #26 (`ChatRequest` widening) |
 | 5 Provider kind | 2, 4 | landed; *strongly preferred* V, and took it |
-| 6 Middleware kind | 1, 2, 3 | landed; `nodeError`, `toolCall` and `modelCall` consulted, three seams reserved |
+| 6 Middleware kind | 1, 2, 3 | landed; four seams consulted, two reserved |
 | 7 Registry | 1 | landed; off the main line |
 | 9 Encoder | 2, 3 | landed; off the main line |
 | **V** SDK extension | — | landed; independent; landed before 5 |
 | 10 Network policy | — | landed in the half heddle can enforce; resolves §7.10 Q4 |
 | 11 Dynamic tools | 7 | landed; resolves §7.10 Q6; MCP is the caller |
 | 12 Installed plugins on the server | 6, 7, 9, 11 | landed; makes the middleware seams reachable from `heddle-server` |
+| 13 The `node` seam | 6, 12 | landed; the widest seam, around every node of every flow |
 
 Phases 0 through V have all landed — that was the original roadmap, and it is
 closed. Phases 10 and 11 are new, and neither came out of the original list: each
@@ -2391,7 +2392,7 @@ kind whose whole job is an outbound request. A submitted provider is *not* refus
 way middleware is: it runs only when the caller's own spec names it, it cannot capture a builtin
 type, and heddle bounds how often it is called — which is more than can be said for `callModel`.
 
-### Phase 6 — Middleware kind — **landed; three seams consulted, three reserved**
+### Phase 6 — Middleware kind — **landed; four seams consulted, two reserved**
 
 The advice held: `nodeError` alone, and the cost estimate held too — restructuring `runner.ts`
 was the easy part, and the policy questions were the phase.
@@ -2415,8 +2416,9 @@ because nothing subscribed to one and a verdict vocabulary with no call site is 
 test. `toolCall` gave it a call site — an approval gate, where a refused call is still *answered*
 because a provider refuses a request whose assistant message asked for one that no tool message
 answers. `modelCall` followed, and is the seam that admits `retry`: a failed tool call leaves the
-request in the conversation, while a failed model call has changed nothing. Three of six seams are
-consulted now; `node`, `toolResult` and `agentRound` remain reserved.
+request in the conversation, while a failed model call has changed nothing. `node` came last and is
+written up as Phase 13. Four of six seams are consulted now; `toolResult` and `agentRound` remain
+reserved.
 
 `toolResult` now overlaps `toolCall`'s `after` half, which is a decision owed rather than a gap:
 both are consulted about a tool's outcome, and unless seeing a result without seeing the call turns
@@ -2732,6 +2734,43 @@ manifest by its filename, and looking for an example's plugin only at `plugin.js
 from disk is named after the program beside it, so `manifest.json` is exactly what it cannot be
 called — and `examples.test.ts` duly reported a valid manifest as a broken spec. Both now read the
 file rather than the name.
+
+### Phase 13 — The `node` seam — **landed**
+
+The last of Phase 6's reserved names worth building, and the widest of the six: consulted around
+every node of every flow rather than around a failure, a tool call or a model call. That is what a
+cache, a dry run and a per-node audit all need, and none of the three built seams could reach.
+
+| Landed | Where |
+|---|---|
+| `before` and `after` around every node execution, with `modify`, `replace` and `reject` on the way in | `runner/runner.ts` |
+| `Settled`, so an outcome reaches `after` instead of being thrown out of `applyVerdict` | `runner/runner.ts` |
+| `attempts` threaded into `consultBefore`, so `ctx.attempt` in a `before` half is the truth rather than a hardcoded 1 | `plugin/middleware.ts` |
+| `NodeAudit`, the shipped policy that watches every node and can answer for a node type instead of running it | `examples/policies/` |
+
+**The decision this phase owed: how `node` and `nodeError` share a position.** They are nested, not
+sequenced. `node` wraps *an execution*; `nodeError` sits inside it and owns retries. Three
+consequences, and each is a test:
+
+- A retried attempt gets a second `before` and no `after`. A retry is not an outcome but a decision
+  to execute again, so the seam that wraps executions sees the next one instead.
+- A settled execution reaches `after` exactly once whether it produced a result or failed, which is
+  what makes an audit an audit. `applyVerdict`'s `pass` used to throw the node's error directly; it
+  now returns it as an outcome, so `node` can be asked before the run ends.
+- `node`'s `after` admits no `retry`, because the seam that does is nested inside it. `readAfterVerdict`
+  already enforced that from the `SEAMS` table; the call site says the same thing in the same words.
+
+**And the claim it falsified.** `plugins/middleware.mdx` said a middleware never gets the run's data,
+which had already been softened by `modelCall` handing over the conversation and is plainly untrue of
+`node` — its `before` half receives the node's resolved input state and its `after` half the output.
+That is necessary: a policy that may `modify` or `replace` has to see what it is deciding about. The
+doc now says what is actually true, which is that a middleware is given the subject of the call it is
+deciding about and nothing wider, and that on a server an installed `node` policy is therefore the
+widest view of a caller's data any seam offers.
+
+**Depends on:** Phase 6 for the shape, Phase 12 for somewhere to install one. **Unblocks:** caching,
+dry runs and per-node audit. Remaining: `toolResult`, which overlaps `toolCall`'s `after` half and
+should be dropped rather than built, and `agentRound`.
 
 ---
 

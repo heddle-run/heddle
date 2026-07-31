@@ -1,12 +1,12 @@
-# Policies: retry, approval and rate limiting
+# Policies: retry, approval, audit and rate limiting
 
-This example adds nothing to a flow. It supplies three **middleware** — the one
+This example adds nothing to a flow. It supplies four **middleware** — the one
 plugin kind no document may name, installed by whoever runs heddle and consulted
 on every node of every flow that host serves.
 
 | File | What it is |
 |------|------------|
-| `policies.json` | The manifest: three middleware, the seams each hooks, and a schema per set of settings |
+| `policies.json` | The manifest: four middleware, the seams each hooks, and a schema per set of settings |
 | `policies.mjs` | The policies themselves |
 | `flow.json` | A flow whose tool fails, so `nodeError` has something to decide about |
 | `gated-flow.json` | An agent that asks for a command the operator forbids |
@@ -91,6 +91,42 @@ carries a reason rather than being a way to abandon a turn.
 
 Drop the `--plugin-config` and the same run lets the command through, because the
 gate guards nothing it was not told to guard.
+
+### `node` — around every node there is
+
+`NodeAudit` is the widest of the four. It emits an event per settled node and, if
+the operator lists a node type under `dryRun`, answers for that type instead of
+letting it run — a flow's shape walked without its side effects:
+
+```bash
+node packages/cli/dist/heddle.js run examples/policies/flow.json --tools-dir ./examples/policies/tools --plugin ./examples/policies/policies.json --plugin-config NodeAudit='{"dryRun":["ToolNode"],"stub":{"answer":"not really run"}}' --input '{"query":"anything"}'
+```
+
+```
+Warning: "NodeAudit" supplied a result for "lookup" instead of letting it run, so
+         the node did not execute at all.
+{
+  "query": "anything",
+  "answer": "not really run"
+}
+```
+
+With no `dryRun` it only watches. Run it with `--verbose` against the failing
+tool and the audit shows the nesting that matters:
+
+```
+[start]  plugin:NodeAudit:node {"node":"start","type":"StartNode","ok":true,"attempt":1}
+[lookup] plugin:NodeAudit:node {"node":"lookup","type":"ToolNode","ok":false,"attempt":3}
+```
+
+One line per node, not one per attempt. `node` wraps *an execution* and
+`nodeError` sits inside it: a retried attempt is abandoned for another, so it gets
+a second `before` with `ctx.attempt` moved on and no `after` at all. `after` is
+consulted once the attempt has settled — here at attempt 3, after `RetryPolicy`
+spent the other two.
+
+That also explains why `node`'s `after` admits no `retry`. The seam that does is
+the one nested inside it.
 
 ### `modelCall` — and two policies composing
 
@@ -177,6 +213,8 @@ data itself is a plugin node, which the flow names.
 | Seam | Half | Verdicts |
 |---|---|---|
 | `nodeError` | after | `pass` `replace` `retry` `fail` |
+| `node` | before | `proceed` `modify` `replace` `reject` |
+| `node` | after | `pass` `replace` `fail` |
 | `toolCall` | before | `proceed` `modify` `replace` `reject` |
 | `toolCall` | after | `pass` `replace` `fail` |
 | `modelCall` | before | `proceed` `modify` `replace` `reject` |

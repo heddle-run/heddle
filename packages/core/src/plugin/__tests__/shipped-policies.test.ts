@@ -73,6 +73,7 @@ describe('the manifest an operator installs', () => {
     expect(registry.middlewareDefs().map(({ def }) => def.componentType)).toEqual([
       'RetryPolicy',
       'ApprovalGate',
+      'NodeAudit',
       'RateLimit',
     ]);
     // The stub model is a provider, not a policy, and a spec has to name it.
@@ -210,6 +211,85 @@ describe('ApprovalGate, at toolCall', () => {
     );
 
     expect(verdict).toEqual({ action: 'pass' });
+  });
+});
+
+describe('NodeAudit, at node', () => {
+  const before = (chain: MiddlewareChain, nodeType: string, events: Event[] = []) =>
+    chain.consultBefore(
+      'node',
+      { nodeName: 'lookup', nodeType },
+      { query: 'anything' },
+      undefined,
+      (event) => events.push(event),
+    );
+
+  it('watches a node without touching it', async () => {
+    const events: Event[] = [];
+    const chain = await installed({ NodeAudit: {} });
+
+    expect(await before(chain, 'ToolNode')).toEqual({ action: 'proceed' });
+
+    const verdict = await chain.consult(
+      'node',
+      {
+        subject: { nodeName: 'lookup', nodeType: 'ToolNode' },
+        outcome: { ok: true, value: { answer: 'found' } },
+        attempt: 1,
+        maxAttempts: 3,
+        allowRetry: false,
+      },
+      undefined,
+      (event) => events.push(event),
+    );
+
+    expect(verdict).toEqual({ action: 'pass' });
+    expect(events.find((e) => e.type === 'plugin:NodeAudit:node')).toMatchObject({
+      data: { node: 'lookup', type: 'ToolNode', ok: true, attempt: 1 },
+    });
+  });
+
+  it('records a failure too, and still lets it stand', async () => {
+    const events: Event[] = [];
+    const chain = await installed({ NodeAudit: {} });
+
+    const verdict = await chain.consult(
+      'node',
+      {
+        subject: { nodeName: 'lookup', nodeType: 'ToolNode' },
+        outcome: failed('upstream timed out'),
+        attempt: 3,
+        maxAttempts: 3,
+        allowRetry: false,
+      },
+      undefined,
+      (event) => events.push(event),
+    );
+
+    expect(verdict).toEqual({ action: 'pass' });
+    expect(events.find((e) => e.type === 'plugin:NodeAudit:node')).toMatchObject({
+      data: { ok: false, attempt: 3 },
+    });
+  });
+
+  it('answers for a node type the operator asked it to skip', async () => {
+    const events: Event[] = [];
+    const chain = await installed({
+      NodeAudit: { dryRun: ['ToolNode'], stub: { answer: 'not really run' } },
+    });
+
+    expect(await before(chain, 'ToolNode', events)).toMatchObject({
+      action: 'replace',
+      value: { answer: 'not really run' },
+      by: 'NodeAudit',
+    });
+    expect(events.find((e) => e.type === 'plugin:NodeAudit:skipped')).toBeDefined();
+  });
+
+  it('leaves the node types it was not asked about alone', async () => {
+    const chain = await installed({ NodeAudit: { dryRun: ['ToolNode'] } });
+
+    expect(await before(chain, 'AgentNode')).toEqual({ action: 'proceed' });
   });
 });
 

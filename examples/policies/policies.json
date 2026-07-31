@@ -52,6 +52,27 @@
       }
     },
     {
+      "componentType": "NodeAudit",
+      "kind": "middleware",
+      "seams": { "node": ["before", "after"] },
+      "schema": {
+        "type": "object",
+        "properties": {
+          "dryRun": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Node types to answer for instead of running. A flow's shape can be walked without its side effects."
+          },
+          "stub": {
+            "type": "object",
+            "description": "What a dry-run node produces.",
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
       "componentType": "StubModelConfig",
       "kind": "provider",
       "schema": {
