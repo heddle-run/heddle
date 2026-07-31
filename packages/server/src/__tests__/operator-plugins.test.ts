@@ -1,7 +1,7 @@
 /**
  * Plugins the operator installed, reached over HTTP.
  *
- * Three middleware seams exist and none of them was reachable from this server:
+ * Middleware seams exist and none of them was reachable from this server:
  * `buildPlugins` loaded only what a request submitted, and a submitted plugin
  * declaring middleware is refused — correctly, since middleware runs on every
  * node of every flow and takes its settings from the command line. So the

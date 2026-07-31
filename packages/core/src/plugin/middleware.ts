@@ -198,7 +198,8 @@ export class MiddlewareChain {
      * and a cache that served the first attempt should know not to serve the
      * second. `toolCall` and `modelCall` consult once and then loop *inside*
      * that, so 1 is the truth for them rather than a default standing in for
-     * one.
+     * one. `agentRound` is asked once a round, and a round is different work
+     * rather than the same work again, so it carries its number in `input`.
      */
     attempts: { attempt: number; maxAttempts: number } = {
       attempt: 1,

@@ -5,7 +5,6 @@ export type Seam =
   | 'nodeError'
   | 'modelCall'
   | 'toolCall'
-  | 'toolResult'
   | 'agentRound';
 
 export type Half = 'before' | 'after';
@@ -15,7 +14,7 @@ export type BeforeAction = 'proceed' | 'modify' | 'replace' | 'reject';
 export type AfterAction = 'pass' | 'replace' | 'retry' | 'fail';
 
 export interface SeamDef {
-  position: 'node' | 'modelCall' | 'toolCall' | 'toolResult' | 'agentRound';
+  position: 'node' | 'modelCall' | 'toolCall' | 'agentRound';
   hooks: Half[];
   when: 'always' | 'error';
   before: BeforeAction[];
@@ -56,21 +55,13 @@ export const SEAMS: Record<Seam, SeamDef> = {
     after: ['pass', 'replace', 'fail'],
     implemented: true,
   },
-  toolResult: {
-    position: 'toolResult',
-    hooks: ['after'],
-    when: 'always',
-    before: [],
-    after: ['pass', 'replace'],
-    implemented: false,
-  },
   agentRound: {
     position: 'agentRound',
     hooks: ['before', 'after'],
     when: 'always',
     before: ['proceed', 'reject'],
     after: ['pass', 'fail'],
-    implemented: false,
+    implemented: true,
   },
 };
 
