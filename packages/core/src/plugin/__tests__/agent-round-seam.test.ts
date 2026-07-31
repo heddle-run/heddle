@@ -101,7 +101,7 @@ function agentWith(
               impl: {
                 kind: 'plugin',
                 plugin: 'test',
-                call: async () => ({ output: { ok: true } }),
+                call: async () => ({ output: { ok: true }, stderr: '' }),
               },
             }
           : undefined,

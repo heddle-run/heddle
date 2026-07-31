@@ -80,7 +80,7 @@ function agentWith(
               name: 'shell',
               description: '',
               origin: 'test',
-              impl: { kind: 'plugin', plugin: 'test', call: async () => ({ output: toolImpl() }) },
+              impl: { kind: 'plugin', plugin: 'test', call: async () => ({ output: toolImpl(), stderr: '' }) },
             }
           : undefined,
       all: () => [],

@@ -7,13 +7,15 @@ import type { ChatRequest, ChatResponse } from '../../llm/types.js';
 import type { LLMConfig } from '../../spec/types.js';
 
 const chatCompletion = vi.fn();
-const built: Array<{ config: LLMConfig; options: Record<string, unknown> }> = [];
+const built: Array<{ config: LLMConfig; options: ProviderOptions }> = [];
 
-const stubProvider = (config: LLMConfig, options: Record<string, unknown>) => {
+const stubProvider = (config: LLMConfig, options: ProviderOptions): Provider => {
   built.push({ config, options });
   return { chatCompletion };
 };
 
+import type { Provider } from '../../llm/types.js';
+import type { ProviderOptions } from '../../llm/provider.js';
 import { PluginRegistry } from '../registry.js';
 import { TransformChain } from '../transform.js';
 import { loadRemotePlugin } from '../remote-loader.js';
