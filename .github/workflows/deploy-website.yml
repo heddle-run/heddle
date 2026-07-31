@@ -50,6 +50,14 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # Pinned because the action otherwise picks its own default, and it
+          # picks one silently: it looks for wrangler in workingDirectory below,
+          # website/ does not depend on it — packages/broker holds this
+          # repository's only declaration — and the lookup failing is what sends
+          # it to an install of its own. Naming the version is the difference
+          # between choosing one and being handed whichever the action defaults
+          # to on the day.
+          wranglerVersion: "4.118.0"
           # NOTE: "specrun" here is the existing Cloudflare Pages project name,
           # not the product name. Renaming it requires creating the project on
           # the Cloudflare side first, so it is deliberately left alone by the
@@ -57,11 +65,18 @@ jobs:
           #
           # website/functions is uploaded with the assets: it is the one thing
           # that makes playground.heddle.run serve the playground rather than
-          # the front page. --compatibility-date is pinned rather than left to
-          # default to the day of the deploy, so a build months from now runs
-          # the middleware on the runtime it was written against.
+          # the front page.
+          #
+          # The compatibility date the middleware runs on is deliberately not
+          # here. `pages deploy` has no --compatibility-date — no version of
+          # wrangler does — and passing one is not ignored, it is a hard
+          # "Unknown arguments" exit that fails the deploy. For Pages it is a
+          # property of the project rather than of a deploy, kept in the
+          # project's deployment_configs and read from there by every
+          # deployment. Change it with the dashboard or the Pages API:
+          #   PATCH /accounts/{account_id}/pages/projects/specrun
+          #   {"deployment_configs":{"production":{"compatibility_date":"..."}}}
           command: >-
             pages deploy out
             --project-name specrun
-            --compatibility-date=2025-04-01
           workingDirectory: website
