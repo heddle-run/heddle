@@ -47,18 +47,37 @@ export async function loadPlugins(
 ): Promise<PluginRegistry> {
   const registry = PluginRegistry.empty();
 
-  for (const specifier of specifiers ?? []) {
-    if (specifier.endsWith(MANIFEST_EXTENSION)) {
-      const path = resolve(process.cwd(), specifier);
-      const raw = readManifest(path);
-      assertDiscoveryAllowed(raw, specifier, discovery);
+  try {
+    for (const specifier of specifiers ?? []) {
+      if (specifier.endsWith(MANIFEST_EXTENSION)) {
+        const path = resolve(process.cwd(), specifier);
+        const raw = readManifest(path);
+        assertDiscoveryAllowed(raw, specifier, discovery);
 
-      const remote = remotePluginFrom(specifier);
-      if (discovery) await discoverTools(remote, raw, dirname(path));
-      registry.addRemote(remote);
-    } else {
-      registry.add(await loadPlugin(specifier));
+        const remote = remotePluginFrom(specifier);
+        try {
+          if (discovery) await discoverTools(remote, raw, dirname(path));
+        } catch (err) {
+          // This one is not in the registry yet — `addRemote` is below — so
+          // nothing else has a reference to its process. Discovery is the first
+          // thing on this path that starts one, and every way it can fail (a
+          // bad tool name, an unknown componentType, the call timeout, a plugin
+          // that never answers) would otherwise leave that process running with
+          // no way left to stop it.
+          remote.host.dispose();
+          throw err;
+        }
+        registry.addRemote(remote);
+      } else {
+        registry.add(await loadPlugin(specifier));
+      }
     }
+  } catch (err) {
+    // And these are: everything loaded before the one that failed. The same
+    // disposition `buildPlugins` takes on the server — a partial registry is
+    // torn down rather than returned or abandoned.
+    registry.dispose();
+    throw err;
   }
 
   return registry;

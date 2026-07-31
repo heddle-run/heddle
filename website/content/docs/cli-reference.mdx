@@ -36,6 +36,7 @@ heddle run <flow> [options]
 | `--input <json>` | Input data as a JSON object. Becomes the run's starting state |
 | `--chat` | Start an interactive chat session instead of a single run |
 | `--plugin <module>` | Load a plugin (repeatable). A `.json` path is a manifest and runs out of process; anything else is imported as an ES module |
+| `--discover-tools` | Let a plugin that declares `discoverTools` be started so heddle can ask what tools it has. Off by default: reading a manifest runs nothing, which is what keeps `validate` free |
 | `--plugin-config <Type>=<json>` | Configuration for a middleware component type (repeatable, once per type). `@path` reads the JSON from a file |
 | `--max-node-attempts <n>` | How many times one arrival at a node may be attempted when middleware retries. Whole number ≥ 1, default 3 |
 | `--no-stream` | Ask the model for one buffered response instead of a token stream |
@@ -123,6 +124,7 @@ heddle validate <spec> [options]
 |--------|-------------|
 | `--tools-dir <path>` | Directory containing tool executables (validates tool references) |
 | `--plugin <module>` | Load a plugin (repeatable), so a flow naming its component types can be parsed |
+| `--discover-tools` | Allow a plugin declaring `discoverTools` to be started. Without it, such a plugin is refused at load rather than loaded without its tools |
 
 ### What It Checks
 

@@ -36,18 +36,26 @@ export const validateCommand = new Command('validate')
   )
   .action(async (specPath: string, options: ValidateOptions) => {
     const plugins = await loadPlugins(options.plugin, options.discoverTools === true);
+    try {
+      const component = loadComponent(specPath, plugins) as unknown as {
+        componentType: string;
+        name: string;
+      };
+      console.log(`  Parsed ${component.componentType}: ${component.name}`);
 
-    const component = loadComponent(specPath, plugins) as unknown as {
-      componentType: string;
-      name: string;
-    };
-    console.log(`  Parsed ${component.componentType}: ${component.name}`);
+      if (component.componentType === 'Flow') {
+        validateFlowFile(specPath, options, plugins);
+      }
 
-    if (component.componentType === 'Flow') {
-      validateFlowFile(specPath, options, plugins);
+      console.log(`Valid: ${specPath}`);
+    } finally {
+      // The one thing that starts a process on this path is discovery, and it
+      // is the reason this exists: a spawned plugin's piped stdio keeps the
+      // event loop referenced, so `heddle validate --discover-tools` printed
+      // "Valid" and then never exited. `run.ts` has always disposed in a
+      // `finally`; this path had nothing to dispose until now.
+      plugins.dispose();
     }
-
-    console.log(`Valid: ${specPath}`);
   });
 
 function validateFlowFile(

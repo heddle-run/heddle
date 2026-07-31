@@ -56,6 +56,46 @@ export interface EgressPolicy {
   allow: string[];
 }
 
+/**
+ * A `fetch` that refuses to be redirected, for use under a policy.
+ *
+ * The policy is checked once, against the base URL, before any connection is
+ * made — so on its own it guarantees only that the *first* address was
+ * allowed. `fetch` defaults to `redirect: 'follow'`, and the OpenAI SDK passes
+ * no option, so an allowed host answering `302 Location: http://127.0.0.1/`
+ * moves the request somewhere the policy already refused. The address checked
+ * would not be the address connected to.
+ *
+ * Worse than blind, in two specific ways. Per the fetch spec a 302 turns a POST
+ * into a GET, which is exactly the shape a metadata service wants — the model
+ * call is a POST to `/chat/completions` and would arrive as a GET. And the
+ * response comes back through `asLLMError`, whose message for a non-JSON body
+ * is the body, which the server then returns in its error payload. So the
+ * redirect would not merely reach the internal service; it would hand the
+ * caller what it said.
+ *
+ * Refused rather than re-checked and followed. Re-checking the `Location` would
+ * work for one hop and invite the same question at the next, and no model API
+ * needs a redirect to serve a completion.
+ *
+ * Installed **only when a policy is in force**, so the ordinary local case —
+ * no policy, your own spec, your own machine — keeps the SDK's own behaviour.
+ */
+export function redirectRefusingFetch(where: string): typeof fetch {
+  return async (input, init) => {
+    const response = await fetch(input, { ...init, redirect: 'manual' });
+    if (response.status < 300 || response.status >= 400) return response;
+
+    const location = response.headers.get('location') ?? '(unstated)';
+    throw new LLMError(
+      `${where} was redirected to "${location}". heddle does not follow ` +
+        `redirects for a spec it did not write: the address it checked would not ` +
+        `be the address it connected to, and a redirect is how an allowed host ` +
+        `reaches one that is not.`,
+    );
+  };
+}
+
 /** Host names that are local whatever they resolve to. */
 const LOCAL_NAMES = new Set(['localhost', 'ip6-localhost', 'ip6-loopback']);
 
@@ -94,7 +134,12 @@ function isPrivateIpv6(host: string): boolean {
 
 /** Whether a hostname is one the default policy refuses. */
 export function isPrivateHost(host: string): boolean {
-  const name = host.toLowerCase();
+  // The root label is stripped first, because WHATWG URL keeps it on a *name*
+  // while removing it from an IPv4 literal — `127.0.0.1.` normalises and
+  // `localhost.` does not. Without this, every name below is one character away
+  // from being bypassed, and `localhost.` resolves to loopback exactly as
+  // `localhost` does.
+  const name = host.toLowerCase().replace(/\.$/, '');
   return (
     LOCAL_NAMES.has(name) ||
     name.endsWith('.localhost') ||
@@ -127,9 +172,14 @@ export function assertEgressAllowed(
     );
   }
 
-  const host = parsed.hostname;
+  // Normalised the same way `isPrivateHost` normalises, so `--allow-net
+  // 10.0.0.5` matches a spec that wrote `10.0.0.5.` — otherwise the hole an
+  // operator punched would depend on how the spec spelled the host.
+  const host = parsed.hostname.toLowerCase().replace(/\.$/, '');
   if (!isPrivateHost(host)) return;
-  if (policy.allow.includes(host)) return;
+  if (policy.allow.some((allowed) => allowed.toLowerCase().replace(/\.$/, '') === host)) {
+    return;
+  }
 
   throw new LLMError(
     `${where} points at "${host}", which is a loopback, link-local or private ` +

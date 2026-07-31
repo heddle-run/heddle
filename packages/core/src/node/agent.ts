@@ -15,7 +15,8 @@ import type { NodeExecutor, Dependencies } from './types.js';
 import type { EventHandler } from '../runner/events.js';
 import type { Executor, Registry } from '../tool/types.js';
 import { invokeTool } from '../tool/invoke.js';
-import type { ChainBefore } from '../plugin/middleware.js';
+import type { ChainBefore, ChainVerdict } from '../plugin/middleware.js';
+import type { SeamOutcome } from '../plugin/types.js';
 import { generationParams, providerFor } from '../llm/provider.js';
 import { TransformChain } from '../plugin/transform.js';
 import { RunError, ToolError } from '../errors.js';
@@ -244,39 +245,102 @@ export class AgentExecutor implements NodeExecutor {
       startedAt,
     });
 
+    let outcome: SeamOutcome;
     try {
       if (parsed.error) throw parsed.error;
-
-      const output = await this.executeTool(
-        signal,
-        call.name,
-        args,
-        scopedExecutor,
-      );
-      const content = JSON.stringify(output);
-
-      this.deps.eventHandler?.({
-        type: 'tool_result',
-        nodeName: this.node.name,
-        toolName: call.name,
-        toolResult: output,
-        toolCallId: call.id,
-        duration: Date.now() - startedAt,
-      });
-
-      return { role: 'tool', tool_call_id: call.id, content };
+      outcome = {
+        ok: true,
+        value: await this.executeTool(signal, call.name, args, scopedExecutor),
+      };
     } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      outcome = { ok: false, error: { name: error.name, message: error.message } };
+    }
+
+    // The other half of the seam, consulted whether the tool returned or threw —
+    // which is what `when: 'always'` means in the SEAMS table. A middleware that
+    // truncates a large result and one that turns a failure into a canned answer
+    // are the same hook seen from two sides.
+    const settled = await this.afterToolCall(signal, call, outcome);
+
+    if (settled.action === 'fail') {
+      throw new ToolError(
+        `"${call.name}" was refused by middleware "${settled.by}": ${settled.reason}`,
+      );
+    }
+    if (settled.action === 'replace') {
+      this.warn(
+        `"${settled.by}" supplied a result for "${call.name}". The tool did not ` +
+          `produce this.`,
+      );
+      outcome = { ok: true, value: settled.value };
+    }
+
+    if (outcome.ok) {
       this.deps.eventHandler?.({
         type: 'tool_result',
         nodeName: this.node.name,
         toolName: call.name,
+        toolResult: outcome.value,
         toolCallId: call.id,
         duration: Date.now() - startedAt,
-        error: err instanceof Error ? err : new Error(String(err)),
       });
 
-      return { role: 'tool', tool_call_id: call.id, content: `Error: ${err}` };
+      return {
+        role: 'tool',
+        tool_call_id: call.id,
+        content: JSON.stringify(outcome.value),
+      };
     }
+
+    this.deps.eventHandler?.({
+      type: 'tool_result',
+      nodeName: this.node.name,
+      toolName: call.name,
+      toolCallId: call.id,
+      duration: Date.now() - startedAt,
+      error: new Error(outcome.error.message),
+    });
+
+    return {
+      role: 'tool',
+      tool_call_id: call.id,
+      content: `Error: ${outcome.error.message}`,
+    };
+  }
+
+  /**
+   * Ask the chain what to make of a tool call that has finished.
+   *
+   * `retry` is not admitted here and `seams.ts` says why: by the time this runs,
+   * the assistant message that asked for the call is already in `messages`, so
+   * re-issuing it is not re-entering a clean state.
+   */
+  private async afterToolCall(
+    signal: AbortSignal | undefined,
+    call: ToolCall,
+    outcome: SeamOutcome,
+  ): Promise<ChainVerdict> {
+    const chain = this.deps.middleware;
+    if (!chain?.has('toolCall')) return { action: 'pass' };
+
+    return chain.consult(
+      'toolCall',
+      {
+        subject: {
+          nodeName: this.node.name,
+          nodeType: 'AgentNode',
+          toolName: call.name,
+          toolCallId: call.id,
+        },
+        outcome,
+        attempt: 1,
+        maxAttempts: 1,
+        allowRetry: false,
+      },
+      signal,
+      this.deps.eventHandler,
+    );
   }
 
   /**

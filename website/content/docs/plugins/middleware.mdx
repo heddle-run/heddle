@@ -91,6 +91,34 @@ A middleware subscribes per half, so one that declared only `after` is never ask
 call site checks before it consults, which matters more here than at `nodeError`: this runs
 on every tool call of every round rather than only on a failure.
 
+### After the call
+
+The same seam has an `after` half, consulted whether the tool returned or threw — which is
+what `always` means in the table above. A middleware that truncates a large result and one
+that turns a failure into a canned answer are the same hook seen from two sides.
+
+```js
+serve({
+  Auditor: {
+    toolCall: {
+      after: ({ subject, outcome }) => {
+        if (outcome.ok && JSON.stringify(outcome.value).length > 10_000) {
+          return { action: 'replace', value: { note: 'result too large, omitted' } };
+        }
+        return { action: 'pass' };
+      },
+    },
+  },
+});
+```
+
+`pass` lets the outcome stand, `replace` substitutes a result the tool did not produce —
+reported as a `warning` naming the middleware — and `fail` ends the run. `retry` is not
+admitted, for the reason above.
+
+A middleware may subscribe to either half or both, and each is asked only if it declared
+it.
+
 Note what `toolCall` does *not* admit: `retry`. By the time a tool call fails, the
 assistant message that requested it is already in the conversation, so re-issuing the
 call is not re-entering a clean state.

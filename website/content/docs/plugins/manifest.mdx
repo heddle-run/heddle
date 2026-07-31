@@ -37,11 +37,42 @@ Two things follow, and both are worth more than the flexibility given up:
 | `capabilities` | no | The reverse calls this plugin intends to make. Absent means none |
 | `components` | no* | The component types this plugin provides |
 | `tools` | no* | Tools this plugin contributes to the flow's registry |
+| `discoverTools` | no | Whether the tool list has to be *asked for* rather than read. Off by default |
 
 <Callout>
-\* A manifest must declare components or tools. A tools-only plugin is a real shape and
-the point of the kind — an MCP proxy contributes no component at all.
+\* A manifest must declare components, tools, **or** `discoverTools`. A tools-only plugin
+is a real shape and the point of the kind, and an MCP proxy often declares none of the
+three statically — its tool list belongs to the server it fronts, so `discoverTools: true`
+alone is enough.
 </Callout>
+
+### discoverTools
+
+Everything else here is data, so heddle learns what a plugin provides without running it —
+which is what keeps `heddle validate` free and lets a spec be inspected without executing
+its author's code. An MCP proxy cannot honour that, because a list committed to this file
+is a copy of somebody else's registry as it stood when a build step last ran.
+
+Declaring it says: start me, ask me once, take the answer. It is therefore **refused unless
+the operator opted in** with `--discover-tools` — a manifest asking to be started is not
+consent, and reading a manifest runs nothing.
+
+```json
+{ "name": "mcp-proxy", "version": "1.0.0", "capabilities": [], "discoverTools": true }
+```
+
+```js
+serve({}, {
+  listTools: async () => ({ tools: [{ name: 'search', path: './search' }] }),
+});
+```
+
+Discovery happens once, at load, before the registry is built — so `Registry.lookup` stays
+synchronous. A discovered tool is checked by exactly the rules a declared one meets, and a
+name colliding with one the manifest already declared is refused as the duplicate it is.
+
+A **submitted** plugin may not discover. The server would have to start it to learn what it
+provides, on the endpoint callers reach for because it runs nothing.
 
 When `command` is absent heddle supplies a default: a program carrying the execute bit is
 invoked by path, and a `.mjs` or `.js` entry point is run under the host's node. Invoking

@@ -16,6 +16,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { execFileSync } from 'node:child_process';
 
 import { loadPlugins } from '../loader.js';
 import { discoverTools, loadRemotePlugin } from '../remote-loader.js';
@@ -44,6 +45,74 @@ afterEach(() => {
 function writePlugin(source: string, manifest: Record<string, unknown>): string {
   writeFileSync(join(scratch, 'proxy.mjs'), withRuntime(source));
   const path = join(scratch, 'proxy.json');
+  writeFileSync(path, JSON.stringify(manifest));
+  return path;
+}
+
+/**
+ * The processes this one currently owns.
+ *
+ * `execFileSync` rather than `execSync`, because a shell is a child too: every
+ * sample taken through one contains that sample's own `sh`, under a new pid each
+ * time, so a poll comparing samples never converges. The first version of this
+ * helper did exactly that and hung until the test timed out — the instrument was
+ * measuring itself.
+ */
+function childPids(): Set<number> {
+  try {
+    const out = execFileSync('pgrep', ['-P', String(process.pid)], {
+      encoding: 'utf-8',
+    });
+    return new Set(out.split('\n').filter(Boolean).map(Number));
+  } catch {
+    // `pgrep` exits non-zero when nothing matches, which is not an error here.
+    return new Set();
+  }
+}
+
+/** Whether a pid is still there. Signal 0 tests for existence and sends nothing. */
+function alive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Wait for the children started since `before` to go, and report any that stay.
+ *
+ * A pid counts as leaked only if it is *still alive* a moment after it was seen,
+ * which is what separates a plugin that outlived its registry from the
+ * short-lived process this check spawns to look. Polled rather than slept: a
+ * fixed delay is a guess about a machine, too short on a loaded runner and
+ * wasteful everywhere else.
+ */
+async function leakedSince(
+  before: Set<number>,
+  deadlineMs = 3000,
+): Promise<number[]> {
+  const start = Date.now();
+  for (;;) {
+    const candidates = [...childPids()].filter((pid) => !before.has(pid));
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    const persistent = candidates.filter(alive);
+    if (persistent.length === 0 || Date.now() - start > deadlineMs) {
+      return persistent;
+    }
+  }
+}
+
+/** A second plugin, under its own basename. */
+function writePluginAt(
+  base: string,
+  source: string,
+  manifest: Record<string, unknown>,
+): string {
+  writeFileSync(join(scratch, `${base}.mjs`), withRuntime(source));
+  const path = join(scratch, `${base}.json`);
   writeFileSync(path, JSON.stringify(manifest));
   return path;
 }
@@ -280,4 +349,43 @@ describe('the property discovery spends, and no more', () => {
     expect(found).toBeDefined();
     expect(found).not.toBeInstanceOf(Promise);
   });
+});
+
+describe('what a failed discovery leaves behind', () => {
+  it('starts no process it does not stop', async () => {
+    // Discovery is the first thing on this path that spawns, and the plugin is
+    // added to the registry only *after* it succeeds — so a rejection used to
+    // leave a started process with no reference left to dispose it. The CLI
+    // survived by accident, on `process.exit`; `loadPlugins` is public API,
+    // where there is no such backstop.
+    const before = childPids();
+    const path = writePlugin(
+      `serve({ Proxy: {} }, { listTools: async () => ({ tools: [
+         { name: 'not a valid name', componentType: 'Proxy' },
+       ] }) });`,
+      PROXY,
+    );
+
+    await expect(loadPlugins([path], true)).rejects.toThrow();
+
+    expect(await leakedSince(before)).toEqual([]);
+  }, 15_000);
+
+  it('stops the plugins it had already loaded', async () => {
+    // Everything before the one that failed is in the registry, and nobody else
+    // holds it. The same disposition `buildPlugins` takes on the server.
+    const before = childPids();
+    const good = writePluginAt('good', SERVES_TWO, PROXY);
+    const bad = writePluginAt(
+      'bad',
+      `serve({ Proxy: {} }, { listTools: async () => ({ tools: [
+         { name: 'nope!', componentType: 'Proxy' },
+       ] }) });`,
+      PROXY,
+    );
+
+    await expect(loadPlugins([good, bad], true)).rejects.toThrow();
+
+    expect(await leakedSince(before)).toEqual([]);
+  }, 15_000);
 });
