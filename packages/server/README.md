@@ -94,11 +94,13 @@ heddle-server \
   --plugin-config SpendLimit=@/etc/heddle/spend-limit.json
 ```
 
-Three seams are available to it: `nodeError` (a node failed — retry, substitute
-a result, or end the run), `toolCall` (before and after a tool the model asked
-for — rewrite the arguments, refuse the call, answer it without running it), and
+Five seams are available to it: `nodeError` (a node failed — retry, substitute
+a result, or end the run), `node` (before and after every node — cache it, dry
+run it, audit it), `toolCall` (before and after a tool the model asked for —
+rewrite the arguments, refuse the call, answer it without running it),
 `modelCall` (before and after a request to the model — edit it, serve it from a
-cache, or retry a 429). See the [plugin
+cache, or retry a 429), and `agentRound` (before and after an agent's round —
+cap how many rounds it may spend). See the [plugin
 docs](https://heddle.run/docs/plugins/middleware).
 
 What installing buys, and what it costs:

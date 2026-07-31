@@ -1113,7 +1113,6 @@ export type Seam =
   | 'nodeError'   // runner.ts:63-73
   | 'modelCall'   // agent.ts:122-126 and llm.ts:42-45
   | 'toolCall'    // agent.ts:181-182
-  | 'toolResult'  // agent.ts:183
   | 'agentRound'; // agent.ts:121
 ```
 
@@ -2132,7 +2131,7 @@ numbering was left alone so cross-references stay valid. The actual order:
 | 3 `PluginContext` | 1, 2 | landed |
 | 4 `callModel` | 1, 3 | landed; also carried seam #26 (`ChatRequest` widening) |
 | 5 Provider kind | 2, 4 | landed; *strongly preferred* V, and took it |
-| 6 Middleware kind | 1, 2, 3 | landed; four seams consulted, two reserved |
+| 6 Middleware kind | 1, 2, 3 | landed; all five seams consulted, nothing reserved |
 | 7 Registry | 1 | landed; off the main line |
 | 9 Encoder | 2, 3 | landed; off the main line |
 | **V** SDK extension | — | landed; independent; landed before 5 |
@@ -2140,6 +2139,7 @@ numbering was left alone so cross-references stay valid. The actual order:
 | 11 Dynamic tools | 7 | landed; resolves §7.10 Q6; MCP is the caller |
 | 12 Installed plugins on the server | 6, 7, 9, 11 | landed; makes the middleware seams reachable from `heddle-server` |
 | 13 The `node` seam | 6, 12 | landed; the widest seam, around every node of every flow |
+| 14 Settle the reserved names | 6, 13 | landed; `agentRound` built, `toolResult` deleted, nothing reserved |
 | 15 `--protocol` on the CLI | 9 | landed; an encoder is reachable without starting a server |
 
 Phases 0 through V have all landed — that was the original roadmap, and it is
@@ -2392,7 +2392,7 @@ kind whose whole job is an outbound request. A submitted provider is *not* refus
 way middleware is: it runs only when the caller's own spec names it, it cannot capture a builtin
 type, and heddle bounds how often it is called — which is more than can be said for `callModel`.
 
-### Phase 6 — Middleware kind — **landed; four seams consulted, two reserved**
+### Phase 6 — Middleware kind — **landed; all five seams consulted**
 
 The advice held: `nodeError` alone, and the cost estimate held too — restructuring `runner.ts`
 was the easy part, and the policy questions were the phase.
@@ -2417,12 +2417,9 @@ test. `toolCall` gave it a call site — an approval gate, where a refused call 
 because a provider refuses a request whose assistant message asked for one that no tool message
 answers. `modelCall` followed, and is the seam that admits `retry`: a failed tool call leaves the
 request in the conversation, while a failed model call has changed nothing. `node` came last and is
-written up as Phase 13. Four of six seams are consulted now; `toolResult` and `agentRound` remain
-reserved.
-
-`toolResult` now overlaps `toolCall`'s `after` half, which is a decision owed rather than a gap:
-both are consulted about a tool's outcome, and unless seeing a result without seeing the call turns
-out to matter, the reserved name should be dropped rather than built.
+written up as Phase 13, and `agentRound` as Phase 14 — which also deleted `toolResult`, the one
+reserved name that turned out not to be worth building. All five seams are consulted now and nothing
+is held in reserve.
 
 **And the gap this phase left, since closed by Phase 12: the server installed no middleware.** It had
 no operator-plugin path at all — `buildPlugins` loaded only what a request submitted — so building
@@ -2769,8 +2766,52 @@ deciding about and nothing wider, and that on a server an installed `node` polic
 widest view of a caller's data any seam offers.
 
 **Depends on:** Phase 6 for the shape, Phase 12 for somewhere to install one. **Unblocks:** caching,
-dry runs and per-node audit. Remaining: `toolResult`, which overlaps `toolCall`'s `after` half and
-should be dropped rather than built, and `agentRound`.
+dry runs and per-node audit. Remaining after this: `toolResult` and `agentRound`, both settled in
+Phase 14.
+
+### Phase 14 — Settle the reserved names — **landed**
+
+Two names were left in `SEAMS` with `implemented: false`. One was built and one was deleted, and
+after this the table has no unbuilt entry at all — a manifest naming something outside it is refused
+as a name heddle does not have, rather than one it has not reached yet.
+
+**`toolResult` deleted.** It was written down before `toolCall` grew an `after` half. Now that it has
+one, that half is shown the call, its arguments, its id *and* the result, so a seam shown the result
+without the call that asked for it is strictly less. Leaving it reserved was the worse option rather
+than the neutral one: the load-time refusal said heddle "does not consult it yet", which promises
+something that should never ship. Deleting it makes that message unreachable by data — see below.
+
+**`agentRound` built**, in `agent.ts`'s tool-calling loop. A round is one model call plus the tool
+calls it asked for; `before` is consulted at the top of each, `after` at the end of each that ran
+tools. Its vocabulary is deliberately the narrowest of the five — `proceed`/`reject`, `pass`/`fail`,
+nothing that rewrites anything — because the two seams *inside* a round already own what is sent and
+what runs. The one thing neither can say is that there should not be another round, which is what an
+agent looping on tools costs money for, and `MAX_TOOL_ROUNDS` is an engine constant an operator
+cannot move.
+
+**The decision it owed: `after` is not consulted for the round that produced the answer.** `fail` is
+the only thing that half can say and there is nothing left to stop once the agent is finishing rather
+than looping, so consulting it there would ask a guard to rule on a transition that is not happening.
+A policy counting rounds counts `before`, which is asked about every one. What the final answer is
+*worth* belongs to `node`, which is shown the whole output rather than a list of tool names. The last
+round of the ceiling does reach `after`, and should: a middleware ending the run naming what the
+agent was looping on says more than "exceeded max tool rounds".
+
+**Three things this surfaced, all recorded rather than fixed here.**
+
+- **The unbuilt-seam refusal is now unreachable by data.** With no `implemented: false` entry,
+  `IMPLEMENTED_SEAMS` equals `SEAM_NAMES` and that branch in `readSeamName` matches nothing. The
+  machinery stays, because reserving the next seam should be a data change rather than a code change,
+  and a test pins `SEAM_NAMES === IMPLEMENTED_SEAMS` so the docs claim cannot drift.
+- **`SeamDef.position` and `SeamDef.when` are read by nothing in code.** They are
+  documentation-as-data, and the docs table that would consume them is hand-written MDX.
+  `SeamDef` is exported, so removing fields from it is an API decision rather than a cleanup.
+- **Test files are excluded from `tsc`.** `packages/core/tsconfig.json` has
+  `"exclude": ["**/__tests__/**"]`, so type errors in tests are caught only by vitest at run time.
+  Compiling them anyway shows pre-existing errors in two seam test files.
+
+**Depends on:** Phase 6 for the shape, Phase 13 for the precedent. **Unblocks:** an operator capping
+an agent's rounds. The seam vocabulary is now closed and complete.
 
 ### Phase 15 — `--protocol` on the CLI — **landed**
 

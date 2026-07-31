@@ -104,9 +104,23 @@ export class AgentExecutor implements NodeExecutor {
     const tools = this.describeTools();
     const turn: TurnCounter = { emitted: 0 };
 
-    for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+    // Counted from 1 because the number is part of the `agentRound` seam's
+    // contract, and a policy capping three rounds should not have to know that
+    // the third one is numbered 2.
+    for (let round = 1; round <= MAX_TOOL_ROUNDS; round++) {
+      const gate = await this.beforeRound(signal, round);
+      if (gate.action === 'reject') {
+        throw new RunError(
+          `AgentNode "${this.node.name}" was stopped by middleware ` +
+            `"${gate.by}" before round ${round}: ${gate.reason}`,
+        );
+      }
+
       const response = await this.callModel(signal, messages, tools, turn);
 
+      // The one exit that skips the `after` half: a round ending in an answer
+      // is not about to become another round, and stopping the next one is all
+      // that half can do. `afterRound` has the rest of the reasoning.
       if (!response.tool_calls || response.tool_calls.length === 0) {
         return await this.finish(signal, messages, response);
       }
@@ -119,6 +133,14 @@ export class AgentExecutor implements NodeExecutor {
 
       for (const call of response.tool_calls) {
         messages.push(await this.runToolCall(signal, call, scopedExecutor));
+      }
+
+      const settled = await this.afterRound(signal, round, response.tool_calls);
+      if (settled.action === 'fail') {
+        throw new RunError(
+          `AgentNode "${this.node.name}" was ended by middleware ` +
+            `"${settled.by}" after round ${round}: ${settled.reason}`,
+        );
       }
     }
 
@@ -375,6 +397,73 @@ export class AgentExecutor implements NodeExecutor {
         toolCallId: call.id,
       },
       args,
+      signal,
+      this.deps.eventHandler,
+    );
+  }
+
+  /**
+   * Ask the chain whether another round should happen at all.
+   *
+   * The narrowest seam heddle has: `proceed` or `reject`, and nothing that
+   * rewrites anything. A round is one model call plus the tool calls it asked
+   * for, and the two seams inside it already own what is sent and what runs —
+   * so the one thing left for this one to say is that there should not be
+   * another. `MAX_TOOL_ROUNDS` is the engine's ceiling and an operator cannot
+   * move it; this is how they get a lower one.
+   */
+  private async beforeRound(
+    signal: AbortSignal | undefined,
+    round: number,
+  ): Promise<ChainBefore> {
+    const chain = this.deps.middleware;
+    if (!chain?.hasBefore('agentRound')) return { action: 'proceed' };
+
+    return chain.consultBefore(
+      'agentRound',
+      { nodeName: this.node.name, nodeType: 'AgentNode' },
+      // `maxRounds` because a policy tightening a ceiling has to be told which
+      // one it is tightening, or it hardcodes 10 and drifts when that changes.
+      { round, maxRounds: MAX_TOOL_ROUNDS },
+      signal,
+      this.deps.eventHandler,
+    );
+  }
+
+  /**
+   * Ask the chain what to make of a round that ran tool calls.
+   *
+   * A round that ended in an answer does not reach here. `fail` is the only
+   * thing this half can say, and there is nothing left to stop once `finish`
+   * is what happens next — so consulting it there would ask a guard to rule on
+   * a transition that is not happening. What the answer itself is worth is
+   * `node`'s to decide, and that seam is shown the whole output rather than a
+   * count of tool calls.
+   *
+   * The last round of the ceiling does reach here, and should: a middleware
+   * that ends the run naming what the agent was looping on says more than
+   * "exceeded max tool rounds".
+   */
+  private async afterRound(
+    signal: AbortSignal | undefined,
+    round: number,
+    calls: ToolCall[],
+  ): Promise<ChainVerdict> {
+    const chain = this.deps.middleware;
+    if (!chain?.has('agentRound')) return { action: 'pass' };
+
+    return chain.consult(
+      'agentRound',
+      {
+        subject: { nodeName: this.node.name, nodeType: 'AgentNode' },
+        outcome: {
+          ok: true,
+          value: { round, toolCalls: calls.map((call) => call.name) },
+        },
+        attempt: 1,
+        maxAttempts: 1,
+        allowRetry: false,
+      },
       signal,
       this.deps.eventHandler,
     );
