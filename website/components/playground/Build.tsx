@@ -4,7 +4,7 @@ import Editor from "./Editor";
 import Tabs from "./Tabs";
 import CodeList from "./CodeList";
 import RunLog from "./RunLog";
-import { Icon } from "@/ds";
+import { Icon, Select } from "@/ds";
 import { API_BASE, type Capabilities, type RequestPlugin, type RequestTool } from "@/lib/playground";
 import type { Playground, Status } from "@/lib/use-playground";
 
@@ -147,15 +147,28 @@ export default function Build({ pg }: { pg: Playground }) {
         <div
           style={{
             display: "flex",
+            flexWrap: "wrap",
             minHeight: 44,
             flexShrink: 0,
             alignItems: "center",
             justifyContent: "space-between",
+            gap: "var(--space-3) var(--space-5)",
             padding: "0 var(--space-5)",
             borderBottom: "1px solid var(--border-hairline)",
           }}
         >
-          <span className="hd-eyebrow">Run</span>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "var(--space-5)",
+              minWidth: 0,
+            }}
+          >
+            <span className="hd-eyebrow">Run</span>
+            <ProtocolPicker pg={pg} />
+          </div>
+
           <span
             aria-live="polite"
             style={{
@@ -195,10 +208,48 @@ export default function Build({ pg }: { pg: Playground }) {
             status={pg.status}
             result={pg.result}
             error={pg.error}
+            protocol={pg.renderedIn}
           />
         </div>
       </section>
     </>
+  );
+}
+
+/**
+ * How the engine should render this run.
+ *
+ * Absent until a submitted plugin declares an encoder, which is the whole
+ * mechanism stated in the interface: heddle renders one protocol of its own,
+ * and every other one arrives in the request body beside the flow. Nothing is
+ * installed on the engine to make this work.
+ */
+function ProtocolPicker({ pg }: { pg: Playground }) {
+  if (pg.protocols.length < 2) return null;
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: "var(--space-3)",
+        minWidth: 0,
+      }}
+    >
+      <label className="hd-eyebrow" htmlFor="playground-protocol">
+        Protocol
+      </label>
+      <Select
+        id="playground-protocol"
+        value={pg.protocol}
+        onChange={(event: React.ChangeEvent<HTMLSelectElement>) =>
+          pg.setProtocol(event.target.value)
+        }
+        options={pg.protocols}
+        disabled={pg.busy}
+        style={{ width: 130, flex: "0 0 auto" }}
+      />
+    </div>
   );
 }
 

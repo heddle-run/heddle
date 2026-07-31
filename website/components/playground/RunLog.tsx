@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import type { RunEvent } from "@/lib/playground";
+import { BUILTIN_PROTOCOL, type RunEvent } from "@/lib/playground";
 
 const LABELS: Record<string, string> = {
   flow_start: "flow",
@@ -67,18 +67,37 @@ function describe(event: RunEvent): string {
   }
 }
 
+/**
+ * The run, in whichever vocabulary it arrived in.
+ *
+ * `describe` above reads heddle's own event types, and there is no honest way
+ * to make it read another protocol's: an encoder is free to invent its
+ * vocabulary, so a component that claimed to understand every one of them would
+ * be guessing. Under a plugin protocol the rows become the frames themselves —
+ * type first, body after — which is the one rendering that is true of any
+ * encoder, and the one a reader wiring a client up actually wants.
+ *
+ * The two are alternatives rather than neighbours because a run is rendered in
+ * exactly one protocol: the engine is handed a single encoder and the wire
+ * carries what it wrote. Showing both at once would mean running twice, and
+ * with a model in the flow those are two different runs — so the honest way to
+ * see one flow both ways is to move the protocol and run it again.
+ */
 export default function RunLog({
   events,
   status,
   result,
   error,
+  protocol = BUILTIN_PROTOCOL,
 }: {
   events: RunEvent[];
   status: "idle" | "running" | "done" | "error";
   result?: Record<string, unknown>;
   error?: { type: string; message: string };
+  protocol?: string;
 }) {
   const endRef = useRef<HTMLDivElement>(null);
+  const raw = protocol !== BUILTIN_PROTOCOL;
 
   useEffect(() => {
     if (status === "running") {
@@ -106,6 +125,20 @@ export default function RunLog({
 
   return (
     <div style={{ display: "flex", height: "100%", flexDirection: "column" }}>
+      {raw && (
+        <p
+          className="hd-eyebrow"
+          style={{
+            flexShrink: 0,
+            margin: 0,
+            padding: "var(--space-3) var(--space-5)",
+            borderBottom: "1px solid var(--border-hairline)",
+          }}
+        >
+          Frames · {protocol}
+        </p>
+      )}
+
       <ol
         style={{
           flex: 1,
@@ -115,69 +148,13 @@ export default function RunLog({
           padding: 0,
         }}
       >
-        {events.map((event, index) => {
-          const failed =
-            FAILED.has(event.type) ||
-            (event.type === "plugin_log" && event.level === "error");
-          const accented = ACCENTED.has(event.type);
-          return (
-            <li
-              key={index}
-              style={{
-                display: "flex",
-                gap: "var(--space-4)",
-                padding: "var(--space-2) var(--space-5)",
-                borderBottom: "1px solid var(--border-hairline)",
-                background: failed ? "var(--brand-pink-05)" : undefined,
-                fontFamily: "var(--font-mono)",
-                fontSize: "var(--fs-xs)",
-                lineHeight: "var(--lh-relaxed)",
-                color: "var(--text-body)",
-              }}
-            >
-              <span
-                style={{
-                  width: 56,
-                  flexShrink: 0,
-                  textTransform: "uppercase",
-                  letterSpacing: "var(--tracking-widest)",
-                  fontSize: "var(--fs-2xs)",
-                  paddingTop: 2,
-                  color: failed
-                    ? "var(--hue-red)"
-                    : accented
-                      ? "var(--brand-pink)"
-                      : "var(--text-faint)",
-                }}
-              >
-                {label(event.type)}
-              </span>
-              <span
-                style={{
-                  minWidth: 0,
-                  flex: 1,
-                  overflowWrap: "break-word",
-                  color: failed ? "var(--text-strong)" : "var(--text-body)",
-                  whiteSpace:
-                    event.type === "token_delta" ? "pre-wrap" : undefined,
-                }}
-              >
-                {describe(event)}
-              </span>
-              {event.duration !== undefined && (
-                <span
-                  style={{
-                    flexShrink: 0,
-                    fontVariantNumeric: "tabular-nums",
-                    color: "var(--text-faint)",
-                  }}
-                >
-                  {formatDuration(event.duration)}
-                </span>
-              )}
-            </li>
-          );
-        })}
+        {events.map((event, index) =>
+          raw ? (
+            <FrameRow key={index} event={event} ordinal={index + 1} />
+          ) : (
+            <EventRow key={index} event={event} />
+          ),
+        )}
         <div ref={endRef} />
       </ol>
 
@@ -239,5 +216,132 @@ export default function RunLog({
         </div>
       )}
     </div>
+  );
+}
+
+/** One heddle event, read through the vocabulary above. */
+function EventRow({ event }: { event: RunEvent }) {
+  const failed =
+    FAILED.has(event.type) ||
+    (event.type === "plugin_log" && event.level === "error");
+  const accented = ACCENTED.has(event.type);
+
+  return (
+    <Row
+      marker={label(event.type)}
+      tone={
+        failed
+          ? "var(--hue-red)"
+          : accented
+            ? "var(--brand-pink)"
+            : "var(--text-faint)"
+      }
+      failed={failed}
+      wrap={event.type === "token_delta"}
+      duration={event.duration}
+    >
+      {describe(event)}
+    </Row>
+  );
+}
+
+/**
+ * One frame, as the encoder wrote it: its type, then the rest of its body.
+ *
+ * `parseFrame` returns a nameless frame's body unchanged, so this is the JSON
+ * that crossed the wire and not a reading of it. The exception is heddle's own
+ * failure frame — that one is named, so it arrives whatever the protocol, and
+ * `parseFrame` moves its body to where the rest of the playground looks for an
+ * error. Putting it back is what keeps this pane a record rather than a
+ * paraphrase; its lowercase name among a protocol's own is the tell that it
+ * came from the engine and not the encoder.
+ */
+function FrameRow({ event, ordinal }: { event: RunEvent; ordinal: number }) {
+  const failed = event.type === "error";
+  const { type, ...rest } = event;
+
+  const body = failed
+    ? JSON.stringify({ type: event.error?.type, message: event.error?.message })
+    : Object.keys(rest).length > 0
+      ? JSON.stringify(rest)
+      : "";
+
+  return (
+    <Row marker={ordinal} tone="var(--text-faint)" failed={failed}>
+      <span style={{ color: failed ? "var(--hue-red)" : "var(--text-strong)" }}>
+        {type}
+      </span>
+      {body && ` ${body}`}
+    </Row>
+  );
+}
+
+/** The line both readings are drawn on: a marker, the text, and a duration. */
+function Row({
+  marker,
+  tone,
+  failed,
+  wrap,
+  duration,
+  children,
+}: {
+  marker: React.ReactNode;
+  tone: string;
+  failed: boolean;
+  wrap?: boolean;
+  duration?: number;
+  children: React.ReactNode;
+}) {
+  return (
+    <li
+      style={{
+        display: "flex",
+        gap: "var(--space-4)",
+        padding: "var(--space-2) var(--space-5)",
+        borderBottom: "1px solid var(--border-hairline)",
+        background: failed ? "var(--brand-pink-05)" : undefined,
+        fontFamily: "var(--font-mono)",
+        fontSize: "var(--fs-xs)",
+        lineHeight: "var(--lh-relaxed)",
+        color: "var(--text-body)",
+      }}
+    >
+      <span
+        style={{
+          width: 56,
+          flexShrink: 0,
+          textTransform: "uppercase",
+          letterSpacing: "var(--tracking-widest)",
+          fontVariantNumeric: "tabular-nums",
+          fontSize: "var(--fs-2xs)",
+          paddingTop: 2,
+          color: tone,
+        }}
+      >
+        {marker}
+      </span>
+      <span
+        style={{
+          minWidth: 0,
+          flex: 1,
+          overflowWrap: "break-word",
+          color: failed ? "var(--text-strong)" : "var(--text-body)",
+          whiteSpace: wrap ? "pre-wrap" : undefined,
+        }}
+      >
+        {children}
+      </span>
+      {duration !== undefined && (
+        <span
+          style={{
+            flexShrink: 0,
+            fontVariantNumeric: "tabular-nums",
+            color: "var(--text-faint)",
+          }}
+        >
+          {formatDuration(duration)}
+        </span>
+      )}
+    </li>
   );
 }

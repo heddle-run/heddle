@@ -15,19 +15,63 @@ export interface RequestPlugin {
   source: string;
 }
 
+/**
+ * The kinds a manifest can declare, as the engine spells them.
+ *
+ * The playground reads exactly one of them — `encoder`, because an encoder is
+ * the only kind that changes what comes back down the wire. The rest are here
+ * because a manifest travels through the editor untouched, and a union that
+ * omitted them would make a manifest the engine accepts impossible to type.
+ */
+export type ManifestKind =
+  | "node"
+  | "transform"
+  | "component"
+  | "provider"
+  | "middleware"
+  | "encoder";
+
 export interface PluginManifest {
   name: string;
   version: string;
   capabilities?: string[];
   components: Array<{
     componentType: string;
-    kind?: "node" | "transform" | "component";
+    kind?: ManifestKind;
     inputs?: Array<{ title: string; type: string }>;
     outputs?: Array<{ title: string; type: string }>;
     branches?: string[];
     phase?: "pre" | "post" | "both";
     schema?: Record<string, unknown>;
+    /** An encoder only: the name a run puts in `?protocol=` to ask for it. */
+    protocol?: string;
+    /** An encoder only: the content type of the response it produces. */
+    contentType?: string;
   }>;
+}
+
+/** heddle's own rendering, and the name a run can ask for it by. */
+export const BUILTIN_PROTOCOL = "heddle";
+
+/**
+ * The protocols these plugins can render a run in.
+ *
+ * An encoder is a submittable kind: it renders one run for the caller who asked
+ * and cannot alter it, so it may ride in the request body the way a tool does.
+ * That is why this reads the manifests in the editor rather than asking the
+ * engine — the engine will not have heard of the protocol until it is sent one.
+ */
+export function encoderProtocols(plugins: RequestPlugin[]): string[] {
+  const protocols = new Set<string>();
+
+  for (const plugin of plugins) {
+    for (const component of plugin.manifest.components) {
+      if (component.kind === "encoder" && component.protocol) {
+        protocols.add(component.protocol);
+      }
+    }
+  }
+  return [...protocols];
 }
 
 export interface RunEvent {
@@ -124,6 +168,8 @@ export interface RunPayload {
   inputs: Record<string, unknown>;
   tools: RequestTool[];
   plugins: RequestPlugin[];
+  /** The rendering to ask for. Absent, or `heddle`, is heddle's own. */
+  protocol?: string;
 }
 
 function body(payload: RunPayload, withInputs: boolean): string {
@@ -150,8 +196,31 @@ export async function validateFlow(
   return (await res.json()) as ValidationResult;
 }
 
+/**
+ * Read one SSE frame, and decide what to call it.
+ *
+ * Two kinds of frame come down this stream and they are labelled differently.
+ *
+ * heddle's own frames are **named**: `event: node_start`, and a body that
+ * repeats the name in a `type`. A plugin encoder's frames are **nameless** —
+ * `data:` alone, with the protocol's own type inside the body — because a
+ * protocol like AG-UI names its events in its own vocabulary and heddle has no
+ * business stamping a second name on the outside.
+ *
+ * So: a named frame is called by its name, and a nameless one by the type in
+ * its body. Preferring the body's `type` for both, as this did, is wrong on
+ * exactly one frame and it is the one that matters. When a run fails the engine
+ * writes `event: error` with the *error body* — `{ type, message }`, where the
+ * type is the error's class. Reading that as the event's type labelled the row
+ * `RunError`, which is in no vocabulary at all: the log did not tint it, no
+ * branch here matched it, and the message was dropped on the floor. A failed run
+ * showed one unremarkable grey line and no reason.
+ *
+ * That frame's body is an error, not an event, so it goes where an error goes.
+ * `RunLog` and `usePlayground` were both already reading `event.error` for it.
+ */
 function parseFrame(frame: string): RunEvent | undefined {
-  let name = "message";
+  let name: string | undefined;
   const data: string[] = [];
 
   for (const line of frame.split("\n")) {
@@ -160,12 +229,34 @@ function parseFrame(frame: string): RunEvent | undefined {
   }
   if (data.length === 0) return undefined;
 
+  const body = parseBody(data.join("\n"));
+  if (!body) return undefined;
+
+  if (name === "error") return { type: "error", error: asError(body) };
+  return { ...body, type: name ?? body.type ?? "message" };
+}
+
+function parseBody(text: string): RunEvent | undefined {
   try {
-    const parsed = JSON.parse(data.join("\n")) as RunEvent;
-    return { ...parsed, type: parsed.type ?? name };
+    const parsed: unknown = JSON.parse(text);
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      return undefined;
+    }
+    return parsed as RunEvent;
   } catch {
     return undefined;
   }
+}
+
+/**
+ * The body of `event: error`, which is an error rather than an event: its
+ * `type` is the class the engine raised, and there is no `message` above it.
+ */
+function asError(body: RunEvent): NonNullable<RunEvent["error"]> {
+  return {
+    type: body.type || "Error",
+    message: body.message ?? "the run failed",
+  };
 }
 
 export async function* streamRun(
@@ -174,7 +265,16 @@ export async function* streamRun(
 ): AsyncGenerator<RunEvent> {
   if (!API_BASE) throw missingEndpoint();
 
-  const res = await fetch(`${API_BASE}/v1/runs?stream=true`, {
+  /* `stream` and `protocol` travel together on purpose: a protocol names how
+     the run's events are rendered, and the buffered response carries no events
+     at all, so the engine answers 400 to one without the other. This function
+     is the streaming one, so `stream=true` is unconditional. */
+  const query = new URLSearchParams({ stream: "true" });
+  if (payload.protocol && payload.protocol !== BUILTIN_PROTOCOL) {
+    query.set("protocol", payload.protocol);
+  }
+
+  const res = await fetch(`${API_BASE}/v1/runs?${query.toString()}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: body(payload, true),
@@ -217,6 +317,8 @@ export interface Example {
   inputs: string;
   tools: RequestTool[];
   plugins: RequestPlugin[];
+  /** The rendering to select when this example is loaded. */
+  protocol?: string;
 }
 
 const SHOUT_TOOL: RequestTool = {
@@ -935,6 +1037,287 @@ $referenced_components:
   plugins: [],
 };
 
+/* An encoder renders the run for the caller who asked and cannot alter it, so
+   unlike a middleware it may be submitted with the request — which is the only
+   way anything reaches the deployed engine, since its flags live in a systemd
+   unit rather than in this repository.
+
+   The plugin below is `examples/ag-ui/encoder.mjs` and `examples/ag-ui/encoder.json`
+   verbatim: the same pair the CLI runs and the server's own tests assert on,
+   rather than a second encoder written for the browser. The manifest is named
+   after its entry point because that is how heddle finds it. */
+const AG_UI: Example = {
+  id: "ag-ui",
+  title: "A run rendered as AG-UI",
+  blurb:
+    "An encoder plugin renders this run as AG-UI. The protocol beside the run chooses which vocabulary the frames arrive in.",
+  protocol: "ag-ui",
+  flow: `component_type: Flow
+name: rendered
+start_node: { $component_ref: start }
+
+nodes:
+  - $component_ref: start
+  - $component_ref: assistant
+  - $component_ref: end
+
+control_flow_connections:
+  - component_type: ControlFlowEdge
+    name: start_to_assistant
+    from_node: { $component_ref: start }
+    to_node: { $component_ref: assistant }
+  - component_type: ControlFlowEdge
+    name: assistant_to_end
+    from_node: { $component_ref: assistant }
+    to_node: { $component_ref: end }
+
+$referenced_components:
+  start:
+    component_type: StartNode
+    id: start
+    name: start
+    outputs:
+      - title: question
+        type: string
+
+  # Nothing in this flow knows it is being rendered. Each node's start and
+  # finish become STEP_STARTED and STEP_FINISHED, its outputs become a
+  # STATE_SNAPSHOT, the tool call becomes TOOL_CALL_START, _ARGS and _END, and
+  # the answer arrives as TEXT_MESSAGE_CONTENT deltas.
+  assistant:
+    component_type: AgentNode
+    id: assistant
+    name: assistant
+    agent:
+      component_type: Agent
+      id: inner
+      name: assistant
+      system_prompt: >-
+        Call digest for a hash rather than guessing one. Answer in one
+        sentence.
+
+      # No api_key and no url, so the engine supplies the free model it was
+      # configured with -- see the agent example for why that pair is
+      # all-or-nothing.
+      llm_config:
+        component_type: OpenAiConfig
+        id: llm
+        name: model
+        model_id: openrouter/free
+
+      tools:
+        - component_type: ServerTool
+          id: digest_tool
+          name: digest
+          description: The SHA-256 of a string, as hexadecimal
+          inputs:
+            - title: text
+              type: string
+          outputs:
+            - title: sha256
+              type: string
+
+  end:
+    component_type: EndNode
+    id: end
+    name: end
+`,
+  inputs: `{
+  "question": "what is the sha-256 of: weave agents from spec"
+}
+`,
+  tools: [
+    {
+      name: "digest",
+      interpreter: "python3",
+      source: `import hashlib, json, sys
+
+args = json.load(sys.stdin)
+text = args.get("text", "")
+
+# Something the model cannot work out for itself, so the turn has to contain a
+# real tool call -- which is the pair of frames worth looking at.
+json.dump({"sha256": hashlib.sha256(text.encode("utf-8")).hexdigest()}, sys.stdout)
+`,
+    },
+  ],
+  plugins: [
+    {
+      name: "ag-ui",
+      manifest: {
+        name: "ag-ui-encoder",
+        version: "1.0.0",
+        capabilities: [],
+        components: [
+          {
+            componentType: "AgUiEncoder",
+            kind: "encoder",
+            protocol: "ag-ui",
+            contentType: "text/event-stream; charset=utf-8",
+          },
+        ],
+      },
+      source: `function createEncoder(runId) {
+  let openMessage;
+  let completed = false;
+  let lastError;
+  let visit = 0;
+  let runState = {};
+
+  const idFor = (event) => \`\${event.nodeName ?? 'run'}#\${visit}\`;
+
+  const closeMessage = () => {
+    if (openMessage === undefined) return [];
+    const frames = [{ data: { type: 'TEXT_MESSAGE_END', messageId: openMessage } }];
+    openMessage = undefined;
+    return frames;
+  };
+
+  return {
+    encode(event) {
+      switch (event.type) {
+        case 'flow_start':
+          return [{ data: { type: 'RUN_STARTED', threadId: runId, runId } }];
+
+        case 'node_start':
+          visit++;
+          runState = { ...runState, ...event.state };
+          return [{ data: { type: 'STEP_STARTED', stepName: event.nodeName } }];
+
+        case 'token_delta': {
+          const id = idFor(event);
+          const frames = [];
+          if (openMessage !== id) {
+            frames.push(...closeMessage());
+            frames.push({
+              data: { type: 'TEXT_MESSAGE_START', messageId: id, role: 'assistant' },
+            });
+            openMessage = id;
+          }
+          frames.push({
+            data: { type: 'TEXT_MESSAGE_CONTENT', messageId: id, delta: event.delta },
+          });
+          return frames;
+        }
+
+        case 'tool_call':
+          return [
+            {
+              data: {
+                type: 'TOOL_CALL_START',
+                toolCallId: event.toolCallId,
+                toolCallName: event.toolName,
+                parentMessageId: idFor(event),
+              },
+            },
+            {
+              data: {
+                type: 'TOOL_CALL_ARGS',
+                toolCallId: event.toolCallId,
+                delta: JSON.stringify(event.toolArgs ?? {}),
+              },
+            },
+            { data: { type: 'TOOL_CALL_END', toolCallId: event.toolCallId } },
+          ];
+
+        case 'tool_result':
+          return [
+            {
+              data: {
+                type: 'TOOL_CALL_RESULT',
+                messageId: \`\${idFor(event)}:\${event.toolCallId}\`,
+                toolCallId: event.toolCallId,
+                content: event.error
+                  ? \`Error: \${event.error.message}\`
+                  : typeof event.toolResult === 'string'
+                    ? event.toolResult
+                    : JSON.stringify(event.toolResult ?? null),
+                role: 'tool',
+              },
+            },
+          ];
+
+        case 'node_complete': {
+          const frames = closeMessage();
+          frames.push({ data: { type: 'STEP_FINISHED', stepName: event.nodeName } });
+          if (event.state) {
+            runState = { ...runState, ...event.state };
+            frames.push({ data: { type: 'STATE_SNAPSHOT', snapshot: runState } });
+          }
+          return frames;
+        }
+
+        case 'node_error': {
+          lastError = event.error?.message ?? 'a node failed';
+          const frames = closeMessage();
+          frames.push({ data: { type: 'STEP_FINISHED', stepName: event.nodeName } });
+          return frames;
+        }
+
+        case 'flow_complete':
+          completed = true;
+          return closeMessage();
+
+        case 'warning':
+        case 'plugin_log':
+          return [
+            {
+              data: {
+                type: 'CUSTOM',
+                name: event.type,
+                value: { message: event.message, level: event.level, node: event.nodeName },
+              },
+            },
+          ];
+
+        default:
+          return [];
+      }
+    },
+
+    finish() {
+      const frames = closeMessage();
+      frames.push(
+        completed
+          ? { data: { type: 'RUN_FINISHED', threadId: runId, runId } }
+          : {
+              data: {
+                type: 'RUN_ERROR',
+                message: lastError ?? 'the run ended without completing',
+                code: 'HEDDLE_RUN_INCOMPLETE',
+              },
+            },
+      );
+      return frames;
+    },
+  };
+}
+
+const encoders = new Map();
+const encoderFor = (ctx) => {
+  let encoder = encoders.get(ctx.runId);
+  if (!encoder) {
+    encoder = createEncoder(ctx.runId);
+    encoders.set(ctx.runId, encoder);
+  }
+  return encoder;
+};
+
+serve({
+  AgUiEncoder: {
+    encode: (event, ctx) => encoderFor(ctx).encode(event),
+    finish: (ctx) => {
+      const encoder = encoderFor(ctx);
+      encoders.delete(ctx.runId);
+      return encoder.finish();
+    },
+  },
+});
+`,
+    },
+  ],
+};
+
 export const EXAMPLES: Example[] = [
   TOOL_AND_PLUGIN,
   GUARDRAIL,
@@ -942,6 +1325,7 @@ export const EXAMPLES: Example[] = [
   AGENT,
   RESEARCH,
   SHELL,
+  AG_UI,
 ];
 
 export const DEFAULT_EXAMPLE = EXAMPLES[0];
