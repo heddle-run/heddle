@@ -28,7 +28,37 @@ import { FileRegistry } from '../../tool/registry.js';
 import { loadFlow } from '../../spec/load.js';
 import { collectToolNames } from '../../spec/types.js';
 import type { Registry } from '../../tool/types.js';
-import { exampleById } from '../../../../../website/lib/playground.js';
+
+/**
+ * The shipped example, loaded rather than copied — a copy is a second thing to
+ * keep in step, and this test exists because the first one drifts.
+ *
+ * The specifier is built at run time on purpose. `website` is a separate npm
+ * project outside this package's `rootDir`, so a static import puts a file
+ * `tsc` will not compile into the program and fails the build with TS6059.
+ * Vitest resolves it perfectly well; only the compiler needs to be kept from
+ * following it.
+ */
+const playgroundModule = new URL(
+  '../../../../../website/lib/playground.ts',
+  import.meta.url,
+).href;
+
+interface PlaygroundExample {
+  id: string;
+  flow: string;
+  inputs: string;
+  tools: Array<{ name: string; source: string; interpreter: string }>;
+  plugins: Array<{
+    name: string;
+    manifest: Record<string, unknown>;
+    source: string;
+  }>;
+}
+
+const { exampleById } = (await import(playgroundModule)) as {
+  exampleById: (id: string) => PlaygroundExample | undefined;
+};
 
 const example = exampleById('skills')!;
 
