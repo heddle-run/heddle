@@ -225,6 +225,21 @@ describe('partials', () => {
     expect(result).toEqual({ output: { text: 'hello' } });
   });
 
+  /**
+   * Asked of the call directly rather than through a timeout. The earlier
+   * version gave the host a 300ms budget and waited for the rejection, which
+   * proved the call was still open only by outliving a window that also had to
+   * cover starting the process — so on a machine slow enough it would have
+   * timed out before the partial ever arrived, and passed without a partial
+   * having failed to settle anything.
+   *
+   * A partial is delivered inside `receive`, and a host that settled on one
+   * would resolve the call in that same turn. So once the partial is in hand
+   * and the microtask queue has drained, which awaiting anything at all
+   * guarantees, the call is either settled or it is not, and no duration comes
+   * into it. The budget goes back to its default, where nothing is waiting on
+   * it.
+   */
   it('does not settle the call', async () => {
     const entry = writePlugin(
       'partial-only',
@@ -232,31 +247,60 @@ describe('partials', () => {
        send({ id: msg.id, partial: { token: 'a' } });`,
     );
 
-    const host = hostFor(entry, manifest('PartialOnlyNode'), { timeout: 300 });
-    await expect(execute(host, 'PartialOnlyNode')).rejects.toThrow(
-      /did not answer execute within 300ms/,
+    const host = hostFor(entry, manifest('PartialOnlyNode'));
+    const partials: unknown[] = [];
+    let settled = false;
+    void execute(host, 'PartialOnlyNode', {}, (p) => partials.push(p)).then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
     );
+
+    await until(() => partials.length > 0, 3_000);
+
+    expect(partials).toEqual([{ token: 'a' }]);
+    expect(settled).toBe(false);
   });
 
+  /**
+   * The twin of the reporting test in `reporting.test.ts`, and robust for the
+   * same reasons: a partial restarts the same clock a report does, so a call
+   * that keeps streaming outlives the timeout it was given.
+   *
+   * The budget covers starting the plugin, which the clock is already running
+   * for — node reaches its first line in about 40ms here and about 90ms on a
+   * machine with three times more runnable processes than cores, against a
+   * budget of 1000ms. Each later window covers one send, at forty to one.
+   *
+   * The loop ends when the plugin's own clock says it has outlived the budget,
+   * rather than after a fixed nine sleeps of 100ms against 300ms, which was a
+   * margin narrow enough for a loaded machine to close.
+   */
   it('keeps a call alive for longer than its timeout while partials arrive', async () => {
+    const budget = 1_000;
     const entry = writePlugin(
       'slow-streamer',
       `if (msg.method !== 'execute') return;
-       for (let i = 0; i < 9; i++) {
-         await new Promise((r) => setTimeout(r, 100));
-         send({ id: msg.id, partial: { i } });
+       const stop = Date.now() + ${budget * 1.2};
+       let sent = 0;
+       while (Date.now() < stop) {
+         await new Promise((r) => setTimeout(r, 25));
+         send({ id: msg.id, partial: { i: sent++ } });
        }
-       send({ id: msg.id, result: { output: { finished: true } } });`,
+       send({ id: msg.id, result: { output: { finished: true, sent } } });`,
     );
 
-    const host = hostFor(entry, manifest('SlowStreamNode'), { timeout: 300 });
+    const host = hostFor(entry, manifest('SlowStreamNode'), { timeout: budget });
     const partials: unknown[] = [];
     const started = Date.now();
     const result = await execute(host, 'SlowStreamNode', {}, (p) => partials.push(p));
 
-    expect(result).toEqual({ output: { finished: true } });
-    expect(partials).toHaveLength(9);
-    expect(Date.now() - started).toBeGreaterThan(300);
+    expect(partials.length).toBeGreaterThan(1);
+    expect(result).toEqual({ output: { finished: true, sent: partials.length } });
+    expect(Date.now() - started).toBeGreaterThan(budget);
   });
 
   it('ignores a partial for a call nobody is waiting on', async () => {
@@ -292,6 +336,20 @@ describe('partials', () => {
   });
 });
 
+/**
+ * A plugin that never answers what it was asked, having first said who it is.
+ *
+ * The pid rides in on a partial rather than on a call of its own, because every
+ * call here is made against a 200ms budget and a call that has to *succeed*
+ * inside one is a call racing node's startup: about 40ms idle and about 90ms on
+ * a loaded machine, against a budget the whole point of which is to be short. A
+ * partial costs no extra call, and it doubles as evidence that the plugin
+ * received the frame at all — a timeout that happened before it did would say
+ * nothing about a plugin refusing to answer.
+ *
+ * Restarting the clock is exactly what a partial does, so the budget then runs
+ * from the moment the plugin went quiet, which is what these tests are about.
+ */
 function writeHangingPlugin(name: string, cancels: boolean): string {
   return writePlugin(
     name,
@@ -300,22 +358,61 @@ function writeHangingPlugin(name: string, cancels: boolean): string {
        ${cancels ? `send({ id: msg.id, result: {} });` : `/* ignored */`}
        return;
      }
-     if (msg.params.input.hang) return;
+     if (msg.params.input.hang) {
+       send({ id: msg.id, partial: { pid: process.pid } });
+       return;
+     }
      send({ id: msg.id, result: { output: { alive: true } } });`,
   );
 }
 
+/**
+ * How long the host waits for a cancel to be acknowledged before it kills, from
+ * `CANCEL_GRACE` in host.ts. Mirrored rather than imported because it is not
+ * exported, and every wait below is a multiple of it: what these tests are
+ * about is what happens on either side of that window.
+ */
+const CANCEL_GRACE = 500;
+
+/** Make a call the plugin will not answer, and name the process it hung in. */
+async function pidOfAbandonedCall(
+  host: PluginHost,
+  componentType: string,
+): Promise<number> {
+  const pids: number[] = [];
+  await expect(
+    execute(host, componentType, { hang: true }, (p) =>
+      pids.push((p as { pid: number }).pid),
+    ),
+  ).rejects.toThrow(/did not answer execute within 200ms/);
+
+  expect(pids).toHaveLength(1);
+  return pids[0];
+}
+
 describe('cancelling a call heddle has given up on', () => {
+  /**
+   * The caller is freed at the timeout, not when the plugin gets round to
+   * agreeing. A deaf plugin never agrees, so the two are separated by the whole
+   * cancel grace.
+   *
+   * Stated as ordering rather than as a duration. The earlier version timed the
+   * whole call and asked for under 450ms, which is a 200ms budget plus 250ms of
+   * slack to start node in and be rejected in — so what the slack was really
+   * being spent on was startup, and a loaded machine spent more than there was.
+   * Asking instead whether the plugin is still running when the rejection lands
+   * says the same thing and cannot be affected by scheduling: had the caller
+   * been made to wait on the cancel, the SIGKILL that ends that wait would
+   * already have happened, and nothing but microtasks runs between the
+   * rejection and the check.
+   */
   it('rejects the call whether or not the plugin ever answers the cancel', async () => {
     const host = hostFor(writeHangingPlugin('deaf', false), manifest('DeafNode'), {
       timeout: 200,
     });
 
-    const started = Date.now();
-    await expect(execute(host, 'DeafNode', { hang: true })).rejects.toThrow(
-      /did not answer execute within 200ms/,
-    );
-    expect(Date.now() - started).toBeLessThan(450);
+    const pid = await pidOfAbandonedCall(host, 'DeafNode');
+    expect(alive(pid)).toBe(true);
   });
 
   it('keeps the process for the next call when the plugin acknowledges', async () => {
@@ -323,10 +420,14 @@ describe('cancelling a call heddle has given up on', () => {
       timeout: 200,
     });
 
-    await expect(execute(host, 'PoliteNode', { hang: true })).rejects.toThrow(
-      /did not answer execute/,
-    );
-    await wait(800);
+    const pid = await pidOfAbandonedCall(host, 'PoliteNode');
+    // The one wait here that has to be a duration: nothing is expected to
+    // happen, and the test is that nothing does. Three grace periods, because
+    // an acknowledgement that failed to disarm the kill would be a kill landing
+    // one grace period from now, and a wait that only just cleared it would let
+    // a loaded machine sit the bug out.
+    await wait(3 * CANCEL_GRACE);
+    expect(alive(pid)).toBe(true);
 
     await expect(execute(host, 'PoliteNode')).resolves.toEqual({
       output: { alive: true },
@@ -338,10 +439,14 @@ describe('cancelling a call heddle has given up on', () => {
       timeout: 200,
     });
 
-    await expect(execute(host, 'StubbornNode', { hang: true })).rejects.toThrow(
-      /did not answer execute/,
-    );
-    await wait(800);
+    const pid = await pidOfAbandonedCall(host, 'StubbornNode');
+    // Polled to the death rather than slept past it. The kill is due one grace
+    // period after the call was abandoned; waiting a fixed 800ms for it asked
+    // that it be no more than 300ms late, and a deadline of six grace periods
+    // that returns as soon as the process goes costs less on a machine where it
+    // is punctual.
+    await until(() => !alive(pid), 6 * CANCEL_GRACE);
+    expect(alive(pid)).toBe(false);
 
     await expect(execute(host, 'StubbornNode')).rejects.toThrow(/SIGKILL/);
   });
@@ -365,7 +470,13 @@ describe('stopping a plugin process', () => {
     await execute(host, 'PoliteExitNode');
 
     host.dispose();
-    await wait(500);
+    // Polled like the shutdown hook below, rather than slept at for a fixed
+    // 500ms. Something is expected to happen here, so a wait is a guess about
+    // how long another process takes to be scheduled, write a file and exit,
+    // and a machine that takes longer than the guess fails a test about asking
+    // before killing. Waiting for the file itself is the same test without the
+    // guess, and it returns as soon as the plugin has said goodbye.
+    await until(() => existsSync(marker), 3_000);
 
     expect(existsSync(marker)).toBe(true);
   });
