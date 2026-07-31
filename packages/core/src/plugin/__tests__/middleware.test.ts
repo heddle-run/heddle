@@ -710,7 +710,7 @@ describe('declaring a middleware', () => {
 
   it('refuses a seam heddle knows but does not consult yet', () => {
     expect(
-      withComponent({ componentType: 'M', kind: 'middleware', seams: { modelCall: ['after'] } }),
+      withComponent({ componentType: 'M', kind: 'middleware', seams: { toolResult: ['after'] } }),
     ).toThrow(/does not consult yet/);
   });
 
@@ -954,7 +954,7 @@ describe('what a middleware is not asked about', () => {
     expect(() =>
       chainOf({
         componentType: 'TooEarly',
-        seams: { modelCall: ['after'] },
+        seams: { toolResult: ['after'] },
         createMiddleware: () => ({ after: () => ({ action: 'pass' }) }),
       }),
     ).toThrow(/does not consult yet/);

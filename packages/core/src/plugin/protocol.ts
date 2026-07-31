@@ -481,6 +481,98 @@ export function readBeforeVerdict(
   }
 }
 
+/**
+ * Read a request a middleware modified, against the one it was given.
+ *
+ * The `modelCall` seam's `modify` is the only verdict in the system that hands
+ * back something heddle then *sends somewhere*, so it gets the strictest
+ * treatment: fields are taken one at a time and type-checked, and anything the
+ * middleware did not supply keeps the value it was shown. A returned object is
+ * therefore an edit rather than a replacement, which is what an author writing
+ * `{ ...input, temperature: 0 }` already assumes.
+ *
+ * `messages` is checked structurally because it is the field worth corrupting —
+ * a provider rejects a malformed array with an error naming the model, several
+ * frames from the middleware that caused it.
+ */
+export function readChatRequest(
+  original: ChatRequest,
+  raw: unknown,
+  where: string,
+): ChatRequest {
+  if (!isObject(raw)) {
+    throw new PluginError(
+      `${where} returned ${typeName(raw)} as a modified model request, expected ` +
+        `an object.`,
+    );
+  }
+
+  const edited: ChatRequest = { ...original };
+
+  if (raw.messages !== undefined) {
+    if (!Array.isArray(raw.messages)) {
+      throw new PluginError(
+        `${where} returned a "messages" that is not an array. A model request ` +
+          `carries an ordered conversation, and anything else reaches the provider ` +
+          `as a malformed body.`,
+      );
+    }
+    edited.messages = raw.messages.map((message, i) =>
+      readEditedMessage(message, `${where}: message ${i + 1}`),
+    );
+  }
+
+  if (raw.model !== undefined) {
+    if (typeof raw.model !== 'string' || !raw.model) {
+      throw new PluginError(`${where} returned a "model" that is not a name.`);
+    }
+    edited.model = raw.model;
+  }
+
+  for (const key of ['temperature', 'maxTokens', 'topP'] as const) {
+    if (raw[key] === undefined) continue;
+    if (typeof raw[key] !== 'number' || !Number.isFinite(raw[key])) {
+      throw new PluginError(
+        `${where} returned a "${key}" that is not a number. These are sent to the ` +
+          `model as written.`,
+      );
+    }
+    edited[key] = raw[key];
+  }
+
+  return edited;
+}
+
+/**
+ * One message out of a middleware's edited request.
+ *
+ * Deliberately not `readMessage` below, which serves `callModel` and names it in
+ * every error. The provenance differs and so should the attribution: a malformed
+ * message here came from a middleware the operator installed, not from a plugin
+ * composing a request, and an error blaming the wrong one sends somebody to the
+ * wrong file.
+ */
+function readEditedMessage(raw: unknown, where: string): Message {
+  if (!isObject(raw)) {
+    throw new PluginError(`${where} is ${typeName(raw)}, expected { role, content }`);
+  }
+  if (typeof raw.role !== 'string' || !Object.hasOwn(ROLES, raw.role)) {
+    throw new PluginError(
+      `${where} has role ${JSON.stringify(raw.role)}; expected one of ` +
+        `${Object.keys(ROLES).join(', ')}.`,
+    );
+  }
+  if (typeof raw.content !== 'string') {
+    throw new PluginError(`${where} has no "content" string.`);
+  }
+
+  const message: Message = { role: raw.role as Role, content: raw.content };
+  if (typeof raw.tool_call_id === 'string') message.tool_call_id = raw.tool_call_id;
+  const calls = readToolCalls(raw.tool_calls, where);
+  if (calls) message.tool_calls = calls;
+  return message;
+}
+
 export function readModelRequest(
   params: Record<string, unknown> | undefined,
 ): ModelRequest {

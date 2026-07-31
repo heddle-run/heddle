@@ -44,6 +44,8 @@ export class LLMExecutor implements NodeExecutor {
       },
       {
         nodeName: this.node.name,
+        nodeType: 'LlmNode',
+        middleware: this.deps.middleware,
         eventHandler: this.deps.eventHandler,
         allowStream: this.deps.stream !== false,
       },
