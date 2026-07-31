@@ -33,6 +33,10 @@ export interface RemotePluginOptions {
   capabilities?: PluginCapability[];
   refusedBecause?: Partial<Record<PluginCapability, string>>;
   root?: string;
+  /** Whether this process will serve more than one run. See `PluginHostOptions`. */
+  shared?: boolean;
+  /** Where the plugin's own stderr goes. See `PluginHostOptions`. */
+  onStderr?: (chunk: string) => void;
 }
 
 export interface RemotePlugin {
@@ -100,6 +104,8 @@ function hostOptionsFor(
     env: options.env,
     capabilities: manifest.capabilities,
     seams: admittedVerdicts(manifest),
+    shared: options.shared,
+    onStderr: options.onStderr,
   };
 }
 

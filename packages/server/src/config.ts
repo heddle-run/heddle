@@ -1,4 +1,8 @@
-import { DEFAULT_RUNNER_OPTIONS, type Sandbox } from '@heddle/core';
+import {
+  DEFAULT_RUNNER_OPTIONS,
+  type PluginRegistry,
+  type Sandbox,
+} from '@heddle/core';
 
 export interface ServerConfig {
   host: string;
@@ -21,6 +25,34 @@ export interface ServerConfig {
    */
   allowNet: string[];
   sandbox?: Sandbox;
+  /**
+   * Plugins the operator installed, already loaded.
+   *
+   * The other half of the plugin system, and the half a request cannot reach.
+   * Middleware runs on every node of every flow and takes its configuration
+   * from the command line, so it is installed here or not at all — a submitted
+   * plugin declaring any is refused, whatever else it provides.
+   *
+   * Loaded once and shared by every run: one process, however many requests.
+   * That is what makes an MCP session or a connection pool worth having, and it
+   * is why these plugins are started with `shared` — see
+   * `PluginHostOptions.shared` for what a shared host stops doing.
+   *
+   * Held rather than loaded here because loading is asynchronous and
+   * `createServer` is not. {@link startServer} takes ownership: draining or
+   * closing the server disposes it.
+   */
+  plugins?: PluginRegistry;
+  /** Settings for installed middleware, by componentType. */
+  pluginConfig: Record<string, Record<string, unknown>>;
+  /**
+   * How many times one arrival at a node may be attempted.
+   *
+   * Only reachable by middleware — nothing else retries a node — so it is here
+   * for the same reason `plugins` is, and it stays refused in a request body.
+   * A caller who could raise it could make the server spend its own budget.
+   */
+  maxNodeAttempts: number;
   defaultLlmKey?: string;
   defaultLlmUrl?: string;
   stream: boolean;
@@ -68,6 +100,10 @@ export function resolveConfig(options: ServerOptions = {}): ServerConfig {
     allowRequestCode: options.allowRequestCode ?? false,
     allowNet: options.allowNet ?? [],
     sandbox: options.sandbox,
+    plugins: options.plugins,
+    pluginConfig: options.pluginConfig ?? {},
+    maxNodeAttempts:
+      options.maxNodeAttempts ?? DEFAULT_RUNNER_OPTIONS.maxNodeAttempts,
     defaultLlmKey: options.defaultLlmKey,
     defaultLlmUrl: options.defaultLlmUrl,
     stream: options.stream ?? true,

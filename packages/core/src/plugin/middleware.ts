@@ -330,6 +330,35 @@ export class MiddlewareChain {
   }
 }
 
+/**
+ * Check middleware configuration without instantiating any middleware.
+ *
+ * The two things about a configuration that are knowable before a run exists:
+ * that something claims it, and that it matches the schema its plugin declared.
+ * A server checks both while it is still starting, so an operator's mistyped
+ * `--plugin-config` is a boot failure rather than a 500 on whichever request
+ * first builds a chain — by which time the port has been open for hours and the
+ * caller sees an error about a decision they had no part in.
+ *
+ * {@link MiddlewareChain.build} does both of these itself, so a host with
+ * nowhere earlier to put them loses nothing by not calling this.
+ */
+export function checkMiddlewareConfig(
+  registry: PluginRegistry | undefined,
+  config: Record<string, Record<string, unknown>>,
+): void {
+  const defs = registry?.middlewareDefs() ?? [];
+
+  checkUnclaimed(
+    config,
+    defs.map(({ def }) => def.componentType),
+  );
+
+  for (const { def } of defs) {
+    def.validateConfig?.(normalize(ownConfig(config, def.componentType)));
+  }
+}
+
 function buildEntry(
   { plugin, def }: RegisteredMiddleware,
   config: Record<string, Record<string, unknown>>,

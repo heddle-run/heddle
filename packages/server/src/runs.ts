@@ -6,11 +6,11 @@ import {
   collectToolNames,
   EncoderStream,
   FileRegistry,
+  MiddlewareChain,
   PluginRegistry,
   SubprocessExecutor,
   Runner,
   type CompiledGraph,
-  DEFAULT_RUNNER_OPTIONS,
   type Dependencies,
   type Event,
   type ParsedFlow,
@@ -36,6 +36,11 @@ import { assertToolsAvailable, mergeRegistries } from './tools.js';
 
 interface RunRequest extends FlowRequest, RequestCode {
   inputs?: Record<string, unknown>;
+}
+
+interface Prepared {
+  graph: CompiledGraph;
+  middleware: MiddlewareChain;
 }
 
 interface RunPlan {
@@ -85,10 +90,11 @@ export async function handleRun(
   let plugins = PluginRegistry.empty();
 
   try {
-    if (config.allowRequestCode) {
-      code = materializeRequestCode(runBody, config);
-      plugins = buildPlugins(config, code);
-    }
+    if (config.allowRequestCode) code = materializeRequestCode(runBody, config);
+    // Unconditionally, because a run resolves against the installed plugins
+    // whether or not it brought any of its own. `NO_CODE` contributes nothing,
+    // so with request code refused this is the operator's layer alone.
+    plugins = buildPlugins(config, code);
 
     const plan: RunPlan = {
       config,
@@ -111,8 +117,11 @@ export async function handleRun(
 }
 
 async function runBuffered(res: ServerResponse, plan: RunPlan): Promise<void> {
-  const graph = await prepare(plan, IGNORE_EVENTS);
-  const runner = new Runner(graph, runnerOptions(plan.config, IGNORE_EVENTS));
+  const { graph, middleware } = await prepare(plan, IGNORE_EVENTS);
+  const runner = new Runner(
+    graph,
+    runnerOptions(plan.config, IGNORE_EVENTS, middleware),
+  );
   const state = await runner.run(plan.abort.signal, plan.inputs);
 
   sendJson(
@@ -133,9 +142,9 @@ async function runStreaming(
 
   let events: EncoderStream | undefined;
 
-  let graph: CompiledGraph;
+  let prepared: Prepared;
   try {
-    graph = await prepare(plan, (event) => events?.offer(event));
+    prepared = await prepare(plan, (event) => events?.offer(event));
   } catch (err) {
     const { status, body } = toErrorResponse(err);
     sendJson(res, status, body, plan.headers);
@@ -151,8 +160,8 @@ async function runStreaming(
   sse.open(encoder.contentType);
 
   const runner = new Runner(
-    graph,
-    runnerOptions(plan.config, events.handler()),
+    prepared.graph,
+    runnerOptions(plan.config, events.handler(), prepared.middleware),
   );
 
   let failure: unknown;
@@ -178,27 +187,27 @@ async function runStreaming(
 async function prepare(
   plan: RunPlan,
   eventHandler: (event: Event) => void,
-): Promise<CompiledGraph> {
+): Promise<Prepared> {
   const flow = resolveFlow(plan.body, plan.config, plan.plugins);
-  const deps = buildDependencies(flow, plan, eventHandler);
+  const { deps, middleware } = buildDependencies(flow, plan, eventHandler);
 
   const graph = compile(flow, deps);
   validate(graph);
-  return graph;
+  return { graph, middleware };
 }
 
 function buildDependencies(
   flow: ParsedFlow,
   plan: RunPlan,
   eventHandler: (event: Event) => void,
-): Dependencies {
+): { deps: Dependencies; middleware: MiddlewareChain } {
   const { config } = plan;
   const registry = buildRegistry(config, plan.code, plan.plugins);
 
   const toolNames = collectToolNames(flow);
   if (toolNames.length > 0) assertToolsAvailable(registry, toolNames);
 
-  return {
+  const deps: Dependencies = {
     toolExecutor: new SubprocessExecutor({ sandbox: config.sandbox }),
     toolRegistry: registry,
     plugins: plan.plugins,
@@ -215,6 +224,24 @@ function buildDependencies(
     defaultLlmUrl: config.defaultLlmUrl,
     stream: config.stream,
   };
+
+  // Per run, over a registry loaded once. A middleware is one object per run
+  // holding that run's `Dependencies`, so the chain cannot be built at startup
+  // and shared — but the processes behind it were, which is what an installed
+  // plugin buys. Built from `plan.plugins` rather than `config.plugins` only
+  // because that is the registry in hand; a submitted plugin declaring
+  // middleware never reaches here, having been refused in `buildPlugins`.
+  const middleware = MiddlewareChain.build(
+    plan.plugins,
+    deps,
+    config.pluginConfig,
+  );
+  // On both, because the two reach different call sites — see the field's own
+  // comment in `Dependencies`. Assigned after the build since the chain is made
+  // *from* `deps`, and before `compile`, which makes the executors that read it.
+  deps.middleware = middleware;
+
+  return { deps, middleware };
 }
 
 function buildRegistry(
@@ -234,13 +261,15 @@ function buildRegistry(
 function runnerOptions(
   config: ServerConfig,
   eventHandler: (event: Event) => void,
+  middleware: MiddlewareChain,
 ): RunnerOptions {
   return {
     maxIterations: config.maxIterations,
     timeout: config.timeout,
     verbose: false,
     eventHandler,
-    maxNodeAttempts: DEFAULT_RUNNER_OPTIONS.maxNodeAttempts,
+    maxNodeAttempts: config.maxNodeAttempts,
+    middleware,
   };
 }
 

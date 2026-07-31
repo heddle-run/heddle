@@ -37,8 +37,9 @@ export function resolveEncoder(
   throw new HttpError(
     400,
     `no encoder for protocol "${protocol}". This server renders: ` +
-      `${available.join(', ')}. An encoder is submitted with the request as a ` +
-      `plugin, so a protocol nothing provides is a plugin that was not sent.`,
+      `${available.join(', ')}. An encoder comes from a plugin — one this ` +
+      `server has installed, or one submitted with the request — so a protocol ` +
+      `nothing provides is a plugin that is neither.`,
   );
 }
 

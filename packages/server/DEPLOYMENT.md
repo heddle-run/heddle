@@ -165,6 +165,41 @@ gVisor needs `--security-opt label=disable` where SELinux is enforcing, and
 | `--work-dir` | `/var/heddle/runs` | Off `/tmp`, which bubblewrap remounts. |
 | `--cors-origin` | your site | Exact origin. Constrains browsers only. |
 | `--drain-timeout` | `≥ --timeout` | So a run near its budget survives a rolling restart. |
+| `--plugin` | none, unless you have a policy | Installs middleware. See below before you do. |
+
+### An installed plugin is not a submitted one
+
+`--plugin` is how a retry policy, an approval gate or a spend limit gets onto
+this server: a submitted plugin declaring middleware is refused, because
+middleware runs on every node of every flow including other callers'.
+
+The safety argument that makes submitted plugins survivable does **not** carry
+over. A submitted plugin gets its own process per run, an empty environment and
+a kill when the run ends. An installed one is started once and serves every
+request, holds whatever capabilities its manifest declares, and runs for as long
+as the server does. It is the operator's code from the operator's filesystem,
+trusted the way `--tools-dir` is trusted — so install one you would be willing
+to `import()` into this process, because the isolation here is buying you
+concurrency, not containment.
+
+Two consequences to size for:
+
+- **State is shared.** One process serves concurrent runs. A plugin that keeps
+  per-run state in a module variable leaks one caller's data into another's run.
+  Nothing in heddle can catch this; it is the plugin's own invariant.
+- **A slow plugin is a slow server.** Every run's middleware call goes to the
+  same process, and each holds a concurrency slot while outstanding.
+  `--plugin-timeout` bounds one call and kills a plugin that overruns — which
+  fails every other run then in flight against it, because they were talking to
+  the process that just went away. The next call starts a fresh one, so this
+  costs a moment rather than the deployment; a plugin that reads `ctx.signal`
+  avoids the kill entirely.
+
+heddle refuses the one case it can see: an installed plugin asking to run a tool
+without saying which call it is acting for is refused rather than served from
+whichever run reached the process first. Its stderr goes to this server's log
+rather than into a caller's error body, for the same reason — one process's
+output spans every run.
 
 ## Deploying from CI
 

@@ -4,6 +4,7 @@ import {
   type Server,
   type ServerResponse,
 } from 'node:http';
+import { checkMiddlewareConfig } from '@heddle/core';
 import {
   resolveConfig,
   isPubliclyBound,
@@ -38,17 +39,40 @@ export interface StartedServer {
   close: () => Promise<void>;
 }
 
+/**
+ * Build the router without binding a port.
+ *
+ * Unlike {@link startServer} this takes no ownership of `options.plugins`,
+ * because it hands back nothing that could later release them: a caller that
+ * loads plugins and calls this disposes them itself.
+ */
 export function createServer(options: ServerOptions = {}): Server {
   const config = resolveConfig(options);
+  checkMiddlewareConfig(config.plugins, config.pluginConfig);
+
   return buildRouter(config, newRuntime(config));
 }
 
-export function startServer(
+/**
+ * Bind a port and serve.
+ *
+ * Takes ownership of `options.plugins`: draining or closing the returned server
+ * disposes it, which is what stops the plugin processes. They outlive every
+ * individual run by design, so nothing else is left to stop them — and a
+ * SIGTERM that left them running would orphan a process per installed plugin.
+ */
+// `async` so that a bad configuration is a rejection rather than a throw from a
+// function that otherwise returns a promise. A caller reaching for `.catch` is
+// not wrong to expect it to catch everything.
+export async function startServer(
   options: ServerOptions = {},
 ): Promise<StartedServer> {
   const config = resolveConfig(options);
+  checkMiddlewareConfig(config.plugins, config.pluginConfig);
+
   const runtime = newRuntime(config);
   const server = buildRouter(config, runtime);
+  const stopPlugins = (): void => config.plugins?.dispose();
 
   return new Promise((resolve, reject) => {
     server.once('error', reject);
@@ -63,8 +87,10 @@ export function startServer(
         host: config.host,
         port,
         drain: () =>
-          drainServer(server, runtime, config.drainTimeout, config.log),
-        close: () => closeServer(server),
+          drainServer(server, runtime, config.drainTimeout, config.log).finally(
+            stopPlugins,
+          ),
+        close: () => closeServer(server).finally(stopPlugins),
       });
     });
   });
@@ -268,6 +294,8 @@ function announce(config: ServerConfig, port: number): void {
   config.log(
     `  sandbox: ${config.sandbox?.name ?? '(none — tools run unconfined)'}`,
   );
+  config.log(`  plugins: ${config.plugins?.describe() ?? 'none'}`);
+  config.log(`  middleware: ${describeMiddleware(config)}`);
   config.log(
     `  request code: ${config.allowRequestCode ? 'accepted' : 'refused'}`,
   );
@@ -276,6 +304,21 @@ function announce(config: ServerConfig, port: number): void {
   );
   config.log(`  max concurrent runs: ${config.maxConcurrentRuns}`);
   config.log(`  drain timeout: ${config.drainTimeout}ms`);
+}
+
+/**
+ * What runs on every node of every flow, and where it came from.
+ *
+ * Worth a line of its own rather than being folded into the plugin list: a
+ * middleware is the one component nobody asked for by name, so an operator
+ * reading this log is the only person who will ever see it stated.
+ */
+function describeMiddleware(config: ServerConfig): string {
+  const installed = (config.plugins?.middlewareDefs() ?? []).map(
+    ({ plugin, def }) => `${def.componentType} (${plugin})`,
+  );
+
+  return installed.length > 0 ? installed.join(', ') : 'none';
 }
 
 function publicBindWarning(host: string, port: number): string {

@@ -84,6 +84,40 @@ export class PluginRegistry {
     this.hosts.push(remote.host);
   }
 
+  /**
+   * A registry holding everything this one holds, plus whatever is added to it
+   * — and owning none of this one's processes.
+   *
+   * What lets an installed plugin outlive the run that used it. An operator's
+   * plugins are loaded once and their processes serve every run on the server;
+   * a run layers whatever the request submitted onto a copy of that registry,
+   * and disposes the copy when it ends. `hosts` is the one thing deliberately
+   * left behind: `dispose` is how a run stops the plugins it started, and a run
+   * must not stop the ones it found already running.
+   *
+   * Names carry over, so a submitted plugin declaring a component type an
+   * installed one already provides is refused by {@link claim} rather than
+   * shadowing it. That is the property worth having on a server: request code
+   * cannot take a name the operator's own flows resolve.
+   */
+  extend(): PluginRegistry {
+    const copy = new PluginRegistry();
+
+    for (const [componentType, entry] of this.defs) {
+      copy.defs.set(componentType, entry);
+    }
+    for (const [name, owner] of this.toolOwners) copy.toolOwners.set(name, owner);
+    for (const [protocol, entry] of this.encoders) {
+      copy.encoders.set(protocol, entry);
+    }
+    copy.sdkPlugins.push(...this.sdkPlugins);
+    copy.pluginNames.push(...this.pluginNames);
+    copy.middlewares.push(...this.middlewares);
+    copy.toolDefs.push(...this.toolDefs);
+
+    return copy;
+  }
+
   dispose(): void {
     for (const host of this.hosts) host.dispose();
     this.hosts = [];

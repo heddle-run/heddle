@@ -61,7 +61,7 @@ describe('callModel and the operator credential', () => {
       const message = (err as HttpError).message;
       expect(message).toMatch(/does not grant/);
       expect(message).toMatch(/supplies a default model credential/);
-      expect(message).toMatch(/--default-llm-key/);
+      expect(message).toMatch(/HEDDLE_LLM_DEFAULT_KEY/);
       expect(message).toMatch(/Granted here: runTool, emitEvent, log/);
     }
   });

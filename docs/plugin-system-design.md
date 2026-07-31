@@ -1311,7 +1311,8 @@ Two protocol gaps that are not lifecycle but rode along:
   unconditionally, then the plugin is asked to drop the call, and the SIGKILL — armed before the frame
   is written — fires `CANCEL_GRACE` later unless the plugin replies. A plugin that answers keeps its
   process, and the next node reaching it does not pay a respawn; a plugin that does not implement
-  `cancel`, refuses it, or dies thinking about it is killed exactly as before. The generated runtime
+  `cancel`, refuses it, or dies thinking about it is killed exactly as before. Killed and then, on a
+  shared host, respawned by the next call — Phase 12, where a per-run kill became a server-wide one. The generated runtime
   makes `ctx.signal` real on the plugin side, so cancellation is cooperative there in the ordinary
   Node sense: a handler that never reads it keeps running and its process is killed shortly after.
 - **The server's per-call timeout was the whole-run budget.** `packages/server/src/plugins.ts` passed
@@ -2131,12 +2132,13 @@ numbering was left alone so cross-references stay valid. The actual order:
 | 3 `PluginContext` | 1, 2 | landed |
 | 4 `callModel` | 1, 3 | landed; also carried seam #26 (`ChatRequest` widening) |
 | 5 Provider kind | 2, 4 | landed; *strongly preferred* V, and took it |
-| 6 Middleware kind | 1, 2, 3 | landed at `nodeError`; five seams reserved |
+| 6 Middleware kind | 1, 2, 3 | landed; `nodeError`, `toolCall` and `modelCall` consulted, three seams reserved |
 | 7 Registry | 1 | landed; off the main line |
 | 9 Encoder | 2, 3 | landed; off the main line |
 | **V** SDK extension | — | landed; independent; landed before 5 |
-| 10 Network policy | — | **open**; resolves §7.10 Q4; needs a backend that can filter |
-| 11 Dynamic tools | 7 | **open**; resolves §7.10 Q6; MCP is the caller |
+| 10 Network policy | — | landed in the half heddle can enforce; resolves §7.10 Q4 |
+| 11 Dynamic tools | 7 | landed; resolves §7.10 Q6; MCP is the caller |
+| 12 Installed plugins on the server | 6, 7, 9, 11 | landed; makes the middleware seams reachable from `heddle-server` |
 
 Phases 0 through V have all landed — that was the original roadmap, and it is
 closed. Phases 10 and 11 are new, and neither came out of the original list: each
@@ -2144,11 +2146,11 @@ is an open question from §7.10 that acquired an answer and therefore acquired
 work. They are numbered after V rather than slotted in, for the reason the header
 gives — phase numbers are identities, not an order.
 
-What else remains is recorded per phase below: Phase 6's five reserved seams, and
-the two surfaces neither Phase 6 nor Phase 9 reaches (the server installs no
-middleware; the CLI selects no encoder). Of the questions in §7.10 only Q8 is
-still open, and it is the one with no obvious answer rather than the one with no
-demand.
+What else remains is recorded per phase below: Phase 6's three still-reserved
+seams, and the surface Phase 9 does not reach — the CLI selects no encoder. The
+server installed no middleware until Phase 12, which is where that gap and its
+consequences are written up. Of the questions in §7.10 only Q8 is still open, and
+it is the one with no obvious answer rather than the one with no demand.
 
 Three things moved after the first draft:
 
@@ -2389,7 +2391,7 @@ kind whose whole job is an outbound request. A submitted provider is *not* refus
 way middleware is: it runs only when the caller's own spec names it, it cannot capture a builtin
 type, and heddle bounds how often it is called — which is more than can be said for `callModel`.
 
-### Phase 6 — Middleware kind — **landed at `nodeError`; five seams reserved**
+### Phase 6 — Middleware kind — **landed; three seams consulted, three reserved**
 
 The advice held: `nodeError` alone, and the cost estimate held too — restructuring `runner.ts`
 was the easy part, and the policy questions were the phase.
@@ -2420,13 +2422,11 @@ consulted now; `node`, `toolResult` and `agentRound` remain reserved.
 both are consulted about a tool's outcome, and unless seeing a result without seeing the call turns
 out to matter, the reserved name should be dropped rather than built.
 
-**And what an operator cannot do yet, stated rather than papered over: the server installs no
-middleware.** It has no operator-plugin path at all — `buildPlugins` loads only what a request
-submitted — so building one is its own change (startup manifest loading, per-run instantiation,
-sandbox sessions, disposal) and is not this phase. What the server does today is refuse a *submitted*
-middleware, which is the half that had to land with the kind rather than after it. Middleware is
-therefore reachable from the CLI and from an embedder holding `RunnerOptions`, and not from
-engine.heddle.run.
+**And the gap this phase left, since closed by Phase 12: the server installed no middleware.** It had
+no operator-plugin path at all — `buildPlugins` loaded only what a request submitted — so building
+one was its own change (startup manifest loading, per-run instantiation, sandbox sessions, disposal)
+and was not this phase. What the server did was refuse a *submitted* middleware, which is the half
+that had to land with the kind rather than after it.
 
 One smaller gap worth knowing about. `heddle chat` builds its own `Runner`
 (`packages/cli/src/chat/ui.tsx`) from the same options object, so the chain *is* installed there and
@@ -2628,7 +2628,7 @@ rather than papered over.
 network they care about. Cost: low for what landed; the sandbox half remains open and is
 the deployment's to solve.
 
-### Phase 11 — Dynamic tool discovery
+### Phase 11 — Dynamic tool discovery — **landed**
 
 Resolves §7.10 Q6. Phase 7 declared tools in the manifest and answered this "no for now"; MCP is why
 the answer changes. A server's tool list is that server's to change, and a manifest committed last
@@ -2653,6 +2653,66 @@ valid and stays the default, so nothing written for Phase 7 changes.
 **Unblocks:** an MCP proxy that does not need a build step rerun when a tool is added upstream.
 Cost: low-medium. The verb is sketched in §7.1 as `ListToolsParams`; the work is the opt-in, the
 metering, and keeping `heddle validate` free.
+
+### Phase 12 — Installed plugins on the server — **landed**
+
+Closes the gap Phase 6 named and the following three phases widened. Three seams were consulted and
+none of them was reachable from `heddle-server`: `runnerOptions` never set `middleware`, and
+`buildPlugins` loaded only what a request submitted — where a middleware is refused, correctly. The
+component nobody can ask for was also the component nobody could install, which made `nodeError`,
+`toolCall` and `modelCall` CLI features rather than engine ones.
+
+| Landed | Where |
+|---|---|
+| `--plugin`, `--plugin-config`, `--discover-tools`, `--max-node-attempts` on the server, loaded before the port opens | `server/heddle-server.ts` |
+| `ServerConfig.plugins` as a *loaded* registry rather than specifiers, because `createServer` is synchronous and loading is not; `startServer` takes ownership and disposes on drain or close | `server/config.ts`, `server/server.ts` |
+| `PluginRegistry.extend()`: a registry holding the installed one's components and owning none of its processes, so a run disposes what it brought and leaves what it found | `plugin/registry.ts` |
+| The chain built per run over a registry loaded once, and assigned to both `deps` and `RunnerOptions` | `server/runs.ts` |
+| `checkMiddlewareConfig`, so a mistyped `--plugin-config` is a boot failure rather than a 500 on whichever request first builds a chain | `plugin/middleware.ts`, `server/server.ts` |
+| `loadPlugins` taking an options object, and `parsePluginConfig` moved to core so both CLIs read the flag the same way | `plugin/loader.ts`, `plugin/config.ts` |
+| A shared host restarted on the next call after its process closes; its stderr forwarded to the server's log rather than kept for a caller's error | `plugin/host.ts` |
+| Each `--plugin` directory in the sandbox read paths, and `SandboxSession.dispose` finally called — nothing had ever called it, so every confined plugin leaked a workspace | `server/heddle-server.ts`, `plugin/host.ts` |
+| Installed encoders, tools and middleware reported on `/v1/capabilities`; installed components resolvable from `/v1/validate` with request code refused | `server/capabilities.ts`, `server/validate.ts` |
+
+**The one property the process boundary stopped providing.** Everywhere else a plugin process serves
+exactly one run, so "the plugin's tools" and "this run's tools" are the same set and `PluginHost`
+could keep a single latched `toolRunner` as a fallback for any `runTool` that named no call. A shared
+host cannot: the latched runner would be whichever run reached the process first, and serving an
+unattributed request from it hands one caller's tools to another caller's plugin. So `shared` hosts
+latch nothing and refuse the unattributed case by name. The runtime always names the call, so this
+only reaches a plugin speaking the protocol by hand — which is exactly the plugin that should not be
+trusted to have asked properly.
+
+**Two more things the boundary stopped providing, both found by review rather than by design, and
+both the same shape: a per-run cost that became a per-server one.**
+
+A host that died stayed dead. That is right for a per-run host — the run it belonged to is over, and
+every later call is that run finding out — and catastrophic for a shared one. Any client hanging up
+mid-call runs `cancelRemotely`, which SIGKILLs a plugin that has not answered the `cancel` frame
+within `CANCEL_GRACE`; on a shared host that killed the plugin for every subsequent request, on a
+server that went on answering `/readyz` with `ok`. A shared host now clears `dead` and `proc` when
+the process closes, so the next call starts over. The calls in flight still fail, which is correct —
+they were mid-conversation with a process that is gone.
+
+And the captured stderr, which the host keeps to quote in an exit message, spanned every run. Worse
+than a leak, it was a *prefix*: `recordStderr` stops recording at `STDERR_LIMIT`, so a long-lived
+process's buffer freezes on the earliest output and never updates. A host with an `onStderr` now
+forwards instead of keeping, and the server points that at its own log — which is where an installed
+plugin's output belonged anyway.
+
+Sizing this correctly matters more than either fix. `--safe` plus `--plugin` could not start at all
+before review caught it: the sandbox is built from flags, and nothing put the plugin's own directory
+in its read paths, so a confined plugin got EPERM opening the program it *is*. The paths now come
+from argv, before any manifest is read.
+
+What is *not* fixed by anything here, and is stated in `DEPLOYMENT.md` rather than papered over: an
+installed plugin is the operator's code running for the life of the server with whatever capabilities
+its manifest declares. The out-of-process boundary is buying concurrency, not containment. A plugin
+keeping per-run state in a module variable leaks one caller's data into another's run, and no
+invariant heddle holds can catch it.
+
+**Depends on:** Phases 6, 7, 9, 11. **Unblocks:** retry policy, approval gates, spend limits and
+caching on engine.heddle.run — the deployments that wanted the seams in the first place.
 
 ---
 

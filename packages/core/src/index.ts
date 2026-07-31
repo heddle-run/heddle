@@ -63,9 +63,19 @@ export type { Dependencies, NodeExecutor } from './node/types.js';
 export { definePlugin } from './plugin/types.js';
 export { PluginRegistry } from './plugin/registry.js';
 export type { ComponentKind, RegisteredMiddleware } from './plugin/registry.js';
-export { loadPlugin, loadPlugins } from './plugin/loader.js';
+export {
+  loadPlugin,
+  loadPlugins,
+  type LoadPluginsOptions,
+} from './plugin/loader.js';
+export { parsePluginConfig } from './plugin/config.js';
 
-export { MiddlewareChain, MiddlewareError, MAX_RETRY_DELAY } from './plugin/middleware.js';
+export {
+  MiddlewareChain,
+  MiddlewareError,
+  checkMiddlewareConfig,
+  MAX_RETRY_DELAY,
+} from './plugin/middleware.js';
 export type { ChainVerdict } from './plugin/middleware.js';
 export { SEAMS, SEAM_NAMES, IMPLEMENTED_SEAMS, isSeam } from './plugin/seams.js';
 export type {

@@ -1,6 +1,14 @@
 #!/usr/bin/env node
+import { dirname, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { createSandbox, type Sandbox, type SandboxBackend } from '@heddle/core';
+import {
+  createSandbox,
+  loadPlugins,
+  parsePluginConfig,
+  type PluginRegistry,
+  type Sandbox,
+  type SandboxBackend,
+} from '@heddle/core';
 import { startServer, type StartedServer } from './server.js';
 import {
   DEFAULT_HOST,
@@ -20,6 +28,24 @@ Options:
   --port <port>          Port to listen on (default: ${DEFAULT_PORT})
   --tools-dir <dir>      Directory of tool executables available to every run
   --flows-root <dir>     Root that "flowPath" requests are confined to
+  --plugin <path>        Install a plugin for every run: a manifest .json or a
+                         JavaScript module (repeatable). This is the only way to
+                         install middleware, which runs on every node of every
+                         flow and so is never accepted in a request. One process
+                         per plugin serves the whole server, so a plugin holding
+                         a session or a pool keeps it warm across runs — and one
+                         holding per-run state is holding it wrong
+  --plugin-config <type=json>
+                         Settings for an installed middleware, as
+                         <ComponentType>=<json> or <ComponentType>=@file
+                         (repeatable)
+  --discover-tools       Let an installed plugin declaring "discoverTools" be
+                         started so heddle can ask what tools it has. Off by
+                         default: reading a manifest runs nothing. Never
+                         available to a submitted plugin, whichever way this is
+                         set
+  --max-node-attempts <n> How many times one arrival at a node may be attempted
+                         when installed middleware asks to retry it
   --max-iterations <n>   Maximum node executions per run
   --timeout <ms>         Wall-clock budget for a single run
   --plugin-timeout <ms>  Budget for a single call into a plugin process
@@ -79,6 +105,10 @@ async function main(): Promise<void> {
       port: { type: 'string' },
       'tools-dir': { type: 'string' },
       'flows-root': { type: 'string' },
+      plugin: { type: 'string', multiple: true },
+      'plugin-config': { type: 'string', multiple: true },
+      'discover-tools': { type: 'boolean' },
+      'max-node-attempts': { type: 'string' },
       'max-iterations': { type: 'string' },
       timeout: { type: 'string' },
       'plugin-timeout': { type: 'string' },
@@ -105,28 +135,86 @@ async function main(): Promise<void> {
   }
 
   const toolsDir = values['tools-dir'];
+  const log = (message: string): void => {
+    process.stderr.write(`${message}\n`);
+  };
+  const sandbox = buildSandbox(values, toolsDir, values.plugin);
+  const pluginTimeout = toInt(values['plugin-timeout'], '--plugin-timeout');
 
-  const started = await startServer({
-    host: values.host,
-    port: toInt(values.port, '--port'),
-    toolsDir,
-    flowsRoot: values['flows-root'],
-    maxIterations: toInt(values['max-iterations'], '--max-iterations'),
-    timeout: toInt(values.timeout, '--timeout'),
-    pluginCallTimeout: toInt(values['plugin-timeout'], '--plugin-timeout'),
-    maxConcurrentRuns: toInt(values['max-concurrent'], '--max-concurrent'),
-    drainTimeout: toInt(values['drain-timeout'], '--drain-timeout'),
-    corsOrigins: values['cors-origin'],
-    allowRequestCode: values['allow-request-code'],
-    allowNet: values['allow-net'],
-    workDir: values['work-dir'],
-    defaultLlmKey: process.env.HEDDLE_LLM_DEFAULT_KEY || undefined,
-    defaultLlmUrl: values['llm-default-url'],
-    stream: boolEnv('HEDDLE_STREAM', process.env.HEDDLE_STREAM),
-    sandbox: buildSandbox(values, toolsDir),
+  const plugins = await installPlugins(values.plugin, {
+    discovery: values['discover-tools'] === true,
+    // Resolved here rather than left undefined, so an installed plugin and a
+    // submitted one get the budget the flag documents rather than each package's
+    // own default. They agree today; nothing was making them.
+    timeout: pluginTimeout ?? DEFAULT_PLUGIN_CALL_TIMEOUT,
+    sandbox,
+    log,
   });
 
+  let started: StartedServer;
+  try {
+    started = await startServer({
+      host: values.host,
+      port: toInt(values.port, '--port'),
+      toolsDir,
+      flowsRoot: values['flows-root'],
+      plugins,
+      pluginConfig: parsePluginConfig(values['plugin-config']),
+      maxNodeAttempts: toPositiveInt(
+        values['max-node-attempts'],
+        '--max-node-attempts',
+      ),
+      maxIterations: toInt(values['max-iterations'], '--max-iterations'),
+      timeout: toInt(values.timeout, '--timeout'),
+      pluginCallTimeout: pluginTimeout,
+      maxConcurrentRuns: toInt(values['max-concurrent'], '--max-concurrent'),
+      drainTimeout: toInt(values['drain-timeout'], '--drain-timeout'),
+      corsOrigins: values['cors-origin'],
+      allowRequestCode: values['allow-request-code'],
+      allowNet: values['allow-net'],
+      workDir: values['work-dir'],
+      defaultLlmKey: process.env.HEDDLE_LLM_DEFAULT_KEY || undefined,
+      defaultLlmUrl: values['llm-default-url'],
+      stream: boolEnv('HEDDLE_STREAM', process.env.HEDDLE_STREAM),
+      sandbox,
+    });
+  } catch (err) {
+    // The server never started, so nothing it hands back will stop these. A bad
+    // --plugin-config is the ordinary way to arrive here, and it arrives after
+    // discovery has already spawned every plugin that asked for it.
+    plugins?.dispose();
+    throw err;
+  }
+
   installShutdownHandlers(started);
+}
+
+/**
+ * Load the plugins this server will serve every run from.
+ *
+ * Before the port is open, so an unreadable manifest, a missing entry point or a
+ * component type two plugins both claim is a server that does not start. What
+ * this does *not* prove is that the plugins run: a host spawns on its first
+ * call, which is what keeps `/v1/validate` free. `--discover-tools` is the one
+ * flag that spends it here, and it starts only the plugins that asked for it.
+ */
+async function installPlugins(
+  specifiers: string[] | undefined,
+  options: {
+    discovery: boolean;
+    timeout?: number;
+    sandbox?: Sandbox;
+    log: (message: string) => void;
+  },
+): Promise<PluginRegistry | undefined> {
+  if (!specifiers || specifiers.length === 0) {
+    if (options.discovery) {
+      throw new Error('--discover-tools requires at least one --plugin');
+    }
+    return undefined;
+  }
+
+  return loadPlugins(specifiers, { ...options, shared: true });
 }
 
 function installShutdownHandlers(started: StartedServer): void {
@@ -152,6 +240,7 @@ function installShutdownHandlers(started: StartedServer): void {
 function buildSandbox(
   values: Record<string, unknown>,
   toolsDir: string | undefined,
+  pluginSpecifiers: string[] | undefined,
 ): Sandbox | undefined {
   const allowRead = (values['allow-read'] as string[] | undefined) ?? [];
   const allowWrite = (values['allow-write'] as string[] | undefined) ?? [];
@@ -172,11 +261,35 @@ function buildSandbox(
   }
 
   return createSandbox(chosen as SandboxBackend, {
-    readPaths: [...(toolsDir ? [toolsDir] : []), ...allowRead],
+    readPaths: [
+      ...(toolsDir ? [toolsDir] : []),
+      ...pluginDirs(pluginSpecifiers),
+      ...allowRead,
+    ],
     writePaths: allowWrite,
     network: !denyNet,
     passEnv: allowEnv,
   });
+}
+
+/**
+ * Each installed plugin's own directory.
+ *
+ * A confined plugin has to be able to read the program it *is*, and the sandbox
+ * is built from flags rather than from anything the loader knows — so the paths
+ * come from argv, before the manifests are read. Without this, `--safe` and
+ * `--plugin` together produce a server that starts and then fails every call
+ * into a plugin with EPERM opening its own entry point.
+ *
+ * The directory rather than the file, because a manifest sits beside the entry
+ * point it names and a plugin may ship more than one file.
+ */
+function pluginDirs(specifiers: string[] | undefined): string[] {
+  const dirs = new Set<string>();
+  for (const specifier of specifiers ?? []) {
+    dirs.add(dirname(resolve(process.cwd(), specifier)));
+  }
+  return [...dirs];
 }
 
 function assertNoSandboxTuning(tuning: {
@@ -205,6 +318,18 @@ function toInt(value: string | undefined, flag: string): number | undefined {
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < 0) {
     throw new Error(`${flag} must be a non-negative integer, got "${value}"`);
+  }
+  return parsed;
+}
+
+/** For a count where zero means "never attempt it", which is not a setting. */
+function toPositiveInt(
+  value: string | undefined,
+  flag: string,
+): number | undefined {
+  const parsed = toInt(value, flag);
+  if (parsed !== undefined && parsed < 1) {
+    throw new Error(`${flag} must be 1 or more, got "${value}"`);
   }
   return parsed;
 }

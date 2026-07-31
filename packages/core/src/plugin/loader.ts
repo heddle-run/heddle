@@ -5,7 +5,8 @@ import type { HeddlePlugin } from './types.js';
 import { PluginRegistry } from './registry.js';
 import { discoverTools, loadRemotePlugin, readManifest } from './remote-loader.js';
 import type { PluginManifest } from './manifest.js';
-import { PLUGIN_CAPABILITIES } from './protocol.js';
+import { PLUGIN_CAPABILITIES, type PluginCapability } from './protocol.js';
+import type { Sandbox } from '../sandbox/types.js';
 import { PluginError } from '../errors.js';
 
 const MANIFEST_EXTENSION = '.json';
@@ -31,8 +32,7 @@ export async function loadPlugin(specifier: string): Promise<HeddlePlugin> {
   return plugin;
 }
 
-export async function loadPlugins(
-  specifiers: string[] | undefined,
+export interface LoadPluginsOptions {
   /**
    * Whether the operator allowed a plugin to be *started* so heddle can ask what
    * tools it has.
@@ -43,9 +43,35 @@ export async function loadPlugins(
    * running its author's code. Discovery spends that, so it is the operator's to
    * spend and not the plugin author's.
    */
-  discovery = false,
+  discovery?: boolean;
+  /**
+   * Whether these processes will serve more than one run.
+   *
+   * False on the CLI, where a load and a run are the same thing. True on a
+   * server, which starts its installed plugins once and reaches them from every
+   * request. See `PluginHostOptions.shared` for what the host stops doing.
+   */
+  shared?: boolean;
+  /** Budget for a single call into one of these plugins. */
+  timeout?: number;
+  /** Confines each plugin to its own session, if the caller has a backend. */
+  sandbox?: Sandbox;
+  /**
+   * Where a plugin's own stderr goes, for a host that has somewhere to put it.
+   *
+   * Required in practice by `shared`, and separate from it because they are
+   * separate facts: one is about how many runs the process serves, the other is
+   * about whether this program keeps a log.
+   */
+  log?: (message: string) => void;
+}
+
+export async function loadPlugins(
+  specifiers: string[] | undefined,
+  options: LoadPluginsOptions = {},
 ): Promise<PluginRegistry> {
   const registry = PluginRegistry.empty();
+  const discovery = options.discovery ?? false;
 
   try {
     for (const specifier of specifiers ?? []) {
@@ -54,7 +80,7 @@ export async function loadPlugins(
         const raw = readManifest(path);
         assertDiscoveryAllowed(raw, specifier, discovery);
 
-        const remote = remotePluginFrom(specifier);
+        const remote = remotePluginFrom(specifier, options);
         try {
           if (discovery) await discoverTools(remote, raw, dirname(path));
         } catch (err) {
@@ -140,11 +166,21 @@ function declaredComponentCount(plugin: HeddlePlugin): number {
   );
 }
 
-function remotePluginFrom(specifier: string) {
+function remotePluginFrom(specifier: string, options: LoadPluginsOptions) {
   const path = resolve(process.cwd(), specifier);
-  return loadRemotePlugin(readManifest(path), entryFor(path), {
+  const manifest = readManifest(path);
+
+  const log = options.log;
+
+  return loadRemotePlugin(manifest, entryFor(path), {
     root: dirname(path),
     capabilities: PLUGIN_CAPABILITIES,
+    timeout: options.timeout,
+    shared: options.shared,
+    session: options.sandbox?.session(`plugin-${manifest.name}`),
+    onStderr: log
+      ? (chunk) => log(`plugin "${manifest.name}": ${chunk.trimEnd()}`)
+      : undefined,
   });
 }
 

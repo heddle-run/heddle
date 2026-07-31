@@ -252,16 +252,41 @@ when the operator supplied nothing — that is the case that matters, since a mi
 declaring a required field and receiving `{}` is exactly the one that would otherwise read
 `undefined` on the first node that failed.
 
+## On a server
+
+`heddle-server` takes the same two flags, and they are the only way to install middleware
+on it — a plugin submitted with a request is refused with a 400 if it declares any,
+whether or not `--allow-request-code` is on.
+
+```bash
+heddle-server \
+  --plugin ./policies/spend-limit.json \
+  --plugin-config SpendLimit=@/etc/heddle/spend-limit.json
+```
+
+Everything loads before the port opens, so a plugin that will not start, or a
+`--plugin-config` that fails its schema, is a server that does not start rather than a 500
+on whichever request first needs it. `GET /v1/capabilities` reports what is installed
+under `middleware`, since a caller cannot select one but can have their tool call rejected
+by it.
+
+The difference from the CLI is lifetime. One process per plugin serves the **whole
+server**, not one run: that is what makes an MCP session or a connection pool worth
+holding, and it is why an installed plugin must not keep per-run state in a module
+variable — concurrent runs share the process and nothing separates them. The chain itself
+is still built per run, because a middleware holds that run's dependencies; only the
+processes behind it are shared.
+
+One consequence reaches plugin authors directly: a shared plugin's `runTool` must name the
+call it was made inside. There is no server-wide fallback, because the tools reachable
+from a call are the ones its own run brought, and answering an unattributed request would
+hand one caller's tools to another caller's plugin. The plugin runtime does this for you;
+a plugin speaking the protocol by hand has to.
+
 ## What is not available yet
 
-The four seams above marked no are unbuilt, as is the `before` half of each. A verdict
-vocabulary with no call site is a contract nobody can test, so the names are reserved and
-the behaviour is not.
-
-**A server installs no middleware.** `heddle-server` has no operator-plugin path at all —
-it loads only what a request submitted, and a submitted middleware is refused with a 400.
-Middleware is therefore reachable from the CLI and from an embedder holding
-`RunnerOptions`, and not from a running server.
+The three seams above marked no are unbuilt. A verdict vocabulary with no call site is a
+contract nobody can test, so the names are reserved and the behaviour is not.
 
 One smaller gap worth knowing: `heddle run --chat` builds its own runner from the same
 options, so the chain is installed and a retry works — but the chat interface reads four

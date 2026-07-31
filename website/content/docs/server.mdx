@@ -99,6 +99,52 @@ is in `flow_complete`.
 A protocol nothing renders is a `400` listing what this server can. See
 [Encoders](/docs/plugins/encoders).
 
+## Installed plugins
+
+`--plugin` installs a plugin for the life of the process. It provides components every run
+can name, and — unlike a plugin sent with a request — it may provide **middleware**.
+
+```bash
+heddle-server \
+  --plugin ./policies/spend-limit.json \
+  --plugin-config SpendLimit=@/etc/heddle/spend-limit.json
+```
+
+That asymmetry is the point. A node, a transform, a provider or an encoder is chosen by
+whoever wrote the flow or made the request; middleware is chosen by nobody, runs on every
+node of every flow, and takes its settings from the command line. So this is the only way
+to install a retry policy, an approval gate or a spend limit. See
+[Middleware](/docs/plugins/middleware).
+
+What installing buys, and what it costs:
+
+- **One process per plugin serves the whole server.** A session, a connection pool or a
+  warm cache survives between runs, which is why it works this way. A plugin keeping
+  *per-run* state in a module variable is keeping it wrong: concurrent runs share the
+  process.
+- **Everything loads before the port opens.** An unreadable manifest, a missing entry
+  point, a duplicate component type or a `--plugin-config` that fails its plugin's schema
+  is a server that does not start. Loading is not running: a plugin's process spawns on
+  its first call, which is what keeps `/v1/validate` free.
+- **A plugin that dies is restarted on the next call.** One process serves every run, so
+  leaving it dead would turn one run's crash into every later run's. The calls in flight
+  when it died still fail.
+- **A shared plugin says which call it is acting for.** `runTool` from an installed plugin
+  must name the call it was made inside; there is no server-wide fallback, because the
+  tools reachable from a call are the ones its own run brought. Its stderr goes to the
+  server's log rather than into a caller's error, for the same reason.
+- **A submitted plugin cannot take an installed name.** A request declaring a component
+  type an installed plugin already provides is refused rather than shadowing it.
+
+Installed plugins hold whatever capabilities their manifest declares, including
+`callModel`. They are the operator's own code from the operator's own filesystem, trusted
+the way `--tools-dir` is trusted. A submitted plugin is not, and is granted less.
+
+`--discover-tools` lets an installed plugin declaring `discoverTools` be started so heddle
+can ask what tools it has — an MCP proxy, typically. It is never available to a submitted
+plugin, whichever way the flag is set: reading a manifest runs nothing, which is what
+makes `/v1/validate` free, and discovery spends exactly that.
+
 ## Submitted code
 
 By default a request may only select a flow. With `--allow-request-code` it may also send
@@ -109,10 +155,11 @@ tool scripts and plugins:
 | `tools` | `{ name, source, interpreter? }` |
 | `plugins` | `{ name, manifest, source }` |
 
-Every submitted plugin is loaded **out of process** — the only path this server offers. An
+Every submitted plugin is loaded **out of process** — the only path a *request* has. An
 in-process plugin would be imported into the server, and a caller who can do that has the
 server's environment, filesystem and memory. Each gets its own process, an empty
-environment, and is killed when the run ends.
+environment, and is killed when the run ends. (`--plugin` accepts a JavaScript module as
+well as a manifest, because that one is the operator's own code.)
 
 Without the flag, a request carrying either field is refused with a `400` rather than
 having it ignored: a caller whose plugin was silently dropped would see an

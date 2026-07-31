@@ -50,6 +50,25 @@ export interface PluginHostOptions {
   capabilities?: PluginCapability[];
   seams?: Record<string, AfterAction[]>;
   runTool?: ToolRunner;
+  /**
+   * Whether one process serves more than one run.
+   *
+   * True for a plugin the operator installed on a server: it is started once and
+   * every run reaches the same process. That is the point of installing it — an
+   * MCP session, a connection pool or a warm cache is worth keeping — but it
+   * costs the host its one piece of run-scoped state. See
+   * {@link PluginHost.runningToolsFor}.
+   */
+  shared?: boolean;
+  /**
+   * Where the process's own stderr goes.
+   *
+   * Set by a host that outlives a run, because a shared process's output spans
+   * every run and the alternative is putting one caller's in another caller's
+   * error. Unset, the last {@link STDERR_LIMIT} bytes are kept and quoted in the
+   * exit message, which is what a single-run plugin's output is for.
+   */
+  onStderr?: (chunk: string) => void;
 }
 
 export interface CallOptions {
@@ -98,7 +117,9 @@ export class PluginHost {
     private readonly name: string,
     private readonly options: PluginHostOptions,
   ) {
-    this.toolRunner = options.runTool;
+    // A shared host never holds one, so it is not given one either. Whoever
+    // passed it meant it for a single run, and this process is not serving one.
+    if (!options.shared) this.toolRunner = options.runTool;
     this.granted = new Set(options.capabilities ?? []);
   }
 
@@ -107,6 +128,7 @@ export class PluginHost {
   }
 
   setToolRunner(run: ToolRunner): void {
+    if (this.options.shared) return;
     this.toolRunner ??= run;
   }
 
@@ -159,6 +181,12 @@ export class PluginHost {
 
     this.cleanupSandbox?.();
     this.cleanupSandbox = undefined;
+    // The scratch directory above belongs to one wrapped command; this is the
+    // workspace the session made when it was created, which both backends
+    // `mkdtemp` eagerly. Nothing else holds a reference to it, so a host that
+    // does not remove it leaves a directory per plugin behind — once per run on
+    // a server that accepts submitted plugins.
+    this.options.session?.dispose();
   }
 
   private assertCallable(method: string, signal: AbortSignal | undefined): void {
@@ -293,9 +321,10 @@ export class PluginHost {
       ),
     );
 
-    proc.on('close', (code, signal) =>
-      this.die(new PluginError(this.exitMessage(code, signal))),
-    );
+    proc.on('close', (code, signal) => {
+      this.die(new PluginError(this.exitMessage(code, signal)));
+      this.readyToRestart();
+    });
 
     proc.stdin?.on('error', ignoreBrokenPipe);
 
@@ -333,15 +362,50 @@ export class PluginHost {
     };
   }
 
+  /**
+   * Let the next call spawn a fresh process, on a host that will get one.
+   *
+   * A per-run host that dies stays dead, and should: the run it belonged to is
+   * over, and every later call is the same run finding out. A shared host has no
+   * such run. Its process died on somebody's request — a crash, a timeout, the
+   * SIGKILL that follows an abandoned call — and leaving it dead turns one run's
+   * bad minute into every later run's, on a server that goes on answering
+   * `/readyz` with `ok` throughout.
+   *
+   * The calls in flight when it died still fail. They were mid-conversation with
+   * a process that is gone, and there is nothing to hand them. What this buys is
+   * that the *next* one starts over.
+   */
+  private readyToRestart(): void {
+    if (this.disposed || !this.options.shared) return;
+
+    this.proc = undefined;
+    this.dead = undefined;
+    this.stderr = '';
+  }
+
   private recordStderr(chunk: string): void {
+    // Forwarded rather than kept, when somebody is listening. A shared process's
+    // output belongs to whoever runs the server: it spans every run, so putting
+    // it in the error one caller sees would show them another caller's.
+    if (this.options.onStderr) {
+      this.options.onStderr(chunk);
+      return;
+    }
     if (this.stderr.length >= STDERR_LIMIT) return;
     this.stderr = (this.stderr + chunk).slice(0, STDERR_LIMIT);
   }
 
   private exitMessage(code: number | null, signal: string | null): string {
     const how = signal ? `signal ${signal}` : `exit code ${code}`;
-    const detail = this.stderr ? `: ${this.stderr.trim()}` : '';
-    return `plugin "${this.name}" exited (${how})${detail}`;
+    if (this.stderr) return `plugin "${this.name}" exited (${how}): ${this.stderr.trim()}`;
+    if (!this.options.onStderr) return `plugin "${this.name}" exited (${how})`;
+
+    return (
+      `plugin "${this.name}" exited (${how}). Its output went to this host's ` +
+      `log rather than here: one process serves every run, so what it wrote is ` +
+      `not this run's to read.`
+    );
   }
 
   private greet(): void {
@@ -466,9 +530,10 @@ export class PluginHost {
     if (!runner) {
       respond(
         refuse(
-          'runTool is granted to this plugin, but no tool runner was installed on ' +
-            'it. A plugin reaches the flow tools through the executor built for its ' +
-            'component, and nothing built one here.',
+          noToolRunnerMessage(
+            this.options.shared === true,
+            namedCall(request) === undefined,
+          ),
         ),
       );
       return;
@@ -589,11 +654,23 @@ export class PluginHost {
     }
   }
 
+  /**
+   * The tools this request may reach.
+   *
+   * A request that names the call it was made inside gets that call's runner,
+   * which is the one built for the run that made it. Everything else falls back
+   * to the host's own — except on a shared host, which has no fallback on
+   * purpose. Its process serves every run on the server, so a host-level runner
+   * would be whichever run happened to reach it first, and answering an
+   * unattributed request from it would hand one caller's tools to another
+   * caller's plugin.
+   */
   private runningToolsFor(request: RpcRequest): ToolRunner | undefined {
     const call = namedCall(request);
-    if (call === undefined) return this.toolRunner;
+    const perCall =
+      call === undefined ? undefined : this.pending.get(idOf(call))?.toolRunner;
 
-    return this.pending.get(idOf(call))?.toolRunner ?? this.toolRunner;
+    return perCall ?? this.toolRunner;
   }
 
   private holdClockFor(request: RpcRequest): () => void {
@@ -771,6 +848,23 @@ function noModelWiredMessage(call: number | string): string {
     `callModel is granted to this plugin, but call ${String(call)} was made ` +
     `with no model to call. A plugin reaches the model through the executor ` +
     `built for its component, and nothing built one here.`
+  );
+}
+
+function noToolRunnerMessage(shared: boolean, unattributed: boolean): string {
+  if (shared && unattributed) {
+    return (
+      'runTool needs a "call": the id of the request it was made inside. This ' +
+      'plugin is installed on the server, so one process serves every run, and ' +
+      'the tools a call can reach are the ones its own run brought. A request ' +
+      'naming no call belongs to no run, and heddle will not guess which one.'
+    );
+  }
+
+  return (
+    'runTool is granted to this plugin, but no tool runner was installed on ' +
+    'it. A plugin reaches the flow tools through the executor built for its ' +
+    'component, and nothing built one here.'
   );
 }
 

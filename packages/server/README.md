@@ -40,9 +40,13 @@ heddle-server --tools-dir ./tools
 | `--port <port>` | `4319` | Port to listen on. |
 | `--tools-dir <dir>` | none | Executables available to every run. |
 | `--flows-root <dir>` | none | Root that `flowPath` requests are confined to. |
+| `--plugin <path>` | none | Install a plugin for every run: a manifest `.json` or a JavaScript module. Repeatable. |
+| `--plugin-config <type=json>` | none | Settings for an installed middleware, as `<ComponentType>=<json>` or `<ComponentType>=@file`. Repeatable. |
+| `--discover-tools` | off | Let an installed plugin declaring `discoverTools` be started so heddle can ask what tools it has. Never available to a submitted plugin. |
+| `--max-node-attempts <n>` | `3` | How many times one arrival at a node may be attempted when installed middleware asks to retry it. |
 | `--max-iterations <n>` | `50` | Maximum node executions per run. |
 | `--timeout <ms>` | `300000` | Wall-clock budget for a single run. |
-| `--plugin-timeout <ms>` | `30000` | Budget for a single call into a plugin process, not for the run. Clamped to `--timeout`. |
+| `--plugin-timeout <ms>` | `30000` | Budget for a single call into a plugin process, not for the run. Clamped to `--timeout` for a submitted plugin; applied as given to an installed one, whose startup discovery happens outside any run. |
 | `--max-concurrent <n>` | `4` | Runs at once. Beyond this, requests get a 429. |
 | `--drain-timeout <ms>` | `30000` | On SIGTERM, how long in-flight runs get to finish. |
 | `--cors-origin <origin>` | none | Browser origin allowed to call this server. Repeatable. |
@@ -70,6 +74,66 @@ ships as a container image with its argv baked in. An unrecognised value for
 `--tools-dir` and `--flows-root` are **server-side configuration only**. A
 request that tries to set either is rejected with a 400 rather than silently
 ignored, so a caller is never misled about what the server will execute.
+
+### `--plugin`
+
+Installs a plugin for the life of the process. It provides components every run
+can name, and — unlike a plugin sent with a request — it may provide
+**middleware**.
+
+That asymmetry is the whole point. A node, a transform, a provider or an encoder
+is chosen by whoever wrote the flow or made the request; middleware is chosen by
+nobody, runs on every node of every flow, and takes its settings from
+`--plugin-config`. So a submitted plugin declaring middleware is refused with a
+400, whether or not `--allow-request-code` is on, and this flag is the only way
+to install one.
+
+```bash
+heddle-server \
+  --plugin ./policies/spend-limit.json \
+  --plugin-config SpendLimit=@/etc/heddle/spend-limit.json
+```
+
+Three seams are available to it: `nodeError` (a node failed — retry, substitute
+a result, or end the run), `toolCall` (before and after a tool the model asked
+for — rewrite the arguments, refuse the call, answer it without running it), and
+`modelCall` (before and after a request to the model — edit it, serve it from a
+cache, or retry a 429). See the [plugin
+docs](https://heddle.run/docs/plugins/middleware).
+
+What installing buys, and what it costs:
+
+- **One process per plugin serves the whole server.** A session, a connection
+  pool or a warm cache is worth keeping, which is why it works this way. A
+  plugin that keeps *per-run* state in a module variable is keeping it wrong:
+  concurrent runs share the process, and nothing separates them.
+- **Everything is loaded before the port opens.** An unreadable manifest, a
+  missing entry point, a component type two plugins both claim, or a
+  `--plugin-config` that fails its plugin's schema is a server that does not
+  start. Loading is not *running*, though: a plugin's process spawns on its
+  first call, which is what keeps `/v1/validate` free. `--discover-tools` is the
+  one flag that spends that at startup.
+- **A plugin that dies is restarted, once somebody calls it again.** One
+  process serves every run, so leaving it dead would turn one run's crash — or
+  one client hanging up mid-call, which SIGKILLs a plugin that ignores its
+  abort signal — into every later run's. The calls in flight when it died still
+  fail; the next one gets a fresh process.
+- **A shared plugin must say which call it is acting for.** `runTool` from an
+  installed plugin has to name the call it was made inside; there is no
+  server-wide fallback, because the tools reachable from a call are the ones its
+  own run brought. The plugin runtime does this for you.
+- **A submitted plugin cannot take an installed name.** A request declaring a
+  component type an installed plugin already provides is refused rather than
+  shadowing it.
+
+Installed plugins hold whatever capabilities their manifest declares, including
+`callModel` — they are the operator's own code, loaded from the operator's own
+filesystem, so they are trusted the way `--tools-dir` is trusted. A submitted
+plugin is not, and is granted less.
+
+`GET /v1/capabilities` reports what is installed under `middleware`, `protocols`
+and `tools`. A caller cannot select a middleware, but one can reject their tool
+call or end their run, and the name in that error is the name reported there.
 
 ### `--allow-request-code`
 
@@ -313,10 +377,11 @@ Two rules worth knowing:
   heddle's own need not be carried over SSE, so the header comes from what the
   encoder declared.
 
-An encoder arrives with the request, as a plugin whose manifest declares
-`"kind": "encoder"` — which means `--allow-request-code` is required to use one,
-and that a server without it renders `heddle` and nothing else. See
-`examples/ag-ui/` for a complete one.
+An encoder is a plugin whose manifest declares `"kind": "encoder"`, and it
+arrives one of two ways: installed with `--plugin`, in which case every caller
+can name its protocol; or submitted with the request, which needs
+`--allow-request-code`. A server with neither renders `heddle` and nothing else.
+See `examples/ag-ui/` for a complete one.
 
 Because a plugin cannot claim the name `heddle`, a client asking for it always
 gets the frames documented above.
