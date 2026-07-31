@@ -3,14 +3,29 @@ import { State } from '../state/state.js';
 import type { Event } from './events.js';
 import type { RunnerOptions } from './options.js';
 import { RunError } from '../errors.js';
-import { MiddlewareError, type ChainVerdict } from '../plugin/middleware.js';
+import {
+  MiddlewareError,
+  type ChainBefore,
+  type ChainVerdict,
+} from '../plugin/middleware.js';
 
 const UNBRANCHED = '';
 
 type NodeAttempt =
   | { kind: 'produced'; output: State }
-  | { kind: 'substituted'; output: State; by: string; cause: Error }
+  | { kind: 'substituted'; output: State; by: string; cause?: Error }
   | { kind: 'retry'; delayMs: number };
+
+/**
+ * What one execution of a node came to, before `node`'s `after` half has seen it.
+ *
+ * A retry is deliberately not one of these. It is not an outcome but a decision
+ * to execute again, and the `node` seam wraps *an execution* — so a retried
+ * attempt gets another `before` rather than an `after`.
+ */
+type Settled =
+  | { ok: true; output: State; by?: string; cause?: Error }
+  | { ok: false; error: Error };
 
 export class Runner {
   constructor(
@@ -98,14 +113,51 @@ export class Runner {
     return start;
   }
 
+  /**
+   * Run a node once, with whatever the chain has to say on either side of it.
+   *
+   * Two seams meet here and the nesting is what keeps them apart. `node` wraps
+   * an execution: its `before` half decides whether one happens at all, and its
+   * `after` half sees what one came to. `nodeError` sits *inside* that, because
+   * it is the seam that owns retries — a retry means this execution is being
+   * abandoned for another, so it returns before `after` is consulted and the
+   * next attempt starts again at `before`.
+   *
+   * The effect for a middleware author is that `node` is consulted once per
+   * settled execution whether the node succeeded or failed, which is what makes
+   * it usable for an audit; and that a policy wanting to retry subscribes to
+   * `nodeError`, which is the only seam that admits one.
+   */
   private async attemptNode(
     node: CompiledNode,
     input: State,
     attempt: number,
     signal: AbortSignal,
   ): Promise<NodeAttempt> {
+    const gate = await this.beforeNode(node, input, attempt, signal);
+
+    if (gate.action === 'reject') {
+      throw new RunError(rejectedMessage(gate.by, node.name, gate.reason));
+    }
+    if (gate.action === 'replace') {
+      this.warn(node, unrunWarning(gate.by, node.name));
+      return this.afterNode(
+        node,
+        { ok: true, output: new State(gate.value), by: gate.by },
+        attempt,
+        signal,
+      );
+    }
+
+    const effective =
+      gate.action === 'modify' ? new State(gate.input) : input;
+
+    let settled: Settled;
     try {
-      return { kind: 'produced', output: await node.executor.execute(signal, input) };
+      settled = {
+        ok: true,
+        output: await node.executor.execute(signal, effective),
+      };
     } catch (err) {
       const failure = err instanceof Error ? err : new Error(String(err));
 
@@ -119,8 +171,12 @@ export class Runner {
 
       if (signal.aborted) throw failure;
 
-      return this.applyVerdict(node, failure, attempt, signal);
+      const decided = await this.applyVerdict(node, failure, attempt, signal);
+      if (decided.kind === 'retry') return decided;
+      settled = decided.settled;
     }
+
+    return this.afterNode(node, settled, attempt, signal);
   }
 
   private async applyVerdict(
@@ -128,7 +184,9 @@ export class Runner {
     failure: Error,
     attempt: number,
     signal: AbortSignal,
-  ): Promise<NodeAttempt> {
+  ): Promise<
+    { kind: 'retry'; delayMs: number } | { kind: 'settled'; settled: Settled }
+  > {
     const verdict = await this.consultMiddleware(node, failure, attempt, signal);
 
     switch (verdict.action) {
@@ -149,10 +207,13 @@ export class Runner {
       case 'replace':
         this.warn(node, replacementWarning(verdict.by, node.name, failure));
         return {
-          kind: 'substituted',
-          output: new State(verdict.value),
-          by: verdict.by,
-          cause: failure,
+          kind: 'settled',
+          settled: {
+            ok: true,
+            output: new State(verdict.value),
+            by: verdict.by,
+            cause: failure,
+          },
         };
 
       case 'fail':
@@ -163,7 +224,126 @@ export class Runner {
         );
 
       default:
-        throw failure;
+        // The error stands as far as `nodeError` is concerned. It is still an
+        // outcome, so `node`'s `after` half is asked about it before it is
+        // thrown — that is what "consulted whether it succeeded or failed"
+        // means, and the seam it belongs to is the one with no `retry`.
+        return { kind: 'settled', settled: { ok: false, error: failure } };
+    }
+  }
+
+  /**
+   * Ask the chain what should happen before this node runs.
+   *
+   * Answers `proceed` whenever nothing subscribes, so the caller has one shape
+   * to handle and a run with no middleware never touches the chain. That check
+   * matters more here than anywhere else: this is the only seam consulted on
+   * every node of every flow.
+   */
+  private async beforeNode(
+    node: CompiledNode,
+    input: State,
+    attempt: number,
+    signal: AbortSignal,
+  ): Promise<ChainBefore> {
+    const chain = this.opts.middleware;
+    if (!chain?.hasBefore('node')) return { action: 'proceed' };
+
+    return this.guarded(node, undefined, () =>
+      chain.consultBefore(
+        'node',
+        { nodeName: node.name, nodeType: node.type },
+        input.toData(),
+        signal,
+        this.opts.eventHandler,
+        { attempt, maxAttempts: this.opts.maxNodeAttempts },
+      ),
+    );
+  }
+
+  private async afterNode(
+    node: CompiledNode,
+    settled: Settled,
+    attempt: number,
+    signal: AbortSignal,
+  ): Promise<NodeAttempt> {
+    const chain = this.opts.middleware;
+    if (!chain?.has('node')) return stand(settled);
+
+    const verdict = await this.guarded(
+      node,
+      settled.ok ? undefined : settled.error,
+      () =>
+        chain.consult(
+          'node',
+          {
+            subject: { nodeName: node.name, nodeType: node.type },
+            outcome: settled.ok
+              ? { ok: true, value: settled.output.toData() }
+              : {
+                  ok: false,
+                  error: {
+                    name: settled.error.name,
+                    message: settled.error.message,
+                  },
+                },
+            attempt,
+            maxAttempts: this.opts.maxNodeAttempts,
+            // `node` admits no retry: the seam that does is inside this one.
+            allowRetry: false,
+          },
+          signal,
+          this.opts.eventHandler,
+        ),
+    );
+
+    switch (verdict.action) {
+      case 'replace':
+        this.warn(
+          node,
+          settled.ok
+            ? overriddenWarning(verdict.by, node.name)
+            : replacementWarning(verdict.by, node.name, settled.error),
+        );
+        return {
+          kind: 'substituted',
+          output: new State(verdict.value),
+          by: verdict.by,
+          cause: settled.ok ? undefined : settled.error,
+        };
+
+      case 'fail':
+        throw new RunError(
+          `"${node.name}" was ended by middleware "${verdict.by}": ` +
+            `${verdict.reason}`,
+          { cause: settled.ok ? undefined : settled.error },
+        );
+
+      default:
+        return stand(settled);
+    }
+  }
+
+  /**
+   * Run a consult, and say what the node was doing if the chain itself fails.
+   *
+   * A middleware failure is fatal — it is the operator's code and swallowing it
+   * would apply a policy nobody can see is not being applied. What this adds is
+   * the node's own error where there is one, since "the middleware threw" alone
+   * sends a reader looking in the wrong place.
+   */
+  private async guarded<T>(
+    node: CompiledNode,
+    failure: Error | undefined,
+    consult: () => Promise<T>,
+  ): Promise<T> {
+    try {
+      return await consult();
+    } catch (err) {
+      if (!(err instanceof MiddlewareError) || !failure) throw err;
+      throw new MiddlewareError(bothFailuresMessage(err.message, failure), {
+        cause: failure,
+      });
     }
   }
 
@@ -176,8 +356,8 @@ export class Runner {
     const chain = this.opts.middleware;
     if (!chain?.has('nodeError')) return { action: 'pass' };
 
-    try {
-      return await chain.consult(
+    return this.guarded(node, error, () =>
+      chain.consult(
         'nodeError',
         {
           subject: { nodeName: node.name, nodeType: node.type },
@@ -191,13 +371,8 @@ export class Runner {
         },
         signal,
         this.opts.eventHandler,
-      );
-    } catch (err) {
-      if (!(err instanceof MiddlewareError)) throw err;
-      throw new MiddlewareError(bothFailuresMessage(err.message, error), {
-        cause: error,
-      });
-    }
+      ),
+    );
   }
 
   private advance(current: CompiledNode, result: NodeAttempt): CompiledNode {
@@ -250,6 +425,20 @@ export class Runner {
   }
 }
 
+/** What the runner does with an outcome nothing wanted to change. */
+function stand(settled: Settled): NodeAttempt {
+  if (!settled.ok) throw settled.error;
+
+  return settled.by === undefined
+    ? { kind: 'produced', output: settled.output }
+    : {
+        kind: 'substituted',
+        output: settled.output,
+        by: settled.by,
+        cause: settled.cause,
+      };
+}
+
 function sleep(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
     if (signal.aborted) {
@@ -296,17 +485,44 @@ function replacementWarning(
   );
 }
 
+function rejectedMessage(by: string, nodeName: string, reason: string): string {
+  return (
+    `middleware "${by}" would not let "${nodeName}" run: ${reason}. ` +
+    `A middleware is installed by whoever runs heddle and is named nowhere in ` +
+    `the flow, so this is not a fault in the document.`
+  );
+}
+
+function unrunWarning(by: string, nodeName: string): string {
+  return (
+    `"${by}" supplied a result for "${nodeName}" instead of letting it run, ` +
+    `so the node did not execute at all.`
+  );
+}
+
+function overriddenWarning(by: string, nodeName: string): string {
+  return (
+    `"${by}" replaced what "${nodeName}" produced. The run continues with the ` +
+    `middleware's value, and the node's own output is gone.`
+  );
+}
+
 function unroutableSubstitutionMessage(
   by: string,
   nodeName: string,
-  cause: Error,
+  cause: Error | undefined,
 ): string {
+  const why = cause
+    ? ` Cause: ${cause.message}`
+    : ` Nothing failed here — the middleware supplied a result for a node that ` +
+      `routes, which is the one case a result cannot answer.`;
+
   return (
-    `middleware "${by}" supplied a result for "${nodeName}" ` +
-    `after it failed, but the run cannot continue past it: every edge out ` +
+    `middleware "${by}" supplied a result for "${nodeName}", ` +
+    `but the run cannot continue past it: every edge out ` +
     `of "${nodeName}" is labelled with a branch, and a replaced node ` +
-    `supplies a result, never a route. Let the error stand for a node that ` +
-    `chooses its own branch. Cause: ${cause.message}`
+    `supplies a result, never a route. Let the node run for one that ` +
+    `chooses its own branch.${why}`
   );
 }
 

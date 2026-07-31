@@ -17,8 +17,8 @@ heddle run flow.json \
   --plugin-config RetryPolicy='{"maxAttempts":3}'
 ```
 
-Three worked policies — a retry, an approval gate and a rate limit, one per seam —
-ship in
+Four worked policies — a retry, an approval gate, a per-node audit and a rate limit,
+one per seam — ship in
 [`examples/policies`](https://github.com/heddle-run/heddle/tree/main/examples/policies),
 with flows that run them without a credential.
 
@@ -37,13 +37,13 @@ validator, the verdict reader and the handshake alike.
 | Seam | Position | Halves | Verdicts | Built |
 |---|---|---|---|---|
 | `nodeError` | a node | `after` | `pass` `replace` `retry` `fail` | yes |
+| `node` | a node | `before` `after` | before: `proceed` `modify` `replace` `reject`<br/>after: `pass` `replace` `fail` | yes |
 | `toolCall` | a tool call | `before` `after` | before: `proceed` `modify` `replace` `reject`<br/>after: `pass` `replace` `fail` | yes |
-| `node` | a node | `before` `after` | `pass` `replace` `fail` | no |
 | `modelCall` | a model call | `before` `after` | before: `proceed` `modify` `replace` `reject`<br/>after: `pass` `replace` `retry` `fail` | yes |
 | `toolResult` | a tool's result | `after` | `pass` `replace` | no |
 | `agentRound` | an agent round | `before` `after` | `pass` `fail` | no |
 
-Three are consulted today. The other three are reserved so that their arrival changes no
+Four are consulted today. The other two are reserved so that their arrival changes no
 meaning — a manifest subscribing to one that is not built is refused at load, naming the
 seams that are.
 
@@ -176,11 +176,21 @@ middleware that wants to work at more than one seam can read it and fall back ra
 send a verdict it will be refused for — which, under the fatal policy, would cost the
 run.
 
-What a middleware does **not** get is the run's data. It is installed by the operator and
-named nowhere in the caller's document, so handing it the state would disclose one
-caller's information to code they never asked for. `subject` names which node failed and
-`outcome` says how; a component that needs the data itself is a plugin node, which the
-flow names.
+**A middleware is given the thing it is deciding about, and nothing wider.** At
+`nodeError` and `toolCall` that is metadata: `subject` names which node or tool, `outcome`
+says how it went. At `modelCall` it is the request, conversation included, because a
+policy that may `modify` what is sent has to see what is being sent. At `node` it is that
+node's input state and its output — for the same reason, and it is the widest view any
+seam offers.
+
+That is worth being deliberate about on a server, where a middleware is named nowhere in
+the caller's document. An installed `node` policy sees every caller's data flowing through
+every flow. It is the operator's own code, trusted the way `--tools-dir` is trusted — but
+a policy that only needs to know *that* a node ran should subscribe to `after` and read
+`subject`, not log `outcome.value`.
+
+A component that needs the data in order to do its job is a plugin node, which the flow
+names and the caller therefore chose.
 
 ## Verdicts
 
@@ -288,9 +298,57 @@ from a call are the ones its own run brought, and answering an unattributed requ
 hand one caller's tools to another caller's plugin. The plugin runtime does this for you;
 a plugin speaking the protocol by hand has to.
 
+## Around every node
+
+`node` is the widest seam. It wraps *an execution* of a node — any node, of any type, in
+any flow — rather than a failure or a call, which is what makes a cache, a dry run or an
+audit possible at all.
+
+```js
+serve({
+  NodeAudit: {
+    node: {
+      before: ({ subject }, ctx) =>
+        (ctx.component.dryRun ?? []).includes(subject.nodeType)
+          ? { action: 'replace', value: ctx.component.stub ?? {} }
+          : { action: 'proceed' },
+
+      after: ({ subject, outcome }, ctx) => {
+        ctx.emitEvent('node', { node: subject.nodeName, ok: outcome.ok });
+        return { action: 'pass' };
+      },
+    },
+  },
+});
+```
+
+`before` may `proceed`, `modify` the node's input state, `replace` its output without
+running it, or `reject` it and end the run. `after` sees what the execution came to —
+`{ ok: true, value }` or `{ ok: false, error }` — and may `pass`, `replace` or `fail`.
+
+**`node` and `nodeError` sit at the same position, and the nesting is what keeps them
+apart.** `nodeError` is *inside* `node`, because it is the seam that owns retries:
+
+- A retry abandons this execution for another, so `after` is not consulted for it and the
+  next attempt starts again at `before`, with `ctx.attempt` moved on.
+- A settled execution reaches `after` exactly once, whether it produced a result or
+  failed — which is why an auditor subscribing only to `node` sees every node once.
+- `node`'s `after` admits no `retry`. The seam that does is the one nested inside it.
+
+<Callout type="warn">
+This runs on every node of every flow, so a slow `before` is a slow engine and a broken
+policy breaks runs it has nothing to do with. The call site checks the subscription before
+it consults, so a chain nobody has subscribed to costs nothing — but a policy that *is*
+installed here is on the hot path in a way none of the other seams are.
+</Callout>
+
+A replaced node takes the unbranched edge, for the same reason a `nodeError` substitution
+does: a supplied result is a result and never a route. A node whose every edge is labelled
+reports that the run cannot continue past it.
+
 ## What is not available yet
 
-The three seams above marked no are unbuilt. A verdict vocabulary with no call site is a
+The two seams above marked no are unbuilt. A verdict vocabulary with no call site is a
 contract nobody can test, so the names are reserved and the behaviour is not.
 
 One smaller gap worth knowing: `heddle run --chat` builds its own runner from the same

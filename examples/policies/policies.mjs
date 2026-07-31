@@ -122,6 +122,50 @@ serve({
   },
 
   /**
+   * Watch every node, and optionally answer for some of them.
+   *
+   * `node` is the widest seam: consulted around every node of every flow, not
+   * only around a failure or a call. That is what makes an audit possible at
+   * all, and it is why this policy does as little as it can — a slow `before`
+   * here is a slow engine.
+   *
+   * The two halves nest around one *execution*. A node the chain retries is
+   * executed again, so it is asked again at `before` with `ctx.attempt` moved
+   * on; `after` is consulted once the attempt has settled, whether the node
+   * produced a result or failed.
+   */
+  NodeAudit: {
+    node: {
+      before: ({ subject }, ctx) => {
+        const dryRun = ctx.component.dryRun ?? [];
+        if (!dryRun.includes(subject.nodeType)) return { action: 'proceed' };
+
+        ctx.emitEvent('skipped', {
+          node: subject.nodeName,
+          type: subject.nodeType,
+          attempt: ctx.attempt,
+        });
+        // The node does not run at all. It takes the unbranched edge out, since
+        // a supplied result is a result and never a route.
+        return { action: 'replace', value: ctx.component.stub ?? {} };
+      },
+
+      after: ({ subject, outcome }, ctx) => {
+        ctx.emitEvent('node', {
+          node: subject.nodeName,
+          type: subject.nodeType,
+          ok: outcome.ok,
+          attempt: ctx.attempt,
+        });
+        // An auditor watches and changes nothing. `pass` leaves the outcome
+        // exactly as it was, including a failure, which the rest of the chain
+        // then still gets its say on.
+        return { action: 'pass' };
+      },
+    },
+  },
+
+  /**
    * A model that is not a model.
    *
    * Not part of the lesson — it is here so the tool-call demo below runs with no

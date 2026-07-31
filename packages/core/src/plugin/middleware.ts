@@ -190,6 +190,20 @@ export class MiddlewareChain {
     input: Record<string, unknown>,
     signal: AbortSignal | undefined,
     handler: EventHandler | undefined,
+    /**
+     * Which attempt this is, where the call site has an attempt loop that
+     * re-enters the `before` half.
+     *
+     * Only `node` does: a retried node is executed again, so it is asked again,
+     * and a cache that served the first attempt should know not to serve the
+     * second. `toolCall` and `modelCall` consult once and then loop *inside*
+     * that, so 1 is the truth for them rather than a default standing in for
+     * one.
+     */
+    attempts: { attempt: number; maxAttempts: number } = {
+      attempt: 1,
+      maxAttempts: 1,
+    },
   ): Promise<ChainBefore> {
     let current = input;
 
@@ -201,6 +215,7 @@ export class MiddlewareChain {
         current,
         signal,
         handler,
+        attempts,
       );
 
       switch (verdict.action) {
@@ -240,6 +255,7 @@ export class MiddlewareChain {
     input: Record<string, unknown>,
     signal: AbortSignal | undefined,
     handler: EventHandler | undefined,
+    attempts: { attempt: number; maxAttempts: number },
   ): Promise<BeforeVerdict> {
     const where = whereOf(entry);
 
@@ -260,7 +276,12 @@ export class MiddlewareChain {
         this.contextFor(
           entry,
           seam,
-          { subject, outcome: { ok: true, value: undefined }, attempt: 1, maxAttempts: 1 },
+          {
+            subject,
+            outcome: { ok: true, value: undefined },
+            attempt: attempts.attempt,
+            maxAttempts: attempts.maxAttempts,
+          },
           signal,
           handler,
         ),
