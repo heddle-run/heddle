@@ -344,14 +344,43 @@ process.stdin.on('data', (chunk) => {
     expect(reported(events)).toEqual([]);
   });
 
+  /**
+   * What a plugin is given is a silence budget, not a deadline: every frame it
+   * sends restarts the clock, so one that keeps reporting outlives the timeout
+   * and one that goes quiet does not. Both halves are load-bearing, and this is
+   * the one a loaded machine can make look broken.
+   *
+   * Two margins hold the instrument up, and both are wide on purpose.
+   *
+   * The budget has to cover starting the plugin, because the clock is armed
+   * when the call is written and the child process does not exist yet. Node
+   * takes about 40ms to reach its first line here, and about 90ms on a machine
+   * with three times more runnable processes than cores, so a budget of 1000ms
+   * leaves an order of magnitude.
+   *
+   * Every later window has to cover one reporting interval, and 1000ms against
+   * 25ms is forty to one: a tick would have to arrive forty times later than it
+   * was asked for before it looked like silence.
+   *
+   * The loop is bounded by the plugin's own clock rather than by a count of
+   * sleeps, which is what the earlier version got wrong — nine sleeps of 100ms
+   * against a 300ms budget held only while each sleep stayed inside a third of
+   * it, and on a loaded machine the first one did not, so the test measured the
+   * machine rather than the mechanism. How many ticks land no longer matters:
+   * any report inside the window restarts the clock, and the plugin does not
+   * return until its own clock says it has outlived the budget it was given.
+   */
   it('keeps the call alive for as long as it keeps reporting', async () => {
+    const budget = 1_000;
     const entry = writePlugin(
       'slow',
-      `for (let i = 0; i < 9; i++) {
-         await sleep(100);
-         await callHost('emitEvent', { call: msg.id, name: 'tick', data: { i } });
+      `const stop = Date.now() + ${budget * 1.2};
+       let ticks = 0;
+       while (Date.now() < stop) {
+         await sleep(25);
+         await callHost('emitEvent', { call: msg.id, name: 'tick', data: { i: ticks++ } });
        }
-       return { output: { finished: true } };`,
+       return { output: { finished: true, ticks } };`,
     );
 
     const started = Date.now();
@@ -360,12 +389,14 @@ process.stdin.on('data', (chunk) => {
       entry,
       manifest('SlowNode', ['emitEvent']),
       flowUsing('SlowNode'),
-      300,
+      budget,
     );
 
     expect(state).toMatchObject({ finished: true });
-    expect(reported(events)).toHaveLength(9);
-    expect(Date.now() - started).toBeGreaterThan(300);
+    expect(state.ticks).toBeGreaterThan(1);
+    // Every tick the plugin sent reached the run stream, whatever the count was.
+    expect(reported(events)).toHaveLength(state.ticks as number);
+    expect(Date.now() - started).toBeGreaterThan(budget);
   });
 });
 

@@ -433,11 +433,27 @@ describe('a plugin calling the model from its own process', () => {
     expect(chatCompletion).not.toHaveBeenCalled();
   });
 
+  /**
+   * A plugin waiting on a model heddle is calling for it is not a plugin that
+   * has gone quiet, so its budget is held for the duration rather than spent.
+   *
+   * The margin is a consequence of where each clock starts rather than of how
+   * fast the machine is. The host arms the budget when it writes the execute
+   * frame; the model's delay only starts when heddle calls the provider, which
+   * is strictly later, and it is a fifth longer than the budget. So the model
+   * always answers after the budget would have run out, however either timer is
+   * scheduled — a fixed 700ms against 300ms said the same thing but left the
+   * budget too small to cover starting the plugin, which is inside it.
+   */
   it('does not spend the plugin’s deadline on heddle’s own work', async () => {
+    const budget = 1_000;
     chatCompletion.mockImplementation(
       () =>
         new Promise((resolve) =>
-          setTimeout(() => resolve({ content: 'slow', finish_reason: 'stop' }), 700),
+          setTimeout(
+            () => resolve({ content: 'slow', finish_reason: 'stop' }),
+            budget * 1.2,
+          ),
         ),
     );
 
@@ -454,13 +470,26 @@ describe('a plugin calling the model from its own process', () => {
       entry,
       manifest('SlowModel', ['callModel']),
       { llm_config: llmConfig() },
-      { timeout: 300 },
+      { timeout: budget },
     );
 
     expect(state.got).toBe('slow');
   });
 
+  /**
+   * The other half of the same rule: released is not held, so the budget starts
+   * again once the model has answered and a plugin that then says nothing is
+   * killed on it.
+   *
+   * The budget is the same 1000ms as its sibling above and for the same reason.
+   * It has to cover starting the plugin and getting as far as the model, which
+   * is where it is spent on a loaded machine — and a call abandoned there would
+   * be rejected in the same words while saying nothing about going quiet
+   * *after* an answer. Having reached the model is what separates the two, so
+   * the test asks.
+   */
   it('still kills a plugin that goes quiet after heddle has answered it', async () => {
+    const budget = 1_000;
     const entry = writeHelperPlugin(
       'stalls',
       `serve({ Stalls: { async execute(input, ctx) {
@@ -475,8 +504,9 @@ describe('a plugin calling the model from its own process', () => {
         entry,
         manifest('Stalls', ['callModel']),
         { llm_config: llmConfig() },
-        { timeout: 300 },
+        { timeout: budget },
       ),
-    ).rejects.toThrow(/did not answer execute within 300ms/);
+    ).rejects.toThrow(/did not answer execute within 1000ms/);
+    expect(chatCompletion).toHaveBeenCalledTimes(1);
   });
 });

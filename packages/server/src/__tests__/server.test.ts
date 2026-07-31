@@ -345,14 +345,45 @@ describe('security: bind address classification', () => {
   });
 });
 
+/** How long the cancelled tool sleeps between saying it started and finishing. */
+const TOOL_SLEEP_SECONDS = 3;
+
+/** Poll for something a subprocess does, rather than guess how long it takes. */
+async function until(condition: () => boolean, deadlineMs: number): Promise<void> {
+  const stop = Date.now() + deadlineMs;
+  while (!condition() && Date.now() < stop) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+}
+
 describe('cancellation', () => {
+  /**
+   * Two moments have to be told apart: the tool starting, and the tool
+   * finishing after the client has gone. So it marks both.
+   *
+   * The started marker is waited for rather than slept towards. A fixed pause
+   * before the abort is a guess that the run has reached the tool by then, and
+   * a run that had not would be cancelled before it started anything — which
+   * leaves no completed marker either, and passes without having tested
+   * cancellation at all.
+   *
+   * The completed marker is then looked for well past when it would have
+   * appeared: the tool sleeps for {@link TOOL_SLEEP_SECONDS} and the window is
+   * twice that, so a cancellation that did not reach the process has to be more
+   * than a whole sleep late to escape notice. The earlier version slept 5s and
+   * looked at 5.2s, which is a four percent margin — on a loaded machine the
+   * marker arrives after the test has stopped looking, and a broken abort reads
+   * as a working one.
+   */
   it('aborts the run when the client disconnects', async () => {
     const toolsDir = mkdtempSync(join(tmpdir(), 'heddle-tools-'));
-    const marker = join(toolsDir, 'completed.marker');
+    const completedMarker = join(toolsDir, 'completed.marker');
+    const startedMarker = join(toolsDir, 'started.marker');
     const toolPath = join(toolsDir, 'slow_tool.sh');
     writeFileSync(
       toolPath,
-      `#!/usr/bin/env bash\ncat > /dev/null\nsleep 5\ntouch "${marker}"\necho '{"done": true}'\n`,
+      `#!/usr/bin/env bash\ncat > /dev/null\ntouch "${startedMarker}"\n` +
+        `sleep ${TOOL_SLEEP_SECONDS}\ntouch "${completedMarker}"\necho '{"done": true}'\n`,
     );
     chmodSync(toolPath, 0o755);
 
@@ -413,13 +444,15 @@ describe('cancellation', () => {
 
       const draining = res.text();
 
-      await new Promise((resolve) => setTimeout(resolve, 400));
+      const { existsSync } = await import('node:fs');
+      await until(() => existsSync(startedMarker), 10_000);
+      expect(existsSync(startedMarker)).toBe(true);
+
       ac.abort();
       await expect(draining).rejects.toThrow();
 
-      await new Promise((resolve) => setTimeout(resolve, 5200));
-      const { existsSync } = await import('node:fs');
-      expect(existsSync(marker)).toBe(false);
+      await new Promise((resolve) => setTimeout(resolve, TOOL_SLEEP_SECONDS * 2000));
+      expect(existsSync(completedMarker)).toBe(false);
     } finally {
       await new Promise<void>((resolve) => toolServer.close(() => resolve()));
     }
