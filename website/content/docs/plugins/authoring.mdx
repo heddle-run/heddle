@@ -32,9 +32,12 @@ export default definePlugin({
 
 ## Out of process
 
-Write a program that speaks the protocol. heddle inlines a runtime for you when the
-plugin is submitted to a server; on disk, a `.mjs` entry point is run under the host's
-node and a program with the execute bit is run directly.
+Write a program that speaks the protocol. `serve` is provided for you whenever heddle
+chose the interpreter: a plugin submitted to a server gets the runtime prepended to its
+source, and a `.mjs` or `.js` entry point on disk gets the same runtime on the command
+line, as a `data:` URL that needs no file and so no sandbox grant. A program with the
+execute bit is run directly and speaks the protocol itself — that is the path for a
+plugin in another language.
 
 ```js
 serve({

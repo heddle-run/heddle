@@ -17,6 +17,11 @@ heddle run flow.json \
   --plugin-config RetryPolicy='{"maxAttempts":3}'
 ```
 
+Three worked policies — a retry, an approval gate and a rate limit, one per seam —
+ship in
+[`examples/policies`](https://github.com/heddle-run/heddle/tree/main/examples/policies),
+with flows that run them without a credential.
+
 <Callout type="warn">
 A middleware runs on flows written before it existed, by people who have never heard of
 it. One that throws fails runs it has nothing to do with. Blast radius is the reason it

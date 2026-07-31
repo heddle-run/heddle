@@ -20,11 +20,30 @@ import {
   remoteToolDef,
   remoteTransformDef,
 } from './remote.js';
+import { PLUGIN_RUNTIME_JS } from './runtime-source.js';
 import { SEAMS, type AfterAction, type Seam } from './seams.js';
 import type { HeddlePlugin } from './types.js';
 
 const EXECUTABLE_BITS = 0o111;
 const SCRIPT_EXTENSIONS = ['.mjs', '.js'];
+
+/**
+ * The runtime, as something `node --import` will take.
+ *
+ * A submitted plugin gets the runtime prepended to its source, because it is
+ * written to a directory with nothing else in it. A plugin on disk cannot be
+ * rewritten — it is the operator's file — so the same runtime arrives on the
+ * command line instead, and `serve` is a global either way.
+ *
+ * A `data:` URL rather than a path to a file this package ships, because a path
+ * is a thing the sandbox would have to grant. This needs no filesystem at all,
+ * so a confined plugin gets its runtime on exactly the terms an unconfined one
+ * does. It costs ~22 KB of argv, which is a fortieth of `ARG_MAX` and contains
+ * nothing that is not already open source.
+ */
+const RUNTIME_IMPORT = `data:text/javascript,${encodeURIComponent(
+  `${PLUGIN_RUNTIME_JS}\nglobalThis.serve = serve;\n`,
+)}`;
 
 export interface RemotePluginOptions {
   timeout?: number;
@@ -133,10 +152,13 @@ function defaultCommand(entry: string): string[] {
     });
   }
 
+  // An executable brings its own interpreter and may not be JavaScript at all,
+  // so it is run as it is. The runtime is for the case heddle chose the
+  // interpreter, which is the only case it knows what to inject into.
   if ((mode & EXECUTABLE_BITS) !== 0) return [entry];
 
   if (SCRIPT_EXTENSIONS.some((extension) => entry.endsWith(extension))) {
-    return [process.execPath, entry];
+    return [process.execPath, '--import', RUNTIME_IMPORT, entry];
   }
 
   throw new PluginError(

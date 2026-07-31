@@ -1,0 +1,64 @@
+{
+  "component_type": "Flow",
+  "name": "gated-demo",
+  "description": "An agent that asks for a shell command the operator does not allow. The model is a stub, so this runs with no credential.",
+  "start_node": { "$component_ref": "start" },
+  "nodes": [
+    { "$component_ref": "start" },
+    { "$component_ref": "agent" },
+    { "$component_ref": "end" }
+  ],
+  "control_flow_connections": [
+    {
+      "component_type": "ControlFlowEdge",
+      "name": "start_to_agent",
+      "from_node": { "$component_ref": "start" },
+      "to_node": { "$component_ref": "agent" }
+    },
+    {
+      "component_type": "ControlFlowEdge",
+      "name": "agent_to_end",
+      "from_node": { "$component_ref": "agent" },
+      "to_node": { "$component_ref": "end" }
+    }
+  ],
+  "$referenced_components": {
+    "start": {
+      "component_type": "StartNode",
+      "id": "start",
+      "name": "start",
+      "outputs": [{ "title": "task", "type": "string" }]
+    },
+    "agent": {
+      "component_type": "AgentNode",
+      "id": "agent",
+      "name": "agent",
+      "inputs": [{ "title": "task", "type": "string" }],
+      "agent": {
+        "component_type": "Agent",
+        "id": "gated-agent",
+        "name": "gated-agent",
+        "system_prompt": "Do what the task asks.",
+        "llm_config": {
+          "component_type": "StubModelConfig",
+          "id": "stub-model",
+          "name": "stub-model",
+          "model_id": "stub",
+          "component_plugin_name": "policies",
+          "component_plugin_version": "1.0.0"
+        },
+        "tools": [
+          {
+            "component_type": "ServerTool",
+            "id": "tool-shell",
+            "name": "shell",
+            "description": "Run a shell command.",
+            "inputs": [{ "title": "cmd", "type": "string" }],
+            "outputs": [{ "title": "stdout", "type": "string" }]
+          }
+        ]
+      }
+    },
+    "end": { "component_type": "EndNode", "id": "end", "name": "end" }
+  }
+}
