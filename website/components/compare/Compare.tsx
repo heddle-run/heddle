@@ -1,147 +1,44 @@
 "use client";
 
-import Link from "next/link";
 import { useState } from "react";
 import CodePane from "./CodePane";
 import FileTree from "./FileTree";
-import Wordmark from "../Wordmark";
-import { useTheme } from "@/lib/theme";
-import { Icon, Select, ThemeToggle } from "@/ds";
+import { Button, Icon } from "@/ds";
 import { GITHUB_URL } from "@/lib/constants";
 import {
-  RIVALS,
-  USE_CASES,
   countLines,
   heddle,
   type Framework,
   type Implementation,
-  type UseCaseId,
+  type UseCase,
 } from "@/lib/compare";
 
-export default function Compare() {
-  const { dark, toggle } = useTheme();
-
-  const [useCase, setUseCase] = useState(USE_CASES[0]);
-  const [rival, setRival] = useState<Framework>(RIVALS[0]);
-
-  const left = heddle.impls[useCase.id];
-  const right = rival.impls[useCase.id];
-
+/**
+ * The same use case in heddle and in one other framework, side by side.
+ *
+ * heddle is pinned to the left pane; the picker in the playground's bar
+ * chooses what fills the right one. The bar and the ledger below belong to
+ * the page — this is the pair of panes between them.
+ */
+export function ComparePanes({
+  useCase,
+  rival,
+  onOpen,
+}: {
+  useCase: UseCase;
+  rival: Framework;
+  onOpen: () => void;
+}) {
   return (
-    <div className="hd-playground">
-      <header
-        style={{
-          position: "sticky",
-          top: 0,
-          zIndex: 20,
-          display: "flex",
-          flexWrap: "wrap",
-          alignItems: "center",
-          gap: "var(--space-3) var(--space-5)",
-          padding: "var(--space-3) var(--space-5)",
-          borderBottom: "1px solid var(--border-hairline)",
-          background: "var(--surface-chrome)",
-          backdropFilter: "blur(var(--blur-chrome))",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "var(--space-3)",
-          }}
-        >
-          <Link href="/" aria-label="heddle — home">
-            <Wordmark size="sm" />
-          </Link>
-          <span
-            aria-hidden
-            style={{
-              width: 1,
-              height: 16,
-              background: "var(--border-default)",
-            }}
-          />
-          <span className="hd-eyebrow">Compare</span>
-        </div>
-
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "var(--space-3)",
-            minWidth: 0,
-          }}
-        >
-          <label className="hd-eyebrow" htmlFor="compare-use-case">
-            Use case
-          </label>
-          <Select
-            id="compare-use-case"
-            value={useCase.title}
-            onChange={(event: React.ChangeEvent<HTMLSelectElement>) => {
-              const next = USE_CASES.find(
-                (candidate) => candidate.title === event.target.value,
-              );
-              if (next) setUseCase(next);
-            }}
-            options={USE_CASES.map((candidate) => candidate.title)}
-            style={{ width: 230, flex: "0 0 auto" }}
-          />
-
-          <span
-            className="hd-playground-blurb"
-            style={{
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-              fontSize: "var(--fs-xs)",
-              color: "var(--text-muted)",
-            }}
-          >
-            {useCase.blurb}
-          </span>
-        </div>
-
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "var(--space-3)",
-            marginLeft: "auto",
-          }}
-        >
-          <label className="hd-eyebrow" htmlFor="compare-framework">
-            Against
-          </label>
-          <Select
-            id="compare-framework"
-            value={rival.name}
-            onChange={(event: React.ChangeEvent<HTMLSelectElement>) => {
-              const next = RIVALS.find(
-                (candidate) => candidate.name === event.target.value,
-              );
-              if (next) setRival(next);
-            }}
-            options={RIVALS.map((candidate) => candidate.name)}
-            style={{ width: 200, flex: "0 0 auto" }}
-          />
-          <ThemeToggle dark={dark} onToggle={toggle} />
-        </div>
-      </header>
-
-      <div
-        id="panes"
-        tabIndex={-1}
-        aria-label="The same use case, two frameworks"
-        className="hd-playground-body"
-      >
-        <Pane framework={heddle} implementation={left} accent />
-        <Pane framework={rival} implementation={right} />
-      </div>
-
-      <Ledger useCase={useCase.id} rival={rival} />
-    </div>
+    <>
+      <Pane
+        framework={heddle}
+        implementation={heddle.impls[useCase.id]}
+        accent
+        onOpen={onOpen}
+      />
+      <Pane framework={rival} implementation={rival.impls[useCase.id]} />
+    </>
   );
 }
 
@@ -149,10 +46,12 @@ function Pane({
   framework,
   implementation,
   accent = false,
+  onOpen,
 }: {
   framework: Framework;
   implementation: Implementation;
   accent?: boolean;
+  onOpen?: () => void;
 }) {
   const [name, setName] = useState(implementation.files[0].name);
 
@@ -249,37 +148,74 @@ function Pane({
         style={{
           flexShrink: 0,
           display: "flex",
-          gap: "var(--space-3)",
+          alignItems: "center",
+          gap: "var(--space-4)",
           padding: "var(--space-3) var(--space-5)",
           borderTop: "1px solid var(--border-hairline)",
           background: "var(--surface-panel)",
-          overflowX: "auto",
         }}
       >
-        <span
-          aria-hidden
-          style={{ color: "var(--brand-pink)", flex: "0 0 auto", marginTop: 1 }}
-        >
-          <Icon name="terminal" size={13} />
-        </span>
-        <pre
+        <div
           style={{
-            margin: 0,
-            fontFamily: "var(--font-mono)",
-            fontSize: "var(--fs-2xs)",
-            lineHeight: "var(--lh-relaxed)",
-            color: "var(--text-muted)",
-            whiteSpace: "pre",
+            display: "flex",
+            gap: "var(--space-3)",
+            minWidth: 0,
+            overflowX: "auto",
           }}
         >
-          {implementation.run}
-        </pre>
+          <span
+            aria-hidden
+            style={{
+              color: "var(--brand-pink)",
+              flex: "0 0 auto",
+              marginTop: 1,
+            }}
+          >
+            <Icon name="terminal" size={13} />
+          </span>
+          <pre
+            style={{
+              margin: 0,
+              fontFamily: "var(--font-mono)",
+              fontSize: "var(--fs-2xs)",
+              lineHeight: "var(--lh-relaxed)",
+              color: "var(--text-muted)",
+              whiteSpace: "pre",
+            }}
+          >
+            {implementation.run}
+          </pre>
+        </div>
+
+        {/* Only heddle's column has one: this flow is also a playground
+            example, so the reader can run it here instead of installing
+            anything. No other framework's column can make that offer. */}
+        {onOpen && (
+          <Button
+            size="sm"
+            variant="subtle"
+            shape="rounded"
+            icon="braces"
+            onClick={onOpen}
+            title="Load this flow into the editor"
+            style={{ flex: "0 0 auto", marginLeft: "auto" }}
+          >
+            Open in the editor
+          </Button>
+        )}
       </div>
     </section>
   );
 }
 
-function Ledger({ useCase, rival }: { useCase: UseCaseId; rival: Framework }) {
+/** Countable facts about the two columns, under the panes. */
+export function CompareLedger({
+  useCase,
+  rival,
+}: {
+  useCase: UseCase;
+  rival: Framework;
+}) {
   const rows: { term: string; mine: string; theirs: string; prose?: true }[] = [
     {
       term: "install",
@@ -299,8 +235,8 @@ function Ledger({ useCase, rival }: { useCase: UseCaseId; rival: Framework }) {
     },
     {
       term: "in this use case",
-      mine: heddle.impls[useCase].note,
-      theirs: rival.impls[useCase].note,
+      mine: heddle.impls[useCase.id].note,
+      theirs: rival.impls[useCase.id].note,
       prose: true,
     },
   ];

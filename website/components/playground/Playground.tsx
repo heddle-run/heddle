@@ -1,208 +1,114 @@
 "use client";
 
-import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
-import Editor from "./Editor";
-import Tabs from "./Tabs";
-import CodeList from "./CodeList";
-import RunLog from "./RunLog";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import Build, { BuildStatusBar, EngineNotice } from "./Build";
 import Wordmark from "../Wordmark";
+import { ComparePanes, CompareLedger } from "../compare/Compare";
 import { useTheme } from "@/lib/theme";
+import { usePlayground } from "@/lib/use-playground";
 import { Badge, Button, Icon, Select, ThemeToggle } from "@/ds";
+import { HOME_URL } from "@/lib/constants";
+import { EXAMPLES, exampleById, type Example } from "@/lib/playground";
 import {
-  API_BASE,
-  DEFAULT_EXAMPLE,
-  EXAMPLES,
-  EngineError,
-  appendEvent,
-  fetchCapabilities,
-  streamRun,
-  validateFlow,
-  type Capabilities,
-  type Example,
-  type RequestPlugin,
-  type RequestTool,
-  type RunEvent,
-} from "@/lib/playground";
+  RIVALS,
+  USE_CASES,
+  type Framework,
+  type UseCase,
+} from "@/lib/compare";
 
-type Status = "idle" | "running" | "done" | "error";
+type View = "build" | "compare";
 
-const TOOL_STUB = `read -r input
-printf '{"result": "ok"}'
-`;
+const VIEWS: { id: View; label: string; icon: string }[] = [
+  { id: "build", label: "Build", icon: "braces" },
+  { id: "compare", label: "Compare", icon: "columns2" },
+];
 
-const PLUGIN_STUB = `serve({
-  MyNode: {
-    execute(input) {
-      return { output: { ...input } };
-    },
-  },
-});
-`;
+/* The prerendered HTML is the Build view, because a static export has no
+   query to render against. Reading the address in a layout effect switches
+   before the browser paints, so a link to a comparison opens on it rather
+   than flashing the editor first. On the server there is no layout to
+   measure and React says so loudly, hence the pair. */
+const useBrowserLayoutEffect =
+  typeof window === "undefined" ? useEffect : useLayoutEffect;
 
-const PLUGIN_MANIFEST_STUB = {
-  name: "my-plugin",
-  version: "1.0.0",
-  components: [{ componentType: "MyNode" }],
-};
-
+/**
+ * The playground: an editor with an engine behind it, and the same use cases
+ * written in other frameworks, as two views of one application.
+ *
+ * They were two pages once. They are one because they answer the same
+ * question in sequence — is this better than what I already use, and does it
+ * actually run — and because a comparison the reader cannot run is only an
+ * assertion. Every heddle column in the comparison is a playground example,
+ * and the button in that column hands it to the editor.
+ */
 export default function Playground() {
   const { dark, toggle } = useTheme();
 
-  const [example, setExample] = useState<Example>(DEFAULT_EXAMPLE);
-  const [flow, setFlow] = useState(DEFAULT_EXAMPLE.flow);
-  const [inputs, setInputs] = useState(DEFAULT_EXAMPLE.inputs);
-  const [tools, setTools] = useState<RequestTool[]>(DEFAULT_EXAMPLE.tools);
-  const [plugins, setPlugins] = useState<RequestPlugin[]>(
-    DEFAULT_EXAMPLE.plugins,
-  );
+  const pg = usePlayground();
+  const [view, setView] = useState<View>("build");
+  const [useCase, setUseCase] = useState<UseCase>(USE_CASES[0]);
+  const [rival, setRival] = useState<Framework>(RIVALS[0]);
 
-  const [tab, setTab] = useState("spec");
-  const [events, setEvents] = useState<RunEvent[]>([]);
-  const [status, setStatus] = useState<Status>("idle");
-  const [result, setResult] = useState<Record<string, unknown>>();
-  const [error, setError] = useState<{ type: string; message: string }>();
-  const [capabilities, setCapabilities] = useState<Capabilities>();
-  const [reachable, setReachable] = useState<boolean>();
+  /* The view is in the address, so a particular comparison can be linked to.
+     This is a static export with no server to read the query, and reading it
+     during render would not survive hydration — so it is read once, on mount,
+     and written back with replaceState, which keeps the address in step
+     without a navigation. */
+  const read = useRef(false);
 
-  const abortRef = useRef<AbortController>(null);
+  useBrowserLayoutEffect(() => {
+    const params = new URLSearchParams(window.location.search);
 
-  useEffect(() => {
-    const ac = new AbortController();
-    fetchCapabilities(ac.signal)
-      .then((caps) => {
-        setCapabilities(caps);
-        setReachable(true);
-      })
-      .catch((err: unknown) => {
-        if ((err as Error)?.name !== "AbortError") setReachable(false);
-      });
-    return () => ac.abort();
+    if (params.get("view") === "compare") setView("compare");
+
+    const useCaseParam = USE_CASES.find((c) => c.id === params.get("case"));
+    if (useCaseParam) setUseCase(useCaseParam);
+
+    const rivalParam = RIVALS.find((r) => r.id === params.get("against"));
+    if (rivalParam) setRival(rivalParam);
+
+    read.current = true;
   }, []);
 
-  const readInputs = useCallback((): Record<string, unknown> => {
-    const text = inputs.trim();
-    if (!text) return {};
-    const parsed: unknown = JSON.parse(text);
-    if (
-      typeof parsed !== "object" ||
-      parsed === null ||
-      Array.isArray(parsed)
-    ) {
-      throw new SyntaxError("Inputs must be a JSON object.");
-    }
-    return parsed as Record<string, unknown>;
-  }, [inputs]);
+  useEffect(() => {
+    if (!read.current) return;
 
-  const payload = useCallback(
-    () => ({ flow, inputs: readInputs(), tools, plugins }),
-    [flow, readInputs, tools, plugins],
-  );
-
-  const fail = (err: unknown) => {
-    if (err instanceof EngineError) {
-      setError({ type: err.type, message: err.message });
-    } else if (err instanceof SyntaxError) {
-      setError({ type: "InvalidInputs", message: err.message });
-    } else if ((err as Error)?.name === "AbortError") {
-      setError({ type: "Aborted", message: "Run stopped." });
+    const params = new URLSearchParams(window.location.search);
+    if (view === "compare") {
+      params.set("view", "compare");
+      params.set("case", useCase.id);
+      params.set("against", rival.id);
     } else {
-      setError({
-        type: "NetworkError",
-        message:
-          `Could not reach the engine at ${API_BASE || "(not configured)"}. ` +
-          "It may be down, or it may not allow this origin.",
-      });
+      for (const key of ["view", "case", "against"]) params.delete(key);
     }
-    setStatus("error");
+
+    const query = params.toString();
+    window.history.replaceState(
+      null,
+      "",
+      `${window.location.pathname}${query ? `?${query}` : ""}`,
+    );
+  }, [view, useCase, rival]);
+
+  /* Handing a comparison to the editor moves the reader to another view, so
+     it also moves focus there — otherwise the keyboard is left on a button
+     that is no longer on the page. */
+  const handedOver = useRef(false);
+
+  const openInEditor = () => {
+    const example = exampleById(useCase.example);
+    if (example) pg.load(example);
+    handedOver.current = true;
+    setView("build");
   };
 
-  const reset = () => {
-    setEvents([]);
-    setResult(undefined);
-    setError(undefined);
-  };
+  useEffect(() => {
+    if (view !== "build" || !handedOver.current) return;
+    handedOver.current = false;
+    document.getElementById("editors")?.focus();
+  }, [view]);
 
-  const run = async () => {
-    reset();
-    setStatus("running");
-
-    const ac = new AbortController();
-    abortRef.current = ac;
-
-    try {
-      for await (const event of streamRun(payload(), ac.signal)) {
-        setEvents((previous) => appendEvent(previous, event));
-
-        if (event.type === "flow_complete" && event.state) {
-          setResult(event.state);
-        }
-        if (event.type === "error") {
-          setError({
-            type: event.error?.type ?? event.error?.name ?? "Error",
-            message: event.error?.message ?? "the run failed",
-          });
-        }
-      }
-      setStatus((current) => (current === "error" ? current : "done"));
-    } catch (err) {
-      fail(err);
-    } finally {
-      abortRef.current = null;
-    }
-  };
-
-  const stop = () => abortRef.current?.abort();
-
-  const check = async () => {
-    reset();
-    setStatus("running");
-    try {
-      const validation = await validateFlow(payload());
-      setEvents([
-        { type: "flow_start" },
-        ...validation.nodes.map((node) => ({
-          type: "node_start",
-          nodeName: node.name,
-          nodeType: node.type,
-        })),
-        { type: "flow_complete" },
-      ]);
-      setResult({
-        valid: true,
-        flow: validation.flow,
-        startNode: validation.startNode,
-        nodes: validation.nodes.length,
-      });
-      setStatus("done");
-    } catch (err) {
-      fail(err);
-    }
-  };
-
-  const load = (next: Example) => {
-    setExample(next);
-    setFlow(next.flow);
-    setInputs(next.inputs);
-    setTools(next.tools);
-    setPlugins(next.plugins);
-    setTab("spec");
-    reset();
-    setStatus("idle");
-  };
-
-  const restore = () => load(example);
-
-  const busy = status === "running";
-  const codeAllowed = capabilities?.allowRequestCode ?? true;
-  const limits = capabilities?.limits;
-
-  const statusTone: Record<Status, string> = {
-    idle: "var(--text-faint)",
-    running: "var(--brand-pink)",
-    done: "var(--hue-emerald)",
-    error: "var(--hue-red)",
-  };
+  const building = view === "build";
 
   return (
     <div className="hd-playground">
@@ -228,9 +134,9 @@ export default function Playground() {
             gap: "var(--space-3)",
           }}
         >
-          <Link href="/" aria-label="heddle — home">
+          <a href={HOME_URL} aria-label="heddle — home">
             <Wordmark size="sm" />
-          </Link>
+          </a>
           <span
             aria-hidden
             style={{
@@ -239,10 +145,18 @@ export default function Playground() {
               background: "var(--border-default)",
             }}
           />
-          <span className="hd-eyebrow">Playground</span>
+          <ViewSwitch view={view} onSelect={setView} />
         </div>
 
-        <ExamplePicker current={example} onSelect={load} disabled={busy} />
+        {building ? (
+          <ExamplePicker
+            current={pg.example}
+            onSelect={pg.load}
+            disabled={pg.busy}
+          />
+        ) : (
+          <UseCasePicker current={useCase} onSelect={setUseCase} />
+        )}
 
         <div
           style={{
@@ -252,345 +166,132 @@ export default function Playground() {
             marginLeft: "auto",
           }}
         >
-          <Button
-            shape="rounded"
-            variant={busy ? "accent" : "solid"}
-            icon={busy ? "square" : "play"}
-            onClick={busy ? stop : run}
-          >
-            {busy ? "Stop" : "Run"}
-          </Button>
-          <Button
-            shape="rounded"
-            variant="subtle"
-            icon="check-check"
-            onClick={check}
-            disabled={busy}
-          >
-            Validate
-          </Button>
+          {building ? (
+            <>
+              <Button
+                shape="rounded"
+                variant={pg.busy ? "accent" : "solid"}
+                icon={pg.busy ? "square" : "play"}
+                onClick={pg.busy ? pg.stop : pg.run}
+              >
+                {pg.busy ? "Stop" : "Run"}
+              </Button>
+              <Button
+                shape="rounded"
+                variant="subtle"
+                icon="check-check"
+                onClick={pg.check}
+                disabled={pg.busy}
+              >
+                Validate
+              </Button>
+            </>
+          ) : (
+            <RivalPicker current={rival} onSelect={setRival} />
+          )}
           <ThemeToggle dark={dark} onToggle={toggle} />
         </div>
       </header>
 
-      <EngineNotice reachable={reachable} />
+      {building && <EngineNotice reachable={pg.reachable} />}
 
-      <div className="hd-playground-body">
-        <section
-          id="editors"
-          tabIndex={-1}
-          aria-label="Specification"
-          className="hd-playground-pane"
-        >
-          <div
-            style={{
-              display: "flex",
-              flexShrink: 0,
-              alignItems: "stretch",
-              justifyContent: "space-between",
-              borderBottom: "1px solid var(--border-hairline)",
-            }}
-          >
-            <Tabs
-              tabs={[
-                { id: "spec", label: "Spec" },
-                { id: "inputs", label: "Inputs" },
-                { id: "tools", label: "Tools", badge: tools.length },
-                { id: "plugins", label: "Plugins", badge: plugins.length },
-              ]}
-              active={tab}
-              onSelect={setTab}
-            />
-            <button
-              type="button"
-              onClick={restore}
-              title={`Restore the "${example.title}" example`}
-              style={{
-                display: "flex",
-                minHeight: 44,
-                width: 44,
-                flexShrink: 0,
-                alignItems: "center",
-                justifyContent: "center",
-                border: 0,
-                borderLeft: "1px solid var(--border-hairline)",
-                background: "transparent",
-                color: "var(--text-faint)",
-                cursor: "pointer",
-              }}
-            >
-              <Icon name="rotate-ccw" size={14} />
-              <span className="sr-only">Restore example</span>
-            </button>
-          </div>
-
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              minWidth: 0,
-              minHeight: 0,
-              flex: 1,
-              overflowY: "auto",
-            }}
-          >
-            {tab === "spec" && (
-              <Editor
-                fill
-                label="Spec"
-                value={flow}
-                onChange={setFlow}
-                rows={30}
-                placeholder="An Agent Spec document, rooted at a Flow, as YAML or JSON"
-              />
-            )}
-
-            {tab === "inputs" && (
-              <Editor
-                fill
-                label="Inputs"
-                value={inputs}
-                onChange={setInputs}
-                rows={12}
-                placeholder='{ "query": "..." }'
-              />
-            )}
-
-            {tab === "tools" && (
-              <CodeList
-                kind="tool"
-                entries={tools}
-                onChange={(next) => setTools(next as RequestTool[])}
-                limit={limits?.maxRequestTools ?? 10}
-                emptySource={TOOL_STUB}
-                note="A tool reads its arguments as JSON on stdin and writes JSON on stdout. It runs as a subprocess, inside the engine's sandbox."
-              />
-            )}
-
-            {tab === "plugins" && (
-              <CodeList
-                kind="plugin"
-                entries={plugins}
-                onChange={(next) => setPlugins(next as RequestPlugin[])}
-                limit={limits?.maxRequestPlugins ?? 5}
-                emptySource={PLUGIN_STUB}
-                emptyManifest={PLUGIN_MANIFEST_STUB}
-                note="A plugin adds component types the engine does not ship. The manifest declares them as data; the source runs in its own process, so it never sees the engine's memory or environment. Call serve({ ComponentType: { execute } }) — it is supplied for you."
-              />
-            )}
-          </div>
-        </section>
-
-        <section aria-label="Run" className="hd-playground-pane">
-          <div
-            style={{
-              display: "flex",
-              minHeight: 44,
-              flexShrink: 0,
-              alignItems: "center",
-              justifyContent: "space-between",
-              padding: "0 var(--space-5)",
-              borderBottom: "1px solid var(--border-hairline)",
-            }}
-          >
-            <span className="hd-eyebrow">Run</span>
-            <span
-              aria-live="polite"
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "var(--space-2)",
-                fontFamily: "var(--font-mono)",
-                fontSize: "var(--fs-2xs)",
-                textTransform: "uppercase",
-                letterSpacing: "var(--tracking-widest)",
-                color: statusTone[status],
-              }}
-            >
-              <span
-                aria-hidden
-                style={{
-                  width: 6,
-                  height: 6,
-                  borderRadius: "50%",
-                  background: "currentColor",
-                }}
-              />
-              {
-                {
-                  idle: "ready",
-                  running: "running",
-                  done: "complete",
-                  error: "failed",
-                }[status]
-              }
-            </span>
-          </div>
-
-          <div style={{ minHeight: 0, flex: 1 }}>
-            <RunLog
-              events={events}
-              status={status}
-              result={result}
-              error={error}
-            />
-          </div>
-        </section>
+      <div
+        id="panes"
+        tabIndex={-1}
+        aria-label={
+          building
+            ? "The specification and the run"
+            : "The same use case, two frameworks"
+        }
+        className="hd-playground-body"
+      >
+        {building ? (
+          <Build pg={pg} />
+        ) : (
+          <ComparePanes
+            useCase={useCase}
+            rival={rival}
+            onOpen={openInEditor}
+          />
+        )}
       </div>
 
-      <StatusBar
-        capabilities={capabilities}
-        reachable={reachable}
-        codeAllowed={codeAllowed}
-      />
+      {building ? (
+        <BuildStatusBar
+          capabilities={pg.capabilities}
+          reachable={pg.reachable}
+          codeAllowed={pg.codeAllowed}
+        />
+      ) : (
+        <CompareLedger useCase={useCase} rival={rival} />
+      )}
     </div>
   );
 }
 
-function EngineNotice({ reachable }: { reachable?: boolean }) {
-  if (!API_BASE) {
-    return (
-      <Notice>
-        No engine is configured for this build. Set{" "}
-        <code style={{ fontFamily: "var(--font-mono)" }}>
-          NEXT_PUBLIC_HEDDLE_API
-        </code>{" "}
-        to a running{" "}
-        <code style={{ fontFamily: "var(--font-mono)" }}>heddle-server</code>{" "}
-        and rebuild, or run one locally and point the site at it.
-      </Notice>
-    );
-  }
-
-  if (reachable === false) {
-    return (
-      <Notice>
-        The engine at{" "}
-        <code style={{ fontFamily: "var(--font-mono)" }}>{API_BASE}</code> is
-        not answering. It may be down, or it may not list this site as an
-        allowed origin.
-      </Notice>
-    );
-  }
-
-  return null;
-}
-
-function StatusBar({
-  capabilities,
-  reachable,
-  codeAllowed,
+function ViewSwitch({
+  view,
+  onSelect,
 }: {
-  capabilities?: Capabilities;
-  reachable?: boolean;
-  codeAllowed: boolean;
+  view: View;
+  onSelect: (view: View) => void;
 }) {
-  const facts: [string, string][] = !API_BASE
-    ? [["engine", "not configured"]]
-    : reachable === false
-      ? [["engine", "unreachable"]]
-      : capabilities
-        ? [
-            ["engine", capabilities.version],
-            ["sandbox", capabilities.sandbox ?? "none"],
-            ["submitted code", codeAllowed ? "accepted" : "refused"],
-            ["timeout", `${Math.round(capabilities.limits.timeout / 1000)}s`],
-          ]
-        : [["engine", "connecting"]];
-
   return (
-    <footer
+    <div
+      role="group"
+      aria-label="View"
       style={{
         display: "flex",
-        flexWrap: "wrap",
-        alignItems: "center",
-        gap: "var(--space-3) var(--space-8)",
-        padding: "var(--space-3) var(--space-5)",
-        borderTop: "1px solid var(--border-hairline)",
-        background: "var(--surface-chrome)",
-        backdropFilter: "blur(var(--blur-chrome))",
+        gap: 2,
+        padding: 2,
+        border: "1px solid var(--border-hairline)",
+        borderRadius: "var(--radius-full)",
       }}
     >
-      <p
-        style={{
-          display: "flex",
-          gap: "var(--space-3)",
-          margin: 0,
-          flex: "1 1 48ch",
-          minWidth: 0,
-          fontSize: "var(--fs-xs)",
-          lineHeight: "var(--lh-relaxed)",
-          color: "var(--text-muted)",
-        }}
-      >
-        <span
-          aria-hidden
-          style={{
-            color: "var(--brand-pink)",
-            display: "inline-flex",
-            flex: "0 0 auto",
-            marginTop: 2,
-          }}
-        >
-          <Icon name="shield" size={14} />
-        </span>
-        Tools and plugins you submit run in their own sandboxed processes and
-        are deleted when the run ends. Nothing is stored. An API key in your
-        flow does travel to the engine to reach the model — use a key you are
-        willing to spend, and revoke it when you are done.
-      </p>
-
-      <dl
-        style={{
-          display: "flex",
-          flexWrap: "wrap",
-          margin: 0,
-          gap: "var(--space-2) var(--space-6)",
-        }}
-      >
-        {facts.map(([term, value]) => (
-          <div
-            key={term}
+      {VIEWS.map(({ id, label, icon }) => {
+        const selected = id === view;
+        return (
+          <button
+            key={id}
+            type="button"
+            aria-pressed={selected}
+            onClick={() => onSelect(id)}
             style={{
-              display: "flex",
+              display: "inline-flex",
               alignItems: "center",
               gap: "var(--space-2)",
+              minHeight: 30,
+              padding: "0 var(--space-4)",
+              border: 0,
+              borderRadius: "var(--radius-full)",
+              background: selected ? "var(--bg-sunken)" : "transparent",
+              color: selected ? "var(--text-strong)" : "var(--text-muted)",
+              cursor: "pointer",
+              fontFamily: "var(--font-sans)",
+              fontSize: "var(--fs-2xs)",
+              fontWeight: selected
+                ? "var(--fw-semibold)"
+                : "var(--fw-medium)",
+              textTransform: "uppercase",
+              letterSpacing: "var(--tracking-widest)",
+              transition:
+                "color var(--dur-base) var(--ease-standard), background-color var(--dur-base) var(--ease-standard)",
             }}
           >
-            <dt className="hd-eyebrow">{term}</dt>
-            <dd
+            <span
+              aria-hidden
               style={{
-                margin: 0,
-                fontFamily: "var(--font-mono)",
-                fontSize: "var(--fs-xs)",
-                fontVariantNumeric: "tabular-nums",
-                color: "var(--text-strong)",
+                display: "inline-flex",
+                color: selected ? "var(--brand-pink)" : "currentColor",
               }}
             >
-              {value}
-            </dd>
-          </div>
-        ))}
-      </dl>
-    </footer>
-  );
-}
-
-function Notice({ children }: { children: React.ReactNode }) {
-  return (
-    <p
-      style={{
-        margin: 0,
-        padding: "var(--space-4) var(--space-5)",
-        borderBottom: "1px solid var(--brand-pink-20)",
-        background: "var(--brand-pink-05)",
-        fontSize: "var(--fs-sm)",
-        lineHeight: "var(--lh-relaxed)",
-        color: "var(--text-body)",
-      }}
-    >
-      {children}
-    </p>
+              <Icon name={icon} size={13} />
+            </span>
+            {label}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -604,18 +305,7 @@ function ExamplePicker({
   disabled: boolean;
 }) {
   return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: "var(--space-3)",
-        minWidth: 0,
-      }}
-    >
-      <label className="hd-eyebrow" htmlFor="playground-example">
-        Example
-      </label>
-
+    <Picker label="Example" htmlFor="playground-example" blurb={current.blurb}>
       <Select
         id="playground-example"
         value={current.title}
@@ -633,6 +323,89 @@ function ExamplePicker({
           key
         </Badge>
       )}
+    </Picker>
+  );
+}
+
+function UseCasePicker({
+  current,
+  onSelect,
+}: {
+  current: UseCase;
+  onSelect: (useCase: UseCase) => void;
+}) {
+  return (
+    <Picker label="Use case" htmlFor="compare-use-case" blurb={current.blurb}>
+      <Select
+        id="compare-use-case"
+        value={current.title}
+        onChange={(event: React.ChangeEvent<HTMLSelectElement>) => {
+          const next = USE_CASES.find(
+            (candidate) => candidate.title === event.target.value,
+          );
+          if (next) onSelect(next);
+        }}
+        options={USE_CASES.map((candidate) => candidate.title)}
+        style={{ width: 230, flex: "0 0 auto" }}
+      />
+    </Picker>
+  );
+}
+
+function RivalPicker({
+  current,
+  onSelect,
+}: {
+  current: Framework;
+  onSelect: (framework: Framework) => void;
+}) {
+  return (
+    <>
+      <label className="hd-eyebrow" htmlFor="compare-framework">
+        Against
+      </label>
+      <Select
+        id="compare-framework"
+        value={current.name}
+        onChange={(event: React.ChangeEvent<HTMLSelectElement>) => {
+          const next = RIVALS.find(
+            (candidate) => candidate.name === event.target.value,
+          );
+          if (next) onSelect(next);
+        }}
+        options={RIVALS.map((candidate) => candidate.name)}
+        style={{ width: 200, flex: "0 0 auto" }}
+      />
+    </>
+  );
+}
+
+/** A labelled select in the bar, with the one-line description beside it. */
+function Picker({
+  label,
+  htmlFor,
+  blurb,
+  children,
+}: {
+  label: string;
+  htmlFor: string;
+  blurb: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: "var(--space-3)",
+        minWidth: 0,
+      }}
+    >
+      <label className="hd-eyebrow" htmlFor={htmlFor}>
+        {label}
+      </label>
+
+      {children}
 
       <span
         className="hd-playground-blurb"
@@ -644,7 +417,7 @@ function ExamplePicker({
           color: "var(--text-muted)",
         }}
       >
-        {current.blurb}
+        {blurb}
       </span>
     </div>
   );

@@ -1,6 +1,6 @@
 name: Deploy Playground Engine
 
-# The engine behind heddle.run/playground: packages/server, running under podman
+# The engine behind playground.heddle.run: packages/server, running under podman
 # with the gVisor runtime on an Oracle Cloud VM that a Cloudflare tunnel fronts.
 # The host has no inbound port open — cloudflared dials out — so this deploys
 # over SSH rather than to an endpoint.

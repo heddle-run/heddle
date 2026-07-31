@@ -3,14 +3,16 @@
 import Link from "next/link";
 import { Button, ThemeToggle, Icon } from "@/ds";
 import { useTheme } from "@/lib/theme";
-import { GITHUB_URL } from "@/lib/constants";
+import { GITHUB_URL, PLAYGROUND_URL } from "@/lib/constants";
 import Wordmark from "./Wordmark";
 
+/* One entry for the playground: the comparison is a view of it, not a page of
+   its own. Its address is another origin once the subdomain is configured, so
+   the anchor is chosen per link rather than assumed. */
 const links = [
   { label: "Method", href: "/#method" },
   { label: "Isolation", href: "/#safe" },
-  { label: "Compare", href: "/compare" },
-  { label: "Playground", href: "/playground" },
+  { label: "Playground", href: PLAYGROUND_URL },
   { label: "Docs", href: "/docs" },
 ];
 
@@ -53,16 +55,27 @@ export default function Nav() {
             fontWeight: "var(--fw-medium)",
           }}
         >
-          {links.map((link) => (
-            <Link
-              key={link.href}
-              href={link.href}
-              className="ff-text-transition"
-              style={{ color: "var(--text-body)" }}
-            >
-              {link.label}
-            </Link>
-          ))}
+          {links.map((link) =>
+            link.href.startsWith("http") ? (
+              <a
+                key={link.href}
+                href={link.href}
+                className="ff-text-transition"
+                style={{ color: "var(--text-body)" }}
+              >
+                {link.label}
+              </a>
+            ) : (
+              <Link
+                key={link.href}
+                href={link.href}
+                className="ff-text-transition"
+                style={{ color: "var(--text-body)" }}
+              >
+                {link.label}
+              </Link>
+            ),
+          )}
         </nav>
 
         <div

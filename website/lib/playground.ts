@@ -665,6 +665,141 @@ $referenced_components:
   plugins: [],
 };
 
+/* The comparison view writes this same assistant in four frameworks, and its
+   heddle column hands the reader here — so the flow below is that column's
+   flow, with the one change the playground requires: no api_key, because a
+   spec that arrives from a stranger may not name one. */
+const RESEARCH: Example = {
+  id: "research",
+  title: "A research assistant",
+  blurb:
+    "One agent, two typed tools, looping until it has an answer. The comparison writes this one four ways.",
+  flow: `component_type: Flow
+name: research-assistant
+start_node: { $component_ref: start }
+
+nodes:
+  - $component_ref: start
+  - $component_ref: researcher
+  - $component_ref: end
+
+control_flow_connections:
+  - component_type: ControlFlowEdge
+    name: start_to_researcher
+    from_node: { $component_ref: start }
+    to_node: { $component_ref: researcher }
+  - component_type: ControlFlowEdge
+    name: researcher_to_end
+    from_node: { $component_ref: researcher }
+    to_node: { $component_ref: end }
+
+$referenced_components:
+  start:
+    component_type: StartNode
+    id: start
+    name: start
+    outputs:
+      - title: question
+        type: string
+
+  researcher:
+    component_type: AgentNode
+    id: researcher
+    name: researcher
+    outputs:
+      - title: result
+        type: string
+    agent:
+      component_type: Agent
+      id: research_agent
+      name: research-agent
+      system_prompt: >-
+        You are a research assistant. Answer the question. Use web_search
+        when you need current information, and calculator for arithmetic.
+
+      # No api_key and no url, so the engine supplies the free model it was
+      # configured with -- see the agent example for why that pair is
+      # all-or-nothing.
+      llm_config:
+        component_type: OpenAiConfig
+        id: llm
+        name: model
+        model_id: openrouter/free
+
+      # Declaring a tool's inputs is what gives the model a shape to fill in:
+      # they become the function's parameters.
+      tools:
+        - component_type: ServerTool
+          id: web_search_tool
+          name: web_search
+          description: Search the web for information
+          inputs:
+            - title: query
+              type: string
+          outputs:
+            - title: results
+              type: string
+
+        - component_type: ServerTool
+          id: calculator_tool
+          name: calculator
+          description: Evaluate a mathematical expression
+          inputs:
+            - title: expression
+              type: string
+          outputs:
+            - title: result
+              type: string
+
+  end:
+    component_type: EndNode
+    id: end
+    name: end
+    inputs:
+      - title: result
+        type: string
+`,
+  inputs: `{
+  "question": "How tall is the Eiffel Tower in feet?"
+}
+`,
+  tools: [
+    {
+      name: "web_search",
+      interpreter: "python3",
+      source: `import json, sys
+
+args = json.load(sys.stdin)
+query = args.get("query", "")
+
+# A stub, so that the example runs with nothing to sign up for. The spec
+# above does not know or care -- swap this file for a real search and the
+# document is unchanged.
+json.dump({"results": f"Search results for: {query}"}, sys.stdout)
+`,
+    },
+    {
+      name: "calculator",
+      interpreter: "python3",
+      source: `import json, sys
+
+args = json.load(sys.stdin)
+expression = args.get("expression", "0")
+
+# The model picks this string, so a bare eval() would be arbitrary code
+# execution. No letters, no imports.
+if set(expression) - set("0123456789.+-*/() "):
+    result = "unsupported expression"
+else:
+    result = str(eval(expression))
+
+json.dump({"result": result}, sys.stdout)
+`,
+    },
+  ],
+  plugins: [],
+};
+
 const BASH_TOOL: RequestTool = {
   name: "bash",
   interpreter: "python3",
@@ -805,9 +940,15 @@ export const EXAMPLES: Example[] = [
   GUARDRAIL,
   BRANCHING,
   AGENT,
+  RESEARCH,
   SHELL,
 ];
 
 export const DEFAULT_EXAMPLE = EXAMPLES[0];
+
+/** The example an id names, for the comparison's handover to the editor. */
+export function exampleById(id: string): Example | undefined {
+  return EXAMPLES.find((example) => example.id === id);
+}
 
 export const INTERPRETERS = ["sh", "bash", "python3", "node"] as const;

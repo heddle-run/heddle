@@ -38,6 +38,13 @@ jobs:
           # renders but reports that no engine is configured.
           NEXT_PUBLIC_HEDDLE_API: ${{ vars.HEDDLE_API_URL }}
 
+          # Where the site links to the playground: https://playground.heddle.run
+          # once that hostname is a custom domain on the Pages project below.
+          # Same page either way — the export lives at /playground and the
+          # Function serves it at the subdomain's root — so leaving this unset
+          # is safe: the links stay relative and keep working.
+          NEXT_PUBLIC_PLAYGROUND_URL: ${{ vars.PLAYGROUND_URL }}
+
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
         with:
@@ -47,5 +54,14 @@ jobs:
           # not the product name. Renaming it requires creating the project on
           # the Cloudflare side first, so it is deliberately left alone by the
           # heddle rename -- same as the git remote.
-          command: pages deploy out --project-name specrun
+          #
+          # website/functions is uploaded with the assets: it is the one thing
+          # that makes playground.heddle.run serve the playground rather than
+          # the front page. --compatibility-date is pinned rather than left to
+          # default to the day of the deploy, so a build months from now runs
+          # the middleware on the runtime it was written against.
+          command: >-
+            pages deploy out
+            --project-name specrun
+            --compatibility-date=2025-04-01
           workingDirectory: website

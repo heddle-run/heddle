@@ -1,0 +1,13 @@
+# Cloudflare Pages redirect rules. Next copies public/ into out/ verbatim, so
+# this file ends up where Pages looks for it.
+#
+# The comparison stopped being a page of its own when it became a view of the
+# playground. Links to it are older than the merge, so the route still exists
+# in the export and forwards on its own — this is the same forward one hop
+# earlier, as a real 301, for the search engines and for the reader who should
+# not have to boot a page to leave it.
+#
+# Paths only: these rules cannot match a hostname, which is why serving the
+# playground at the root of playground.heddle.run is a Function instead.
+/compare   /playground?view=compare   301
+/compare/  /playground?view=compare   301
