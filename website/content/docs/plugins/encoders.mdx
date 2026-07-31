@@ -1,21 +1,48 @@
 ---
 title: Encoders
-description: Render a run in another wire format, chosen per request — AG-UI ships as a worked example.
+description: Render a run in another wire format, chosen by whoever asked for the run — AG-UI ships as a worked example.
 ---
 
 An encoder is the one kind that is not part of a flow at all. Every other kind answers
 "what runs inside a flow"; this one answers "what the run looks like on the way out". It
 is a sink on the event stream: one runner event in, zero or more wire frames out.
 
-**The request chooses it.** Not the spec, and not the operator — two clients hitting the
-same flow can legitimately want different renderings of it, and neither the flow's author
-nor whoever runs the server knows which.
+**Whoever asked for the run chooses it.** Not the spec, and not the operator — two clients
+hitting the same flow can legitimately want different renderings of it, and neither the
+flow's author nor whoever runs the server knows which.
+
+Over HTTP that is the request, with `?protocol=`:
 
 ```
 POST /v1/runs?stream=true&protocol=ag-ui
 ```
 
-Omit the parameter, or ask for `heddle`, and you get heddle's own frames. A plugin may not
+On the CLI it is `--protocol`, and the frames go to stdout one JSON object per line:
+
+```bash
+heddle run examples/ag-ui/flow.json --plugin ./examples/ag-ui/encoder.json \
+  --protocol ag-ui --input '{"query": "hello"}'
+```
+
+```
+{"data":{"type":"RUN_STARTED","threadId":"5d4ed795-…","runId":"5d4ed795-…"}}
+{"data":{"type":"STEP_STARTED","stepName":"start"}}
+{"data":{"type":"STEP_FINISHED","stepName":"start"}}
+{"data":{"type":"STATE_SNAPSHOT","snapshot":{"query":"hello"}}}
+{"data":{"type":"STEP_STARTED","stepName":"end"}}
+{"data":{"type":"STEP_FINISHED","stepName":"end"}}
+{"data":{"type":"STATE_SNAPSHOT","snapshot":{"query":"hello"}}}
+{"data":{"type":"RUN_FINISHED","threadId":"5d4ed795-…","runId":"5d4ed795-…"}}
+```
+
+The two differ only in framing, which belongs to the transport rather than the encoder: SSE
+carries a frame's name on an `event:` line because it is an HTTP response body, and the CLI
+writes the frame itself so a nameless frame stays nameless. `encode` returns the same frames
+either way, so an encoder can be written and checked without starting a server at all — see
+[the CLI reference](/docs/cli-reference#rendering-the-run-in-another-protocol) for what the
+CLI does with the final state.
+
+Omit the choice, or ask for `heddle`, and you get heddle's own frames. A plugin may not
 claim that name, so a client asking for it always gets the frames documented in
 [the server API](/docs/server).
 
@@ -51,9 +78,10 @@ serve({
 what you read is what a browser watching `?protocol=heddle` reads. Returning `[]` is the
 ordinary answer for an event your format does not render.
 
-A frame is `{ event, data }` for a named SSE frame, or `{ data }` alone for a nameless
-one — which is what a protocol carrying its own type inside the payload wants. Both shapes
-exist because the two protocols heddle already serves disagree about it.
+A frame is `{ event, data }` for a named frame, or `{ data }` alone for a nameless one —
+which is what a protocol carrying its own type inside the payload wants. Both shapes exist
+because the two protocols heddle already renders disagree about it, and both survive every
+transport: SSE writes the name on an `event:` line, and the CLI writes the frame itself.
 
 `finish` is called exactly once, on every path — a run that finished, one that failed, and
 one whose caller hung up. It is where a terminal frame belongs. A client that never
@@ -65,9 +93,10 @@ tool, no model and no workspace, so it is the one kind that is complete with an 
 grant. It is also strictly one-directional: there is no verdict to return and no way to
 affect the run being rendered.
 
-If `encode` throws, the stream ends with an error frame and the run stops. With your
-encoder selected your rendering *is* the response, and a run whose answer nobody can read
-is not worth continuing to spend on.
+If `encode` throws, the run stops. With your encoder selected your rendering *is* the
+output, and a run whose answer nobody can read is not worth continuing to spend on. The
+server ends the stream with an error frame; the CLI prints your message to stderr and exits
+1. Either way it is your error that surfaces, not the abort it caused.
 
 ## What heddle emits
 
@@ -123,13 +152,14 @@ in the content — or it is lost, and reads as a tool that successfully returned
 <Callout>
 The complete worked example is in
 [`examples/ag-ui`](https://github.com/heddle-run/heddle/tree/main/examples/ag-ui):
-a manifest, an encoder, a flow, and a `curl` that runs it.
+a manifest, an encoder, a flow, one `heddle run` that renders it, and the `curl` that does
+the same over HTTP.
 </Callout>
 
 ## A note on cost
 
 An out-of-process encoder costs one round trip per event, and the event heddle emits most
 is `token_delta` — one per fragment of every model answer. Nothing in the engine waits on
-those round trips, so the cost is latency on the client's stream and CPU on the server
+those round trips, so the cost is latency on the frame stream and CPU on the host process
 rather than a slower flow, bounded by the run's own budget. An in-process encoder costs a
 function call.
