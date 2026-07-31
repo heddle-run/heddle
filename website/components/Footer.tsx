@@ -1,7 +1,14 @@
 import Link from "next/link";
 import { BoxedFrame } from "@/ds";
 import Wordmark from "./Wordmark";
-import { AGENT_SPEC_URL, GITHUB_URL, NPM_URL, VERSION } from "@/lib/constants";
+import {
+  AGENT_SPEC_URL,
+  COMPARE_URL,
+  GITHUB_URL,
+  NPM_URL,
+  PLAYGROUND_URL,
+  VERSION,
+} from "@/lib/constants";
 
 const columns = [
   {
@@ -10,8 +17,10 @@ const columns = [
       { label: "Documentation", href: "/docs" },
       { label: "Getting started", href: "/docs/getting-started" },
       { label: "CLI reference", href: "/docs/cli-reference" },
-      { label: "Playground", href: "/playground" },
-      { label: "Compare", href: "/compare" },
+      { label: "Playground", href: PLAYGROUND_URL },
+      /* The comparison is a view of the playground now; this is the link
+         that opens on it. */
+      { label: "Compare frameworks", href: COMPARE_URL },
     ],
   },
   {
@@ -103,11 +112,15 @@ export default function Footer() {
                 >
                   {column.links.map((link) => (
                     <li key={link.label}>
-                      {"external" in link && link.external ? (
+                      {link.href.startsWith("http") ? (
                         <a
                           href={link.href}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                          /* Another origin, but still this project: the
+                             playground opens in place, GitHub and npm do
+                             not. */
+                          {...("external" in link && link.external
+                            ? { target: "_blank", rel: "noopener noreferrer" }
+                            : {})}
                           className="ff-text-transition"
                           style={linkStyle}
                         >

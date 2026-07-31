@@ -38,6 +38,10 @@ export interface UseCase {
   id: UseCaseId;
   title: string;
   blurb: string;
+  /** The playground example that is this use case in heddle, by its id in
+      lib/playground.ts. It is what the comparison hands to the editor, so a
+      reader can run the left-hand column rather than only read it. */
+  example: string;
 }
 
 export function countLines(implementation: Implementation): number {

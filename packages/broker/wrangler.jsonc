@@ -37,8 +37,11 @@
   ],
 
   "vars": {
-    // The playground page's origin. Exact match — no wildcards, no suffixes.
-    "ALLOWED_ORIGINS": "https://heddle.run",
+    // The playground page's origins. Exact match — no wildcards, no suffixes.
+    // Two of them, because one export is served at both: the playground lives
+    // at playground.heddle.run, and heddle.run/playground still answers for
+    // every link written before it moved.
+    "ALLOWED_ORIGINS": "https://playground.heddle.run,https://heddle.run",
 
     // The broker's own hostname: the single host a container is allowed to
     // reach, and where its model traffic is pointed. Both must be updated

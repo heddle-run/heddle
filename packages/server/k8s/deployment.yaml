@@ -67,6 +67,9 @@ spec:
             - --drain-timeout=90000
             - --timeout=60000
             - --max-iterations=25
+            # Both addresses the playground is served at: its own subdomain,
+            # and the path on the apex that still answers for older links.
+            - --cors-origin=https://playground.heddle.run
             - --cors-origin=https://heddle.run
             # --safe --sandbox=bubblewrap is deliberately absent. bubblewrap
             # has to create a user namespace and mount /proc in it, which the

@@ -9,7 +9,7 @@ so plainly. This is where that is meant to be terminated.
 ## Shape
 
 ```
-heddle.run/playground        broker (this)              HeddleEngine container
+playground.heddle.run        broker (this)              HeddleEngine container
 static export, Pages   ──►   auth, rate limit,    ──►   heddle-server
                              CORS, SSE passthrough      --allow-request-code
                                    │

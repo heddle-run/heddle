@@ -1,6 +1,6 @@
-import Link from "next/link";
 import { BoxedFrame, Icon } from "@/ds";
 import SectionLabel from "./SectionLabel";
+import { COMPARE_URL } from "@/lib/constants";
 
 export default function Manifesto() {
   return (
@@ -59,8 +59,8 @@ export default function Manifesto() {
                 any other conforming runtime unchanged.
               </p>
 
-              <Link
-                href="/compare"
+              <a
+                href={COMPARE_URL}
                 className="ff-text-transition"
                 style={{
                   display: "inline-flex",
@@ -74,7 +74,7 @@ export default function Manifesto() {
               >
                 The same agent, four frameworks
                 <Icon name="arrow-right" size={14} />
-              </Link>
+              </a>
             </div>
           </div>
         </BoxedFrame>

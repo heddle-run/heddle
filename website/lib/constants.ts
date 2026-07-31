@@ -1,4 +1,26 @@
 export const SITE_URL = "https://heddle.run";
+
+/* The playground — the editor, the run log and the framework comparison, one
+   application — is exported at /playground and served at the root of
+   playground.heddle.run. The same page either way; this is the address the
+   site links to. It is set at build time because a local build, a preview
+   deployment or a fork has no subdomain of its own, and unset the relative
+   path is the correct one. */
+const PLAYGROUND_ORIGIN = process.env.NEXT_PUBLIC_PLAYGROUND_URL?.replace(
+  /\/+$/,
+  "",
+);
+
+export const PLAYGROUND_URL = PLAYGROUND_ORIGIN || "/playground";
+
+/** The same application, opened on the comparison rather than the editor. */
+export const COMPARE_URL = `${PLAYGROUND_ORIGIN ? `${PLAYGROUND_ORIGIN}/` : "/playground"}?view=compare`;
+
+/* Home, addressed from inside the playground. The wordmark in its bar is the
+   way back to the site, and on the playground's own origin "/" is the
+   playground itself — so there, home has to be spelled out. */
+export const HOME_URL = PLAYGROUND_ORIGIN ? SITE_URL : "/";
+
 export const GITHUB_URL = "https://github.com/spichen/heddle";
 export const NPM_URL = "https://www.npmjs.com/package/@heddle/cli";
 export const AGENT_SPEC_URL = "https://oracle.github.io/agent-spec/";
