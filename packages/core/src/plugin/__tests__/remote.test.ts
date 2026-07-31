@@ -992,9 +992,10 @@ describe('spawning a plugin under a sandbox', () => {
     // quoting. The runtime rides in the arguments as a `data:` URL rather than
     // as a path, so a confined plugin needs no read grant to receive it.
     const args = stub.wraps[0].args;
-    expect(args[0]).toBe('--import');
-    expect(args[1]).toMatch(/^data:text\/javascript,/);
-    expect(args[2]).toBe(entry);
+    expect(args, 'the wrapped command carried no arguments').toBeDefined();
+    expect(args![0]).toBe('--import');
+    expect(args![1]).toMatch(/^data:text\/javascript,/);
+    expect(args![2]).toBe(entry);
   });
 
   it('gives the plugin the environment the backend built for it', async () => {

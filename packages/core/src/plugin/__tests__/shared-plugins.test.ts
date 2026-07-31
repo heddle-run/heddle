@@ -93,7 +93,15 @@ describe('a registry layered for one run', () => {
       perRun.add({
         name: 'submitted',
         version: '1.0.0',
-        nodes: [{ componentType: 'Ping' }],
+        // Never called: `claim` refuses the name before anything is built.
+        nodes: [
+          {
+            componentType: 'Ping',
+            createExecutor: () => {
+              throw new Error('the duplicate name should have been refused');
+            },
+          },
+        ],
       }),
     ).toThrow(/more than one plugin/);
   });

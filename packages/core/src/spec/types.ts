@@ -9,6 +9,16 @@ export function propertyTitle(property: Property): string {
 
 export interface LLMConfig {
   componentType?: string;
+  /**
+   * What the spec called this configuration.
+   *
+   * Declared because a spec carries one and something reads it: a plugin
+   * provider is handed the config as a `PluginComponent`, whose `name` heddle
+   * quotes back in every error about that provider. It was absent here for as
+   * long as tests went untypechecked, so the cast in `pluginProvider` was
+   * carrying a field the type said did not exist.
+   */
+  name?: string;
   modelId: string;
   url?: string;
   apiKey?: string;

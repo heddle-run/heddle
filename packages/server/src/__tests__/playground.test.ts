@@ -938,7 +938,7 @@ describe('the operator credential is bound to the operator endpoint', () => {
 
   it('supplies the credential to a spec that names neither', async () => {
     const res = await post({ flow: agentFlow({}), inputs: { query: 'hi' } });
-    const body = (await res.json()) as { error: { message: string } };
+    const body = (await res.json()) as { error: { message: string; type?: string } };
     expect(body.error.type ?? '').toBe('LLMError');
     expect(JSON.stringify(body)).not.toContain('operator-secret-key');
   });

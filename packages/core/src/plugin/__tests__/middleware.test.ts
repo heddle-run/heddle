@@ -15,12 +15,12 @@ import { parseFlow } from '../../spec/parser.js';
 import { compile } from '../../graph/compile.js';
 import type { CompiledGraph, CompiledNode } from '../../graph/types.js';
 import type {
-  AfterVerdict,
   HeddlePlugin,
   MiddlewareContext,
   PluginMiddlewareDef,
   SeamOutcome,
 } from '../types.js';
+import type { AfterVerdict } from '../protocol.js';
 
 let scratch: string;
 
@@ -958,7 +958,9 @@ describe('what a middleware is not asked about', () => {
     expect(() =>
       chainOf({
         componentType: 'NoSuchSeam',
-        seams: { toolResult: ['after'] },
+        // Cast because it is not a `Seam` any more: that is the compile-time
+        // half of what this asserts at run time.
+        seams: { toolResult: ['after'] } as PluginMiddlewareDef['seams'],
         createMiddleware: () => ({ after: () => ({ action: 'pass' }) }),
       }),
     ).toThrow(/which is not a seam/);

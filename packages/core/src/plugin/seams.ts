@@ -13,52 +13,61 @@ export type BeforeAction = 'proceed' | 'modify' | 'replace' | 'reject';
 
 export type AfterAction = 'pass' | 'replace' | 'retry' | 'fail';
 
+/**
+ * What a seam admits, and where.
+ *
+ * Every field here is read: `hooks` by the subscription reader, `before` and
+ * `after` by the verdict readers, `implemented` by both of those and by the
+ * handshake. Two more fields lived here until they did not — `position` and
+ * `when`, which said which call site a seam wrapped and whether it fired on
+ * failures only. Both were true and neither was ever read, and the table a
+ * reader would consult for that is prose in the docs rather than generated from
+ * here. A field a program does not read is a comment with a type annotation, so
+ * they are comments now.
+ */
 export interface SeamDef {
-  position: 'node' | 'modelCall' | 'toolCall' | 'agentRound';
   hooks: Half[];
-  when: 'always' | 'error';
   before: BeforeAction[];
   after: AfterAction[];
   implemented: boolean;
 }
 
 export const SEAMS: Record<Seam, SeamDef> = {
+  /** Around a node, and only when it failed — nothing precedes an error. */
   nodeError: {
-    position: 'node',
     hooks: ['after'],
-    when: 'error',
     before: [],
     after: ['pass', 'replace', 'retry', 'fail'],
     implemented: true,
   },
+  /**
+   * Around a node whether it failed or not, and the widest seam there is.
+   * Shares its call site with `nodeError`, which nests inside it and owns the
+   * retries — which is why nothing here admits one.
+   */
   node: {
-    position: 'node',
     hooks: ['before', 'after'],
-    when: 'always',
     before: ['proceed', 'modify', 'replace', 'reject'],
     after: ['pass', 'replace', 'fail'],
     implemented: true,
   },
+  /** Around a request to the model. The only seam that admits a retry. */
   modelCall: {
-    position: 'modelCall',
     hooks: ['before', 'after'],
-    when: 'always',
     before: ['proceed', 'modify', 'replace', 'reject'],
     after: ['pass', 'replace', 'retry', 'fail'],
     implemented: true,
   },
+  /** Around a tool the model asked for. No retry: the request is already said. */
   toolCall: {
-    position: 'toolCall',
     hooks: ['before', 'after'],
-    when: 'always',
     before: ['proceed', 'modify', 'replace', 'reject'],
     after: ['pass', 'replace', 'fail'],
     implemented: true,
   },
+  /** Around one model call and the tool calls it asked for. A guard, nothing more. */
   agentRound: {
-    position: 'agentRound',
     hooks: ['before', 'after'],
-    when: 'always',
     before: ['proceed', 'reject'],
     after: ['pass', 'fail'],
     implemented: true,

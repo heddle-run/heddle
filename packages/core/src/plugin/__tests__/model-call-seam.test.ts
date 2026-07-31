@@ -17,7 +17,7 @@ import { MiddlewareChain } from '../middleware.js';
 import { PluginRegistry } from '../registry.js';
 import type { Event } from '../../runner/events.js';
 import type { ChatRequest, ChatResponse, Provider } from '../../llm/types.js';
-import type { PluginMiddlewareDef } from '../../index.js';
+import type { PluginMiddlewareDef, SeamOutcome } from '../../index.js';
 
 const REQUEST: ChatRequest = {
   model: 'gpt-4o',
@@ -90,7 +90,7 @@ describe('before the call', () => {
   it('sends a request a middleware edited', async () => {
     const { provider, asked } = recording([ANSWER]);
     await run(provider, chainOf(policy({ modelCall: ['before'] }, {
-      before: ({ input }) => ({
+      before: ({ input }: { input: Record<string, unknown> }) => ({
         action: 'modify',
         input: { ...input, temperature: 0, model: 'gpt-4o-mini' },
       }),
@@ -180,7 +180,7 @@ describe('after the call', () => {
     const answer = await run(
       provider,
       chainOf(policy({ modelCall: ['after'] }, {
-        after: ({ outcome }) =>
+        after: ({ outcome }: { outcome: SeamOutcome }) =>
           outcome.ok || !/429/.test(outcome.error.message)
             ? { action: 'pass' }
             : { action: 'retry' },

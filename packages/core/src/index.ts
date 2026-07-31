@@ -121,6 +121,8 @@ export type {
   AfterParams,
   AfterVerdict,
   ApplyParams,
+  BeforeParams,
+  BeforeVerdict,
   CallModelParams,
   CancelParams,
   ChatParams,
