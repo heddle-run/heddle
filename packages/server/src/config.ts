@@ -1,7 +1,9 @@
 import {
+  createWorkspaceFactory,
   DEFAULT_RUNNER_OPTIONS,
   type PluginRegistry,
   type Sandbox,
+  type WorkspaceFactory,
 } from '@heddle/core';
 
 export interface ServerConfig {
@@ -25,6 +27,15 @@ export interface ServerConfig {
    */
   allowNet: string[];
   sandbox?: Sandbox;
+  /**
+   * What every node's workspace starts with, and where it lives.
+   *
+   * Fixed at startup, like `sandbox`, and for the same reason: a request may
+   * not choose what is in the working directory of every node of every run.
+   * Unlike the sandbox it is never absent — a workspace exists on every run,
+   * and this decides only what is in it.
+   */
+  workspaces: WorkspaceFactory;
   /**
    * Plugins the operator installed, already loaded.
    *
@@ -100,6 +111,7 @@ export function resolveConfig(options: ServerOptions = {}): ServerConfig {
     allowRequestCode: options.allowRequestCode ?? false,
     allowNet: options.allowNet ?? [],
     sandbox: options.sandbox,
+    workspaces: options.workspaces ?? createWorkspaceFactory(),
     plugins: options.plugins,
     pluginConfig: options.pluginConfig ?? {},
     maxNodeAttempts:

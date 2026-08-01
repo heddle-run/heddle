@@ -208,7 +208,10 @@ function buildDependencies(
   if (toolNames.length > 0) assertToolsAvailable(registry, toolNames);
 
   const deps: Dependencies = {
-    toolExecutor: new SubprocessExecutor({ sandbox: config.sandbox }),
+    toolExecutor: new SubprocessExecutor({
+      sandbox: config.sandbox,
+      workspaces: config.workspaces,
+    }),
     toolRegistry: registry,
     plugins: plan.plugins,
     eventHandler,

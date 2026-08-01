@@ -1,10 +1,15 @@
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createWorkspace, slug } from './dir.js';
-import { ScopeWorkspace } from './workspace.js';
-import type { Workspace, WorkspaceFactory } from './types.js';
+import { createWorkspace, removeDir, slug } from './dir.js';
+import { copyTree, stampTree, type CopyBudget } from './copy.js';
+import { assertNoCollisions } from './mount.js';
+import { ScopeWorkspace, mountParent, type WritableMount } from './workspace.js';
+import type { Mount, Workspace, WorkspaceFactory } from './types.js';
 
 export interface WorkspaceFactoryOptions {
+  /** What every scope starts with. Validated here, copied once. */
+  mounts?: Mount[];
   /**
    * A directory to put every scope's workspace under, kept after the run.
    *
@@ -15,6 +20,7 @@ export interface WorkspaceFactoryOptions {
    * produced without granting a single write path.
    */
   root?: string;
+  budget?: CopyBudget;
   /**
    * Where a failure that must not fail the run is reported.
    *
@@ -46,25 +52,97 @@ export function createScratchWorkspace(label: string): Workspace {
 
 class ScopedWorkspaceFactory implements WorkspaceFactory {
   private readonly options: WorkspaceFactoryOptions;
+  private readonly readOnly: Mount[];
+  private readonly writable: Mount[];
   private readonly used = new Map<string, number>();
+  private template?: string;
 
   constructor(options: WorkspaceFactoryOptions) {
     this.options = options;
+
+    const mounts = options.mounts ?? [];
+    assertNoCollisions(mounts);
+    this.readOnly = mounts.filter((mount) => mount.mode === 'ro');
+    this.writable = mounts.filter((mount) => mount.mode === 'rw');
+
+    // Assembled now rather than per scope, so a mount that is missing, too big
+    // or a symlink fails before the run starts — not at whichever node reaches
+    // it first, by which time the model has been told the file is there.
+    if (this.readOnly.length > 0) this.template = this.buildTemplate();
   }
 
   create(label: string): Workspace {
-    const root = this.options.root;
-    if (root === undefined) {
-      return new ScopeWorkspace({ root: createWorkspace(label), keep: false });
-    }
+    const root = this.rootFor(label);
+    if (this.template) copyTree(this.template, root, 'workspace template');
 
-    const directory = join(root, this.uniqueName(label));
-    mkdirSync(directory, { recursive: true });
-    return new ScopeWorkspace({ root: directory, keep: true });
+    return new ScopeWorkspace({
+      root,
+      keep: this.options.root !== undefined,
+      readOnly: this.readOnly.map((mount) => mount.dest),
+      writable: this.writable.map((mount) => this.takeWritable(root, mount)),
+      onWarn: this.options.onWarn,
+    });
   }
 
   dispose(): void {
-    return;
+    if (this.template === undefined) return;
+    removeDir(this.template);
+    this.template = undefined;
+  }
+
+  private buildTemplate(): string {
+    const template = mkdtempSync(join(tmpdir(), 'heddle-tpl-'));
+
+    try {
+      for (const mount of this.readOnly) {
+        copyTree(
+          mount.source,
+          join(template, mount.dest),
+          `${mount.origin} "${mount.source}"`,
+          this.options.budget,
+        );
+      }
+    } catch (err) {
+      removeDir(template);
+      throw err;
+    }
+
+    return template;
+  }
+
+  /**
+   * A read-write mount is copied from the host per scope, not from the
+   * template.
+   *
+   * The operator said this directory is shared with the run, and a stale copy
+   * of a shared directory is the worst of both: a node that starts after
+   * another finished should see what it wrote back. The runner walks one node
+   * at a time, so within a run that ordering is all there is to it.
+   */
+  private takeWritable(root: string, mount: Mount): WritableMount {
+    const dest = join(root, mount.dest);
+    mkdirSync(mountParent(root, mount), { recursive: true });
+
+    copyTree(
+      mount.source,
+      dest,
+      `${mount.origin} "${mount.source}"`,
+      this.options.budget,
+    );
+
+    return {
+      mount,
+      baseline: { taken: stampTree(dest), host: stampTree(mount.source) },
+    };
+  }
+
+  private rootFor(label: string): string {
+    const root = this.options.root;
+    if (root === undefined) return createWorkspace(label);
+
+    const directory = join(root, this.uniqueName(label));
+    mkdirSync(directory, { recursive: true });
+    return directory;
   }
 
   /**

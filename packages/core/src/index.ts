@@ -225,9 +225,14 @@ export type {
 export {
   createScratchWorkspace,
   createWorkspaceFactory,
+  parseMount,
+  checkedMount,
+  DEFAULT_MOUNT_MAX_BYTES,
+  DEFAULT_MOUNT_MAX_ENTRIES,
   RESERVED_DIR as WORKSPACE_RESERVED_DIR,
 } from './workspace/index.js';
 export type {
+  CopyBudget,
   Mount,
   MountMode,
   Workspace,
@@ -270,4 +275,5 @@ export {
   SandboxError,
   SpecError,
   ToolError,
+  WorkspaceError,
 } from './errors.js';

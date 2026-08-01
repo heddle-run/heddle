@@ -18,7 +18,11 @@ import {
   PluginRegistry,
   MiddlewareChain,
   parsePluginConfig,
+  createWorkspaceFactory,
+  parseMount,
   SandboxError,
+  DEFAULT_MOUNT_MAX_BYTES,
+  DEFAULT_MOUNT_MAX_ENTRIES,
   DEFAULT_RUNNER_OPTIONS,
   type CompiledGraph,
   type Dependencies,
@@ -28,6 +32,7 @@ import {
   type ParsedFlow,
   type Sandbox,
   type SandboxBackend,
+  type WorkspaceFactory,
 } from '@heddle/core';
 import { frameLine, resolveEncoder, type EncoderFactory } from './encoders.js';
 import { createProgressWriter, renderEvent } from './progress.js';
@@ -45,7 +50,14 @@ interface SafeOptions {
   denyNet?: boolean;
 }
 
-interface RunOptions extends SafeOptions {
+interface WorkspaceOptions {
+  mount: string[];
+  workspace?: string;
+  mountMaxBytes?: string;
+  mountMaxEntries?: string;
+}
+
+interface RunOptions extends SafeOptions, WorkspaceOptions {
   toolsDir?: string;
   input?: string;
   chat?: boolean;
@@ -93,6 +105,27 @@ export const runCommand = new Command('run')
     'Render the run through an installed encoder, one JSON frame per line on ' +
       'stdout, instead of the human progress output. "heddle" is heddle\'s own ' +
       'frames; any other name comes from a plugin',
+  )
+  .option(
+    '--mount <src[:dest][:ro|:rw]>',
+    'Put a file or directory in every workspace. "ro" (the default) is a copy ' +
+      'the run cannot carry back; "rw" copies changed files out again when a ' +
+      'node finishes (repeatable)',
+    collect,
+    [] as string[],
+  )
+  .option(
+    '--workspace <dir>',
+    'Keep each node\'s workspace under this directory instead of a temporary ' +
+      'one, so what the run produced is still there afterwards',
+  )
+  .option(
+    '--mount-max-bytes <n>',
+    `Largest a --mount may be, in bytes (default ${DEFAULT_MOUNT_MAX_BYTES})`,
+  )
+  .option(
+    '--mount-max-entries <n>',
+    `Most files and directories a --mount may hold (default ${DEFAULT_MOUNT_MAX_ENTRIES})`,
   )
   .option('--safe', 'Run tools inside an OS sandbox')
   .option(
@@ -144,6 +177,9 @@ async function runFlow(
   const encoder = chooseEncoder(options.protocol, isChat, plugins);
 
   const flow = loadFlow(flowPath, plugins);
+  // Before the sandbox, because a `--workspace` directory has to be on the
+  // policy's write paths and the policy is fixed once the sandbox is made.
+  const workspaces = buildWorkspaces(options);
   const sandbox = buildSandbox(
     options,
     options.toolsDir,
@@ -162,7 +198,7 @@ async function runFlow(
   applyMaxNodeAttempts(runnerOpts, options.maxNodeAttempts);
 
   const deps: Dependencies = {
-    toolExecutor: new SubprocessExecutor({ sandbox }),
+    toolExecutor: new SubprocessExecutor({ sandbox, workspaces }),
     toolRegistry: registry,
     plugins,
     eventHandler: (event: Event) => runnerOpts.eventHandler?.(event),
@@ -358,8 +394,41 @@ function detectInputKey(flow: ParsedFlow): string {
   return DEFAULT_INPUT_KEY;
 }
 
+/**
+ * What every node's workspace starts with, and where it lives.
+ *
+ * Not gated on `--safe`, unlike the flags below it: a workspace exists on every
+ * run, and where a run's files come from is not a question about confinement.
+ * `--safe` decides only whether anything enforces the workspace's edges.
+ */
+function buildWorkspaces(options: RunOptions): WorkspaceFactory {
+  return createWorkspaceFactory({
+    mounts: options.mount.map(parseMount),
+    root: options.workspace,
+    budget: {
+      maxBytes: positive('--mount-max-bytes', options.mountMaxBytes, DEFAULT_MOUNT_MAX_BYTES),
+      maxEntries: positive(
+        '--mount-max-entries',
+        options.mountMaxEntries,
+        DEFAULT_MOUNT_MAX_ENTRIES,
+      ),
+    },
+    onWarn: (message) => console.error(message),
+  });
+}
+
+function positive(flag: string, raw: string | undefined, fallback: number): number {
+  if (raw === undefined) return fallback;
+
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new SandboxError(`${flag} must be a positive whole number, got "${raw}"`);
+  }
+  return value;
+}
+
 function buildSandbox(
-  options: SafeOptions,
+  options: RunOptions,
   toolsDir: string | undefined,
   pluginDirs: string[] = [],
 ): Sandbox | undefined {
@@ -381,7 +450,14 @@ function buildSandbox(
       ...pluginDirs,
       ...options.allowRead,
     ],
-    writePaths: options.allowWrite,
+    // A named workspace directory grants itself write. It is where the run's
+    // tools are about to work, so making the operator also say --allow-write
+    // for it would be heddle asking permission for the thing it was just told
+    // to do.
+    writePaths: [
+      ...(options.workspace ? [options.workspace] : []),
+      ...options.allowWrite,
+    ],
     network: !options.denyNet,
     passEnv: options.allowEnv,
   });

@@ -64,6 +64,13 @@ Each of these is a hard error without `--safe`, naming the offending flag. They 
 sandbox; they do not switch one on.
 </Callout>
 
+[`--mount`](/docs/tools#putting-something-in-it) and `--workspace` are deliberately not on
+that list. They say what is in the run's working directory and where it lives, which is a
+different question from what confines it — so they work with or without `--safe`, and
+`--safe` changes only whether a `ro` mount is a boundary or a copy. A `--workspace`
+directory adds itself to the write paths, since it is where the run's tools are about to
+work.
+
 **The network is allowed by default**, including under `--safe`. A tool that fetches a URL
 keeps working when you add the flag, which is usually what you want and is worth knowing
 if it is not. `--deny-net` removes it, and on Linux that is a network namespace: all or

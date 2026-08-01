@@ -41,6 +41,10 @@ heddle run <flow> [options]
 | `--max-node-attempts <n>` | How many times one arrival at a node may be attempted when middleware retries. Whole number ≥ 1, default 3 |
 | `--no-stream` | Ask the model for one buffered response instead of a token stream |
 | `--protocol <name>` | Render the run through an installed [encoder](/docs/plugins/encoders), one JSON frame per line on stdout, instead of the human progress output |
+| `--mount <src[:dest][:ro\|:rw]>` | Put a file or directory in every node's [workspace](/docs/tools#the-workspace) (repeatable). `ro`, the default, is a copy the run cannot carry back; `rw` copies changed files out again when a node finishes |
+| `--workspace <dir>` | Keep each node's workspace under this directory instead of a temporary one, so what the run produced is still there afterwards |
+| `--mount-max-bytes <n>` | Largest a `--mount` may be, in bytes. Default 67108864 (64 MiB) |
+| `--mount-max-entries <n>` | Most files and directories a `--mount` may hold. Default 4096 |
 | `--safe` | Run tools inside an OS sandbox |
 | `--sandbox <backend>` | Sandbox backend: `auto` (default), `bubblewrap`, or `seatbelt` |
 | `--allow-read <path>` | Grant sandboxed tools read access to a path (repeatable) |
@@ -58,6 +62,13 @@ reached a client cannot be recalled once the transform rejects the answer.
 hard error without `--safe`, naming the offending flag. They tune a sandbox; they do not
 switch one on. See [Sandboxing](/docs/sandboxing).
 </Callout>
+
+`--mount` and `--workspace` are **not** on that list. A workspace exists on every run and
+`--safe` decides only whether anything enforces its edges, so where a run's files come
+from is a separate question from what confines them. Both are checked before the run
+starts: a source that is not there, a destination that climbs out of the workspace, a
+symbolic link anywhere in the tree, or two mounts landing on the same path is an error at
+second zero rather than at whichever node reaches it first.
 
 ### Examples
 
