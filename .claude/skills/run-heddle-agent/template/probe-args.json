@@ -1,0 +1,4 @@
+{
+  "runbook_lookup": { "service": "checkout-api" },
+  "log_search": { "pattern": "timeout", "limit": 3 }
+}

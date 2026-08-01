@@ -1,0 +1,8 @@
+2026-07-31T22:14:02Z checkout-api INFO  request POST /v1/orders 201 in 84ms
+2026-07-31T22:14:07Z checkout-api WARN  upstream payments-gw slow: 1840ms
+2026-07-31T22:14:09Z checkout-api ERROR upstream payments-gw timeout after 5000ms
+2026-07-31T22:14:09Z checkout-api ERROR request POST /v1/orders 502 in 5003ms
+2026-07-31T22:14:11Z checkout-api ERROR upstream payments-gw timeout after 5000ms
+2026-07-31T22:14:12Z checkout-api INFO  readiness probe failed (2 consecutive)
+2026-07-31T22:14:20Z search-indexer INFO  batch 8812 indexed 4096 docs in 2.1s
+2026-07-31T22:14:44Z search-indexer WARN  index:queue depth 91204, growing
