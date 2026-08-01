@@ -48,6 +48,13 @@ export interface PluginManifest {
     /** An encoder only: the content type of the response it produces. */
     contentType?: string;
   }>;
+  /** Tools the plugin provides. `componentType` names the one implementing it. */
+  tools?: Array<{
+    name: string;
+    componentType: string;
+    description?: string;
+    inputSchema?: Record<string, unknown>;
+  }>;
 }
 
 /** heddle's own rendering, and the name a run can ask for it by. */
@@ -1318,6 +1325,348 @@ serve({
   ],
 };
 
+/* A skill is a folder of instructions on somebody's disk, and there is no disk
+   here: the playground engine takes a request and installs nothing. So the
+   skills travel as data inside the plugin, which reaches the model through two
+   tools rather than through the prompt. That is not a workaround for the
+   playground -- it is the arrangement the mechanism wants. Names and
+   descriptions are cheap and always in context; a body is a tool call the model
+   decided to make, on a task it decided the skill covers. Paste twenty skills
+   into the system prompt instead and you have not built skills, you have built
+   a long prompt. */
+const SKILLS_PLUGIN: RequestPlugin = {
+  name: "skills",
+  manifest: {
+    name: "playground-skills",
+    version: "1.0.0",
+    // Declared because a tool's "componentType" has to name a component this
+    // plugin provides -- the manifest is checked before anything runs, so a
+    // typo is refused at load rather than at the call. Nothing implements it:
+    // callTool dispatches on the tool's name, not on the component.
+    components: [{ componentType: "Skills", kind: "component" }],
+    tools: [
+      {
+        name: "list_skills",
+        componentType: "Skills",
+        description:
+          "List every skill: its name and one line on when it applies. Call this first.",
+        inputSchema: { type: "object", properties: {} },
+      },
+      {
+        name: "read_skill",
+        componentType: "Skills",
+        description: "Return the full text of one skill, by the name list_skills gave.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            name: { type: "string", description: "the skill's name" },
+          },
+          required: ["name"],
+        },
+      },
+    ],
+  },
+  source: `const SKILLS = [
+  {
+    name: 'tabular-summary',
+    description:
+      'Total, average or rank rows of data -- a CSV, a TSV, a pasted table. ' +
+      'Read this before doing arithmetic over more than a couple of rows.',
+    body: \`Do not add the rows up yourself. Put them in a file and let a script do it.
+
+1. write_file the rows verbatim to data.csv. Do not retype a figure, reorder a
+   column, or drop the header.
+2. write_file a summarise.py that reads data.csv with the csv module and prints
+   one line per figure you were asked for.
+3. bash: python3 summarise.py
+4. Report only numbers that appeared in its output.
+
+If exit_code is not 0, fix the script and run it again. Never fall back to
+working the answer out in your head -- that is the mistake this procedure exists
+to prevent.
+
+Round money in the script, to two places, rather than in the sentence you write.\`,
+  },
+  {
+    name: 'date-arithmetic',
+    description:
+      'Days between two dates, a weekday, or a date some interval away. Read ' +
+      'this before stating any date you did not copy from the input.',
+    body: \`Counting days by hand goes wrong at month ends and in February. Run it.
+
+  bash: python3 -c "from datetime import date, timedelta; print((date(2026,3,1) - date(2025,11,14)).days)"
+
+A weekday is print(date(2026,3,1).strftime('%A')). A date n days on is
+print(date(2026,3,1) + timedelta(days=n)).
+
+Quote the number the command printed. If a date arrives without a year, say
+which year you took it to be instead of choosing one silently.\`,
+  },
+  {
+    name: 'incident-note',
+    description:
+      'The house format for writing up something that broke -- an outage, a ' +
+      'failed job, a bad deploy. Read this before writing any incident summary.',
+    body: \`Five lines, this order, one sentence each. No headings, no adjectives,
+no names.
+
+WHAT:  the behaviour somebody outside would have noticed.
+WHEN:  the window in UTC, and how long it lasted.
+FOUND: what noticed it -- an alarm, a customer, somebody looking.
+CAUSE: the change or condition that produced it.
+GUARD: the check that would have caught it before a user did.
+
+Write "not established" for CAUSE when it is not established. A plausible cause
+stated as a settled one is the failure this format exists to prevent.\`,
+  },
+];
+
+serve(
+  // No component handlers at all. "Skills" exists in the manifest so the two
+  // tools below have something to name; neither is dispatched through it.
+  {},
+  {
+    tools: {
+      // The index, and only the index. Sending the bodies here would put every
+      // skill in the conversation on the first call, which is the whole thing
+      // this arrangement avoids.
+      list_skills: async () => ({
+        output: {
+          skills: SKILLS.map((skill) => ({
+            name: skill.name,
+            description: skill.description,
+          })),
+        },
+      }),
+
+      read_skill: async (input) => {
+        const asked = String(input.name || '').trim().toLowerCase();
+        const skill = SKILLS.find((entry) => entry.name === asked);
+
+        // Answered, not thrown. A tool that fails takes the round with it, and
+        // the model that mistyped the name is the one reader who can correct it.
+        if (!skill) {
+          return {
+            output: {
+              body:
+                'there is no skill called "' + asked + '". There are: ' +
+                SKILLS.map((entry) => entry.name).join(', ') + '.',
+            },
+          };
+        }
+
+        return { output: { name: skill.name, body: skill.body } };
+      },
+    },
+  },
+);
+`,
+};
+
+/* Every path is taken relative to $HEDDLE_WORKSPACE, and refused if it climbs
+   out. Here the sandbox has already made that true and this is belt and braces.
+   Run the same tool locally under heddle run without --safe and there is no
+   workspace: it falls back to the working directory, which is then the whole of
+   what the model can reach. Start it somewhere empty. */
+const WORKSPACE_PATH = `import json, os, sys
+
+data = json.load(sys.stdin)
+path = (data.get("path") or "").strip()
+
+root = os.path.realpath(os.environ.get("HEDDLE_WORKSPACE") or os.getcwd())
+target = os.path.realpath(os.path.join(root, path))
+inside = path and (target == root or target.startswith(root + os.sep))
+`;
+
+const WRITE_FILE_TOOL: RequestTool = {
+  name: "write_file",
+  interpreter: "python3",
+  source: `${WORKSPACE_PATH}
+content = data.get("content") or ""
+
+if not inside:
+    json.dump({"result": "refused: path must stay inside the workspace"}, sys.stdout)
+    sys.exit(0)
+
+os.makedirs(os.path.dirname(target), exist_ok=True)
+with open(target, "w") as handle:
+    handle.write(content)
+
+json.dump({"result": "wrote %d bytes to %s" % (len(content), path)}, sys.stdout)
+`,
+};
+
+const READ_FILE_TOOL: RequestTool = {
+  name: "read_file",
+  interpreter: "python3",
+  source: `${WORKSPACE_PATH}
+if not inside:
+    json.dump({"content": "refused: path must stay inside the workspace"}, sys.stdout)
+    sys.exit(0)
+
+try:
+    with open(target) as handle:
+        content = handle.read()[:8000]
+except OSError as err:
+    # A message rather than a crash, for the reason the plugin returns one: the
+    # model picked this path and can pick another once it is told.
+    content = "could not read %s: %s" % (path, err)
+
+json.dump({"content": content}, sys.stdout)
+`,
+};
+
+const SKILLS: Example = {
+  id: "skills",
+  title: "An agent with skills",
+  blurb:
+    "Procedures the model loads only when it decides it needs them. The index is always in context; a body costs a tool call.",
+  flow: `component_type: Flow
+name: skills
+start_node: { $component_ref: start }
+
+nodes:
+  - $component_ref: start
+  - $component_ref: assistant
+  - $component_ref: end
+
+control_flow_connections:
+  - component_type: ControlFlowEdge
+    name: start_to_assistant
+    from_node: { $component_ref: start }
+    to_node: { $component_ref: assistant }
+  - component_type: ControlFlowEdge
+    name: assistant_to_end
+    from_node: { $component_ref: assistant }
+    to_node: { $component_ref: end }
+
+$referenced_components:
+  start:
+    component_type: StartNode
+    id: start
+    name: start
+    outputs:
+      - title: task
+        type: string
+
+  assistant:
+    component_type: AgentNode
+    id: assistant
+    name: assistant
+    agent:
+      component_type: Agent
+      id: inner
+      name: assistant
+
+      # The contract, and the only place it is stated. A model that is not told
+      # to look will not look, and a skill nobody reads is a file.
+      system_prompt: |
+        You have skills: short written procedures for jobs like this one. Their
+        text is not in this prompt. list_skills returns every skill's name and
+        description; read_skill returns one body.
+
+        Call list_skills first, on every task, before anything else. If a
+        description covers the task, read that skill and follow it exactly: it
+        says how the job is done here, and that outranks how you would otherwise
+        do it. If none covers it, say so in one line and work the task out
+        yourself.
+
+        write_file and read_file take a path relative to the workspace. bash
+        runs a command there, with python3 and node on PATH. Each bash call is a
+        fresh shell, so cd does not carry to the next one, and a command is
+        killed after 20 seconds. Read exit_code every time.
+
+        Finish with a short answer that names the skill you followed.
+
+      # No api_key and no url, so the engine supplies the free model it was
+      # configured with -- see the agent example for why that pair is
+      # all-or-nothing.
+      llm_config:
+        component_type: OpenAiConfig
+        id: llm
+        name: model
+        model_id: openrouter/free
+
+      tools:
+        # Named, and nothing else. The plugin's manifest already carries a
+        # description and a parameter schema for each, and a spec that declares
+        # neither takes both from there -- so what the model is told about these
+        # two tools is the plugin's own account of them rather than a copy kept
+        # in step by hand.
+        - component_type: ServerTool
+          id: list_skills_tool
+          name: list_skills
+
+        - component_type: ServerTool
+          id: read_skill_tool
+          name: read_skill
+
+        # The other three are submitted files with no manifest behind them, so
+        # they declare their own shape here.
+        #
+        # write_file and bash together are a shell: whatever the model can write
+        # it can then run. Here that is a throwaway workspace the sandbox
+        # deletes when the agent finishes. Where it would not be, the gate is
+        # the toolCall seam -- examples/policies/ ships an ApprovalGate that
+        # reads the arguments the model chose and refuses the call before it is
+        # made.
+        - component_type: ServerTool
+          id: write_file_tool
+          name: write_file
+          description: >-
+            Write a file in the workspace. The path is relative to it, and a
+            path that climbs out is refused.
+          inputs:
+            - title: path
+              type: string
+            - title: content
+              type: string
+          outputs:
+            - title: result
+              type: string
+
+        - component_type: ServerTool
+          id: read_file_tool
+          name: read_file
+          description: Read a file from the workspace, by a path relative to it.
+          inputs:
+            - title: path
+              type: string
+          outputs:
+            - title: content
+              type: string
+
+        - component_type: ServerTool
+          id: bash_tool
+          name: bash
+          description: >-
+            Run a shell command in the workspace and return its stdout, stderr
+            and exit code. Each call is a fresh shell and commands are killed
+            after 20 seconds.
+          inputs:
+            - title: command
+              type: string
+          outputs:
+            - title: stdout
+              type: string
+            - title: stderr
+              type: string
+            - title: exit_code
+              type: integer
+
+  end:
+    component_type: EndNode
+    id: end
+    name: end
+`,
+  inputs: `{
+  "task": "Total these expenses by category and say which category cost the most.\\n\\ndate,category,amount\\n2026-03-02,travel,412.50\\n2026-03-04,meals,38.20\\n2026-03-09,travel,96.00\\n2026-03-11,software,240.00\\n2026-03-18,meals,52.75"
+}
+`,
+  tools: [WRITE_FILE_TOOL, READ_FILE_TOOL, BASH_TOOL],
+  plugins: [SKILLS_PLUGIN],
+};
+
 export const EXAMPLES: Example[] = [
   TOOL_AND_PLUGIN,
   GUARDRAIL,
@@ -1325,6 +1674,7 @@ export const EXAMPLES: Example[] = [
   AGENT,
   RESEARCH,
   SHELL,
+  SKILLS,
   AG_UI,
 ];
 
