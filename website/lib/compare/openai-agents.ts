@@ -1,9 +1,10 @@
 import type { Framework } from "./types";
 
-/* Checked against openai-agents 0.19.1. All three files were run: routing
-   prints its branch, guardrail prints the refusal with a deliberately
-   invalid OPENAI_API_KEY (so the model is provably never called), and
-   research reaches the provider and stops at authentication. */
+/* Checked against openai-agents 0.19.1. Every file here was run, under a
+   deliberately invalid OPENAI_API_KEY. The ones with no model in them print
+   their answer — routing its branch, tool-and-plugin its reversed text — and
+   guardrail prints the refusal, which with that key is proof the model was
+   never called. The rest reach the provider and stop at authentication. */
 
 const RESEARCH = `from agents import Agent, Runner
 from agents.decorators import tool
@@ -126,6 +127,134 @@ if __name__ == "__main__":
         print(handle("the database is on fire"))
 `;
 
+const AGENT = `from agents import Agent, Runner
+
+assistant = Agent(
+    name="assistant",
+    model="gpt-4o",
+    instructions="Answer in one sentence.",
+)
+
+if __name__ == "__main__":
+    result = Runner.run_sync(assistant, "what is a heddle on a loom?")
+    print(result.final_output)
+`;
+
+const SHELL = `import subprocess
+
+from agents import Agent, Runner
+from agents.decorators import tool
+
+
+@tool
+def bash(command: str) -> str:
+    """Run a shell command and return its stdout, stderr and exit code."""
+    # Whatever the model writes runs here, with this process's
+    # privileges and no confinement of any kind.
+    done = subprocess.run(
+        command, shell=True, capture_output=True, text=True, timeout=20
+    )
+    return (
+        f"exit_code={done.returncode}\\n"
+        f"stdout={done.stdout}\\n"
+        f"stderr={done.stderr}"
+    )
+
+
+agent = Agent(
+    name="shell",
+    model="gpt-4o",
+    instructions=(
+        "You run shell commands to answer the task. python3 and node "
+        "are both on PATH. Each call is a fresh shell, so chain what "
+        "depends on itself into a single command. Read exit_code every "
+        "time. Answer in one or two sentences."
+    ),
+    tools=[bash],
+)
+
+if __name__ == "__main__":
+    task = (
+        'count the vowels in "weave agents from spec" with python, '
+        "then reverse the string with node"
+    )
+    print(Runner.run_sync(agent, task).final_output)
+`;
+
+const SKILLS = `from pathlib import Path
+
+from agents import Agent, Runner
+from agents.decorators import tool
+
+SKILLS = Path("skills")
+
+
+@tool
+def list_skills() -> str:
+    """Every skill's name and its one-line description."""
+    return "\\n".join(
+        f"{path.stem}: {path.read_text().splitlines()[0]}"
+        for path in sorted(SKILLS.glob("*.md"))
+    )
+
+
+@tool
+def read_skill(name: str) -> str:
+    """One skill's body, by name."""
+    path = SKILLS / f"{name}.md"
+    if not path.is_file():
+        return f"no skill named {name!r}"
+    return path.read_text()
+
+
+agent = Agent(
+    name="assistant",
+    model="gpt-4o",
+    instructions=(
+        "You have skills: short written procedures. Their text is not "
+        "in this prompt. Call list_skills first, on every task. If a "
+        "description covers the task, read that skill and follow it "
+        "exactly -- it outranks how you would otherwise do the job. "
+        "Finish by naming the skill you followed."
+    ),
+    tools=[list_skills, read_skill],
+)
+
+if __name__ == "__main__":
+    task = "tidy up the numbers in report.csv"
+    print(Runner.run_sync(agent, task).final_output)
+`;
+
+const TOOL_AND_PLUGIN = `import subprocess
+
+from agents import trace
+
+# No model takes part, so this is the SDK's orchestrating-via-code
+# pattern again: plain Python, wrapped in one trace.
+
+
+def shout(text: str) -> str:
+    """A subprocess, because the step it is compared against is one."""
+    done = subprocess.run(
+        ["tr", "[:lower:]", "[:upper:]"],
+        input=text,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return done.stdout.rstrip("\\n")
+
+
+def flip(text: str) -> str:
+    """In this process, sharing its heap. There is no other option."""
+    return text[::-1]
+
+
+if __name__ == "__main__":
+    with trace("shout and flip"):
+        print(flip(shout("weave agents from spec")))
+`;
+
 export const openaiAgents: Framework = {
   id: "openai-agents",
   name: "OpenAI Agents SDK",
@@ -167,6 +296,51 @@ export const openaiAgents: Framework = {
         "For a branch no model takes part in, the SDK's documented answer is " +
         "plain Python around the agent runs — its orchestrating-via-code " +
         "pattern — with a trace wrapped round the whole thing.",
+    },
+
+    agent: {
+      files: [{ name: "agent.py", language: "python", source: AGENT }],
+      run: "python agent.py",
+      note:
+        "The shortest of the four columns, and the SDK at its best: an " +
+        "Agent, a Runner, and nothing else to know.",
+    },
+
+    shell: {
+      files: [{ name: "shell.py", language: "python", source: SHELL }],
+      run: "python shell.py",
+      note:
+        "One @tool holding a subprocess call. What the framework does not " +
+        "bring is a boundary: the command the model writes runs as this " +
+        "process, and confining it is left to you.",
+    },
+
+    skills: {
+      files: [{ name: "skills.py", language: "python", source: SKILLS }],
+      run: "python skills.py",
+      note:
+        "Skills are not a framework concept here, and do not need to be — " +
+        "two tools over a directory and a prompt that insists they be " +
+        "called is the entire pattern.",
+    },
+
+    "tool-and-plugin": {
+      files: [
+        { name: "pipeline.py", language: "python", source: TOOL_AND_PLUGIN },
+      ],
+      run: "python pipeline.py",
+      note:
+        "With no model in the flow there is no agent either, so the SDK " +
+        "steps aside and leaves two functions and a trace. It is the " +
+        "shortest answer of the four, and the least structured.",
+    },
+
+    "ag-ui": {
+      unsupported:
+        "No AG-UI integration is published for this SDK. Its own answer to " +
+        "watching a run is tracing — spans posted to OpenAI's dashboard, " +
+        "for the developer rather than a client, and not a protocol a UI " +
+        "can be built against.",
     },
   },
 };
