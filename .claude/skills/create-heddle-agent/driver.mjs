@@ -33,7 +33,7 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-/** <repo>/.claude/skills/run-heddle-agent/driver.mjs -> <repo> */
+/** <repo>/.claude/skills/create-heddle-agent/driver.mjs -> <repo> */
 const REPO = resolve(HERE, '../../..');
 const STUB_KEY = 'heddle-driver-stub-key';
 const PROBE = 'probe';

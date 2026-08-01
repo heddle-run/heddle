@@ -1,20 +1,21 @@
 ---
-name: run-heddle-agent
+name: create-heddle-agent
 description: Create a new heddle agent from requirements — author the Agent Spec flow, its tools and any plugin, then validate and actually run it against a stub model, no API key needed. Use when asked to create, add, scaffold, write, build, wire up, validate, smoke-test, debug or run a heddle agent, flow, spec, tool, transform, middleware or plugin.
 ---
 
-# Create and run a heddle agent
+# Create a heddle agent
 
-An agent here is a **document plus executables**: an Agent Spec flow (YAML or
-JSON), a directory of tool programs that speak JSON over stdin/stdout, and
-optionally a plugin module for component types the engine does not ship. No SDK,
-no agent class to subclass.
+Build one from the user's requirements: the Agent Spec flow, the tools it calls,
+and a plugin when the engine's builtin component types do not cover what was
+asked for. An agent here is a **document plus executables** — a flow in YAML or
+JSON, a directory of tool programs that speak JSON over stdin/stdout, and
+optionally a plugin module. No SDK, no agent class to subclass.
 
-Drive it with **`.claude/skills/run-heddle-agent/driver.mjs`**. It lints the
-spec, runs `heddle validate`, and — the part that matters — **runs the flow
-against a stub model served on localhost**, so a brand-new agent can be
-exercised end to end with no API key and no spend. Paths below are relative to
-the repo root.
+Then prove it works, with **`.claude/skills/create-heddle-agent/driver.mjs`**. It
+lints the spec, runs `heddle validate`, and — the part that matters — **runs the
+flow against a stub model served on localhost**, so the agent you just wrote is
+exercised end to end with no API key and no spend. Writing the document is half
+the job; a spec nobody ran is a guess. Paths below are relative to the repo root.
 
 ## Get a CLI once
 
@@ -34,13 +35,13 @@ run still works and the spec-level checks are skipped with a note.
 
 ## Author from the template
 
-`.claude/skills/run-heddle-agent/template/` is a working agent — flow with a
+`.claude/skills/create-heddle-agent/template/` is a working agent — flow with a
 branch, two tools, one plugin transform — with the schema explained in comments.
 Copy it and edit; do not write a flow from memory, the `$component_ref` wiring is
 unforgiving.
 
 ```bash
-cp -r .claude/skills/run-heddle-agent/template my-agent
+cp -r .claude/skills/create-heddle-agent/template my-agent
 ```
 
 ```
@@ -56,11 +57,11 @@ my-agent/
 Then work this loop until both commands pass:
 
 ```bash
-node .claude/skills/run-heddle-agent/driver.mjs check my-agent/spec.yaml --tools-dir my-agent/tools --plugin ./my-agent/plugin.mjs
+node .claude/skills/create-heddle-agent/driver.mjs check my-agent/spec.yaml --tools-dir my-agent/tools --plugin ./my-agent/plugin.mjs
 ```
 
 ```bash
-node .claude/skills/run-heddle-agent/driver.mjs run my-agent/spec.yaml --tools-dir my-agent/tools --plugin ./my-agent/plugin.mjs --input '{"alert":"checkout-api 502 rate 12%, upstream payments-gw timeout","service":"checkout-api"}'
+node .claude/skills/create-heddle-agent/driver.mjs run my-agent/spec.yaml --tools-dir my-agent/tools --plugin ./my-agent/plugin.mjs --input '{"alert":"checkout-api 502 rate 12%, upstream payments-gw timeout","service":"checkout-api"}'
 ```
 
 `run` prints the nodes in the order they ran, every tool call with its arguments
@@ -96,9 +97,9 @@ sub-agent delegation), `bash-agent` (one shell tool, sandbox-aware),
 ## Driver reference
 
 ```
-node .claude/skills/run-heddle-agent/driver.mjs check <spec> [--tools-dir D] [--plugin M]...
-node .claude/skills/run-heddle-agent/driver.mjs run   <spec> [--tools-dir D] [--plugin M]... [options]
-node .claude/skills/run-heddle-agent/driver.mjs tool  <executable> [--input JSON]
+node .claude/skills/create-heddle-agent/driver.mjs check <spec> [--tools-dir D] [--plugin M]...
+node .claude/skills/create-heddle-agent/driver.mjs run   <spec> [--tools-dir D] [--plugin M]... [options]
+node .claude/skills/create-heddle-agent/driver.mjs tool  <executable> [--input JSON]
 ```
 
 | `run` option | |
@@ -120,7 +121,7 @@ arguments are placeholders (`probe:service`), so tools that do real work will
 report errors on them — pass `--args` for realistic values:
 
 ```bash
-node .claude/skills/run-heddle-agent/driver.mjs run my-agent/spec.yaml --tools-dir my-agent/tools --plugin ./my-agent/plugin.mjs --args my-agent/probe-args.json
+node .claude/skills/create-heddle-agent/driver.mjs run my-agent/spec.yaml --tools-dir my-agent/tools --plugin ./my-agent/plugin.mjs --args my-agent/probe-args.json
 ```
 
 For an exact conversation — a specific branch, a tool called twice, a JSON answer
@@ -135,13 +136,13 @@ For an exact conversation — a specific branch, a tool called twice, a JSON ans
 ```
 
 ```bash
-node .claude/skills/run-heddle-agent/driver.mjs run my-agent/spec.yaml --tools-dir my-agent/tools --plugin ./my-agent/plugin.mjs --script my-agent/script.json --input '{"alert":"probes failing","service":"checkout-api"}'
+node .claude/skills/create-heddle-agent/driver.mjs run my-agent/spec.yaml --tools-dir my-agent/tools --plugin ./my-agent/plugin.mjs --script my-agent/script.json --input '{"alert":"probes failing","service":"checkout-api"}'
 ```
 
 A tool on its own, before it is wired into anything:
 
 ```bash
-node .claude/skills/run-heddle-agent/driver.mjs tool my-agent/tools/log_search.sh --input '{"pattern":"timeout","limit":3}'
+node .claude/skills/create-heddle-agent/driver.mjs tool my-agent/tools/log_search.sh --input '{"pattern":"timeout","limit":3}'
 ```
 
 ## Run it for real
