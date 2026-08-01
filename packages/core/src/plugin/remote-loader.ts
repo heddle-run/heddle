@@ -66,9 +66,17 @@ export interface RemotePlugin {
   host: PluginHost;
 }
 
+/**
+ * `entryPath` may be absent.
+ *
+ * A plugin that is some programs and a directory — every tool shipping its own
+ * `path`, no components, no discovery — has nothing that could ask it to run.
+ * It still gets a host, because the host is what a registry disposes; that host
+ * simply has no command, and says so if something ever tries to start it.
+ */
 export function loadRemotePlugin(
   rawManifest: unknown,
-  entryPath: string,
+  entryPath: string | undefined,
   options: RemotePluginOptions = {},
 ): RemotePlugin {
   const manifest = validateManifest(rawManifest);
@@ -78,10 +86,13 @@ export function loadRemotePlugin(
     options.refusedBecause ?? {},
   );
 
-  const entry = isAbsolute(entryPath)
-    ? entryPath
-    : resolve(process.cwd(), entryPath);
-  const root = options.root ?? dirname(entry);
+  const entry =
+    entryPath === undefined
+      ? undefined
+      : isAbsolute(entryPath)
+        ? entryPath
+        : resolve(process.cwd(), entryPath);
+  const root = options.root ?? (entry !== undefined ? dirname(entry) : process.cwd());
 
   const host = new PluginHost(
     manifest.name,
@@ -114,7 +125,7 @@ export function readManifest(path: string): PluginManifest {
 
 function hostOptionsFor(
   manifest: PluginManifest,
-  entry: string,
+  entry: string | undefined,
   root: string,
   options: RemotePluginOptions,
 ): PluginHostOptions {
@@ -134,10 +145,12 @@ function hostOptionsFor(
 
 function commandFor(
   manifest: PluginManifest,
-  entry: string,
+  entry: string | undefined,
   root: string,
 ): string[] {
-  if (!manifest.command) return defaultCommand(entry);
+  // Empty rather than absent, so `PluginHost` holds the same shape either way
+  // and refuses at the one place a command is actually needed.
+  if (!manifest.command) return entry === undefined ? [] : defaultCommand(entry);
 
   return manifest.command.map((part, index) =>
     index === 0 && !isAbsolute(part) && part.includes('/')

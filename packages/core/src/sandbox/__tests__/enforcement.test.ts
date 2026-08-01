@@ -39,7 +39,7 @@ cat <<EOF
   "execPeer": $(probe sh -c 'peer'),
   "workspace": "$HEDDLE_WORKSPACE",
   "bin": "$HEDDLE_WORKSPACE_BIN",
-  "binFirstOnPath": $(probe test "\${PATH%%:*}" = "$HEDDLE_WORKSPACE_BIN"),
+  "binOnPath": $(probe test "\${PATH##*:}" = "$HEDDLE_WORKSPACE_BIN"),
   "marker": "$HEDDLE_SANDBOX"
 }
 EOF
@@ -115,7 +115,7 @@ describe.runIf(backendAvailable())('sandbox enforcement', () => {
   it('refuses a write into the workspace bin', async () => {
     const out = await run();
     expect(out.writeBin).toBe(false);
-    expect(out.binFirstOnPath).toBe(true);
+    expect(out.binOnPath).toBe(true);
   });
 
   /**

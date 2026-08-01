@@ -56,14 +56,6 @@ export interface WorkspaceGrant {
 }
 
 /**
- * One node scope's working directory.
- *
- * `root` is `$HEDDLE_WORKSPACE`, the cwd every tool is given, and the whole of
- * what a tool may write. One name is reserved inside it and it is hidden:
- * `.heddle`, which holds `bin`. Hidden because the model lists this directory
- * constantly and what it is looking for is its own files.
- */
-/**
  * A tool as a workspace sees it: a name, and something to put behind it.
  *
  * Deliberately not `ToolDef`. The tool layer builds on this module, so taking
@@ -79,9 +71,17 @@ export interface WorkspaceTool {
   servedBy?: string;
 }
 
+/**
+ * One node scope's working directory.
+ *
+ * `root` is `$HEDDLE_WORKSPACE`, the cwd every tool is given, and the whole of
+ * what a tool may write. One name is reserved inside it and it is hidden:
+ * `.heddle`, which holds `bin`. Hidden because the model lists this directory
+ * constantly and what it is looking for is its own files.
+ */
 export interface Workspace {
   readonly root: string;
-  /** `<root>/.heddle/bin`. First on `$PATH`, and read-only. */
+  /** `<root>/.heddle/bin`. Last on `$PATH`, and read-only. */
   readonly bin: string;
   grants(): WorkspaceGrant[];
   /**
@@ -120,8 +120,8 @@ export interface Workspace {
  */
 export interface WorkspaceFactory {
   /**
-   * `tools` are put in `bin` and go first on `$PATH`, so a tool can reach a
-   * peer by the name the model uses for it. They arrive per scope rather than
+   * `tools` are put in `bin` and go on `$PATH`, so a tool can reach a peer by
+   * the name the model uses for it. They arrive per scope rather than
    * being held here, because on a server the tool registry is per run.
    */
   create(label: string, tools?: WorkspaceTool[]): Workspace;

@@ -82,7 +82,7 @@ executable is added to the read paths automatically. An operator auditing their
 
 ## What a tool can reach
 
-Every tool is in the workspace's `bin` and first on `$PATH`, so a tool can run a peer by
+Every tool is in the workspace's `bin`, which is on `$PATH`, so a tool can run a peer by
 the name the model uses for it — `bash` can call `write_file`, and a procedure written as
 a sequence of tool calls can be written as a script instead.
 
@@ -106,6 +106,12 @@ it and whether anybody was asked.
 The rule worth carrying: **a `toolCall` middleware is a control over the model, not over
 the machine.** A control over the machine is `--allow-write`, `--deny-net` and the tools
 you install — the things the kernel enforces, which no shell can talk its way past.
+
+`bin` goes **last** on `$PATH`, not first. heddle's tools are named after what they do, so
+a flow with a tool called `bash` — the shipped examples have one — would otherwise put a
+JSON-on-stdin script where every other tool's `bash -c` expects the shell. Last means a tool
+reaches a peer by name and nothing the system already provides is quietly replaced; what it
+costs is overriding a system binary, which is not a thing to do by accident.
 
 `--no-mount-tools` empties `bin`, so the only way to reach a tool is a call the model made.
 It costs a tool the ability to run a peer and buys back the guarantee above; take it if you

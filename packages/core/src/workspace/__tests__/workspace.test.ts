@@ -63,7 +63,7 @@ describe('the layout a tool can rely on', () => {
 
     expect(env.HEDDLE_WORKSPACE).toBe(ws.root);
     expect(env.HEDDLE_WORKSPACE_BIN).toBe(ws.bin);
-    expect(env.PATH).toBe(`${ws.bin}:/usr/bin:/bin`);
+    expect(env.PATH).toBe(`/usr/bin:/bin:${ws.bin}`);
   });
 
   it('is still a usable PATH when there was nothing to prepend to', () => {

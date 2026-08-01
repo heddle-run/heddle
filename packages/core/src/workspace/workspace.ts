@@ -40,7 +40,7 @@ export interface ScopeWorkspaceOptions {
   /** Read-only mount destinations, relative to the root. */
   readOnly?: string[];
   writable?: WritableMount[];
-  /** Put in `bin`, and first on `$PATH`. */
+  /** Put in `bin`, and on `$PATH`. */
   tools?: WorkspaceTool[];
   onWarn?(message: string): void;
 }

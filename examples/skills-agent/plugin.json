@@ -1,0 +1,35 @@
+{
+  "name": "skills",
+  "version": "1.0.0",
+  "capabilities": [],
+  "components": [],
+  "files": [{ "path": "skills", "dest": "skills" }],
+  "tools": [
+    {
+      "name": "list_skills",
+      "path": "bin/list_skills.py",
+      "description": "List every skill: its name and one line on when it applies. Call this first.",
+      "inputSchema": { "type": "object", "properties": {} },
+      "outputSchema": {
+        "type": "object",
+        "properties": { "skills": { "type": "string" } }
+      }
+    },
+    {
+      "name": "read_skill",
+      "path": "bin/read_skill.py",
+      "description": "Return the full text of one skill, by the name list_skills gave.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "the skill's name" }
+        },
+        "required": ["name"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": { "body": { "type": "string" } }
+      }
+    }
+  ]
+}

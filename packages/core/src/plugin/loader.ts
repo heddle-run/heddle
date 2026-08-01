@@ -188,7 +188,22 @@ function remotePluginFrom(specifier: string, options: LoadPluginsOptions) {
   });
 }
 
-function entryFor(manifestPath: string): string {
+/**
+ * Whether anything could ever ask this plugin to run.
+ *
+ * A component is dispatched to over the wire, and so is a tool that names one.
+ * A tool that ships a `path` is a program heddle runs directly, and `files` are
+ * copied — neither goes near a process. So a plugin that is some programs and a
+ * directory needs no entry point, and demanding one would mean shipping a file
+ * that exists to satisfy a check.
+ */
+function needsProcess(manifest: PluginManifest): boolean {
+  if (manifest.components.length > 0) return true;
+  if (manifest.discoverTools === true) return true;
+  return manifest.tools.some((tool) => tool.path === undefined);
+}
+
+function entryFor(manifestPath: string): string | undefined {
   const manifest = readManifest(manifestPath);
   if (manifest.command && manifest.command.length > 0) {
     return resolve(dirname(manifestPath), manifest.command[0]);
@@ -198,6 +213,8 @@ function entryFor(manifestPath: string): string {
   for (const extension of ENTRY_POINT_EXTENSIONS) {
     if (existsSync(base + extension)) return base + extension;
   }
+
+  if (!needsProcess(manifest)) return undefined;
 
   throw new PluginError(
     `plugin manifest "${manifestPath}" names no "command" and there is no ` +

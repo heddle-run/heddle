@@ -358,6 +358,19 @@ export class PluginHost {
     const { command, session, env, cwd } = this.options;
     const [executable, ...args] = command;
 
+    // A plugin that ships only programs and files declares no way to be
+    // started, and nothing should be asking. Reaching here means a manifest and
+    // a call disagree about what this plugin is, which is worth saying rather
+    // than letting `spawn(undefined)` say something else.
+    if (executable === undefined) {
+      throw new PluginError(
+        `plugin "${this.name}" has no entry point: its manifest declares no ` +
+          `"command" and there is no module beside it. That is allowed for a ` +
+          `plugin whose tools are all programs of their own, and this call ` +
+          `needs a process.`,
+      );
+    }
+
     if (!session) return { command: executable, args, env: env ?? {}, cwd };
 
     const wrapped = session.wrap(executable, args);

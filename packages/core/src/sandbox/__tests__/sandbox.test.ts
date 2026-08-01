@@ -145,12 +145,12 @@ describe('bubblewrap sessions', () => {
     expect(reserved).toBeGreaterThan(root);
   });
 
-  it('puts the workspace bin first on PATH', () => {
+  it('puts the workspace bin on PATH', () => {
     const ws = workspace();
     const cmd = session({}, ws).wrap('/tools/echo');
 
     expect(cmd.env.HEDDLE_WORKSPACE_BIN).toBe(ws.bin);
-    expect(cmd.env.PATH.startsWith(`${ws.bin}:`)).toBe(true);
+    expect(cmd.env.PATH.endsWith(`:${ws.bin}`)).toBe(true);
   });
 
   it('leaves the workspace alone when the session is disposed', () => {
