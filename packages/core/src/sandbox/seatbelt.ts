@@ -8,7 +8,8 @@ import type {
   SandboxSession,
 } from './types.js';
 import { baseEnv } from './types.js';
-import { createWorkspace, removeDir } from './workspace.js';
+import { removeDir } from '../workspace/index.js';
+import type { Workspace, WorkspaceGrant } from '../workspace/index.js';
 
 const SYSTEM_READ_PATHS = [
   '/usr',
@@ -39,31 +40,51 @@ const SANDBOX_EXEC = '/usr/bin/sandbox-exec';
 
 class SeatbeltSession implements SandboxSession {
   readonly name = 'seatbelt';
-  readonly workspace: string;
+  readonly workspace: Workspace;
 
   private readonly policy: SandboxPolicy;
 
-  constructor(policy: SandboxPolicy, workspace: string) {
+  constructor(policy: SandboxPolicy, workspace: Workspace) {
     this.policy = policy;
-    this.workspace = realPath(workspace);
+    this.workspace = workspace;
   }
 
   wrap(toolPath: string, extraArgs: string[] = []): SandboxCommand {
-    const cwd = realPath(this.policy.cwd ?? process.cwd());
+    // Readable, and no longer where the tool starts — see the same comment in
+    // the bubblewrap backend for why.
+    const launchedFrom = realPath(this.policy.cwd ?? process.cwd());
+    const cwd = realPath(this.workspace.root);
     const tool = realPath(toolPath);
 
     const scratch = realPath(mkdtempSync(join(tmpdir(), 'heddle-scratch-')));
     const home = join(scratch, 'home');
     mkdirSync(home);
 
+    const grants = this.workspace.grants();
     const profile = buildProfile({
-      readPaths: [...SYSTEM_READ_PATHS, cwd, tool, ...this.policy.readPaths],
+      readPaths: [
+        ...SYSTEM_READ_PATHS,
+        launchedFrom,
+        tool,
+        ...this.policy.readPaths,
+        // Where the workspace's bin links point -- see the same list in the
+        // bubblewrap backend.
+        ...this.workspace.toolPaths(),
+        ...pathsWith(grants, 'read'),
+      ],
       writePaths: [
         scratch,
-        this.workspace,
         ...SHARED_TEMP_PATHS,
         ...this.policy.writePaths,
+        ...pathsWith(grants, 'write'),
       ],
+      // Written back as a deny after the allows, because a read grant sits
+      // inside a writable one — `.heddle` inside the workspace root — and a
+      // profile resolves that by taking the last rule that matches. Only the
+      // grants, never `toolPaths`: those are outside the workspace, so denying
+      // writes there would quietly overrule an `--allow-write` the operator
+      // asked for.
+      readOnlyPaths: pathsWith(grants, 'read'),
       network: this.policy.network,
     });
 
@@ -77,7 +98,7 @@ class SeatbeltSession implements SandboxSession {
   }
 
   dispose(): void {
-    removeDir(this.workspace);
+    return;
   }
 }
 
@@ -90,14 +111,22 @@ export class SeatbeltSandbox implements Sandbox {
     this.policy = policy;
   }
 
-  session(label: string): SandboxSession {
-    return new SeatbeltSession(this.policy, createWorkspace(label));
+  session(label: string, workspace: Workspace): SandboxSession {
+    return new SeatbeltSession(this.policy, workspace);
   }
+}
+
+function pathsWith(
+  grants: WorkspaceGrant[],
+  access: WorkspaceGrant['access'],
+): string[] {
+  return grants.filter((grant) => grant.access === access).map((g) => g.path);
 }
 
 function buildProfile(rules: {
   readPaths: string[];
   writePaths: string[];
+  readOnlyPaths: string[];
   network: boolean;
 }): string {
   return [
@@ -112,6 +141,9 @@ function buildProfile(rules: {
     `(allow file-read* (literal "/") ${subpathRule(rules.readPaths)})`,
     `(allow file-write-data ${literalRule(WRITABLE_DEVICES)})`,
     `(allow file-read* file-write* ${subpathRule(rules.writePaths)})`,
+    ...(rules.readOnlyPaths.length > 0
+      ? [`(deny file-write* ${subpathRule(rules.readOnlyPaths)})`]
+      : []),
     rules.network ? '(allow network*)' : '(deny network*)',
   ].join('\n');
 }

@@ -26,7 +26,15 @@ export interface ExecResult {
 
 export interface ExecutorScope {
   executor: Executor;
-  workspace?: string;
+  /**
+   * Where this scope's tools work, and where they hand each other files.
+   *
+   * Not optional. A scope that cannot say where its work happens is a scope
+   * nothing can pass a file through, and it used to be absent for exactly one
+   * reason — no sandbox — which made a plugin node's behaviour depend on a flag
+   * it has no business knowing about.
+   */
+  workspace: string;
   dispose(): void;
 }
 

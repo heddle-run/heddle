@@ -1,3 +1,6 @@
+import type { Workspace } from '../workspace/index.js';
+import { workspaceEnv } from '../workspace/index.js';
+
 export interface SandboxPolicy {
   readPaths: string[];
   writePaths: string[];
@@ -23,14 +26,23 @@ export interface SandboxCommand {
 
 export interface SandboxSession {
   readonly name: string;
-  readonly workspace: string;
+  readonly workspace: Workspace;
   wrap(toolPath: string, args?: string[]): SandboxCommand;
   dispose(): void;
 }
 
 export interface Sandbox {
   readonly name: string;
-  session(label: string): SandboxSession;
+  /**
+   * Confine one node scope's tool calls, in the workspace that scope was given.
+   *
+   * The workspace arrives rather than being made here. A session's job is to
+   * permit what `workspace.grants()` names; deciding what is in a workspace, or
+   * whether there is one at all, is not confinement and does not belong to a
+   * backend. Disposing a session therefore does not remove the directory — the
+   * executor that opened it does that, after the session has let go.
+   */
+  session(label: string, workspace: Workspace): SandboxSession;
 }
 
 const SANDBOX_PATH = '/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin';
@@ -40,14 +52,13 @@ export function baseEnv(
   policy: SandboxPolicy,
   home: string,
   tmp: string,
-  workspace: string,
+  workspace: Workspace,
 ): Record<string, string> {
   const env: Record<string, string> = {
-    PATH: SANDBOX_PATH,
     HOME: home,
     TMPDIR: tmp,
-    HEDDLE_WORKSPACE: workspace,
     HEDDLE_SANDBOX: '1',
+    ...workspaceEnv(workspace, SANDBOX_PATH),
   };
 
   for (const name of [...ALWAYS_FORWARDED_ENV, ...policy.passEnv]) {

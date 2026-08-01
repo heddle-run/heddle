@@ -37,6 +37,7 @@ Two things follow, and both are worth more than the flexibility given up:
 | `capabilities` | no | The reverse calls this plugin intends to make. Absent means none |
 | `components` | no* | The component types this plugin provides |
 | `tools` | no* | Tools this plugin contributes to the flow's registry |
+| `files` | no | Files this plugin puts in every node's [workspace](/docs/tools#the-workspace) |
 | `discoverTools` | no | Whether the tool list has to be *asked for* rather than read. Off by default |
 
 <Callout>
@@ -158,6 +159,52 @@ refuses one whose declared `type` is anything but `object` — a tool takes name
 arguments, so its schema has to describe them.
 </Callout>
 
+## files[]
+
+What a plugin ships besides its tools. Each entry lands in the workspace of every node in
+every run, before the flow starts.
+
+```json
+{
+  "files": [
+    { "path": "skills" },
+    { "path": "reference/units.csv", "dest": "units.csv" }
+  ]
+}
+```
+
+| Field | Required | Meaning |
+|---|---|---|
+| `path` | yes | A file or directory inside the plugin's own directory |
+| `dest` | no | Where it lands, relative to the workspace root. `basename(path)` by default |
+
+`path` follows exactly the rule `tools[].path` follows, and reuses the same code: resolved
+against the plugin's directory, `realpath`'d on both sides, refused if it lands outside.
+The same word for the same rule, because a second word would make one rule look like two.
+
+Three things worth stating plainly:
+
+- **This is data, not a verb.** heddle learns what a plugin puts in a workspace by reading
+  the manifest — it starts nothing, so `heddle validate` stays free and a spec can be
+  inspected without running its author's code. `files` is not a seventh
+  [kind](/docs/plugins); nothing chooses it, the way nothing chooses `tools`.
+- **Always read-only.** A plugin ships files; it does not get a writable channel onto the
+  operator's disk. `--mount …:rw` exists and belongs to whoever runs heddle.
+- **Top level, never on a component.** Every component of a plugin runs against the same
+  workspace, so on a component this would be read by nothing — and a manifest that writes
+  it there is refused rather than ignored.
+
+A plugin that declares `files` and nothing else is refused too, and the error says why:
+that is a directory rather than a plugin, and `--mount` puts a directory in a workspace
+without loading anybody's code.
+
+<Callout type="warn">
+A **submitted** plugin may not declare `files`. A plugin's files are read from the
+directory it was installed in, and a plugin that arrived in a request is a module with no
+directory — so there is nothing for them to resolve against. Files belonging to one run go
+in that run's own request; files belonging to every run are the operator's, with `--mount`.
+</Callout>
+
 ## What is refused, and why
 
 The validator is deliberately strict, because it runs against data that may have arrived
@@ -172,3 +219,6 @@ in an HTTP request and its failure is the first thing a plugin author sees.
 - A component type declared twice, or one that is not a valid identifier.
 - A tool with both `path` and `componentType`, or neither; a tool naming a component the
   plugin does not declare; two tools with one name.
+- `files` on a component rather than on the plugin; two files landing on one destination;
+  more than 64 of them, since each is copied into every node's workspace; a `files` array
+  that is the manifest's only content.

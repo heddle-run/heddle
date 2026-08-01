@@ -37,6 +37,11 @@ Tools are not a kind. A tool is already a first-class thing with its own namespa
 a spec writes into, so a plugin contributing tools needs no component type at all. See
 [Tools](/docs/tools).
 
+Neither are [`files`](/docs/plugins/manifest#files), the other thing a plugin ships:
+whatever it declares there is copied into every node's [workspace](/docs/tools#the-workspace).
+Nothing chooses them, there is no verb behind them, and heddle reads them off the manifest
+without starting anything — a skill pack is a plugin with two tools and a directory.
+
 ## Two ways to write one
 
 <Callout type="warn">

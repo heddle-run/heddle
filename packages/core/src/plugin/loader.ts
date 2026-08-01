@@ -7,6 +7,7 @@ import { discoverTools, loadRemotePlugin, readManifest } from './remote-loader.j
 import type { PluginManifest } from './manifest.js';
 import { PLUGIN_CAPABILITIES, type PluginCapability } from './protocol.js';
 import type { Sandbox } from '../sandbox/types.js';
+import { createScratchWorkspace } from '../workspace/index.js';
 import { PluginError } from '../errors.js';
 
 const MANIFEST_EXTENSION = '.json';
@@ -171,20 +172,38 @@ function remotePluginFrom(specifier: string, options: LoadPluginsOptions) {
   const manifest = readManifest(path);
 
   const log = options.log;
+  const label = `plugin-${manifest.name}`;
+  const workspace = createScratchWorkspace(label);
 
   return loadRemotePlugin(manifest, entryFor(path), {
     root: dirname(path),
     capabilities: PLUGIN_CAPABILITIES,
     timeout: options.timeout,
     shared: options.shared,
-    session: options.sandbox?.session(`plugin-${manifest.name}`),
+    workspace,
+    session: options.sandbox?.session(label, workspace),
     onStderr: log
       ? (chunk) => log(`plugin "${manifest.name}": ${chunk.trimEnd()}`)
       : undefined,
   });
 }
 
-function entryFor(manifestPath: string): string {
+/**
+ * Whether anything could ever ask this plugin to run.
+ *
+ * A component is dispatched to over the wire, and so is a tool that names one.
+ * A tool that ships a `path` is a program heddle runs directly, and `files` are
+ * copied — neither goes near a process. So a plugin that is some programs and a
+ * directory needs no entry point, and demanding one would mean shipping a file
+ * that exists to satisfy a check.
+ */
+function needsProcess(manifest: PluginManifest): boolean {
+  if (manifest.components.length > 0) return true;
+  if (manifest.discoverTools === true) return true;
+  return manifest.tools.some((tool) => tool.path === undefined);
+}
+
+function entryFor(manifestPath: string): string | undefined {
   const manifest = readManifest(manifestPath);
   if (manifest.command && manifest.command.length > 0) {
     return resolve(dirname(manifestPath), manifest.command[0]);
@@ -194,6 +213,8 @@ function entryFor(manifestPath: string): string {
   for (const extension of ENTRY_POINT_EXTENSIONS) {
     if (existsSync(base + extension)) return base + extension;
   }
+
+  if (!needsProcess(manifest)) return undefined;
 
   throw new PluginError(
     `plugin manifest "${manifestPath}" names no "command" and there is no ` +

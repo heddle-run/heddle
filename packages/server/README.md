@@ -53,6 +53,11 @@ heddle-server --tools-dir ./tools
 | `--allow-request-code` | off | Accept tool scripts and plugin modules in the request. |
 | `--allow-net <host>` | Let a submitted spec's `llm_config.url` reach a private host it would otherwise be refused — loopback, link-local and RFC1918 addresses are denied under `--allow-request-code`. Repeatable. | none |
 | `--work-dir <dir>` | `$TMPDIR` | Where per-run directories are created. |
+| `--mount <src[:dest][:ro\|:rw]>` | none | Put a file or directory in every node's workspace, for every run. `ro` is a copy the run cannot carry back; `rw` copies changed files out again when a node finishes. Repeatable, and operator-only — a request cannot name a mount. |
+| `--workspace <dir>` | `$TMPDIR` | Keep each node's workspace under this directory instead of a temporary one. Every run of every request writes here. |
+| `--mount-max-bytes <n>` | `67108864` | Largest a `--mount` may be. It is copied once per node. |
+| `--mount-max-entries <n>` | `4096` | Most files and directories a `--mount` may hold. |
+| `--no-mount-tools` | off | Keep the tools out of the workspace, so the only way to reach one is a call the model made. What an installed approval gate is written against. |
 | `--llm-default-url <url>` | none | Endpoint the default model credential (`HEDDLE_LLM_DEFAULT_KEY`) belongs to. |
 | `--safe` | off | Run tool subprocesses inside an OS sandbox. |
 | `--sandbox <backend>` | `auto` | `auto`, `bubblewrap` or `seatbelt`. Requires `--safe`. |

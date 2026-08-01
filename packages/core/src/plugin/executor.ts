@@ -4,7 +4,8 @@ import type { EventHandler } from '../runner/events.js';
 import { pluginEventType } from '../runner/events.js';
 import type { Executor, ExecutorScope } from '../tool/types.js';
 import { invokeTool } from '../tool/invoke.js';
-import { createWorkspace, removeDir } from '../sandbox/workspace.js';
+import { createScratchWorkspace } from '../workspace/index.js';
+import type { Workspace } from '../workspace/index.js';
 import type {
   PluginContext,
   PluginNode,
@@ -58,7 +59,7 @@ export class PluginNodeAdapter implements NodeExecutor {
   private readonly declaredBranches: Set<string>;
   private readonly model: PluginModel;
   private selectedBranch = NO_BRANCH;
-  private ownWorkspace?: string;
+  private ownWorkspace?: Workspace;
 
   constructor(node: PluginNode, def: PluginNodeDef, deps: Dependencies) {
     this.node = node;
@@ -160,17 +161,29 @@ export class PluginNodeAdapter implements NodeExecutor {
     return result.output;
   }
 
+  /**
+   * The directory this node and its tools both see.
+   *
+   * The fallback used to cover two cases and only one of them was legitimate.
+   * It covered *no sandbox*, where the node was handed a fresh temp directory
+   * while its tools ran somewhere else entirely — a workspace nobody else was
+   * in, which is the failure it was supposed to prevent. A scope now opens one
+   * either way, so that case is gone.
+   *
+   * What is left is a run with no tool executor at all, and there a directory
+   * of its own is the right answer rather than a consolation: there are no
+   * tools to disagree with it. It is made on demand, because most nodes never
+   * ask.
+   */
   private workspace(scope: ExecutorScope | undefined): string {
-    if (scope?.workspace !== undefined) return scope.workspace;
+    if (scope !== undefined) return scope.workspace;
 
-    this.ownWorkspace ??= createWorkspace(this.node.name);
-    return this.ownWorkspace;
+    this.ownWorkspace ??= createScratchWorkspace(this.node.name);
+    return this.ownWorkspace.root;
   }
 
   private discardOwnWorkspace(): void {
-    if (this.ownWorkspace === undefined) return;
-
-    removeDir(this.ownWorkspace);
+    this.ownWorkspace?.dispose();
     this.ownWorkspace = undefined;
   }
 

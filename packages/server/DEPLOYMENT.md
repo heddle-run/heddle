@@ -15,7 +15,7 @@ plugins ran inside the server process. They no longer do.
 
 | | Mechanism | Confined by |
 |---|---|---|
-| **Tool scripts** | executed as subprocesses | `--safe`: no `$HOME`, no writes outside the run workspace, environment cut to what `--allow-env` names |
+| **Tool scripts** | executed as subprocesses | `--safe`: no `$HOME`, no writes outside the run workspace, environment cut to what `--allow-env` names. Note a tool can exec a peer from the workspace's `bin`, so a `toolCall` middleware bounds the *model*, not the machine — `--no-mount-tools` if you need it to bound both |
 | **Plugin modules** | executed in their own process | own process, none of the server's environment, killed when the run ends |
 | **The spec itself** | parsed as data | `$VAR` refused, so it cannot read this process's environment |
 
@@ -166,6 +166,29 @@ gVisor needs `--security-opt label=disable` where SELinux is enforcing, and
 | `--cors-origin` | your site | Exact origin. Constrains browsers only. |
 | `--drain-timeout` | `≥ --timeout` | So a run near its budget survives a rolling restart. |
 | `--plugin` | none, unless you have a policy | Installs middleware. See below before you do. |
+| `--mount` | none, unless every run needs the same files | Puts files in every node's workspace. Operator-only. See below. |
+| `--no-mount-tools` | on, if you run an approval gate | Otherwise a tool can exec a peer, and that call reaches no seam. |
+
+### What a request cannot put in a workspace
+
+`--mount` and `--workspace` are yours, at startup, like `--safe`. A request cannot name
+either, for the same reason it cannot name a sandbox: what is in the working directory of
+every node of every run is not a caller's decision. A **submitted plugin declaring `files`
+is refused with a 400**, and the refusal is about the field rather than the plugin — a
+submitted plugin is a module with no directory, so there is nothing for its paths to
+resolve against, and its files would land in every node's workspace before the flow starts.
+
+Two things to size if you use `--mount`. Each `ro` mount is copied into every node's
+workspace, so a large tree is paid for on every node of every run — `--mount-max-bytes`
+(64 MiB) and `--mount-max-entries` (4096) are the ceilings, and they are checked at startup
+rather than mid-run. And a `rw` mount is shared with **every run this server executes**:
+last writer wins, deletions do not propagate, and heddle arbitrates nothing between two
+concurrent runs touching the same file. On a server that accepts submitted code, a `rw`
+mount is a shared writable directory reachable by any caller — treat it as one.
+
+`--workspace <dir>` is the same warning in a different shape: every run of every request
+writes there and nothing is cleaned up. It is a debugging and archival flag, not a
+production one, unless you have something reaping it.
 
 ### An installed plugin is not a submitted one
 

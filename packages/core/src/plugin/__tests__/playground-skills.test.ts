@@ -27,7 +27,7 @@ import { SubprocessExecutor } from '../../tool/executor.js';
 import { FileRegistry } from '../../tool/registry.js';
 import { loadFlow } from '../../spec/load.js';
 import { collectToolNames } from '../../spec/types.js';
-import type { Registry } from '../../tool/types.js';
+import type { ExecutorScope, Registry } from '../../tool/types.js';
 
 /**
  * The shipped example, loaded rather than copied — a copy is a second thing to
@@ -69,25 +69,22 @@ const SHEBANG: Record<string, string> = {
   node: '#!/usr/bin/env node',
 };
 
-const executor = new SubprocessExecutor();
-
 let scratch: string;
+let scope: ExecutorScope;
 let workspace: string;
 let plugins: PluginRegistry;
 let files: Registry;
 let flowPath: string;
-let priorWorkspace: string | undefined;
 
 beforeAll(() => {
   scratch = mkdtempSync(join(tmpdir(), 'heddle-skills-'));
 
-  // The one writable directory the tools are given. On the server the sandbox
-  // makes it; here the tools read it out of the environment they inherit, which
-  // is the same variable by the same name.
-  workspace = join(scratch, 'workspace');
-  mkdirSync(workspace);
-  priorWorkspace = process.env.HEDDLE_WORKSPACE;
-  process.env.HEDDLE_WORKSPACE = workspace;
+  // The one writable directory the tools are given. This used to be a
+  // hand-set `process.env.HEDDLE_WORKSPACE`, because outside `--safe` there was
+  // no workspace to open — which made this a test that *simulated* the thing it
+  // was testing. A scope now has one either way, so it opens a real one.
+  scope = new SubprocessExecutor().beginScope('skills');
+  workspace = scope.workspace;
 
   const submitted = example.plugins[0];
   const entry = join(scratch, `${submitted.name}.mjs`);
@@ -113,8 +110,7 @@ beforeAll(() => {
 
 afterAll(() => {
   plugins.dispose();
-  if (priorWorkspace === undefined) delete process.env.HEDDLE_WORKSPACE;
-  else process.env.HEDDLE_WORKSPACE = priorWorkspace;
+  scope.dispose();
   rmSync(scratch, { recursive: true, force: true });
 });
 
@@ -132,7 +128,7 @@ async function callFileTool(
   input: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
   const tool = files.lookup(name)!;
-  const { output } = await invokeTool(undefined, tool, input, executor);
+  const { output } = await invokeTool(undefined, tool, input, scope.executor);
   return output;
 }
 
@@ -228,13 +224,23 @@ describe('carrying out what a skill says', () => {
 
     // The three tools share one workspace, which is what makes the procedure a
     // procedure rather than three unrelated calls.
+    // Asserted whole rather than field by field, so a failure shows what the
+    // command actually said. `exit_code` alone tells you it went wrong and
+    // takes the reason away.
     const run = await callFileTool('bash', { command: 'python3 summarise.py' });
-    expect(run.exit_code).toBe(0);
-    expect(run.stdout).toBe('travel 508.50\nsoftware 240.00\nmeals 90.95\n');
+    expect(run).toEqual({
+      stdout: 'travel 508.50\nsoftware 240.00\nmeals 90.95\n',
+      stderr: '',
+      exit_code: 0,
+    });
 
     const back = await callFileTool('read_file', { path: 'summarise.py' });
     expect(back.content).toBe(script);
-  });
+    // Four python processes, three of them spawning more. Comfortably inside a
+    // second on an idle machine and past vitest's 5s default when the rest of
+    // the suite is running beside it, which made this the one flaky test in the
+    // repo. The budget is the machine's, not the code's.
+  }, 20_000);
 
   it('refuses a path that leaves the workspace, in either direction', async () => {
     expect(

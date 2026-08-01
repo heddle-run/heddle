@@ -391,6 +391,7 @@ submitted *tool scripts* run unsandboxed on that platform.
 | Custom tool *type* | no | — | — | `ToolUnion` closed; `registry.claim` forbids builtin names (`plugin/registry.ts`) |
 | Custom LLM provider | yes — Phase 5 | yes, as an `llm_config` | yes, verb `chat`, streaming optional | `llm/provider.ts`, `providerFor`; `plugin/remote.ts`, `remoteProviderDef` |
 | Custom tool source / registry | no | — | — | `Registry` is an interface (`tool/types.ts`, `Registry`) with no plugin route |
+| Files in every node's workspace | yes | no — the operator's `--mount`, or a plugin's manifest `files` | n/a — read as data, nothing started | `plugin/manifest.ts`, `ManifestFile`; `plugin/registry.ts`, `registerFiles`; `workspace/factory.ts` |
 | Custom wire protocol / encoder | no | — | — | `serializeEvent` (`packages/server/src/sse.ts`, `serializeEvent`) is a free function with one hardcoded rendering |
 | Any interception | no | — | — | §5 |
 
@@ -2955,7 +2956,8 @@ better than this paragraph can.
 | Closed | Where | Why |
 |---|---|---|
 | `State` as a replaceable type | `state/state.ts`; `NodeExecutor` is typed against the concrete class (`node/types.ts`) | A merge-*policy* slot (seam #17) gets the value at one call site (`runner.ts`). Replacing `State` wholesale touches every executor for no proportionate gain. |
-| Sandbox confinement moving out of the executor | `sandbox/types.ts` | The design's whole point is that nothing in the graph, node or spec layers knows a sandbox exists. Per-tool *policy* (seam #29) is reachable without breaking that. |
+| Sandbox confinement moving out of the executor | `sandbox/types.ts` | The design's whole point is that nothing in the graph, node or spec layers knows a sandbox exists. Per-tool *policy* (seam #29) is reachable without breaking that. **The workspace moved out and that is not this row**: a workspace decides where a program works, confinement decides what it may touch, and the two were one thing only because the code that made a directory happened to live in `sandbox/`. The dependency runs one way — `workspace/` may not import from `sandbox/` — and if that inverts, this row has been broken for real. |
+| `toolCall` as an enforcement boundary | `node/agent.ts`, `runToolCall`; `plugin/middleware.ts`; `workspace/bin.ts` | The seam is consulted where the model's calls are dispatched, and every tool is on `$PATH` inside the node's workspace — so a tool that exec's a peer never reaches it. Widening the seam to cover that would mean heddle sitting between a subprocess and `execve`, which is the kernel's job and is what `--safe` already buys. A `before` verdict governs what the model may *ask for*; the sandbox governs what any of it may *do*. `--no-mount-tools` is the escape hatch for an operator who needs the narrower guarantee, and it is a flag rather than the default because a procedure a model can run as a script is the thing tools-in-a-workspace exists for. |
 | Prototype-pollution key filtering | `plugin/deserializer.ts:50,124-126` | Applied both before and after camelCasing, on a path that parses caller-supplied JSON. Not negotiable. |
 | Builtin type shadowing | `plugin/registry.ts` | Only with an explicit `implements: "builtin"` opt-in and a stated precedence rule (§7.10 Q7). The default stays: a plugin cannot silently become `AgentNode`. |
 | `$VAR` dereference for submitted specs | `llm/provider.ts` | The reference is not restricted to model credentials, and the "is not set" error is an enumeration oracle. |

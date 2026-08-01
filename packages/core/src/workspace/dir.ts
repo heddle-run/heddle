@@ -18,7 +18,7 @@ export function removeDir(path: string): void {
   }
 }
 
-function slug(label: string): string {
+export function slug(label: string): string {
   const cleaned = label
     .replace(UNSAFE_PATH_CHARS, '-')
     .replace(LEADING_OR_TRAILING_DASHES, '');

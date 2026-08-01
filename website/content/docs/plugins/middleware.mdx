@@ -55,6 +55,16 @@ is not re-entering a clean state.
 `toolCall` is the seam an approval gate hangs off, and it is the first with a `before`
 half — the first place a middleware decides what happens rather than reacting to what did.
 
+<Callout type="warn">
+The seam sees the calls the **model** made. It does not see a tool another tool ran: every
+tool is on `$PATH` inside the [workspace](/docs/tools#the-workspace), so a shell tool can
+exec a peer, and that call reaches no seam and emits no event. A gate over a flow whose
+agent has a shell is advice rather than enforcement — `--no-mount-tools` makes it
+enforcement again, and the kernel-level controls (`--allow-write`, `--deny-net`, which
+tools you install) never stopped being enforcement. See
+[Sandboxing](/docs/sandboxing#what-a-tool-can-reach).
+</Callout>
+
 ```js
 serve({
   ApprovalGate: {

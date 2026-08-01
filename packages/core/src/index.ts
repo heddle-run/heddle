@@ -219,6 +219,29 @@ export type {
   SandboxSession,
 } from './sandbox/index.js';
 
+// Where a node's tools work, and what is in there when they start. Separate
+// from the sandbox on purpose: a workspace exists on every run, and `--safe`
+// decides only whether anything enforces its edges.
+export {
+  createScratchWorkspace,
+  createWorkspaceFactory,
+  parseMount,
+  checkedMount,
+  DEFAULT_MOUNT_MAX_BYTES,
+  DEFAULT_MOUNT_MAX_ENTRIES,
+  RESERVED_DIR as WORKSPACE_RESERVED_DIR,
+} from './workspace/index.js';
+export type {
+  CopyBudget,
+  Mount,
+  MountMode,
+  Workspace,
+  WorkspaceFactory,
+  WorkspaceFactoryOptions,
+  WorkspaceGrant,
+  WorkspaceTool,
+} from './workspace/index.js';
+
 export {
   createProvider,
   generationParams,
@@ -253,4 +276,5 @@ export {
   SandboxError,
   SpecError,
   ToolError,
+  WorkspaceError,
 } from './errors.js';

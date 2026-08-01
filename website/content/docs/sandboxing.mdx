@@ -35,11 +35,20 @@ install it if missing. seatbelt ships with macOS.
 - **Read-only system paths.** `/usr`, `/bin`, `/sbin`, `/lib`, `/lib64`, `/lib32`, `/etc`
   and `/opt`, bound read-only.
 - **A fresh `/tmp`** per invocation, as tmpfs — nothing survives between tools.
-- **The working directory and the tool itself, read-only.** A tool can be run; it cannot
-  rewrite itself or its siblings.
-- **A writable workspace**, shared with the other tools in the same node's scope so they
-  can hand each other files.
+- **The directory heddle was launched from, and the tool itself, read-only.** A tool can
+  be run; it cannot rewrite itself or its siblings, or the flow it came from.
+- **Its [workspace](/docs/tools#the-workspace), writable, and as its working directory** —
+  shared with the other tools in the same node's scope so they can hand each other files.
+  `.heddle` inside it is read-only, so a tool cannot rewrite a peer and have heddle run
+  the result.
 - **Nothing from the environment** unless named with `--allow-env`.
+
+<Callout>
+The workspace itself is not a `--safe` feature: a tool has one on every run, and `--safe`
+is what makes its edges enforced rather than conventional. Under `--safe` the workspace is
+the only place a tool can write; without it, the workspace is where a tool starts and what
+its peers read, and nothing stops it going elsewhere.
+</Callout>
 
 Everything else is added explicitly:
 
@@ -55,6 +64,13 @@ Each of these is a hard error without `--safe`, naming the offending flag. They 
 sandbox; they do not switch one on.
 </Callout>
 
+[`--mount`](/docs/tools#putting-something-in-it) and `--workspace` are deliberately not on
+that list. They say what is in the run's working directory and where it lives, which is a
+different question from what confines it — so they work with or without `--safe`, and
+`--safe` changes only whether a `ro` mount is a boundary or a copy. A `--workspace`
+directory adds itself to the write paths, since it is where the run's tools are about to
+work.
+
 **The network is allowed by default**, including under `--safe`. A tool that fetches a URL
 keeps working when you add the flag, which is usually what you want and is worth knowing
 if it is not. `--deny-net` removes it, and on Linux that is a network namespace: all or
@@ -63,6 +79,48 @@ nothing, not a per-host filter.
 When plugins are loaded, the directory of every plugin-contributed tool that ships an
 executable is added to the read paths automatically. An operator auditing their
 `--allow-read` list is therefore looking at a narrower set than what is actually bound.
+
+## What a tool can reach
+
+Every tool is in the workspace's `bin`, which is on `$PATH`, so a tool can run a peer by
+the name the model uses for it — `bash` can call `write_file`, and a procedure written as
+a sequence of tool calls can be written as a script instead.
+
+<Callout type="warn">
+**A tool on `PATH` is a tool the model can reach without asking.**
+
+Every seam heddle offers over a tool call hangs on one call site: the place an agent
+dispatches a call the *model* made. A tool that another tool exec'd goes around all of it.
+The [`toolCall` middleware](/docs/plugins/middleware) is not consulted, `tool_call` and
+`tool_result` are not emitted, and the run's own transcript stops being a complete account
+of what ran.
+
+So an approval gate refuses the calls the model makes. It does not refuse the calls a tool
+makes. On a flow whose agent has a shell, that is the difference between a gate and a note.
+</Callout>
+
+**This is not a hole in the sandbox.** The program that ran is one you installed, inside
+the same confinement, with the same read and write paths. What changed is who chose to run
+it and whether anybody was asked.
+
+The rule worth carrying: **a `toolCall` middleware is a control over the model, not over
+the machine.** A control over the machine is `--allow-write`, `--deny-net` and the tools
+you install — the things the kernel enforces, which no shell can talk its way past.
+
+`bin` goes **last** on `$PATH`, not first. heddle's tools are named after what they do, so
+a flow with a tool called `bash` — the shipped examples have one — would otherwise put a
+JSON-on-stdin script where every other tool's `bash -c` expects the shell. Last means a tool
+reaches a peer by name and nothing the system already provides is quietly replaced; what it
+costs is overriding a system binary, which is not a thing to do by accident.
+
+`--no-mount-tools` empties `bin`, so the only way to reach a tool is a call the model made.
+It costs a tool the ability to run a peer and buys back the guarantee above; take it if you
+are running an approval gate and want it to be one.
+
+A tool a plugin answers over its own channel is not a program, so there is nothing to link.
+It gets a one-line shim that says so and exits non-zero, rather than nothing at all —
+`command not found` would tell the model the tool does not exist, and it does. Those tools
+stay reachable only through a model tool call, and every one of those still passes the seam.
 
 ## What it does not confine
 

@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import type { SandboxSession } from '../sandbox/types.js';
+import type { Workspace } from '../workspace/index.js';
 import { PluginError } from '../errors.js';
 import {
   encode,
@@ -46,6 +47,15 @@ export interface PluginHostOptions {
   cwd?: string;
   timeout?: number;
   session?: SandboxSession;
+  /**
+   * Somewhere this plugin's process may write.
+   *
+   * Arrives beside the session rather than from it, since a session no longer
+   * makes one. Disposed here because nothing else holds a reference — a host
+   * that skipped it would leave a directory per plugin behind, once per run on
+   * a server that accepts submitted plugins.
+   */
+  workspace?: Workspace;
   env?: Record<string, string>;
   capabilities?: PluginCapability[];
   seams?: Record<string, AfterAction[]>;
@@ -182,11 +192,10 @@ export class PluginHost {
     this.cleanupSandbox?.();
     this.cleanupSandbox = undefined;
     // The scratch directory above belongs to one wrapped command; this is the
-    // workspace the session made when it was created, which both backends
-    // `mkdtemp` eagerly. Nothing else holds a reference to it, so a host that
-    // does not remove it leaves a directory per plugin behind — once per run on
-    // a server that accepts submitted plugins.
+    // process's own workspace. Session first, so a backend still holding a
+    // handle has let go before the directory goes.
     this.options.session?.dispose();
+    this.options.workspace?.dispose();
   }
 
   private assertCallable(method: string, signal: AbortSignal | undefined): void {
@@ -348,6 +357,19 @@ export class PluginHost {
   private resolveCommand(): LaunchCommand {
     const { command, session, env, cwd } = this.options;
     const [executable, ...args] = command;
+
+    // A plugin that ships only programs and files declares no way to be
+    // started, and nothing should be asking. Reaching here means a manifest and
+    // a call disagree about what this plugin is, which is worth saying rather
+    // than letting `spawn(undefined)` say something else.
+    if (executable === undefined) {
+      throw new PluginError(
+        `plugin "${this.name}" has no entry point: its manifest declares no ` +
+          `"command" and there is no module beside it. That is allowed for a ` +
+          `plugin whose tools are all programs of their own, and this call ` +
+          `needs a process.`,
+      );
+    }
 
     if (!session) return { command: executable, args, env: env ?? {}, cwd };
 

@@ -948,7 +948,13 @@ function stubSession(): StubSession {
   const cleanups: string[] = [];
   const session: SandboxSession = {
     name: 'stub',
-    workspace: scratch,
+    workspace: {
+      root: scratch,
+      bin: join(scratch, '.heddle', 'bin'),
+      grants: () => [],
+      toolPaths: () => [],
+      dispose: () => {},
+    },
     wrap(toolPath, args) {
       wraps.push({ toolPath, args });
       return {

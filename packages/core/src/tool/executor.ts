@@ -1,6 +1,13 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { resolve } from 'node:path';
 import type { ExecResult, Executor, ExecutorScope } from './types.js';
 import type { Sandbox, SandboxCommand, SandboxSession } from '../sandbox/index.js';
+import type {
+  Workspace,
+  WorkspaceFactory,
+  WorkspaceTool,
+} from '../workspace/index.js';
+import { createWorkspaceFactory, workspaceEnv } from '../workspace/index.js';
 import { ToolError } from '../errors.js';
 
 const DEFAULT_TIMEOUT = 30_000;
@@ -10,33 +17,63 @@ export interface SubprocessExecutorOptions {
   timeout?: number;
   sandbox?: Sandbox;
   session?: SandboxSession;
+  /**
+   * What opens a workspace per scope.
+   *
+   * Defaulted, so `new SubprocessExecutor()` still gives every scope somewhere
+   * to work. Confinement is what `sandbox` decides; where the work happens is
+   * decided here, and the two are now independent — which is the point.
+   */
+  workspaces?: WorkspaceFactory;
+  /** This scope's workspace. Set on the executor a `beginScope` returns. */
+  workspace?: Workspace;
+  /**
+   * What goes in each workspace's `bin`, reachable by name from inside it.
+   *
+   * Supplied by whoever built the tool registry, since that is who knows — on a
+   * server the registry is per run, so this cannot be settled at startup.
+   */
+  tools?: WorkspaceTool[];
 }
 
 export class SubprocessExecutor implements Executor {
   private readonly timeout: number;
   private readonly sandbox?: Sandbox;
   private readonly session?: SandboxSession;
+  private readonly workspaces: WorkspaceFactory;
+  private readonly workspace?: Workspace;
+  private readonly tools: WorkspaceTool[];
 
   constructor(options?: SubprocessExecutorOptions) {
     this.timeout = options?.timeout ?? DEFAULT_TIMEOUT;
     this.sandbox = options?.sandbox;
     this.session = options?.session;
+    this.workspaces = options?.workspaces ?? createWorkspaceFactory();
+    this.workspace = options?.workspace;
+    this.tools = options?.tools ?? [];
   }
 
   beginScope(label: string): ExecutorScope {
-    if (!this.sandbox) {
-      return { executor: this, dispose: () => {} };
-    }
+    const workspace = this.workspaces.create(label, this.tools);
+    const session = this.sandbox?.session(label, workspace);
 
-    const session = this.sandbox.session(label);
     return {
       executor: new SubprocessExecutor({
         timeout: this.timeout,
         sandbox: this.sandbox,
+        workspaces: this.workspaces,
+        tools: this.tools,
         session,
+        workspace,
       }),
-      workspace: session.workspace,
-      dispose: once(() => session.dispose()),
+      workspace: workspace.root,
+      // Session first. A backend may hold a handle on the directory, and it
+      // should let go before the workspace copies anything back out of it and
+      // removes it.
+      dispose: once(() => {
+        session?.dispose();
+        workspace.dispose();
+      }),
     };
   }
 
@@ -45,13 +82,22 @@ export class SubprocessExecutor implements Executor {
     toolPath: string,
     input: Record<string, unknown>,
   ): Promise<ExecResult> {
-    const session = this.session ?? this.sandbox?.session(UNSCOPED_SESSION_LABEL);
+    // A bare `ToolNode` opens no scope, so it gets a throwaway workspace of its
+    // own for the length of one call — as it always got a throwaway session.
+    const workspace =
+      this.workspace ??
+      this.workspaces.create(UNSCOPED_SESSION_LABEL, this.tools);
+    const ownsWorkspace = workspace !== this.workspace;
+
+    const session =
+      this.session ?? this.sandbox?.session(UNSCOPED_SESSION_LABEL, workspace);
     const ownsSession = session !== undefined && session !== this.session;
     const wrapped = session?.wrap(toolPath);
 
     const release = once(() => {
       wrapped?.cleanup?.();
       if (ownsSession) session?.dispose();
+      if (ownsWorkspace) workspace.dispose();
     });
 
     return new Promise<ExecResult>((resolve, reject) => {
@@ -82,7 +128,7 @@ export class SubprocessExecutor implements Executor {
         release();
       };
 
-      const proc = spawnTool(toolPath, wrapped, controller.signal);
+      const proc = spawnTool(toolPath, wrapped, workspace, controller.signal);
       const stdout: Buffer[] = [];
       const stderr: Buffer[] = [];
 
@@ -127,12 +173,33 @@ export class SubprocessExecutor implements Executor {
 function spawnTool(
   toolPath: string,
   wrapped: SandboxCommand | undefined,
+  workspace: Workspace,
   signal: AbortSignal,
 ): ChildProcessWithoutNullStreams {
-  return spawn(wrapped?.command ?? toolPath, wrapped?.args ?? [], {
+  if (wrapped) {
+    return spawn(wrapped.command, wrapped.args, {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      signal,
+      env: wrapped.env,
+      cwd: wrapped.cwd,
+    });
+  }
+
+  // Resolved, because the cwd below is the workspace and a relative tool path
+  // would then be looked for inside it. `FileRegistry` builds its paths by
+  // joining whatever `--tools-dir` was given, so a relative flag means relative
+  // paths — which used to work only because an unconfined tool inherited
+  // heddle's own working directory. Both sandbox backends already resolve, and
+  // that asymmetry was the bug: `--safe` found the tool and running without it
+  // did not.
+  return spawn(resolve(toolPath), [], {
     stdio: ['pipe', 'pipe', 'pipe'],
     signal,
-    ...(wrapped ? { env: wrapped.env, cwd: wrapped.cwd } : {}),
+    // The parent's environment, plus the workspace. Deliberately not the
+    // sandbox's cleared environment: an unconfined tool inherits what heddle
+    // has, as it always did, and this adds to that rather than replacing it.
+    env: { ...process.env, ...workspaceEnv(workspace, process.env.PATH) },
+    cwd: workspace.root,
   });
 }
 

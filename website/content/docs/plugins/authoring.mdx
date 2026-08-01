@@ -92,10 +92,10 @@ Cancellation is cooperative, as it is anywhere in Node: a handler that never rea
 read it lets its process survive to serve the next call.
 
 `getWorkspace()` deserves a note. A plugin can always make its own temp directory; what
-it cannot do is find the one its tools can see. Under `--safe` a node's tool calls are
-confined to a session workspace, so a path from `mkdtemp` is not there on the tool's
-side — a failure that appears only under sandboxing and reads as the tool being broken.
-This returns the directory both sides share.
+it cannot do is find the one its tools can see. A node's tool calls run in that node's
+[workspace](/docs/tools#the-workspace) — every run, sandbox or not — so a path from
+`mkdtemp` is somewhere neither the tools nor anything else will look. This returns the
+directory both sides share.
 
 ## A node
 

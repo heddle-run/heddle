@@ -1,0 +1,135 @@
+component_type: Flow
+name: skills
+start_node: { $component_ref: start }
+
+nodes:
+  - $component_ref: start
+  - $component_ref: assistant
+  - $component_ref: end
+
+control_flow_connections:
+  - component_type: ControlFlowEdge
+    name: start_to_assistant
+    from_node: { $component_ref: start }
+    to_node: { $component_ref: assistant }
+  - component_type: ControlFlowEdge
+    name: assistant_to_end
+    from_node: { $component_ref: assistant }
+    to_node: { $component_ref: end }
+
+$referenced_components:
+  start:
+    component_type: StartNode
+    id: start
+    name: start
+    outputs:
+      - title: task
+        type: string
+
+  assistant:
+    component_type: AgentNode
+    id: assistant
+    name: assistant
+    agent:
+      component_type: Agent
+      id: inner
+      name: assistant
+
+      # The contract, and the only place it is stated. A model that is not told
+      # to look will not look, and a skill nobody reads is a file.
+      system_prompt: |
+        You have skills: short written procedures for jobs like this one. Their
+        text is not in this prompt. list_skills returns every skill's name and
+        description; read_skill returns one body.
+
+        Call list_skills first, on every task, before anything else. If a
+        description covers the task, read that skill and follow it exactly: it
+        says how the job is done here, and that outranks how you would otherwise
+        do it. If none covers it, say so in one line and work the task out
+        yourself.
+
+        write_file and read_file take a path relative to the workspace. bash
+        runs a command there, with python3 and node on PATH. Each bash call is a
+        fresh shell, so cd does not carry to the next one, and a command is
+        killed after 20 seconds. Read exit_code every time.
+
+        Finish with a short answer that names the skill you followed.
+
+      llm_config:
+        component_type: OpenAiConfig
+        id: llm
+        name: model
+        model_id: gpt-4o-mini
+        api_key: $OPENAI_API_KEY
+
+      tools:
+        # Named, and nothing else. The plugin's manifest already carries a
+        # description and a parameter schema for each, and a spec that declares
+        # neither takes both from there -- so what the model is told about these
+        # two tools is the plugin's own account of them rather than a copy kept
+        # in step by hand.
+        - component_type: ServerTool
+          id: list_skills_tool
+          name: list_skills
+
+        - component_type: ServerTool
+          id: read_skill_tool
+          name: read_skill
+
+        # The other three are submitted files with no manifest behind them, so
+        # they declare their own shape here.
+        #
+        # write_file and bash together are a shell: whatever the model can write
+        # it can then run. Here that is a throwaway workspace the sandbox
+        # deletes when the agent finishes. Where it would not be, the gate is
+        # the toolCall seam -- examples/policies/ ships an ApprovalGate that
+        # reads the arguments the model chose and refuses the call before it is
+        # made.
+        - component_type: ServerTool
+          id: write_file_tool
+          name: write_file
+          description: >-
+            Write a file in the workspace. The path is relative to it, and a
+            path that climbs out is refused.
+          inputs:
+            - title: path
+              type: string
+            - title: content
+              type: string
+          outputs:
+            - title: result
+              type: string
+
+        - component_type: ServerTool
+          id: read_file_tool
+          name: read_file
+          description: Read a file from the workspace, by a path relative to it.
+          inputs:
+            - title: path
+              type: string
+          outputs:
+            - title: content
+              type: string
+
+        - component_type: ServerTool
+          id: bash_tool
+          name: bash
+          description: >-
+            Run a shell command in the workspace and return its stdout, stderr
+            and exit code. Each call is a fresh shell and commands are killed
+            after 20 seconds.
+          inputs:
+            - title: command
+              type: string
+          outputs:
+            - title: stdout
+              type: string
+            - title: stderr
+              type: string
+            - title: exit_code
+              type: integer
+
+  end:
+    component_type: EndNode
+    id: end
+    name: end

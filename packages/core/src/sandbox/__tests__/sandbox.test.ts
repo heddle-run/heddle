@@ -1,20 +1,30 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { BubblewrapSandbox } from '../bubblewrap.js';
 import { DEFAULT_SANDBOX_POLICY } from '../types.js';
 import type { SandboxPolicy, SandboxSession } from '../types.js';
+import { createScratchWorkspace, RESERVED_DIR } from '../../workspace/index.js';
+import type { Workspace } from '../../workspace/index.js';
 
-const opened: SandboxSession[] = [];
+const opened: Workspace[] = [];
 
 afterEach(() => {
   while (opened.length) opened.pop()!.dispose();
 });
 
-function session(overrides: Partial<SandboxPolicy> = {}): SandboxSession {
+function workspace(label = 'test-agent'): Workspace {
+  const created = createScratchWorkspace(label);
+  opened.push(created);
+  return created;
+}
+
+function session(
+  overrides: Partial<SandboxPolicy> = {},
+  ws: Workspace = workspace(),
+): SandboxSession {
   const policy: SandboxPolicy = { ...DEFAULT_SANDBOX_POLICY, cwd: '/work', ...overrides };
-  const s = new BubblewrapSandbox(policy).session('test-agent');
-  opened.push(s);
-  return s;
+  return new BubblewrapSandbox(policy).session('test-agent', ws);
 }
 
 function pairIndex(args: string[], flag: string, value: string): number {
@@ -41,11 +51,19 @@ describe('BubblewrapSandbox', () => {
     expect(joined).not.toContain(process.env.HOME ?? '/home/nobody');
   });
 
-  it('keeps the working directory read-only by default', () => {
+  it('keeps the directory heddle was launched from readable, and read-only', () => {
     const cmd = session().wrap('/tools/echo');
 
     expect(pairIndex(cmd.args, '--ro-bind-try', '/work')).toBeGreaterThan(-1);
     expect(pairIndex(cmd.args, '--bind-try', '/work')).toBe(-1);
+  });
+
+  it('starts the tool in the workspace, not where heddle was launched', () => {
+    const ws = workspace();
+    const cmd = session({}, ws).wrap('/tools/echo');
+
+    expect(cmd.cwd).toBe(ws.root);
+    expect(pairIndex(cmd.args, '--chdir', ws.root)).toBeGreaterThan(-1);
   });
 
   it('applies write binds after read binds so nesting resolves to writable', () => {
@@ -87,38 +105,58 @@ describe('BubblewrapSandbox', () => {
   });
 });
 
+/**
+ * A session permits a workspace; it does not own one.
+ *
+ * Naming it, making it and removing it are the workspace factory's, and are
+ * tested there. What is left here is the half a backend is answerable for:
+ * turning `grants()` into binds, in an order where a nested grant wins.
+ */
 describe('bubblewrap sessions', () => {
   it('binds one writable workspace shared by every tool in the session', () => {
-    const s = session();
+    const ws = workspace();
+    const s = session({}, ws);
     const first = s.wrap('/tools/a');
     const second = s.wrap('/tools/b');
 
-    expect(first.env.HEDDLE_WORKSPACE).toBe(s.workspace);
-    expect(second.env.HEDDLE_WORKSPACE).toBe(s.workspace);
-    expect(pairIndex(first.args, '--bind', s.workspace)).toBeGreaterThan(-1);
-    expect(pairIndex(second.args, '--bind', s.workspace)).toBeGreaterThan(-1);
+    expect(first.env.HEDDLE_WORKSPACE).toBe(ws.root);
+    expect(second.env.HEDDLE_WORKSPACE).toBe(ws.root);
+    expect(pairIndex(first.args, '--bind', ws.root)).toBeGreaterThan(-1);
+    expect(pairIndex(second.args, '--bind', ws.root)).toBeGreaterThan(-1);
   });
 
-  it('gives separate sessions separate workspaces', () => {
-    const a = session();
-    const b = session();
+  it('binds a session only the workspace it was given', () => {
+    const a = workspace();
+    const b = workspace();
 
-    expect(a.workspace).not.toBe(b.workspace);
-    expect(a.wrap('/tools/x').args).not.toContain(b.workspace);
+    expect(a.root).not.toBe(b.root);
+    expect(session({}, a).wrap('/tools/x').args).not.toContain(b.root);
   });
 
-  it('names the workspace after the owning node', () => {
-    const s = new BubblewrapSandbox({ ...DEFAULT_SANDBOX_POLICY }).session('Research Agent');
-    opened.push(s);
+  it('makes the reserved directory read-only inside the writable root', () => {
+    const ws = workspace();
+    const cmd = session({}, ws).wrap('/tools/echo');
 
-    expect(s.workspace).toContain('Research-Agent');
+    const root = pairIndex(cmd.args, '--bind', ws.root);
+    const reserved = pairIndex(cmd.args, '--ro-bind', join(ws.root, RESERVED_DIR));
+
+    expect(root).toBeGreaterThan(-1);
+    // After, or the nested grant loses and a tool can rewrite its peers.
+    expect(reserved).toBeGreaterThan(root);
   });
 
-  it('removes the workspace on dispose', () => {
-    const s = new BubblewrapSandbox({ ...DEFAULT_SANDBOX_POLICY }).session('temp');
-    expect(existsSync(s.workspace)).toBe(true);
+  it('puts the workspace bin on PATH', () => {
+    const ws = workspace();
+    const cmd = session({}, ws).wrap('/tools/echo');
 
-    s.dispose();
-    expect(existsSync(s.workspace)).toBe(false);
+    expect(cmd.env.HEDDLE_WORKSPACE_BIN).toBe(ws.bin);
+    expect(cmd.env.PATH.endsWith(`:${ws.bin}`)).toBe(true);
+  });
+
+  it('leaves the workspace alone when the session is disposed', () => {
+    const ws = workspace();
+    session({}, ws).dispose();
+
+    expect(existsSync(ws.root)).toBe(true);
   });
 });

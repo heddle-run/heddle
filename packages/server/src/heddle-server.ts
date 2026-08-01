@@ -3,11 +3,16 @@ import { dirname, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import {
   createSandbox,
+  createWorkspaceFactory,
   loadPlugins,
+  parseMount,
   parsePluginConfig,
+  DEFAULT_MOUNT_MAX_BYTES,
+  DEFAULT_MOUNT_MAX_ENTRIES,
   type PluginRegistry,
   type Sandbox,
   type SandboxBackend,
+  type WorkspaceFactory,
 } from '@heddle/core';
 import { startServer, type StartedServer } from './server.js';
 import {
@@ -60,6 +65,23 @@ Options:
   --allow-request-code   Accept tool scripts and plugin modules in the request
   --allow-net <host>     Let a submitted spec reach this private host (repeatable)
   --work-dir <dir>       Where per-run directories are created (default: $TMPDIR)
+  --mount <src[:dest][:ro|:rw]>
+                         Put a file or directory in every workspace, for every
+                         run. "ro" (the default) is a copy the run cannot carry
+                         back; "rw" copies changed files out again when a node
+                         finishes (repeatable). Operator-only: a request cannot
+                         name a mount, for the same reason it cannot name a
+                         sandbox
+  --workspace <dir>      Keep each node's workspace under this directory instead
+                         of a temporary one. Every run of every request writes
+                         here, so this is a directory you are choosing to fill
+  --mount-max-bytes <n>  Largest a --mount may be, in bytes
+  --mount-max-entries <n> Most files and directories a --mount may hold
+  --no-mount-tools       Keep the tools out of the workspace, so the only way to
+                         reach one is a call the model made. Costs a tool the
+                         ability to run a peer; buys back the guarantee that
+                         every tool call passes the toolCall seam, which is what
+                         an installed approval gate is written against
   --llm-default-url <url> Endpoint the default model credential belongs to. The
                          credential itself is read from HEDDLE_LLM_DEFAULT_KEY,
                          and is only ever used with this URL: a spec choosing
@@ -118,6 +140,11 @@ async function main(): Promise<void> {
       'allow-request-code': { type: 'boolean' },
       'allow-net': { type: 'string', multiple: true },
       'work-dir': { type: 'string' },
+      mount: { type: 'string', multiple: true },
+      workspace: { type: 'string' },
+      'mount-max-bytes': { type: 'string' },
+      'mount-max-entries': { type: 'string' },
+      'no-mount-tools': { type: 'boolean' },
       'llm-default-url': { type: 'string' },
       safe: { type: 'boolean' },
       sandbox: { type: 'string' },
@@ -173,6 +200,8 @@ async function main(): Promise<void> {
       allowRequestCode: values['allow-request-code'],
       allowNet: values['allow-net'],
       workDir: values['work-dir'],
+      workspaces: buildWorkspaces(values, plugins),
+      mountTools: values['no-mount-tools'] !== true,
       defaultLlmKey: process.env.HEDDLE_LLM_DEFAULT_KEY || undefined,
       defaultLlmUrl: values['llm-default-url'],
       stream: boolEnv('HEDDLE_STREAM', process.env.HEDDLE_STREAM),
@@ -266,10 +295,62 @@ function buildSandbox(
       ...pluginDirs(pluginSpecifiers),
       ...allowRead,
     ],
-    writePaths: allowWrite,
+    // A named workspace directory grants itself write: it is where the run's
+    // tools are about to work, so making the operator also say --allow-write
+    // for it would be heddle asking permission for what it was just told to do.
+    writePaths: [
+      ...(typeof values.workspace === 'string' ? [values.workspace] : []),
+      ...allowWrite,
+    ],
     network: !denyNet,
     passEnv: allowEnv,
   });
+}
+
+/**
+ * What every node's workspace starts with, and where it lives.
+ *
+ * Fixed at startup, like confinement, and for the same reason: a request may
+ * not choose what is in the working directory of every node of every run.
+ * Unlike the sandbox flags it is not gated on `--safe` — a workspace exists
+ * whether or not anything is enforcing its edges.
+ */
+function buildWorkspaces(
+  values: Record<string, unknown>,
+  plugins: PluginRegistry | undefined,
+): WorkspaceFactory {
+  return createWorkspaceFactory({
+    // The operator's first, so a collision reads as "your --mount and this
+    // plugin want the same path" rather than the other way round.
+    mounts: [
+      ...((values.mount as string[] | undefined) ?? []).map(parseMount),
+      ...(plugins?.workspaceMounts() ?? []),
+    ],
+    root: values.workspace as string | undefined,
+    budget: {
+      maxBytes: positive(
+        '--mount-max-bytes',
+        values['mount-max-bytes'],
+        DEFAULT_MOUNT_MAX_BYTES,
+      ),
+      maxEntries: positive(
+        '--mount-max-entries',
+        values['mount-max-entries'],
+        DEFAULT_MOUNT_MAX_ENTRIES,
+      ),
+    },
+    onWarn: (message) => process.stderr.write(`${message}\n`),
+  });
+}
+
+function positive(flag: string, raw: unknown, fallback: number): number {
+  if (raw === undefined) return fallback;
+
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`${flag} must be a positive whole number, got "${String(raw)}"`);
+  }
+  return value;
 }
 
 /**

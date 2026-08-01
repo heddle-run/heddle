@@ -1,7 +1,9 @@
 import {
+  createWorkspaceFactory,
   DEFAULT_RUNNER_OPTIONS,
   type PluginRegistry,
   type Sandbox,
+  type WorkspaceFactory,
 } from '@heddle/core';
 
 export interface ServerConfig {
@@ -25,6 +27,23 @@ export interface ServerConfig {
    */
   allowNet: string[];
   sandbox?: Sandbox;
+  /**
+   * What every node's workspace starts with, and where it lives.
+   *
+   * Fixed at startup, like `sandbox`, and for the same reason: a request may
+   * not choose what is in the working directory of every node of every run.
+   * Unlike the sandbox it is never absent — a workspace exists on every run,
+   * and this decides only what is in it.
+   */
+  workspaces: WorkspaceFactory;
+  /**
+   * Whether a tool can reach a peer by name from inside the workspace.
+   *
+   * On by default. Off is what an operator running an approval gate wants: the
+   * gate sees the calls the model made, and a tool that exec'd a peer made a
+   * call it never saw. See `workspace/bin.ts`.
+   */
+  mountTools: boolean;
   /**
    * Plugins the operator installed, already loaded.
    *
@@ -100,6 +119,8 @@ export function resolveConfig(options: ServerOptions = {}): ServerConfig {
     allowRequestCode: options.allowRequestCode ?? false,
     allowNet: options.allowNet ?? [],
     sandbox: options.sandbox,
+    workspaces: options.workspaces ?? createWorkspaceFactory(),
+    mountTools: options.mountTools ?? true,
     plugins: options.plugins,
     pluginConfig: options.pluginConfig ?? {},
     maxNodeAttempts:
