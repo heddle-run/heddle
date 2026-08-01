@@ -1,4 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { resolve } from 'node:path';
 import type { ExecResult, Executor, ExecutorScope } from './types.js';
 import type { Sandbox, SandboxCommand, SandboxSession } from '../sandbox/index.js';
 import type {
@@ -184,7 +185,14 @@ function spawnTool(
     });
   }
 
-  return spawn(toolPath, [], {
+  // Resolved, because the cwd below is the workspace and a relative tool path
+  // would then be looked for inside it. `FileRegistry` builds its paths by
+  // joining whatever `--tools-dir` was given, so a relative flag means relative
+  // paths — which used to work only because an unconfined tool inherited
+  // heddle's own working directory. Both sandbox backends already resolve, and
+  // that asymmetry was the bug: `--safe` found the tool and running without it
+  // did not.
+  return spawn(resolve(toolPath), [], {
     stdio: ['pipe', 'pipe', 'pipe'],
     signal,
     // The parent's environment, plus the workspace. Deliberately not the

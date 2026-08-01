@@ -282,6 +282,32 @@ printf '{"cwd":"%s","workspace":"%s","bin":"%s","sawPeer":%s}' \\
     }
   });
 
+  /**
+   * `FileRegistry` builds tool paths by joining whatever `--tools-dir` was
+   * given, so a relative flag means relative paths — and once the cwd is the
+   * workspace, a relative path is looked for inside it. This worked before only
+   * because an unconfined tool inherited heddle's own working directory, and it
+   * broke the first shipped consumer that passed a relative `--tools-dir`.
+   */
+  it('finds a tool named by a path relative to heddle, not to the workspace', async () => {
+    const before = process.cwd();
+    process.chdir(scratch);
+
+    try {
+      const scope = new SubprocessExecutor().beginScope('agent');
+      const { output } = await scope.executor.execute(
+        undefined,
+        './probe.sh',
+        {},
+      );
+
+      expect(output.workspace).toBe(scope.workspace);
+      scope.dispose();
+    } finally {
+      process.chdir(before);
+    }
+  });
+
   it('takes the workspace away when the scope ends', async () => {
     const scope = new SubprocessExecutor().beginScope('agent-done');
     await scope.executor.execute(undefined, probe, {});
