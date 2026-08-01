@@ -1,7 +1,7 @@
 "use client";
 
 import Editor from "./Editor";
-import Tabs from "./Tabs";
+import Tabs from "../Tabs";
 import CodeList from "./CodeList";
 import RunLog from "./RunLog";
 import { Icon, Select } from "@/ds";
@@ -54,6 +54,7 @@ export default function Build({ pg }: { pg: Playground }) {
           }}
         >
           <Tabs
+            label="Editors"
             tabs={[
               { id: "spec", label: "Spec" },
               { id: "inputs", label: "Inputs" },
