@@ -203,13 +203,13 @@ A `.json` argument to `--plugin` is read as a manifest, which is data: validatin
 that uses an out-of-process plugin starts none of that plugin's code.
 
 <Callout type="warn">
-One gap worth knowing in CI. A spec that does not parse exits 1, and so does a tool the
-flow names that nothing provides — that check sits outside the catch deliberately, because
-exiting 0 while printing the problem is the one outcome a validator must not have. But a
-graph *compilation* failure is caught and reported as `Graph validation skipped`, and
-still exits 0: the skip exists to tolerate a compile that could not run, and it cannot
-tell that case from a real fault. Read the output as well as the status, and treat
-`Graph validation passed` as the signal you want.
+One case worth knowing in CI. A spec that does not parse exits 1, so does an invalid
+graph, and so does a tool the flow names that nothing provides — exiting 0 while printing
+the problem is the one outcome a validator must not have. What still exits 0 is a graph
+heddle could not *compile* at all, reported as `Graph validation skipped` with the reason.
+That skip is there so a check which could not run — a node type whose plugin was not
+loaded is the usual cause — is not mistaken for a fault in the spec. Read the output as
+well as the status, and treat `Graph validation passed` as the signal you want.
 </Callout>
 
 ## heddle init

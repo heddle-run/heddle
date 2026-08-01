@@ -201,7 +201,11 @@ When you run a flow, heddle:
 4. Walks from the `StartNode`, one node at a time, until an `EndNode` is reached
 5. Prints the final state as JSON on stdout
 
-Graph validation checks that every node is reachable from the start node, that a reachable `EndNode` exists, and that no non-terminal node is a dead end. It does not yet check that branch names on edges line up with a `BranchingNode` mapping, nor that data flow edges reference properties the nodes actually declare.
+Graph validation checks that every node is reachable from the start node, that a reachable `EndNode` exists, and that no non-terminal node is a dead end.
+
+It also checks where a branch leads, which is otherwise something only the input that selects it reveals: a `BranchingNode` that maps a key to a branch no control flow edge leaves the node on is refused, as is an edge labelled with a branch its source never selects. Both would have ended a run mid-flight with `no next node from "<node>"`.
+
+Data flow edges are checked against what their source node can actually produce, where that is knowable. An `LlmNode` writes `generated_text` and nothing else, so an edge reading anything else from one is refused — the runner would have dropped the mapping silently and the destination would never have received the input. A source node the flow does not contain is refused for the same reason. Node types whose outputs are not fixed by heddle are not checked: an `AgentNode` writes `result` plus whatever keys its answer parsed to, a `ToolNode` writes what the tool returned, and a plugin node writes what its plugin returned.
 
 ### Runner Defaults
 

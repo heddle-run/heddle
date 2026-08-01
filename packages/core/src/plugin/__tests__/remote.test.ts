@@ -305,10 +305,18 @@ describe('branching out of a plugin node', () => {
 
   it('refuses a branch the manifest did not declare', async () => {
     const entry = writePlugin('undeclaredbranch', CHOOSER);
+    // The manifest declares both branches the flow's edges leave on, so the
+    // undeclared one has to come from the plugin at run time. Declaring fewer
+    // than the flow routes on is caught by `validate` before anything runs,
+    // which is a different check answering a different question.
     await expect(
-      route(entry, manifest('ChooserNode', { branches: ['left'] }), 'right'),
+      route(
+        entry,
+        manifest('ChooserNode', { branches: ['left', 'right'] }),
+        'sideways',
+      ),
     ).rejects.toThrow(
-      /returned branch "right", which is not in its declared branches \[left\]/,
+      /returned branch "sideways", which is not in its declared branches \[left, right\]/,
     );
   });
 
@@ -322,7 +330,11 @@ describe('branching out of a plugin node', () => {
   it('refuses a branch that is not a string', async () => {
     const entry = writePlugin('numericbranch', `return { output: {}, branch: 42 };`);
     await expect(
-      route(entry, manifest('ChooserNode', { branches: ['left'] }), 'left'),
+      route(
+        entry,
+        manifest('ChooserNode', { branches: ['left', 'right'] }),
+        'left',
+      ),
     ).rejects.toThrow(/returned a non-string "branch"/);
   });
 });
