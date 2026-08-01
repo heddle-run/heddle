@@ -65,14 +65,28 @@ export interface DataFlowEdge {
   destinationInput: string;
 }
 
-export interface StartNode {
+/**
+ * What a node says it can route on.
+ *
+ * Every node in an Agent Spec document carries this — the SDK's node schema
+ * gives it a default of `[]` — and it is the only place a document says which
+ * branch labels on a node's outgoing edges are real. `validate` reads it to
+ * catch an edge labelled with a branch its source never selects, which a run
+ * meets as a node it cannot leave. It was absent from these interfaces for as
+ * long as nothing read it.
+ */
+interface Branched {
+  branches?: string[];
+}
+
+export interface StartNode extends Branched {
   componentType: 'StartNode';
   name: string;
   inputs?: Property[];
   outputs?: Property[];
 }
 
-export interface EndNode {
+export interface EndNode extends Branched {
   componentType: 'EndNode';
   name: string;
   branchName?: string;
@@ -80,7 +94,7 @@ export interface EndNode {
   outputs?: Property[];
 }
 
-export interface AgentNode {
+export interface AgentNode extends Branched {
   componentType: 'AgentNode';
   name: string;
   agent?: Agent;
@@ -88,7 +102,7 @@ export interface AgentNode {
   outputs?: Property[];
 }
 
-export interface ToolNode {
+export interface ToolNode extends Branched {
   componentType: 'ToolNode';
   name: string;
   tool?: ToolSpec;
@@ -96,7 +110,7 @@ export interface ToolNode {
   outputs?: Property[];
 }
 
-export interface LLMNode {
+export interface LLMNode extends Branched {
   componentType: 'LlmNode';
   name: string;
   llmConfig?: LLMConfig;
@@ -105,7 +119,7 @@ export interface LLMNode {
   outputs?: Property[];
 }
 
-export interface BranchingNode {
+export interface BranchingNode extends Branched {
   componentType: 'BranchingNode';
   name: string;
   mapping: Record<string, string>;
@@ -120,12 +134,11 @@ export type SpecNode =
   | LLMNode
   | BranchingNode;
 
-export interface CustomNode {
+export interface CustomNode extends Branched {
   componentType: string;
   name: string;
   inputs?: Property[];
   outputs?: Property[];
-  branches?: string[];
 }
 
 export type AnyNode = SpecNode | CustomNode;

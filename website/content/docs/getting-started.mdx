@@ -165,9 +165,9 @@ This validates the spec against the Agent Spec schema, compiles it, checks the g
 checks that an executable exists for every tool the flow names.
 
 <Callout type="warn">
-One gap worth knowing in CI. A tool a flow names and nothing provides exits 1, as does a
-spec that does not parse. But if graph *compilation* fails for some other reason,
-`validate` prints `Graph validation skipped` with the reason and still exits 0 — the
-skip exists to tolerate a compile that could not run, and it cannot tell that case from a
-real fault. Read the output as well as the status.
+One case worth knowing in CI. A spec that does not parse exits 1, as does an invalid graph
+and a tool a flow names that nothing provides. The exception is a graph heddle could not
+*compile* at all: `validate` prints `Graph validation skipped` with the reason and exits 0,
+so that a check which could not run is not mistaken for a fault. Read the output as well
+as the status.
 </Callout>

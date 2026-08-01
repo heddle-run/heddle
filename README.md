@@ -182,9 +182,11 @@ to `query` when none is declared.
 > **Note:** an in-flight run cannot be interrupted. `Ctrl+C` and `/exit` close the session,
 > but a flow already executing runs until it finishes or hits the five-minute timeout.
 
-> **Note:** `heddle validate` exits 0 even when graph or tool validation fails. Any error
-> after schema validation is reported as `Graph validation skipped`, which also hides real
-> problems such as a missing tool executable. Read its output rather than the exit code.
+> **Note:** `heddle validate` exits 1 when a spec does not parse, when its graph is
+> invalid, and when the flow names a tool nothing provides. The one thing it tolerates is a
+> graph it could not compile at all, reported as `Graph validation skipped` with the reason
+> and exit 0 — the skip is there so a check that could not run is not mistaken for a fault.
+> Read the output as well as the status.
 
 ## How It Works
 

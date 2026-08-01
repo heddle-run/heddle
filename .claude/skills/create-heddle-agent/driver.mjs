@@ -325,9 +325,10 @@ async function check(opts) {
   process.stdout.write(heddle.out);
   if (heddle.err.trim()) process.stderr.write(heddle.err);
 
-  // `heddle validate` exits 0 even when the graph or tool check failed — it
-  // reports "Graph validation skipped: <reason>" and carries on. Read its
-  // output, not its status.
+  // An invalid graph exits 1, but a graph heddle could not compile at all is
+  // still reported as "Graph validation skipped: <reason>" on a 0 status —
+  // the skip is there so a check that could not run is not called a fault, and
+  // here it is one either way. Read the output, not just the status.
   const skipped = /Graph validation skipped: (.*)/.exec(heddle.out);
   if (skipped) problems.errors.push(`heddle: graph validation failed — ${skipped[1]}`);
   if (heddle.code !== 0) {

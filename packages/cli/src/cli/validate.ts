@@ -11,6 +11,7 @@ import {
   missingTools,
   PluginRegistry,
   ToolError,
+  type CompiledGraph,
   type ParsedFlow,
 } from '@heddle/core';
 
@@ -74,17 +75,32 @@ function validateFlowFile(
   }
 }
 
+/**
+ * Check the graph, and tell a graph that is wrong from one that was not read.
+ *
+ * Only compilation is tolerated here. It is the half that can fail for reasons
+ * that are not the flow's fault — a node type whose plugin is not loaded is the
+ * usual one — and reporting a check that could not run as a fault would refuse
+ * specs that are fine. Validation is the other half: the graph compiled, heddle
+ * read it, and what it found is a verdict. That throws, and the exit status
+ * carries it, because a validator that prints a fatal problem and exits 0 is
+ * one nobody can put in CI.
+ */
 function reportGraphValidation(
   flow: ParsedFlow,
   plugins: PluginRegistry,
 ): void {
+  let graph: CompiledGraph;
   try {
-    validate(compile(flow, { plugins }));
-    console.log('  Graph validation passed');
+    graph = compile(flow, { plugins });
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
     console.log(`  Graph validation skipped: ${reason}`);
+    return;
   }
+
+  validate(graph);
+  console.log('  Graph validation passed');
 }
 
 function reportToolValidation(
