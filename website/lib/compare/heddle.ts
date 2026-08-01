@@ -1,9 +1,13 @@
-import type { Framework } from "./types";
+import type { Reference } from "./types";
 
-/* Every spec here has been checked with `heddle validate`, and the guardrail
-   and routing flows have been run end to end — neither needs a credential,
-   because a pre-transform that rejects skips the model call, and routing has
-   no model in it at all. */
+/* Every spec here has been checked with `heddle validate` — the two that name
+   a component type a plugin supplies, under the same --plugin flag their run
+   line already carries, because without it the type is genuinely unknown and
+   the check is supposed to say so.
+
+   The guardrail and routing flows have also been run end to end. Neither needs
+   a credential: a pre-transform that rejects skips the model call, and routing
+   has no model in it at all. */
 
 const RESEARCH_FLOW = `component_type: Flow
 name: research-assistant
@@ -331,7 +335,475 @@ read -r input
 printf '{"action":"filed a ticket for the morning"}'
 `;
 
-export const heddle: Framework = {
+const AGENT_FLOW = `component_type: Flow
+name: ask
+start_node: { $component_ref: start }
+
+nodes:
+  - $component_ref: start
+  - $component_ref: assistant
+  - $component_ref: end
+
+control_flow_connections:
+  - component_type: ControlFlowEdge
+    name: start_to_assistant
+    from_node: { $component_ref: start }
+    to_node: { $component_ref: assistant }
+  - component_type: ControlFlowEdge
+    name: assistant_to_end
+    from_node: { $component_ref: assistant }
+    to_node: { $component_ref: end }
+
+$referenced_components:
+  start:
+    component_type: StartNode
+    id: start
+    name: start
+    outputs:
+      - title: query
+        type: string
+
+  assistant:
+    component_type: AgentNode
+    id: assistant
+    name: assistant
+    agent:
+      component_type: Agent
+      id: inner
+      name: assistant
+      system_prompt: Answer in one sentence.
+
+      llm_config:
+        component_type: OpenAiConfig
+        id: llm
+        name: openai
+        model_id: gpt-4o
+        api_key: $OPENAI_API_KEY
+
+      tools: []
+
+  end:
+    component_type: EndNode
+    id: end
+    name: end
+`;
+
+const SHELL_FLOW = `component_type: Flow
+name: shell
+start_node: { $component_ref: start }
+
+nodes:
+  - $component_ref: start
+  - $component_ref: shell
+  - $component_ref: end
+
+control_flow_connections:
+  - component_type: ControlFlowEdge
+    name: start_to_shell
+    from_node: { $component_ref: start }
+    to_node: { $component_ref: shell }
+  - component_type: ControlFlowEdge
+    name: shell_to_end
+    from_node: { $component_ref: shell }
+    to_node: { $component_ref: end }
+
+$referenced_components:
+  start:
+    component_type: StartNode
+    id: start
+    name: start
+    outputs:
+      - title: task
+        type: string
+
+  shell:
+    component_type: AgentNode
+    id: shell
+    name: shell
+    agent:
+      component_type: Agent
+      id: inner
+      name: shell
+      system_prompt: >-
+        You run shell commands to answer the task. python3 and node are both on
+        PATH. Each call is a fresh shell, so chain what depends on itself into a
+        single command. Read exit_code every time. Answer in one or two
+        sentences.
+
+      llm_config:
+        component_type: OpenAiConfig
+        id: llm
+        name: openai
+        model_id: gpt-4o
+        api_key: $OPENAI_API_KEY
+
+      tools:
+        - component_type: ServerTool
+          id: bash_tool
+          name: bash
+          description: >-
+            Run a shell command and return its stdout, stderr and exit code.
+            Each call is a fresh shell and commands are killed after 20 seconds.
+          inputs:
+            - title: command
+              type: string
+          outputs:
+            - title: stdout
+              type: string
+            - title: stderr
+              type: string
+            - title: exit_code
+              type: integer
+
+  end:
+    component_type: EndNode
+    id: end
+    name: end
+`;
+
+const BASH = `#!/usr/bin/env python3
+import json, subprocess, sys
+
+args = json.load(sys.stdin)
+
+# --safe --sandbox bubblewrap is what confines this, and it is a flag on the
+# run rather than a line in this file. The tool stays the same whether or not
+# it is sandboxed; only the run decides.
+done = subprocess.run(
+    args.get("command", ""), shell=True,
+    capture_output=True, text=True, timeout=20,
+)
+
+json.dump(
+    {
+        "stdout": done.stdout,
+        "stderr": done.stderr,
+        "exit_code": done.returncode,
+    },
+    sys.stdout,
+)
+`;
+
+const SKILLS_FLOW = `component_type: Flow
+name: skills
+start_node: { $component_ref: start }
+
+nodes:
+  - $component_ref: start
+  - $component_ref: assistant
+  - $component_ref: end
+
+control_flow_connections:
+  - component_type: ControlFlowEdge
+    name: start_to_assistant
+    from_node: { $component_ref: start }
+    to_node: { $component_ref: assistant }
+  - component_type: ControlFlowEdge
+    name: assistant_to_end
+    from_node: { $component_ref: assistant }
+    to_node: { $component_ref: end }
+
+$referenced_components:
+  start:
+    component_type: StartNode
+    id: start
+    name: start
+    outputs:
+      - title: task
+        type: string
+
+  assistant:
+    component_type: AgentNode
+    id: assistant
+    name: assistant
+    agent:
+      component_type: Agent
+      id: inner
+      name: assistant
+
+      # The contract, and the only place it is stated. A model that is not
+      # told to look will not look, and a skill nobody reads is a file.
+      system_prompt: >-
+        You have skills: short written procedures. Their text is not in this
+        prompt. list_skills returns every skill's name and description;
+        read_skill returns one body. Call list_skills first, on every task. If
+        a description covers the task, read that skill and follow it exactly --
+        it outranks how you would otherwise do the job. Finish by naming the
+        skill you followed.
+
+      llm_config:
+        component_type: OpenAiConfig
+        id: llm
+        name: openai
+        model_id: gpt-4o
+        api_key: $OPENAI_API_KEY
+
+      tools:
+        - component_type: ServerTool
+          id: list_skills_tool
+          name: list_skills
+          description: Every skill's name and its one-line description
+          outputs:
+            - title: skills
+              type: string
+
+        - component_type: ServerTool
+          id: read_skill_tool
+          name: read_skill
+          description: One skill's body, by name
+          inputs:
+            - title: name
+              type: string
+          outputs:
+            - title: body
+              type: string
+
+  end:
+    component_type: EndNode
+    id: end
+    name: end
+`;
+
+const LIST_SKILLS = `#!/usr/bin/env python3
+import json, pathlib, sys
+
+json.load(sys.stdin)
+
+skills = sorted(pathlib.Path("skills").glob("*.md"))
+index = "\\n".join(
+    "%s: %s" % (path.stem, path.read_text().splitlines()[0])
+    for path in skills
+)
+
+json.dump({"skills": index}, sys.stdout)
+`;
+
+const READ_SKILL = `#!/usr/bin/env python3
+import json, pathlib, sys
+
+args = json.load(sys.stdin)
+path = pathlib.Path("skills") / ("%s.md" % args.get("name", ""))
+
+# A message rather than a crash: the model picked this name and can pick
+# another once it is told.
+body = path.read_text() if path.is_file() else "no skill by that name"
+
+json.dump({"body": body}, sys.stdout)
+`;
+
+const TIDY_SKILL = `Tidying a CSV of numbers
+
+Round every value to two decimals, keep the header row, and write the
+result beside the original with a .tidy.csv suffix. Never edit in place:
+the original is what someone will check the result against.
+`;
+
+const TOOL_AND_PLUGIN_FLOW = `component_type: Flow
+name: shout
+start_node: { $component_ref: start }
+
+nodes:
+  - $component_ref: start
+  - $component_ref: shout
+  - $component_ref: reverse
+  - $component_ref: end
+
+control_flow_connections:
+  - component_type: ControlFlowEdge
+    name: start_to_shout
+    from_node: { $component_ref: start }
+    to_node: { $component_ref: shout }
+  - component_type: ControlFlowEdge
+    name: shout_to_reverse
+    from_node: { $component_ref: shout }
+    to_node: { $component_ref: reverse }
+  - component_type: ControlFlowEdge
+    name: reverse_to_end
+    from_node: { $component_ref: reverse }
+    to_node: { $component_ref: end }
+
+$referenced_components:
+  start:
+    component_type: StartNode
+    id: start
+    name: start
+    outputs:
+      - title: text
+        type: string
+
+  # A tool: an executable the engine runs as a subprocess.
+  shout:
+    component_type: ToolNode
+    id: shout
+    name: shout
+    tool:
+      component_type: ServerTool
+      id: shout_tool
+      name: shout
+      description: Uppercases the text it is given
+
+  # A plugin node. ReverseNode is not a heddle type -- the plugin adds it,
+  # and it runs in the plugin's own process rather than the engine's.
+  reverse:
+    component_type: ReverseNode
+    id: reverse
+    name: reverse
+
+  end:
+    component_type: EndNode
+    id: end
+    name: end
+`;
+
+const SHOUT = `#!/bin/sh
+read -r input
+
+text=$(printf '%s' "$input" | sed -n 's/.*"text"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p')
+
+printf '{"shouted":"%s"}' "$(printf '%s' "$text" | tr '[:lower:]' '[:upper:]')"
+`;
+
+const REVERSE_PLUGIN = `export default {
+  name: 'heddle-plugin-reverse',
+  version: '1.0.0',
+
+  nodes: [
+    {
+      // ReverseNode is not a heddle type. This adds it.
+      componentType: 'ReverseNode',
+
+      execute(input, ctx) {
+        const text = String(input.shouted ?? input.text ?? '');
+
+        ctx.log('info', 'reversing ' + text.length + ' characters');
+
+        return { output: { reversed: [...text].reverse().join('') } };
+      },
+    },
+  ],
+};
+`;
+
+const AG_UI_FLOW = `component_type: Flow
+name: rendered
+start_node: { $component_ref: start }
+
+nodes:
+  - $component_ref: start
+  - $component_ref: assistant
+  - $component_ref: end
+
+control_flow_connections:
+  - component_type: ControlFlowEdge
+    name: start_to_assistant
+    from_node: { $component_ref: start }
+    to_node: { $component_ref: assistant }
+  - component_type: ControlFlowEdge
+    name: assistant_to_end
+    from_node: { $component_ref: assistant }
+    to_node: { $component_ref: end }
+
+$referenced_components:
+  start:
+    component_type: StartNode
+    id: start
+    name: start
+    outputs:
+      - title: question
+        type: string
+
+  # Nothing in this flow knows it is being rendered. Each node's start and
+  # finish become STEP_STARTED and STEP_FINISHED, its outputs become a
+  # STATE_SNAPSHOT, the tool call becomes TOOL_CALL_START, _ARGS and _END, and
+  # the answer arrives as TEXT_MESSAGE_CONTENT deltas.
+  assistant:
+    component_type: AgentNode
+    id: assistant
+    name: assistant
+    agent:
+      component_type: Agent
+      id: inner
+      name: assistant
+      system_prompt: >-
+        Call digest for a hash rather than guessing one. Answer in one
+        sentence.
+
+      llm_config:
+        component_type: OpenAiConfig
+        id: llm
+        name: openai
+        model_id: gpt-4o
+        api_key: $OPENAI_API_KEY
+
+      tools:
+        - component_type: ServerTool
+          id: digest_tool
+          name: digest
+          description: The SHA-256 of a string, as hexadecimal
+          inputs:
+            - title: text
+              type: string
+          outputs:
+            - title: sha256
+              type: string
+
+  end:
+    component_type: EndNode
+    id: end
+    name: end
+`;
+
+const DIGEST = `#!/usr/bin/env python3
+import hashlib, json, sys
+
+args = json.load(sys.stdin)
+text = args.get("text", "")
+
+json.dump({"sha256": hashlib.sha256(text.encode()).hexdigest()}, sys.stdout)
+`;
+
+const ENCODER_MANIFEST = `{
+  "name": "heddle-plugin-ag-ui",
+  "version": "1.0.0",
+  "components": [{ "componentType": "AgUiEncoder", "kind": "encoder" }]
+}
+`;
+
+const ENCODER = `// An encoder renders a run for whoever asked for it and cannot alter it, so
+// unlike a middleware it is safe to submit with the request.
+export default {
+  name: 'heddle-plugin-ag-ui',
+  version: '1.0.0',
+
+  encoders: [
+    {
+      componentType: 'AgUiEncoder',
+      protocol: 'ag-ui',
+
+      encode(event) {
+        switch (event.type) {
+          case 'node_start':
+            return { type: 'STEP_STARTED', stepName: event.nodeName };
+          case 'node_finish':
+            return { type: 'STEP_FINISHED', stepName: event.nodeName };
+          case 'token_delta':
+            return { type: 'TEXT_MESSAGE_CONTENT', delta: event.delta };
+          case 'tool_call':
+            return { type: 'TOOL_CALL_START', toolCallName: event.toolName };
+          case 'tool_result':
+            return { type: 'TOOL_CALL_END', toolCallId: event.toolCallId };
+          default:
+            // Anything with no AG-UI spelling is dropped rather than
+            // invented: a frame a client cannot read is worse than none.
+            return null;
+        }
+      },
+    },
+  ],
+};
+`;
+
+export const heddle: Reference = {
   id: "heddle",
   name: "heddle",
   install: "npm install -g @heddle/cli",
@@ -401,6 +873,80 @@ export const heddle: Framework = {
         "The branch is an edge in the document, not an if-statement. Every " +
         "tool is its own executable, which is why this column has four files " +
         "where the others have one.",
+    },
+
+    agent: {
+      files: [{ name: "flow.yaml", language: "yaml", source: AGENT_FLOW }],
+      run:
+        "heddle run flow.yaml \\\n" +
+        `  --input '{"query": "what is a heddle on a loom?"}'`,
+      note:
+        "One model call and nothing else, so this is the whole of the " +
+        "format at its smallest: a start, an agent and an end, and no " +
+        "runtime to construct.",
+    },
+
+    shell: {
+      files: [
+        { name: "flow.yaml", language: "yaml", source: SHELL_FLOW },
+        { name: "tools/bash.py", language: "python", source: BASH },
+      ],
+      run:
+        "heddle run flow.yaml --tools-dir ./tools --safe \\\n" +
+        "  --sandbox bubblewrap \\\n" +
+        `  --input '{"task": "count the vowels in \\"weave agents from spec\\""}'`,
+      note:
+        "The only column where the confinement is part of the answer: " +
+        "--safe --sandbox bubblewrap puts each command in its own namespace " +
+        "with no $HOME and no writes outside the run's workspace.",
+    },
+
+    skills: {
+      files: [
+        { name: "flow.yaml", language: "yaml", source: SKILLS_FLOW },
+        { name: "tools/list_skills.py", language: "python", source: LIST_SKILLS },
+        { name: "tools/read_skill.py", language: "python", source: READ_SKILL },
+        { name: "skills/tidy-a-csv.md", language: "markdown", source: TIDY_SKILL },
+      ],
+      run:
+        "heddle run flow.yaml --tools-dir ./tools \\\n" +
+        `  --input '{"task": "tidy up the numbers in report.csv"}'`,
+      note:
+        "Skills are not a heddle concept either — the pattern is two tools " +
+        "and a prompt, and every column writes the same one. What differs " +
+        "is only that the prompt and the tool shapes are a document here.",
+    },
+
+    "tool-and-plugin": {
+      files: [
+        { name: "flow.yaml", language: "yaml", source: TOOL_AND_PLUGIN_FLOW },
+        { name: "tools/shout.sh", language: "bash", source: SHOUT },
+        { name: "reverse.js", language: "javascript", source: REVERSE_PLUGIN },
+      ],
+      run:
+        "heddle run flow.yaml --tools-dir ./tools --plugin ./reverse.js \\\n" +
+        `  --input '{"text": "weave agents from spec"}'`,
+      note:
+        "Both steps are out of the engine's process — the tool as a " +
+        "subprocess, the plugin node in its own — and the flow names them " +
+        "without knowing either is not a heddle type.",
+    },
+
+    "ag-ui": {
+      files: [
+        { name: "flow.yaml", language: "yaml", source: AG_UI_FLOW },
+        { name: "tools/digest.py", language: "python", source: DIGEST },
+        { name: "encoder.mjs", language: "javascript", source: ENCODER },
+        { name: "encoder.json", language: "json", source: ENCODER_MANIFEST },
+      ],
+      run:
+        "heddle run flow.yaml --tools-dir ./tools --plugin ./encoder.mjs \\\n" +
+        "  --protocol ag-ui \\\n" +
+        `  --input '{"question": "the sha-256 of: weave agents from spec"}'`,
+      note:
+        "The flow is the agent column again, unchanged — the rendering is " +
+        "a plugin and a flag, not a property of the program. That is what " +
+        "the other three have no equivalent of.",
     },
   },
 };

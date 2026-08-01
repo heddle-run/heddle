@@ -8,6 +8,8 @@ import { GITHUB_URL } from "@/lib/constants";
 import {
   countLines,
   heddle,
+  isUnsupported,
+  type Cell,
   type Framework,
   type Implementation,
   type UseCase,
@@ -33,16 +35,163 @@ export function ComparePanes({
     <>
       <Pane
         framework={heddle}
-        implementation={heddle.impls[useCase.id]}
+        cell={heddle.impls[useCase.id]}
         accent
         onOpen={onOpen}
       />
-      <Pane framework={rival} implementation={rival.impls[useCase.id]} />
+      <Pane framework={rival} cell={rival.impls[useCase.id]} />
     </>
   );
 }
 
+/* A cell is either an implementation or a written reason there is none, and
+   the two look nothing alike — so this only picks between them. Each branch
+   is its own component because one of them has state and the other must not
+   pretend to. */
 function Pane({
+  framework,
+  cell,
+  accent = false,
+  onOpen,
+}: {
+  framework: Framework;
+  cell: Cell;
+  accent?: boolean;
+  onOpen?: () => void;
+}) {
+  if (isUnsupported(cell)) {
+    return (
+      <GapPane
+        framework={framework}
+        reason={cell.unsupported}
+        accent={accent}
+      />
+    );
+  }
+  return (
+    <ImplementationPane
+      framework={framework}
+      implementation={cell}
+      accent={accent}
+      onOpen={onOpen}
+    />
+  );
+}
+
+/** The heading every pane shares: whose column this is, and its measure. */
+function PaneHeading({
+  framework,
+  accent,
+  measure,
+}: {
+  framework: Framework;
+  accent: boolean;
+  measure: string;
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        minHeight: 44,
+        flexShrink: 0,
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: "var(--space-4)",
+        padding: "0 var(--space-5)",
+        borderBottom: "1px solid var(--border-hairline)",
+      }}
+    >
+      <a
+        href={framework.docs}
+        {...(framework.docs.startsWith("http")
+          ? { target: "_blank", rel: "noopener noreferrer" }
+          : {})}
+        title={`${framework.name} documentation`}
+        className="ff-text-transition"
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: "var(--space-2)",
+          fontSize: "var(--fs-sm)",
+          fontWeight: "var(--fw-semibold)",
+          letterSpacing: "var(--tracking-tight)",
+          color: "var(--text-strong)",
+        }}
+      >
+        {accent && (
+          <span
+            aria-hidden
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: "50%",
+              background: "var(--brand-pink)",
+            }}
+          />
+        )}
+        {framework.name}
+        <span aria-hidden style={{ color: "var(--text-faint)" }}>
+          <Icon name="arrow-up-right" size={12} />
+        </span>
+      </a>
+
+      <span
+        style={{
+          fontFamily: "var(--font-mono)",
+          fontSize: "var(--fs-2xs)",
+          fontVariantNumeric: "tabular-nums",
+          textTransform: "uppercase",
+          letterSpacing: "var(--tracking-widest)",
+          color: "var(--text-faint)",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {measure}
+      </span>
+    </div>
+  );
+}
+
+/* A use case this framework has no honest equivalent for. There is no code to
+   show and none is invented: the column says what the framework does offer
+   and why it is a different thing, which is the only answer that keeps the
+   claim under the ledger true. */
+function GapPane({
+  framework,
+  reason,
+  accent,
+}: {
+  framework: Framework;
+  reason: string;
+  accent: boolean;
+}) {
+  return (
+    <section aria-label={framework.name} className="hd-playground-pane">
+      <PaneHeading
+        framework={framework}
+        accent={accent}
+        measure="no equivalent"
+      />
+
+      <div style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
+        <p
+          style={{
+            margin: 0,
+            padding: "var(--space-5)",
+            maxWidth: "56ch",
+            fontSize: "var(--fs-xs)",
+            lineHeight: "var(--lh-relaxed)",
+            color: "var(--text-muted)",
+          }}
+        >
+          {reason}
+        </p>
+      </div>
+    </section>
+  );
+}
+
+function ImplementationPane({
   framework,
   implementation,
   accent = false,
@@ -63,73 +212,20 @@ function Pane({
     implementation.files[0];
 
   const lines = countLines(implementation);
+  const files = implementation.files.length;
+  const packages = framework.packages.length;
 
   return (
     <section aria-label={framework.name} className="hd-playground-pane">
-      <div
-        style={{
-          display: "flex",
-          minHeight: 44,
-          flexShrink: 0,
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: "var(--space-4)",
-          padding: "0 var(--space-5)",
-          borderBottom: "1px solid var(--border-hairline)",
-        }}
-      >
-        <a
-          href={framework.docs}
-          {...(framework.docs.startsWith("http")
-            ? { target: "_blank", rel: "noopener noreferrer" }
-            : {})}
-          title={`${framework.name} documentation`}
-          className="ff-text-transition"
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "var(--space-2)",
-            fontSize: "var(--fs-sm)",
-            fontWeight: "var(--fw-semibold)",
-            letterSpacing: "var(--tracking-tight)",
-            color: "var(--text-strong)",
-          }}
-        >
-          {accent && (
-            <span
-              aria-hidden
-              style={{
-                width: 6,
-                height: 6,
-                borderRadius: "50%",
-                background: "var(--brand-pink)",
-              }}
-            />
-          )}
-          {framework.name}
-          <span aria-hidden style={{ color: "var(--text-faint)" }}>
-            <Icon name="arrow-up-right" size={12} />
-          </span>
-        </a>
-
-        <span
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: "var(--fs-2xs)",
-            fontVariantNumeric: "tabular-nums",
-            textTransform: "uppercase",
-            letterSpacing: "var(--tracking-widest)",
-            color: "var(--text-faint)",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {lines} {lines === 1 ? "line" : "lines"} ·{" "}
-          {implementation.files.length}{" "}
-          {implementation.files.length === 1 ? "file" : "files"} ·{" "}
-          {framework.packages.length}{" "}
-          {framework.packages.length === 1 ? "package" : "packages"}
-        </span>
-      </div>
+      <PaneHeading
+        framework={framework}
+        accent={accent}
+        measure={
+          `${lines} ${lines === 1 ? "line" : "lines"} · ` +
+          `${files} ${files === 1 ? "file" : "files"} · ` +
+          `${packages} ${packages === 1 ? "package" : "packages"}`
+        }
+      />
 
       <div className="hd-compare-pane-body">
         <FileTree
@@ -216,6 +312,10 @@ export function CompareLedger({
   useCase: UseCase;
   rival: Framework;
 }) {
+  /* The last row is the only one that is about this use case rather than the
+     framework, so it is also the only one with a gap to report. */
+  const theirs = rival.impls[useCase.id];
+
   const rows: { term: string; mine: string; theirs: string; prose?: true }[] = [
     {
       term: "install",
@@ -236,7 +336,7 @@ export function CompareLedger({
     {
       term: "in this use case",
       mine: heddle.impls[useCase.id].note,
-      theirs: rival.impls[useCase.id].note,
+      theirs: isUnsupported(theirs) ? theirs.unsupported : theirs.note,
       prose: true,
     },
   ];
@@ -337,8 +437,9 @@ export function CompareLedger({
         </span>
         <span>
           Every column is the shortest version that framework&apos;s own
-          documentation would write, checked against its current release. Think
-          one is unfair?{" "}
+          documentation would write, checked against its current release — and
+          where one has no equivalent it says so rather than inventing a
+          version nobody would write. Think a column is unfair?{" "}
           <a
             href={`${GITHUB_URL}/issues/new`}
             target="_blank"
