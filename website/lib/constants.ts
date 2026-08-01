@@ -26,10 +26,29 @@ export const NPM_URL = "https://www.npmjs.com/package/@heddle/cli";
 export const AGENT_SPEC_URL = "https://oracle.github.io/agent-spec/";
 export const VERSION = "0.1.0-beta6";
 
-export const installCommands = [
-  { label: "npm", cmd: "npm install -g @heddle/cli" },
-  { label: "brew", cmd: "brew install spichen/tap/heddle" },
-  { label: "docker", cmd: "docker run --rm salahpichen/heddle --help" },
+/* Two audiences arrive wanting different first commands, and the difference is
+   not cosmetic: a person wants to run a flow, an agent wants to be taught how to
+   write one. npx leads the human tab because it is the claim rather than an
+   option — the runtime stays outside the project. `npm install -g` and Homebrew
+   are in the docs; a landing page owes each visitor one command, not four.
+
+   Every command here is a run, not an install. That is the point. */
+export const installTabs = [
+  {
+    id: "humans",
+    label: "Humans",
+    note: "Point it at a document. Nothing enters your project.",
+    commands: [
+      { label: "npx", cmd: "npx @heddle/cli run flow.json" },
+      { label: "docker", cmd: "docker run --rm salahpichen/heddle --help" },
+    ],
+  },
+  {
+    id: "agents",
+    label: "Agents",
+    note: "Teaches your coding agent to write, validate and run a heddle agent.",
+    commands: [{ label: "skill", cmd: "npx skills add heddle-run/heddle" }],
+  },
 ];
 
 export const definition = {

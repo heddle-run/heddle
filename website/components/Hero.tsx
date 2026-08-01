@@ -1,13 +1,8 @@
 import { Badge, Button, BoxedFrame, Chip } from "@/ds";
 import Link from "next/link";
-import CopyCommand from "./CopyCommand";
+import InstallTabs from "./InstallTabs";
 import Loom from "./Loom";
-import {
-  AGENT_SPEC_URL,
-  GITHUB_URL,
-  VERSION,
-  installCommands,
-} from "@/lib/constants";
+import { AGENT_SPEC_URL, GITHUB_URL, VERSION } from "@/lib/constants";
 
 const marks = [
   { icon: "braces", label: "Nothing in your lockfile" },
@@ -119,19 +114,8 @@ export default function Hero() {
           </a>
         </div>
 
-        <div
-          className="ff-fade-in-up ff-delay-300"
-          style={{
-            margin: "var(--space-12) auto 0",
-            maxWidth: 560,
-            display: "flex",
-            flexDirection: "column",
-            gap: "var(--space-3)",
-          }}
-        >
-          {installCommands.map((c) => (
-            <CopyCommand key={c.label} label={c.label} command={c.cmd} />
-          ))}
+        <div className="ff-fade-in-up ff-delay-300">
+          <InstallTabs />
         </div>
 
         <ul

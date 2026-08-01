@@ -29,6 +29,18 @@ it is not published to npm. See [vendor/agentspec/VENDOR.md](vendor/agentspec/VE
 
 ## Installation
 
+There is nothing to install. `npx` fetches the CLI and runs it:
+
+```bash
+npx @heddle/cli run flow.json --tools-dir tools --input '{"query": "hello"}'
+```
+
+Every `heddle` in this README can be spelled `npx @heddle/cli`. Either way the
+runtime stays outside your project: no dependency, no lockfile entry, nothing to
+migrate when heddle changes its mind.
+
+To keep it on the machine rather than fetching it each time:
+
 ```bash
 # npm
 npm install -g @heddle/cli
@@ -36,7 +48,7 @@ npm install -g @heddle/cli
 # Homebrew
 brew install spichen/tap/heddle
 
-# Docker — nothing to install
+# Docker — no Node at all
 docker run --rm salahpichen/heddle --help
 ```
 

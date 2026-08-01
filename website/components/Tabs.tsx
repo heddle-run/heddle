@@ -10,16 +10,25 @@ export default function Tabs({
   tabs,
   active,
   onSelect,
+  label,
+  align,
 }: {
   tabs: Tab[];
   active: string;
   onSelect: (id: string) => void;
+  /** What this group of tabs is, for a screen reader. */
+  label: string;
+  align?: "start" | "center";
 }) {
   return (
     <div
       role="tablist"
-      aria-label="Editors"
-      style={{ display: "flex", flexWrap: "wrap" }}
+      aria-label={label}
+      style={{
+        display: "flex",
+        flexWrap: "wrap",
+        justifyContent: align === "center" ? "center" : undefined,
+      }}
     >
       {tabs.map((tab) => {
         const selected = tab.id === active;

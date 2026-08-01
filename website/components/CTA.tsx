@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { BoxedFrame, Button, Badge } from "@/ds";
-import CopyCommand from "./CopyCommand";
-import { GITHUB_URL, installCommands } from "@/lib/constants";
+import InstallTabs from "./InstallTabs";
+import { GITHUB_URL } from "@/lib/constants";
 
 export default function CTA() {
   return (
@@ -25,19 +25,7 @@ export default function CTA() {
               Zero to agent in one command.
             </h2>
 
-            <div
-              style={{
-                margin: "var(--space-10) auto 0",
-                maxWidth: 560,
-                display: "flex",
-                flexDirection: "column",
-                gap: "var(--space-3)",
-              }}
-            >
-              {installCommands.map((c) => (
-                <CopyCommand key={c.label} label={c.label} command={c.cmd} />
-              ))}
-            </div>
+            <InstallTabs />
 
             <div
               style={{

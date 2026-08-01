@@ -5,7 +5,20 @@ description: Install heddle and run your first agent workflow in under a minute.
 
 ## Installation
 
-Install the CLI globally via npm:
+There is nothing to install. `npx` fetches the CLI and runs it:
+
+```bash
+npx @heddle/cli --help
+```
+
+Every `heddle` on this page can be spelled `npx @heddle/cli`. That is not a
+shortcut around a missing install step — it is the shape of the thing. heddle is
+a runtime you point at a document, so it belongs outside your project: no
+dependency, no lockfile entry, nothing that has to be migrated when heddle
+changes.
+
+To keep it on the machine rather than fetching it each time, install it globally
+via npm:
 
 ```bash
 npm install -g @heddle/cli
