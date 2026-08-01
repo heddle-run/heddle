@@ -16,6 +16,18 @@ export interface RequestPlugin {
 }
 
 /**
+ * A file the run finds in its workspace, carried in the request beside the code.
+ *
+ * The caller's own bytes, at a path relative to the workspace root — never a
+ * path on the engine, which is not the caller's to read. It is how content
+ * reaches a tool without being installed on the engine or pasted into a prompt.
+ */
+export interface RequestFile {
+  path: string;
+  content: string;
+}
+
+/**
  * The kinds a manifest can declare, as the engine spells them.
  *
  * The playground reads exactly one of them — `encoder`, because an encoder is
@@ -175,6 +187,7 @@ export interface RunPayload {
   inputs: Record<string, unknown>;
   tools: RequestTool[];
   plugins: RequestPlugin[];
+  files: RequestFile[];
   /** The rendering to ask for. Absent, or `heddle`, is heddle's own. */
   protocol?: string;
 }
@@ -185,6 +198,7 @@ function body(payload: RunPayload, withInputs: boolean): string {
     ...(withInputs ? { inputs: payload.inputs } : {}),
     ...(payload.tools.length > 0 ? { tools: payload.tools } : {}),
     ...(payload.plugins.length > 0 ? { plugins: payload.plugins } : {}),
+    ...(payload.files.length > 0 ? { files: payload.files } : {}),
   });
 }
 
@@ -324,6 +338,7 @@ export interface Example {
   inputs: string;
   tools: RequestTool[];
   plugins: RequestPlugin[];
+  files: RequestFile[];
   /** The rendering to select when this example is loaded. */
   protocol?: string;
 }
@@ -440,6 +455,7 @@ $referenced_components:
 `,
   tools: [SHOUT_TOOL],
   plugins: [REVERSE_PLUGIN],
+  files: [],
 };
 
 const GUARDRAIL: Example = {
@@ -550,6 +566,7 @@ $referenced_components:
 `,
     },
   ],
+  files: [],
 };
 
 const BRANCHING: Example = {
@@ -688,6 +705,7 @@ printf '{"action":"filed a ticket for the morning"}'
     },
   ],
   plugins: [],
+  files: [],
 };
 
 const AGENT: Example = {
@@ -772,6 +790,7 @@ $referenced_components:
 `,
   tools: [],
   plugins: [],
+  files: [],
 };
 
 /* The comparison view writes this same assistant in four frameworks, and its
@@ -907,6 +926,7 @@ json.dump({"result": result}, sys.stdout)
     },
   ],
   plugins: [],
+  files: [],
 };
 
 const BASH_TOOL: RequestTool = {
@@ -1042,6 +1062,7 @@ $referenced_components:
 `,
   tools: [BASH_TOOL],
   plugins: [],
+  files: [],
 };
 
 /* An encoder renders the run for the caller who asked and cannot alter it, so
@@ -1323,56 +1344,27 @@ serve({
 `,
     },
   ],
+  files: [],
 };
 
-/* A skill is a folder of instructions on somebody's disk, and there is no disk
-   here: the playground engine takes a request and installs nothing. So the
-   skills travel as data inside the plugin, which reaches the model through two
-   tools rather than through the prompt. That is not a workaround for the
-   playground -- it is the arrangement the mechanism wants. Names and
-   descriptions are cheap and always in context; a body is a tool call the model
-   decided to make, on a task it decided the skill covers. Paste twenty skills
-   into the system prompt instead and you have not built skills, you have built
-   a long prompt. */
-const SKILLS_PLUGIN: RequestPlugin = {
-  name: "skills",
-  manifest: {
-    name: "playground-skills",
-    version: "1.0.0",
-    // Declared because a tool's "componentType" has to name a component this
-    // plugin provides -- the manifest is checked before anything runs, so a
-    // typo is refused at load rather than at the call. Nothing implements it:
-    // callTool dispatches on the tool's name, not on the component.
-    components: [{ componentType: "Skills", kind: "component" }],
-    tools: [
-      {
-        name: "list_skills",
-        componentType: "Skills",
-        description:
-          "List every skill: its name and one line on when it applies. Call this first.",
-        inputSchema: { type: "object", properties: {} },
-      },
-      {
-        name: "read_skill",
-        componentType: "Skills",
-        description: "Return the full text of one skill, by the name list_skills gave.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            name: { type: "string", description: "the skill's name" },
-          },
-          required: ["name"],
-        },
-      },
-    ],
-  },
-  source: `const SKILLS = [
+/* A skill is a folder of instructions on a disk, and the run has one: the
+   engine copies whatever the request sent into every node's workspace before
+   the flow starts, so the three files below are on disk by the time a tool
+   looks for them. Nothing is installed on the engine to make that true, and
+   nothing survives the run.
+
+   Which leaves the part that is not about disks at all. The skills reach the
+   model as two tools rather than as prompt text, because names and descriptions
+   are cheap and always in context while a body is a tool call the model decided
+   to make, on a task it decided the skill covers. Paste twenty skills into the
+   system prompt instead and you have not built skills, you have built a long
+   prompt. */
+const SKILL_FILES: RequestFile[] = [
   {
-    name: 'tabular-summary',
-    description:
-      'Total, average or rank rows of data -- a CSV, a TSV, a pasted table. ' +
-      'Read this before doing arithmetic over more than a couple of rows.',
-    body: \`Do not add the rows up yourself. Put them in a file and let a script do it.
+    path: "skills/tabular-summary.md",
+    content: `Total, average or rank rows of data -- a CSV, a TSV, a pasted table. Read this before doing arithmetic over more than a couple of rows.
+
+Do not add the rows up yourself. Put them in a file and let a script do it.
 
 1. write_file the rows verbatim to data.csv. Do not retype a figure, reorder a
    column, or drop the header.
@@ -1385,14 +1377,14 @@ If exit_code is not 0, fix the script and run it again. Never fall back to
 working the answer out in your head -- that is the mistake this procedure exists
 to prevent.
 
-Round money in the script, to two places, rather than in the sentence you write.\`,
+Round money in the script, to two places, rather than in the sentence you write.
+`,
   },
   {
-    name: 'date-arithmetic',
-    description:
-      'Days between two dates, a weekday, or a date some interval away. Read ' +
-      'this before stating any date you did not copy from the input.',
-    body: \`Counting days by hand goes wrong at month ends and in February. Run it.
+    path: "skills/date-arithmetic.md",
+    content: `Days between two dates, a weekday, or a date some interval away. Read this before stating any date you did not copy from the input.
+
+Counting days by hand goes wrong at month ends and in February. Run it.
 
   bash: python3 -c "from datetime import date, timedelta; print((date(2026,3,1) - date(2025,11,14)).days)"
 
@@ -1400,15 +1392,14 @@ A weekday is print(date(2026,3,1).strftime('%A')). A date n days on is
 print(date(2026,3,1) + timedelta(days=n)).
 
 Quote the number the command printed. If a date arrives without a year, say
-which year you took it to be instead of choosing one silently.\`,
+which year you took it to be instead of choosing one silently.
+`,
   },
   {
-    name: 'incident-note',
-    description:
-      'The house format for writing up something that broke -- an outage, a ' +
-      'failed job, a bad deploy. Read this before writing any incident summary.',
-    body: \`Five lines, this order, one sentence each. No headings, no adjectives,
-no names.
+    path: "skills/incident-note.md",
+    content: `The house format for writing up something that broke -- an outage, a failed job, a bad deploy. Read this before writing any incident summary.
+
+Five lines, this order, one sentence each. No headings, no adjectives, no names.
 
 WHAT:  the behaviour somebody outside would have noticed.
 WHEN:  the window in UTC, and how long it lasted.
@@ -1417,49 +1408,60 @@ CAUSE: the change or condition that produced it.
 GUARD: the check that would have caught it before a user did.
 
 Write "not established" for CAUSE when it is not established. A plausible cause
-stated as a settled one is the failure this format exists to prevent.\`,
+stated as a settled one is the failure this format exists to prevent.
+`,
   },
 ];
 
-serve(
-  // No component handlers at all. "Skills" exists in the manifest so the two
-  // tools below have something to name; neither is dispatched through it.
-  {},
-  {
-    tools: {
-      // The index, and only the index. Sending the bodies here would put every
-      // skill in the conversation on the first call, which is the whole thing
-      // this arrangement avoids.
-      list_skills: async () => ({
-        output: {
-          skills: SKILLS.map((skill) => ({
-            name: skill.name,
-            description: skill.description,
-          })),
-        },
-      }),
+/* The first line of a skill is its description: when it applies, in one
+   sentence. That line is what the model carries all the time, and everything
+   under it is what a second tool call costs. Sending the bodies from here would
+   put every skill in the conversation on the first call, which is the whole
+   thing this arrangement avoids. */
+const LIST_SKILLS_TOOL: RequestTool = {
+  name: "list_skills",
+  interpreter: "python3",
+  source: `import json, os, pathlib, sys
 
-      read_skill: async (input) => {
-        const asked = String(input.name || '').trim().toLowerCase();
-        const skill = SKILLS.find((entry) => entry.name === asked);
+json.load(sys.stdin)
 
-        // Answered, not thrown. A tool that fails takes the round with it, and
-        // the model that mistyped the name is the one reader who can correct it.
-        if (!skill) {
-          return {
-            output: {
-              body:
-                'there is no skill called "' + asked + '". There are: ' +
-                SKILLS.map((entry) => entry.name).join(', ') + '.',
-            },
-          };
-        }
+# The workspace, not the working directory -- they are the same today, and
+# saying which one is meant survives a tool being called from somewhere else.
+root = pathlib.Path(os.environ.get("HEDDLE_WORKSPACE") or os.getcwd()) / "skills"
 
-        return { output: { name: skill.name, body: skill.body } };
-      },
-    },
-  },
-);
+index = "\\n".join(
+    "%s: %s" % (path.stem, path.read_text().splitlines()[0])
+    for path in sorted(root.glob("*.md"))
+)
+
+json.dump({"skills": index or "there are no skills here"}, sys.stdout)
+`,
+};
+
+const READ_SKILL_TOOL: RequestTool = {
+  name: "read_skill",
+  interpreter: "python3",
+  source: `import json, os, pathlib, sys
+
+data = json.load(sys.stdin)
+asked = str(data.get("name") or "").strip().lower()
+
+root = pathlib.Path(os.environ.get("HEDDLE_WORKSPACE") or os.getcwd()) / "skills"
+path = root / ("%s.md" % asked)
+
+# Refused rather than trusted: the name arrives from the model, and "../../etc"
+# is a path this would otherwise open.
+inside = asked and path.parent.resolve() == root.resolve()
+
+if inside and path.is_file():
+    body = path.read_text()
+else:
+    # Answered, not thrown. A tool that fails takes the round with it, and the
+    # model that mistyped the name is the one reader who can correct it.
+    names = ", ".join(sorted(p.stem for p in root.glob("*.md")))
+    body = 'there is no skill called "%s". There are: %s.' % (asked, names)
+
+json.dump({"body": body}, sys.stdout)
 `,
 };
 
@@ -1589,22 +1591,33 @@ $referenced_components:
         model_id: openrouter/free
 
       tools:
-        # Named, and nothing else. The plugin's manifest already carries a
-        # description and a parameter schema for each, and a spec that declares
-        # neither takes both from there -- so what the model is told about these
-        # two tools is the plugin's own account of them rather than a copy kept
-        # in step by hand.
+        # All five are submitted scripts with no manifest behind them, so each
+        # declares its own shape here. These first two are the whole of the
+        # skills mechanism: one lists what is in skills/, the other reads one
+        # file out of it. Neither knows anything about skills that the
+        # directory does not tell it.
         - component_type: ServerTool
           id: list_skills_tool
           name: list_skills
+          description: >-
+            List every skill: its name and one line on when it applies. Call
+            this first.
+          outputs:
+            - title: skills
+              type: string
 
         - component_type: ServerTool
           id: read_skill_tool
           name: read_skill
+          description: >-
+            Return the full text of one skill, by the name list_skills gave.
+          inputs:
+            - title: name
+              type: string
+          outputs:
+            - title: body
+              type: string
 
-        # The other three are submitted files with no manifest behind them, so
-        # they declare their own shape here.
-        #
         # write_file and bash together are a shell: whatever the model can write
         # it can then run. Here that is a throwaway workspace the sandbox
         # deletes when the agent finishes. Where it would not be, the gate is
@@ -1664,8 +1677,15 @@ $referenced_components:
   "task": "Total these expenses by category and say which category cost the most.\\n\\ndate,category,amount\\n2026-03-02,travel,412.50\\n2026-03-04,meals,38.20\\n2026-03-09,travel,96.00\\n2026-03-11,software,240.00\\n2026-03-18,meals,52.75"
 }
 `,
-  tools: [WRITE_FILE_TOOL, READ_FILE_TOOL, BASH_TOOL],
-  plugins: [SKILLS_PLUGIN],
+  tools: [
+    LIST_SKILLS_TOOL,
+    READ_SKILL_TOOL,
+    WRITE_FILE_TOOL,
+    READ_FILE_TOOL,
+    BASH_TOOL,
+  ],
+  plugins: [],
+  files: SKILL_FILES,
 };
 
 export const EXAMPLES: Example[] = [

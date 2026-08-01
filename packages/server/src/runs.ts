@@ -16,6 +16,7 @@ import {
   type ParsedFlow,
   type Registry,
   type RunnerOptions,
+  type WorkspaceFactory,
   type WorkspaceTool,
 } from '@heddle/core';
 import type { ServerConfig } from './config.js';
@@ -25,6 +26,7 @@ import { readJsonBody, sendJson } from './http.js';
 import type { ConcurrencyGate } from './limits.js';
 import { buildPlugins } from './plugins.js';
 import {
+  asBadRequest,
   materializeRequestCode,
   rejectRequestCode,
   NO_CODE,
@@ -50,6 +52,8 @@ interface RunPlan {
   inputs: Record<string, unknown>;
   code: MaterializedCode;
   plugins: PluginRegistry;
+  /** The server's, plus whatever this request put in its own workspaces. */
+  workspaces: WorkspaceFactory;
   abort: AbortController;
   headers: Record<string, string>;
 }
@@ -89,6 +93,7 @@ export async function handleRun(
 
   let code: MaterializedCode = NO_CODE;
   let plugins = PluginRegistry.empty();
+  let workspaces = config.workspaces;
 
   try {
     if (config.allowRequestCode) code = materializeRequestCode(runBody, config);
@@ -96,6 +101,11 @@ export async function handleRun(
     // whether or not it brought any of its own. `NO_CODE` contributes nothing,
     // so with request code refused this is the operator's layer alone.
     plugins = buildPlugins(config, code);
+    // The same shape, for the same reason: the server's factory is built once
+    // at startup and this layers the request's own files onto a copy of it. A
+    // collision with something the operator mounted is refused here rather than
+    // shadowing it, which is why it can be the caller's 400.
+    workspaces = asBadRequest(() => config.workspaces.extend(code.mounts));
 
     const plan: RunPlan = {
       config,
@@ -103,6 +113,7 @@ export async function handleRun(
       inputs,
       code,
       plugins,
+      workspaces,
       abort: abort.controller,
       headers,
     };
@@ -112,6 +123,11 @@ export async function handleRun(
   } finally {
     abort.finish();
     plugins.dispose();
+    // Removes the template assembled from this request's files and leaves the
+    // operator's, which every other run is still using. The guard is for the
+    // path where `extend` never ran: disposing the server's own factory here
+    // would delete what every later run starts from.
+    if (workspaces !== config.workspaces) workspaces.dispose();
     code.dispose();
     release();
   }
@@ -211,7 +227,7 @@ function buildDependencies(
   const deps: Dependencies = {
     toolExecutor: new SubprocessExecutor({
       sandbox: config.sandbox,
-      workspaces: config.workspaces,
+      workspaces: plan.workspaces,
       // Per run, because the registry is: a request may have submitted tools of
       // its own, and they belong in that run's workspaces and no others.
       tools: config.mountTools ? workspaceTools(registry) : [],

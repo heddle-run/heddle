@@ -21,7 +21,7 @@ export default function CodeList({
 }: {
   entries: Entry[];
   onChange: (entries: Entry[]) => void;
-  kind: "tool" | "plugin";
+  kind: "tool" | "plugin" | "file";
   limit: number;
   note: string;
   emptySource: string;
@@ -35,7 +35,10 @@ export default function CodeList({
     onChange([
       ...entries,
       {
-        name: `${kind}_${entries.length + 1}`,
+        // A file is named by where it lands, so a new one needs a path rather
+        // than an identifier — and one with an extension, since the tool that
+        // reads it is usually globbing for it.
+        name: kind === "file" ? `notes-${entries.length + 1}.md` : `${kind}_${entries.length + 1}`,
         source: emptySource,
         ...(kind === "tool"
           ? { interpreter: "sh" }
@@ -94,7 +97,7 @@ export default function CodeList({
             }}
           >
             <label className="sr-only" htmlFor={`${kind}-name-${index}`}>
-              {kind} name
+              {kind} {kind === "file" ? "path" : "name"}
             </label>
             <input
               id={`${kind}-name-${index}`}
@@ -103,7 +106,7 @@ export default function CodeList({
               spellCheck={false}
               autoCapitalize="off"
               autoCorrect="off"
-              placeholder="name"
+              placeholder={kind === "file" ? "path" : "name"}
               style={{
                 minHeight: 36,
                 minWidth: 0,
@@ -159,7 +162,7 @@ export default function CodeList({
           </div>
 
           <Editor
-            label={`${kind} ${entry.name} source`}
+            label={`${kind} ${entry.name} ${kind === "file" ? "content" : "source"}`}
             value={entry.source}
             onChange={(source) => update(index, { source })}
             rows={12}

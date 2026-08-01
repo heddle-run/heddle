@@ -11,6 +11,7 @@ export type { WorkspaceFactoryOptions } from './factory.js';
 export { RESERVED_DIR, ScopeWorkspace } from './workspace.js';
 export {
   assertNoCollisions,
+  checkedDest,
   checkedMount,
   parseMount,
   DEFAULT_MOUNT_MAX_BYTES,

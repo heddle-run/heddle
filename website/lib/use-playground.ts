@@ -13,6 +13,7 @@ import {
   validateFlow,
   type Capabilities,
   type Example,
+  type RequestFile,
   type RequestPlugin,
   type RequestTool,
   type RunEvent,
@@ -39,6 +40,7 @@ export function usePlayground() {
   const [plugins, setPlugins] = useState<RequestPlugin[]>(
     DEFAULT_EXAMPLE.plugins,
   );
+  const [files, setFiles] = useState<RequestFile[]>(DEFAULT_EXAMPLE.files);
 
   const [protocol, setProtocol] = useState(
     DEFAULT_EXAMPLE.protocol ?? BUILTIN_PROTOCOL,
@@ -94,8 +96,15 @@ export function usePlayground() {
   const chosen = protocols.includes(protocol) ? protocol : BUILTIN_PROTOCOL;
 
   const payload = useCallback(
-    () => ({ flow, inputs: readInputs(), tools, plugins, protocol: chosen }),
-    [flow, readInputs, tools, plugins, chosen],
+    () => ({
+      flow,
+      inputs: readInputs(),
+      tools,
+      plugins,
+      files,
+      protocol: chosen,
+    }),
+    [flow, readInputs, tools, plugins, files, chosen],
   );
 
   const fail = (err: unknown) => {
@@ -193,6 +202,7 @@ export function usePlayground() {
     setInputs(next.inputs);
     setTools(next.tools);
     setPlugins(next.plugins);
+    setFiles(next.files);
     setProtocol(next.protocol ?? BUILTIN_PROTOCOL);
     setTab("spec");
     reset();
@@ -211,6 +221,8 @@ export function usePlayground() {
     setTools,
     plugins,
     setPlugins,
+    files,
+    setFiles,
     protocol: chosen,
     setProtocol,
     protocols,

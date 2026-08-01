@@ -202,7 +202,8 @@ without loading anybody's code.
 A **submitted** plugin may not declare `files`. A plugin's files are read from the
 directory it was installed in, and a plugin that arrived in a request is a module with no
 directory — so there is nothing for them to resolve against. Files belonging to one run go
-in that run's own request; files belonging to every run are the operator's, with `--mount`.
+in [that run's own request](/docs/server#submitted-code); files belonging to every run are
+the operator's, with `--mount`.
 </Callout>
 
 ## What is refused, and why

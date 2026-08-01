@@ -148,12 +148,27 @@ makes `/v1/validate` free, and discovery spends exactly that.
 ## Submitted code
 
 By default a request may only select a flow. With `--allow-request-code` it may also send
-tool scripts and plugins:
+tool scripts, plugins, and files for the workspace:
 
 | Field | Shape |
 |---|---|
 | `tools` | `{ name, source, interpreter? }` |
 | `plugins` | `{ name, manifest, source }` |
+| `files` | `{ path, content }` |
+
+`files` is the one that is not code. Each entry is copied into every node's workspace
+before the run starts, read-only, at `path` relative to the workspace root — so a
+submitted tool can read content the request carried instead of content the operator
+installed. `path` is checked the way a `--mount` destination is: relative, no climbing,
+nothing under `.heddle`. A path that collides with something the operator mounted is
+refused rather than shadowing it. `content` is the caller's own bytes; there is no way to
+name a file on the server, which is not the caller's to read.
+
+The three share one byte budget, because to the caller they are one thing: bytes this
+request asked the server to hold. `files` is additionally capped by count, since each one
+is copied per node rather than per run. Both limits, and the caps on `tools` and
+`plugins`, are in `/v1/capabilities` under `limits` — a client can read them rather than
+discover them by being refused.
 
 Every submitted plugin is loaded **out of process** — the only path a *request* has. An
 in-process plugin would be imported into the server, and a caller who can do that has the
@@ -161,9 +176,10 @@ server's environment, filesystem and memory. Each gets its own process, an empty
 environment, and is killed when the run ends. (`--plugin` accepts a JavaScript module as
 well as a manifest, because that one is the operator's own code.)
 
-Without the flag, a request carrying either field is refused with a `400` rather than
+Without the flag, a request carrying any of the three is refused with a `400` rather than
 having it ignored: a caller whose plugin was silently dropped would see an
-unknown-component-type failure with no way to learn why.
+unknown-component-type failure with no way to learn why, and one whose files were dropped
+would see a tool find an empty directory.
 
 What a submitted plugin may do is narrower than what heddle can serve. `runTool`,
 `emitEvent` and `log` are granted. `callModel` is withheld entirely when the server

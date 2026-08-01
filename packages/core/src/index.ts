@@ -226,6 +226,7 @@ export {
   createScratchWorkspace,
   createWorkspaceFactory,
   parseMount,
+  checkedDest,
   checkedMount,
   DEFAULT_MOUNT_MAX_BYTES,
   DEFAULT_MOUNT_MAX_ENTRIES,

@@ -8,26 +8,39 @@
  * `shipped-policies.test.ts` loads its manifest from `examples/`: a second copy
  * is a copy that drifts.
  *
- * What it pins is the property the example exists to demonstrate. Skills reach
- * the model as two tools over data the request carried, so the index costs
- * three names and three lines of context and a body costs a call the model
- * chose to make. A change that put the bodies in the index, or in the prompt,
- * would still run — and would have stopped being an example of anything.
+ * What it pins is the property the example exists to demonstrate. The skills
+ * are three files the request carried into the workspace, and they reach the
+ * model as two tools over that directory — so the index costs three names and
+ * three lines of context and a body costs a call the model chose to make. A
+ * change that put the bodies in the index, or in the prompt, would still run —
+ * and would have stopped being an example of anything.
+ *
+ * It sits beside `skills-example.test.ts` because the two are the same pattern
+ * from the two ends the workspace has: files an operator installed with a
+ * plugin, and files a caller sent with a request.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
-import { loadRemotePlugin } from '../remote-loader.js';
-import { PluginRegistry } from '../registry.js';
-import { withRuntime } from '../runtime-source.js';
-import { invokeTool } from '../../tool/invoke.js';
 import { SubprocessExecutor } from '../../tool/executor.js';
 import { FileRegistry } from '../../tool/registry.js';
+import { invokeTool } from '../../tool/invoke.js';
 import { loadFlow } from '../../spec/load.js';
 import { collectToolNames } from '../../spec/types.js';
+import { PluginRegistry } from '../../plugin/registry.js';
+import { createWorkspaceFactory } from '../factory.js';
+import { checkedMount } from '../mount.js';
 import type { ExecutorScope, Registry } from '../../tool/types.js';
+import type { Mount, WorkspaceFactory, WorkspaceTool } from '../types.js';
 
 /**
  * The shipped example, loaded rather than copied — a copy is a second thing to
@@ -49,11 +62,7 @@ interface PlaygroundExample {
   flow: string;
   inputs: string;
   tools: Array<{ name: string; source: string; interpreter: string }>;
-  plugins: Array<{
-    name: string;
-    manifest: Record<string, unknown>;
-    source: string;
-  }>;
+  files: Array<{ path: string; content: string }>;
 }
 
 const { exampleById } = (await import(playgroundModule)) as {
@@ -70,30 +79,13 @@ const SHEBANG: Record<string, string> = {
 };
 
 let scratch: string;
+let workspaces: WorkspaceFactory;
 let scope: ExecutorScope;
-let workspace: string;
-let plugins: PluginRegistry;
-let files: Registry;
+let registry: Registry;
 let flowPath: string;
 
 beforeAll(() => {
   scratch = mkdtempSync(join(tmpdir(), 'heddle-skills-'));
-
-  // The one writable directory the tools are given. This used to be a
-  // hand-set `process.env.HEDDLE_WORKSPACE`, because outside `--safe` there was
-  // no workspace to open — which made this a test that *simulated* the thing it
-  // was testing. A scope now has one either way, so it opens a real one.
-  scope = new SubprocessExecutor().beginScope('skills');
-  workspace = scope.workspace;
-
-  const submitted = example.plugins[0];
-  const entry = join(scratch, `${submitted.name}.mjs`);
-  writeFileSync(entry, withRuntime(submitted.source));
-
-  plugins = PluginRegistry.empty();
-  plugins.addRemote(
-    loadRemotePlugin(submitted.manifest, entry, { timeout: 20_000 }),
-  );
 
   const toolsDir = join(scratch, 'tools');
   mkdirSync(toolsDir);
@@ -102,73 +94,98 @@ beforeAll(() => {
     writeFileSync(path, `${SHEBANG[tool.interpreter]}\n${tool.source}`);
     chmodSync(path, 0o755);
   }
-  files = FileRegistry.create(toolsDir);
+  registry = FileRegistry.create(toolsDir);
+
+  // What `request-code.ts` does with a submitted `files`: the caller's bytes
+  // under the run's own directory, and one read-only mount each. Hand-rolled
+  // rather than imported because core cannot depend on the server — the shape
+  // is the assertion, and `checkedMount` is the part that has to be shared.
+  const filesDir = join(scratch, 'files');
+  const mounts: Mount[] = example.files.map((file) => {
+    const source = join(filesDir, file.path);
+    mkdirSync(dirname(source), { recursive: true });
+    writeFileSync(source, file.content);
+
+    return checkedMount({
+      source,
+      dest: file.path,
+      mode: 'ro',
+      origin: 'the request\'s "files"',
+    });
+  });
+
+  workspaces = createWorkspaceFactory().extend(mounts);
+  const tools: WorkspaceTool[] = registry.all().map((tool) => ({
+    name: tool.name,
+    target: tool.impl.kind === 'path' ? tool.impl.path : undefined,
+  }));
+
+  scope = new SubprocessExecutor({ workspaces, tools }).beginScope('assistant');
 
   flowPath = join(scratch, 'flow.yaml');
   writeFileSync(flowPath, example.flow);
 });
 
 afterAll(() => {
-  plugins.dispose();
-  scope.dispose();
+  scope?.dispose();
+  workspaces?.dispose();
   rmSync(scratch, { recursive: true, force: true });
 });
 
-async function callSkillTool(
+async function call(
   name: string,
-  input: Record<string, unknown>,
+  input: Record<string, unknown> = {},
 ): Promise<Record<string, unknown>> {
-  const tool = plugins.toolRegistry().lookup(name)!;
-  const { output } = await invokeTool(undefined, tool, input, undefined);
+  const { output } = await invokeTool(
+    undefined,
+    registry.lookup(name)!,
+    input,
+    scope.executor,
+  );
   return output;
 }
 
-async function callFileTool(
-  name: string,
-  input: Record<string, unknown>,
-): Promise<Record<string, unknown>> {
-  const tool = files.lookup(name)!;
-  const { output } = await invokeTool(undefined, tool, input, scope.executor);
-  return output;
-}
-
-interface Listed {
-  name: string;
-  description: string;
-}
-
-const listed = async (): Promise<Listed[]> =>
-  (await callSkillTool('list_skills', {})).skills as Listed[];
+const index = async (): Promise<string> =>
+  String((await call('list_skills')).skills);
 
 describe('the index the model is always carrying', () => {
-  it('is names and descriptions, and carries no body', async () => {
-    const skills = await listed();
-
-    expect(skills.map((skill) => skill.name)).toEqual([
-      'tabular-summary',
-      'date-arithmetic',
-      'incident-note',
+  it('is in the workspace before the first tool runs', () => {
+    expect(readdirSync(join(scope.workspace, 'skills')).sort()).toEqual([
+      'date-arithmetic.md',
+      'incident-note.md',
+      'tabular-summary.md',
     ]);
-    for (const skill of skills) {
-      expect(Object.keys(skill).sort()).toEqual(['description', 'name']);
-      expect(skill.description.length).toBeGreaterThan(0);
-    }
+  });
 
-    // The load-bearing assertion. A skill body says what to do; a description
-    // says when it applies. The moment a body appears here, every skill is in
-    // the conversation from the first round and the example is a long prompt
-    // with extra steps.
-    const written = JSON.stringify(skills);
-    for (const skill of skills) {
-      const { body } = await callSkillTool('read_skill', { name: skill.name });
-      expect(written).not.toContain(String(body).slice(0, 40));
+  it('is names and first lines, and carries no body', async () => {
+    const listed = await index();
+
+    for (const file of example.files) {
+      const [description, ...rest] = file.content.split('\n');
+      expect(listed).toContain(description);
+
+      // The load-bearing assertion. A skill body says what to do; a first line
+      // says when it applies. The moment a body appears here, every skill is in
+      // the conversation from the first round and the example is a long prompt
+      // with extra steps.
+      const body = rest.join('\n').trim();
+      expect(body.length).toBeGreaterThan(40);
+      expect(listed).not.toContain(body.slice(0, 40));
     }
   });
 
   it('names only skills read_skill can produce', async () => {
-    for (const skill of await listed()) {
-      const answer = await callSkillTool('read_skill', { name: skill.name });
-      expect(answer.name).toBe(skill.name);
+    const named = (await index())
+      .split('\n')
+      .map((line) => line.split(':')[0]);
+
+    expect(named.sort()).toEqual([
+      'date-arithmetic',
+      'incident-note',
+      'tabular-summary',
+    ]);
+    for (const name of named) {
+      const answer = await call('read_skill', { name });
       expect(String(answer.body).length).toBeGreaterThan(100);
     }
   });
@@ -176,22 +193,26 @@ describe('the index the model is always carrying', () => {
 
 describe('reading one body', () => {
   it('returns that one and no other', async () => {
-    const { body } = await callSkillTool('read_skill', {
-      name: 'date-arithmetic',
-    });
+    const { body } = await call('read_skill', { name: 'date-arithmetic' });
 
     expect(body).toContain('timedelta');
     expect(body).not.toContain('csv');
   });
 
   it('answers a name nothing matches instead of failing the round', async () => {
-    const { body } = await callSkillTool('read_skill', { name: 'Spreadsheets' });
+    const { body } = await call('read_skill', { name: 'Spreadsheets' });
 
     // Not a rejected promise: a failed tool call takes the agent's round with
     // it, and the model that guessed the name is the one reader who could pick
     // a better one. So the answer is a sentence listing what there is.
     expect(body).toContain('there is no skill called');
     expect(body).toContain('tabular-summary');
+  });
+
+  it('refuses a name that climbs out of the skills directory', async () => {
+    const { body } = await call('read_skill', { name: '../../etc/passwd' });
+
+    expect(body).toContain('there is no skill called');
   });
 });
 
@@ -211,30 +232,28 @@ describe('carrying out what a skill says', () => {
       "with open('data.csv') as handle:\n" +
       '    for row in csv.DictReader(handle):\n' +
       "        totals[row['category']] += float(row['amount'])\n" +
-      "for name, total in sorted(totals.items(), key=lambda kv: -kv[1]):\n" +
+      'for name, total in sorted(totals.items(), key=lambda kv: -kv[1]):\n' +
       "    print('%s %.2f' % (name, total))\n";
 
-    expect(
-      await callFileTool('write_file', { path: 'data.csv', content: rows }),
-    ).toEqual({ result: 'wrote 143 bytes to data.csv' });
-    await callFileTool('write_file', {
-      path: 'summarise.py',
-      content: script,
+    expect(await call('write_file', { path: 'data.csv', content: rows })).toEqual({
+      result: 'wrote 143 bytes to data.csv',
     });
+    await call('write_file', { path: 'summarise.py', content: script });
 
-    // The three tools share one workspace, which is what makes the procedure a
-    // procedure rather than three unrelated calls.
+    // The five tools share one workspace, which is what makes the procedure a
+    // procedure rather than five unrelated calls — and what puts the skills
+    // themselves within reach of the two that read them.
     // Asserted whole rather than field by field, so a failure shows what the
     // command actually said. `exit_code` alone tells you it went wrong and
     // takes the reason away.
-    const run = await callFileTool('bash', { command: 'python3 summarise.py' });
+    const run = await call('bash', { command: 'python3 summarise.py' });
     expect(run).toEqual({
       stdout: 'travel 508.50\nsoftware 240.00\nmeals 90.95\n',
       stderr: '',
       exit_code: 0,
     });
 
-    const back = await callFileTool('read_file', { path: 'summarise.py' });
+    const back = await call('read_file', { path: 'summarise.py' });
     expect(back.content).toBe(script);
     // Four python processes, three of them spawning more. Comfortably inside a
     // second on an idle machine and past vitest's 5s default when the rest of
@@ -244,19 +263,16 @@ describe('carrying out what a skill says', () => {
 
   it('refuses a path that leaves the workspace, in either direction', async () => {
     expect(
-      await callFileTool('write_file', {
-        path: '../escaped.txt',
-        content: 'no',
-      }),
+      await call('write_file', { path: '../escaped.txt', content: 'no' }),
     ).toEqual({ result: 'refused: path must stay inside the workspace' });
 
-    expect(await callFileTool('read_file', { path: '/etc/hosts' })).toEqual({
+    expect(await call('read_file', { path: '/etc/hosts' })).toEqual({
       content: 'refused: path must stay inside the workspace',
     });
   });
 
   it('reports a command that failed rather than failing itself', async () => {
-    const run = await callFileTool('bash', {
+    const run = await call('bash', {
       command: 'python3 -c "import sys; sys.exit(3)"',
     });
     expect(run.exit_code).toBe(3);
@@ -264,16 +280,14 @@ describe('carrying out what a skill says', () => {
 });
 
 describe('the flow that ties the two together', () => {
-  it('resolves every tool it names against the plugin or the tools directory', () => {
-    const flow = loadFlow(flowPath, plugins);
+  it('resolves every tool it names against the submitted tools', () => {
+    const flow = loadFlow(flowPath, PluginRegistry.empty());
     const named = collectToolNames(flow);
 
     expect(named).toContain('list_skills');
     expect(named).toContain('read_skill');
     for (const name of named) {
-      expect(
-        plugins.toolRegistry().lookup(name) ?? files.lookup(name),
-      ).toBeDefined();
+      expect(registry.lookup(name)).toBeDefined();
     }
   });
 
