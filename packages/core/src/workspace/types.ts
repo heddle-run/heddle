@@ -125,5 +125,27 @@ export interface WorkspaceFactory {
    * being held here, because on a server the tool registry is per run.
    */
   create(label: string, tools?: WorkspaceTool[]): Workspace;
+  /**
+   * A factory mounting everything this one mounts, plus `mounts` — and owning
+   * none of this one's directories.
+   *
+   * What lets a server take files in a request body. This factory is built once
+   * at startup from what the operator mounted, because what is in the working
+   * directory of every node of every run is the operator's to decide; a run
+   * layers its own caller's bytes onto a copy of it and disposes the copy when
+   * it ends. The parent's assembled template is *shared* rather than rebuilt —
+   * it is the same bytes for every run, and copying the operator's mounts again
+   * per request would pay for them per request.
+   *
+   * Which is also why disposing the child must not dispose the parent's
+   * template: `dispose` is how a run removes what it brought, and a run must
+   * not remove what it found.
+   *
+   * A mount that collides with one the parent already holds is refused here
+   * rather than shadowing it, for the reason `PluginRegistry.extend` carries
+   * names over: request content must not be able to take a workspace path the
+   * operator already claimed.
+   */
+  extend(mounts: Mount[]): WorkspaceFactory;
   dispose(): void;
 }

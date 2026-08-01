@@ -189,6 +189,17 @@ wrote. Three rules worth knowing, because they are chosen rather than incidental
 - **A copy-back that fails is reported, not raised.** It happens as the node finishes, and
   the run's own error is the one worth having.
 
+A plugin can put files in every workspace too, by declaring them in its
+[manifest](/docs/plugins/manifest#files) — that is how `examples/skills-agent/` ships an
+agent with a folder of skills rather than a prompt full of them.
+
+Over HTTP a caller has the same option without needing a path on the server. A request to
+a [`heddle-server`](/docs/server#submitted-code) started with `--allow-request-code` may
+carry a `files` array of `{ path, content }`, and each entry lands in every node's
+workspace read-only, exactly where `--mount` would have put it. What differs is whose
+bytes they are: `--mount` names a directory the operator already has, and `files` carries
+the caller's own.
+
 ### Keeping it
 
 ```bash

@@ -565,28 +565,33 @@ $referenced_components:
 `;
 
 const LIST_SKILLS = `#!/usr/bin/env python3
-import json, pathlib, sys
+import json, os, pathlib, sys
 
 json.load(sys.stdin)
 
-skills = sorted(pathlib.Path("skills").glob("*.md"))
+# The workspace, not the working directory. --mount put the skills here before
+# the run started, and $HEDDLE_WORKSPACE is where every tool in this run works.
+root = pathlib.Path(os.environ.get("HEDDLE_WORKSPACE") or os.getcwd()) / "skills"
+
 index = "\\n".join(
     "%s: %s" % (path.stem, path.read_text().splitlines()[0])
-    for path in skills
+    for path in sorted(root.glob("*.md"))
 )
 
 json.dump({"skills": index}, sys.stdout)
 `;
 
 const READ_SKILL = `#!/usr/bin/env python3
-import json, pathlib, sys
+import json, os, pathlib, sys
 
 args = json.load(sys.stdin)
-path = pathlib.Path("skills") / ("%s.md" % args.get("name", ""))
+root = pathlib.Path(os.environ.get("HEDDLE_WORKSPACE") or os.getcwd()) / "skills"
+path = root / ("%s.md" % str(args.get("name", "")).strip().lower())
 
 # A message rather than a crash: the model picked this name and can pick
 # another once it is told.
-body = path.read_text() if path.is_file() else "no skill by that name"
+inside = path.parent.resolve() == root.resolve()
+body = path.read_text() if inside and path.is_file() else "no skill by that name"
 
 json.dump({"body": body}, sys.stdout)
 `;
@@ -909,12 +914,14 @@ export const heddle: Reference = {
         { name: "skills/tidy-a-csv.md", language: "markdown", source: TIDY_SKILL },
       ],
       run:
-        "heddle run flow.yaml --tools-dir ./tools \\\n" +
+        "heddle run flow.yaml --tools-dir ./tools --mount ./skills \\\n" +
         `  --input '{"task": "tidy up the numbers in report.csv"}'`,
       note:
         "Skills are not a heddle concept either — the pattern is two tools " +
-        "and a prompt, and every column writes the same one. What differs " +
-        "is only that the prompt and the tool shapes are a document here.",
+        "and a prompt, and every column writes the same one. What differs is " +
+        "that the prompt and the tool shapes are a document, and --mount is " +
+        "what decides the folder is there, rather than the process happening " +
+        "to be started in the right directory.",
     },
 
     "tool-and-plugin": {

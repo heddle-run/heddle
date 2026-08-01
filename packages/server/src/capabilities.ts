@@ -36,6 +36,7 @@ export function handleCapabilities(
         maxBodyBytes: config.maxBodyBytes,
         maxRequestTools: config.maxRequestTools,
         maxRequestPlugins: config.maxRequestPlugins,
+        maxRequestFiles: config.maxRequestFiles,
         maxRequestCodeBytes: config.maxRequestCodeBytes,
         maxConcurrentRuns: config.maxConcurrentRuns,
       },

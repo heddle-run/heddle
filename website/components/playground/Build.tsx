@@ -5,7 +5,12 @@ import Tabs from "../Tabs";
 import CodeList from "./CodeList";
 import RunLog from "./RunLog";
 import { Icon, Select } from "@/ds";
-import { API_BASE, type Capabilities, type RequestPlugin, type RequestTool } from "@/lib/playground";
+import {
+  API_BASE,
+  type Capabilities,
+  type RequestPlugin,
+  type RequestTool,
+} from "@/lib/playground";
 import type { Playground, Status } from "@/lib/use-playground";
 
 const TOOL_STUB = `read -r input
@@ -26,6 +31,8 @@ const PLUGIN_MANIFEST_STUB = {
   version: "1.0.0",
   components: [{ componentType: "MyNode" }],
 };
+
+const FILE_STUB = "Whatever a tool in this run should be able to read.\n";
 
 const statusTone: Record<Status, string> = {
   idle: "var(--text-faint)",
@@ -60,6 +67,7 @@ export default function Build({ pg }: { pg: Playground }) {
               { id: "inputs", label: "Inputs" },
               { id: "tools", label: "Tools", badge: pg.tools.length },
               { id: "plugins", label: "Plugins", badge: pg.plugins.length },
+              { id: "files", label: "Files", badge: pg.files.length },
             ]}
             active={pg.tab}
             onSelect={pg.setTab}
@@ -139,6 +147,31 @@ export default function Build({ pg }: { pg: Playground }) {
               emptySource={PLUGIN_STUB}
               emptyManifest={PLUGIN_MANIFEST_STUB}
               note="A plugin adds component types the engine does not ship. The manifest declares them as data; the source runs in its own process, so it never sees the engine's memory or environment. Call serve({ ComponentType: { execute } }) — it is supplied for you."
+            />
+          )}
+
+          {/* Named by path rather than by name, which is the whole of the
+              difference from the two tabs above: a tool is called, a file is
+              found. The engine copies these into every node's workspace before
+              the flow starts, so a tool reaches one at $HEDDLE_WORKSPACE. */}
+          {pg.tab === "files" && (
+            <CodeList
+              kind="file"
+              entries={pg.files.map((file) => ({
+                name: file.path,
+                source: file.content,
+              }))}
+              onChange={(next) =>
+                pg.setFiles(
+                  next.map((entry) => ({
+                    path: entry.name,
+                    content: entry.source,
+                  })),
+                )
+              }
+              limit={pg.limits?.maxRequestFiles ?? 20}
+              emptySource={FILE_STUB}
+              note="A file is put in every node's workspace before the run starts, at the path you give it, and is read-only there. It is content the run reads — a skill, a template, a fixture — rather than something the engine runs."
             />
           )}
         </div>

@@ -70,7 +70,19 @@ export function checkedMount(mount: Mount): Mount {
   return { ...mount, source: realpathSync(source), dest: checkedDest(mount) };
 }
 
-function checkedDest(mount: Mount): string {
+/**
+ * Where something lands, checked and normalized — without asking what it is.
+ *
+ * Separate from {@link checkedMount} because a caller who is about to *write*
+ * the content has to know the destination is safe before it writes it: a server
+ * taking files in a request body has no source to check the existence of yet,
+ * and the path it would write to is exactly what is in question. Everything
+ * refused here is refused for both callers, which is the point of it being one
+ * function.
+ */
+export function checkedDest(
+  mount: Pick<Mount, 'dest' | 'source' | 'origin'>,
+): string {
   const dest = mount.dest.trim();
 
   if (dest.length === 0) {

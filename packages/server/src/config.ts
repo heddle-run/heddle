@@ -78,6 +78,15 @@ export interface ServerConfig {
   workDir?: string;
   maxRequestTools: number;
   maxRequestPlugins: number;
+  /**
+   * How many files one request may put in its own workspaces.
+   *
+   * Counted rather than only sized, because each one is a mount: it is copied
+   * into every node's workspace, and the copy is per node rather than per run.
+   * `maxRequestCodeBytes` bounds what the bytes cost; this bounds what the
+   * traversal does.
+   */
+  maxRequestFiles: number;
   maxRequestCodeBytes: number;
   maxConcurrentRuns: number;
   drainTimeout: number;
@@ -92,6 +101,7 @@ export const DEFAULT_PORT = 4319;
 export const DEFAULT_MAX_BODY_BYTES = ONE_MEBIBYTE;
 export const DEFAULT_MAX_REQUEST_TOOLS = 10;
 export const DEFAULT_MAX_REQUEST_PLUGINS = 5;
+export const DEFAULT_MAX_REQUEST_FILES = 20;
 export const DEFAULT_MAX_REQUEST_CODE_BYTES = 256 * 1024;
 export const DEFAULT_MAX_CONCURRENT_RUNS = 4;
 export const DEFAULT_PLUGIN_CALL_TIMEOUT = 30_000;
@@ -131,6 +141,7 @@ export function resolveConfig(options: ServerOptions = {}): ServerConfig {
     workDir: options.workDir,
     maxRequestTools: options.maxRequestTools ?? DEFAULT_MAX_REQUEST_TOOLS,
     maxRequestPlugins: options.maxRequestPlugins ?? DEFAULT_MAX_REQUEST_PLUGINS,
+    maxRequestFiles: options.maxRequestFiles ?? DEFAULT_MAX_REQUEST_FILES,
     maxRequestCodeBytes:
       options.maxRequestCodeBytes ?? DEFAULT_MAX_REQUEST_CODE_BYTES,
     maxConcurrentRuns:

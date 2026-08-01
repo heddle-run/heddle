@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createWorkspaceFactory } from '../factory.js';
 import { assertNoCollisions, parseMount } from '../mount.js';
-import type { Mount, Workspace } from '../types.js';
+import type { Mount, Workspace, WorkspaceFactory } from '../types.js';
 import { WorkspaceError } from '../../errors.js';
 
 let host: string;
@@ -301,3 +301,130 @@ describe('a read-write mount', () => {
     expect(warnings.join('\n')).toContain('could not copy "notes" back');
   });
 });
+
+/**
+ * The factory a server builds once at startup, and the one a run layers its
+ * caller's own files onto. The parent outlives every child, which is the whole
+ * reason this is not just a second factory.
+ */
+describe('extending a factory', () => {
+  function parent(): { factory: WorkspaceFactory; template: string } {
+    give('mounted/from-operator.md', 'the operator put this here');
+    const factory = createWorkspaceFactory({
+      mounts: [
+        { source: join(host, 'mounted'), dest: 'mounted', mode: 'ro', origin: '--mount' },
+      ],
+    });
+    return { factory, template: templateOf(factory) };
+  }
+
+  it('puts both layers in the scope', () => {
+    give('sent/from-caller.md', 'the caller sent this');
+    const child = parent().factory.extend([
+      { source: join(host, 'sent'), dest: 'sent', mode: 'ro', origin: 'the request' },
+    ]);
+
+    const ws = child.create('agent');
+    opened.push(ws);
+
+    expect(readFileSync(join(ws.root, 'mounted', 'from-operator.md'), 'utf-8')).toBe(
+      'the operator put this here',
+    );
+    expect(readFileSync(join(ws.root, 'sent', 'from-caller.md'), 'utf-8')).toBe(
+      'the caller sent this',
+    );
+    // Both read-only: what the parent mounted stays as read-only in a child's
+    // scope as it is in the parent's, or extending would be a way to soften it.
+    expect(ws.grants()).toEqual([
+      { path: ws.root, access: 'write' },
+      { path: join(ws.root, '.heddle'), access: 'read' },
+      { path: join(ws.root, 'mounted'), access: 'read' },
+      { path: join(ws.root, 'sent'), access: 'read' },
+    ]);
+  });
+
+  it('shares what the parent assembled rather than copying it again', () => {
+    give('sent/from-caller.md');
+    const { factory, template } = parent();
+
+    const child = factory.extend([
+      { source: join(host, 'sent'), dest: 'sent', mode: 'ro', origin: 'the request' },
+    ]);
+
+    // The operator's mounts are copied once, at startup, however many requests
+    // arrive. A child that rebuilt the template would pay for them per request.
+    expect(existsSync(join(template, 'mounted', 'from-operator.md'))).toBe(true);
+    expect(existsSync(join(templateOf(child), 'mounted'))).toBe(false);
+    expect(existsSync(join(templateOf(child), 'sent', 'from-caller.md'))).toBe(true);
+  });
+
+  it('disposes what it assembled and not what it was handed', () => {
+    give('sent/from-caller.md');
+    const { factory, template } = parent();
+
+    const child = factory.extend([
+      { source: join(host, 'sent'), dest: 'sent', mode: 'ro', origin: 'the request' },
+    ]);
+    const childTemplate = templateOf(child);
+    child.dispose();
+
+    expect(existsSync(childTemplate)).toBe(false);
+    // The one that matters on a server: a run ending must not take the next
+    // run's starting point with it.
+    expect(existsSync(template)).toBe(true);
+    expect(readFileSync(
+      join(nextScope(factory).root, 'mounted', 'from-operator.md'),
+      'utf-8',
+    )).toBe('the operator put this here');
+
+    factory.dispose();
+    expect(existsSync(template)).toBe(false);
+  });
+
+  it('refuses a mount that lands on one the parent already claimed', () => {
+    give('sent/from-caller.md');
+    const { factory } = parent();
+
+    expect(() =>
+      factory.extend([
+        {
+          source: join(host, 'sent'),
+          dest: 'mounted',
+          mode: 'ro',
+          origin: 'the request',
+        },
+      ]),
+    ).toThrow(/two things want "mounted"/);
+  });
+
+  it('leaves the parent alone', () => {
+    give('sent/from-caller.md');
+    const { factory } = parent();
+
+    factory.extend([
+      { source: join(host, 'sent'), dest: 'sent', mode: 'ro', origin: 'the request' },
+    ]);
+
+    // A run's own files are its own. A parent that had gained them would be
+    // handing one caller's content to every later request.
+    expect(existsSync(join(nextScope(factory).root, 'sent'))).toBe(false);
+  });
+
+  function nextScope(factory: WorkspaceFactory): Workspace {
+    const ws = factory.create('agent');
+    opened.push(ws);
+    return ws;
+  }
+});
+
+/**
+ * The directory a factory assembled for itself, or `''` if it assembled none.
+ *
+ * Reaching past `private`, which is worth it for exactly one property: that
+ * extending shares the parent's copy instead of making a second one. That is
+ * invisible from the outside — both arrangements produce identical scopes — and
+ * it is the reason `extend` exists rather than a second `createWorkspaceFactory`.
+ */
+function templateOf(factory: WorkspaceFactory): string {
+  return (factory as unknown as { template?: string }).template ?? '';
+}

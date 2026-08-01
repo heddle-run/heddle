@@ -5,9 +5,16 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { validateManifest, withRuntime } from '@heddle/core';
+import {
+  checkedDest,
+  checkedMount,
+  validateManifest,
+  withRuntime,
+  WorkspaceError,
+} from '@heddle/core';
+import type { Mount } from '@heddle/core';
 import type { ServerConfig } from './config.js';
 import { HttpError } from './errors.js';
 
@@ -23,6 +30,13 @@ export interface RequestPlugin {
   source: string;
 }
 
+/** A file the caller wants in the workspace, as the caller's own bytes. */
+export interface RequestFile {
+  /** Where it lands, relative to the workspace root. Already checked. */
+  path: string;
+  content: string;
+}
+
 export interface MaterializedPlugin {
   name: string;
   manifest: unknown;
@@ -32,16 +46,20 @@ export interface MaterializedPlugin {
 export interface RequestCode {
   tools?: unknown;
   plugins?: unknown;
+  files?: unknown;
 }
 
 export interface MaterializedCode {
   toolsDir?: string;
   plugins: MaterializedPlugin[];
+  /** Read-only, and one per submitted file. See {@link writeFiles}. */
+  mounts: Mount[];
   dispose(): void;
 }
 
 export const NO_CODE: MaterializedCode = {
   plugins: [],
+  mounts: [],
   dispose: () => {},
 };
 
@@ -56,7 +74,31 @@ const DEFAULT_INTERPRETER = 'sh';
 const NAME = /^[A-Za-z0-9_-]{1,64}$/;
 const SHEBANG = '#!';
 const OWNER_READ_EXECUTE = 0o500;
-const CODE_FIELDS = ['tools', 'plugins'];
+const CODE_FIELDS = ['tools', 'plugins', 'files'];
+
+/** Who asked for these mounts, in a collision message. */
+const FILES_ORIGIN = 'the request\'s "files"';
+
+/**
+ * A workspace complaint about something the request sent, as a 400.
+ *
+ * `WorkspaceError` is not a caller-fault type in general, which is why it is on
+ * neither list in `errors.ts`: an operator's `--mount` that has gone missing
+ * raises the same class and is a 500. It is the caller's fault *here*, and at
+ * the one other place a request reaches the workspace layer — layering these
+ * mounts onto the server's factory, where the collision is between a path the
+ * caller sent and one the operator already claimed.
+ */
+export function asBadRequest<T>(check: () => T): T {
+  try {
+    return check();
+  } catch (err) {
+    if (err instanceof WorkspaceError) {
+      throw new HttpError(400, err.message, 'WorkspaceError');
+    }
+    throw err;
+  }
+}
 
 export function rejectRequestCode(body: Record<string, unknown>): void {
   for (const field of CODE_FIELDS) {
@@ -75,9 +117,22 @@ export function materializeRequestCode(
 ): MaterializedCode {
   const tools = parseTools(body.tools, config);
   const plugins = parsePlugins(body.plugins, config);
+  const files = parseFiles(body.files, config);
 
-  if (tools.length === 0 && plugins.length === 0) return NO_CODE;
-  assertWithinCodeBudget([...tools, ...plugins], config);
+  if (tools.length === 0 && plugins.length === 0 && files.length === 0) {
+    return NO_CODE;
+  }
+  // One budget over all three, because they are one thing to the caller: bytes
+  // this request asked the server to hold. Splitting it would let a run spend
+  // the limit three times.
+  assertWithinCodeBudget(
+    [
+      ...tools.map((tool) => tool.source),
+      ...plugins.map((plugin) => plugin.source),
+      ...files.map((file) => file.content),
+    ],
+    config,
+  );
 
   const root = mkdtempSync(join(config.workDir ?? tmpdir(), 'heddle-run-'));
   const dispose = (): void => rmSync(root, { recursive: true, force: true });
@@ -86,6 +141,7 @@ export function materializeRequestCode(
     return {
       toolsDir: tools.length > 0 ? writeTools(root, tools) : undefined,
       plugins: writePlugins(root, plugins),
+      mounts: writeFiles(root, files),
       dispose,
     };
   } catch (err) {
@@ -136,6 +192,41 @@ function writeExecutable(path: string, contents: string): void {
   chmodSync(path, OWNER_READ_EXECUTE);
 }
 
+/**
+ * The submitted files, on disk and as something a workspace will take.
+ *
+ * One mount per file rather than one for the directory they share. The caller
+ * named these paths one at a time, so a collision should name the path the
+ * caller wrote — and grouping them would mount a directory nobody asked for,
+ * whose other contents would then be whatever else happened to land there.
+ *
+ * Written under the run's own temp root, which the run itself never reaches:
+ * what a node gets is the workspace's copy, made per scope from these. So this
+ * directory is deleted with the rest of the request's code when the run ends,
+ * and until then it is a source like any other mount's.
+ */
+function writeFiles(root: string, files: RequestFile[]): Mount[] {
+  if (files.length === 0) return [];
+
+  const filesDir = join(root, 'files');
+  mkdirSync(filesDir);
+
+  return files.map((file) => {
+    const source = join(filesDir, file.path);
+    mkdirSync(dirname(source), { recursive: true });
+    writeFileSync(source, file.content);
+
+    return asBadRequest(() =>
+      checkedMount({
+        source,
+        dest: file.path,
+        mode: 'ro',
+        origin: FILES_ORIGIN,
+      }),
+    );
+  });
+}
+
 function parseTools(value: unknown, config: ServerConfig): RequestTool[] {
   const seen = new Set<string>();
 
@@ -168,12 +259,57 @@ function parsePlugins(value: unknown, config: ServerConfig): RequestPlugin[] {
   });
 }
 
+/**
+ * Every submitted file, checked before a byte of it is written.
+ *
+ * The path is checked the way a `--mount` destination is, by the same function:
+ * relative, no climbing, not under `.heddle`. That has to happen here rather
+ * than when the mount is made, because the path is where the content is about
+ * to be written — a check that ran after the write would be reporting on a file
+ * it had already put outside the run's own directory.
+ */
+function parseFiles(value: unknown, config: ServerConfig): RequestFile[] {
+  const seen = new Set<string>();
+
+  return checkArray('files', value, config.maxRequestFiles).map((raw) => {
+    const entry = asEntry('files', raw);
+    const path = checkPath(entry.path, seen);
+
+    if (typeof entry.content !== 'string') {
+      throw new HttpError(
+        400,
+        `file "${path}" has no "content". A submitted file carries its own ` +
+          `bytes — a host path would name a file on the server, which is not ` +
+          `yours to read.`,
+      );
+    }
+
+    return { path, content: entry.content };
+  });
+}
+
+function checkPath(path: unknown, seen: Set<string>): string {
+  if (typeof path !== 'string' || path.trim().length === 0) {
+    throw new HttpError(400, `each entry in "files" needs a "path"`);
+  }
+
+  const dest = asBadRequest(() =>
+    checkedDest({ dest: path, source: path, origin: FILES_ORIGIN }),
+  );
+  if (seen.has(dest)) {
+    throw new HttpError(400, `duplicate file path "${dest}"`);
+  }
+  seen.add(dest);
+
+  return dest;
+}
+
 function assertWithinCodeBudget(
-  submitted: Array<{ source: string }>,
+  submitted: string[],
   config: ServerConfig,
 ): void {
   const total = submitted.reduce(
-    (sum, entry) => sum + Buffer.byteLength(entry.source, 'utf-8'),
+    (sum, source) => sum + Buffer.byteLength(source, 'utf-8'),
     0,
   );
   if (total <= config.maxRequestCodeBytes) return;

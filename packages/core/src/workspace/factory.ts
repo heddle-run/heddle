@@ -55,30 +55,67 @@ export function createScratchWorkspace(label: string): Workspace {
   return new ScopeWorkspace({ root: createWorkspace(label), keep: false });
 }
 
+/**
+ * What a factory takes from the one it extends.
+ *
+ * Templates rather than mounts, because the parent has already assembled them
+ * and they are the same bytes for every child: an extended factory copies them
+ * and never owns them. The mounts come too, but only so a collision is caught
+ * and a read-only grant is still made — the copying was done upstream.
+ */
+interface Inherited {
+  templates: string[];
+  mounts: Mount[];
+  /**
+   * The parent's name counter, shared rather than copied.
+   *
+   * Under `--workspace` a scope's directory is named after its node, and the
+   * counter is what stops the second arrival at a node opening the first one's
+   * directory. A child with a counter of its own would hand out a name the
+   * parent — or another child — had already used, which on a server is one
+   * run reading another's files.
+   */
+  used: Map<string, number>;
+}
+
 class ScopedWorkspaceFactory implements WorkspaceFactory {
   private readonly options: WorkspaceFactoryOptions;
   private readonly readOnly: Mount[];
   private readonly writable: Mount[];
-  private readonly used = new Map<string, number>();
+  private readonly used: Map<string, number>;
+  /** Copied into every scope, in order. Only {@link template} is this one's. */
+  private readonly templates: string[];
   private template?: string;
 
-  constructor(options: WorkspaceFactoryOptions) {
+  constructor(options: WorkspaceFactoryOptions, inherited?: Inherited) {
     this.options = options;
+    this.used = inherited?.used ?? new Map();
 
-    const mounts = options.mounts ?? [];
+    const own = options.mounts ?? [];
+    const mounts = [...(inherited?.mounts ?? []), ...own];
     assertNoCollisions(mounts);
     this.readOnly = mounts.filter((mount) => mount.mode === 'ro');
     this.writable = mounts.filter((mount) => mount.mode === 'rw');
+    this.templates = [...(inherited?.templates ?? [])];
 
     // Assembled now rather than per scope, so a mount that is missing, too big
     // or a symlink fails before the run starts — not at whichever node reaches
     // it first, by which time the model has been told the file is there.
-    if (this.readOnly.length > 0) this.template = this.buildTemplate();
+    //
+    // Only what this factory adds: an inherited template holds the rest and
+    // rebuilding it would copy the operator's mounts once per extension.
+    const ownReadOnly = own.filter((mount) => mount.mode === 'ro');
+    if (ownReadOnly.length > 0) {
+      this.template = this.buildTemplate(ownReadOnly);
+      this.templates.push(this.template);
+    }
   }
 
   create(label: string, tools: WorkspaceTool[] = []): Workspace {
     const root = this.rootFor(label);
-    if (this.template) copyTree(this.template, root, 'workspace template');
+    for (const template of this.templates) {
+      copyTree(template, root, 'workspace template');
+    }
 
     return new ScopeWorkspace({
       root,
@@ -90,17 +127,29 @@ class ScopedWorkspaceFactory implements WorkspaceFactory {
     });
   }
 
+  extend(mounts: Mount[]): WorkspaceFactory {
+    return new ScopedWorkspaceFactory(
+      { ...this.options, mounts },
+      {
+        templates: this.templates,
+        mounts: [...this.readOnly, ...this.writable],
+        used: this.used,
+      },
+    );
+  }
+
+  /** Removes what this factory assembled, and nothing it was handed. */
   dispose(): void {
     if (this.template === undefined) return;
     removeDir(this.template);
     this.template = undefined;
   }
 
-  private buildTemplate(): string {
+  private buildTemplate(mounts: Mount[]): string {
     const template = mkdtempSync(join(tmpdir(), 'heddle-tpl-'));
 
     try {
-      for (const mount of this.readOnly) {
+      for (const mount of mounts) {
         copyTree(
           mount.source,
           join(template, mount.dest),
