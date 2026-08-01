@@ -110,8 +110,23 @@ export const manifest = [
   },
   {
     icon: "message-square",
-    title: "Interactive chat",
-    detail: "--session keeps the conversation, on disk or in your own store.",
+    title: "Sessions",
+    detail: "Conversations kept across runs, on the CLI and over HTTP.",
+  },
+  {
+    icon: "plug",
+    title: "Pluggable storage",
+    detail: "Sessions on disk by default, or in a store a plugin provides.",
+  },
+  {
+    icon: "rotate-ccw",
+    title: "Durable runs",
+    detail: "--durable checkpoints each node; --resume continues from it.",
+  },
+  {
+    icon: "square-check",
+    title: "Human in the loop",
+    detail: "A run can stop for a person and carry on when they answer.",
   },
   {
     icon: "webhook",
@@ -357,7 +372,7 @@ export const faqItems = [
   {
     question: "What does batteries-included actually mean here?",
     answer:
-      "That the equipment an agent needs in production is already in the runtime rather than left to you: a tool-calling loop, pre-flight graph validation, an OS-level sandbox, a per-agent workspace, an HTTP server with event streaming, guardrail transforms, retry and approval policies, branching, chat sessions, wire-protocol encoders and project scaffolding. The manifest on this page lists them, and each one is a feature you can check against the README rather than a claim about quality.",
+      "That the equipment an agent needs in production is already in the runtime rather than left to you: a tool-calling loop, pre-flight graph validation, an OS-level sandbox, a per-agent workspace, an HTTP server with event streaming, guardrail transforms, retry and approval policies, branching, sessions that outlive the process, durable runs you can resume, a way to stop for a human, wire-protocol encoders and project scaffolding. The manifest on this page lists them, and each one is a feature you can check against the README rather than a claim about quality.",
   },
   {
     question: "How is this different from other agent frameworks?",
@@ -368,6 +383,11 @@ export const faqItems = [
     question: "How is this different from other declarative agent runtimes?",
     answer:
       "Declarative agents in YAML are no longer unusual — Docker Agent, Microsoft's declarative workflows and Google's ADK all offer a version of it, and that is a good thing for everyone writing agents. Two things separate heddle. The format is the Open Agent Specification, published by Oracle rather than defined by this project, so a flow is portable to any conforming runtime instead of to one vendor's product. And the sandbox is a kernel boundary on your own machine — bubblewrap or seatbelt — rather than a container or a hosted execution service, with a documented refusal to degrade into an unconfined run.",
+  },
+  {
+    question: "Can an agent hold a conversation, or wait for a person?",
+    answer:
+      "Both, and they are the same mechanism. --session keeps a run in a conversation on disk and hands the agent the turns before it; the same session works over HTTP, so a chat on your laptop and one behind the server are the same thing. On top of that, --durable writes the run down at each step so it can be resumed if the process dies, and a policy can suspend a run to wait on a person — the run stops, the question is stored, and answering it continues from where it stopped without re-running the model call or the tools that already ran. Sessions live on disk by default; a plugin can put them in a database instead, which is what more than one replica needs.",
   },
   {
     question: "Can I run it as a service?",

@@ -156,9 +156,9 @@ body {
   }
 }
 
-/* The inventory checklist. Twelve entries, so the column count is chosen to
-   leave whole rows: three columns of four on a wide screen, two of six at
-   tablet width. */
+/* The inventory checklist: three columns on a wide screen, two at tablet
+   width. The count is deliberately not part of that choice — see the rule
+   below, which is what lets the list be however long the list is. */
 .hd-manifest {
   display: grid;
   gap: var(--space-6) var(--space-8);
