@@ -10,6 +10,7 @@ heddle needs no SDK. The workflow is a document — YAML or JSON — naming node
 - **Graph-based execution** - Flows are compiled into directed graphs with control flow and data flow edges
 - **LLM integration** - OpenAI-compatible LLM provider with tool-calling loop support
 - **External tools** - Tools are standalone executables (shell scripts, Python, etc.) that communicate via JSON over stdin/stdout
+- **Per-agent workspace** - Each agent's tools share one writable directory and can reach each other by name; `--mount` puts your files in it
 - **Branching logic** - Conditional routing with `BranchingNode` for dynamic workflows
 - **Validation** - Spec-level and graph-level validation catches errors before execution
 - **Scaffolding** - `heddle init` generates a project template to get started quickly
@@ -143,6 +144,16 @@ Commands:
     --input <json>         Input JSON object
     --chat                 Open an interactive chat session
     --plugin <module>      Plugin providing custom component types (repeatable)
+    --mount <src[:dest][:ro|:rw]>
+                           Put a file or directory in every workspace
+                           (repeatable). "ro" is a copy the run cannot carry
+                           back; "rw" copies changed files out again
+    --workspace <dir>      Keep each node's workspace under this directory
+                           instead of a temporary one
+    --mount-max-bytes <n>  Largest a --mount may be (default 67108864)
+    --mount-max-entries <n> Most files a --mount may hold (default 4096)
+    --no-mount-tools       Keep the tools out of the workspace, so the only way
+                           to reach one is a call the model made
     --safe                 Run tools inside an OS sandbox
     --sandbox <backend>    auto (default), bubblewrap, or seatbelt
     --allow-read <path>    Grant sandboxed tools read access (repeatable)
@@ -214,6 +225,60 @@ so `fetch_api.py` is declared as `fetch_api`.
 > that execute commands or write files on a model's behalf, such as those in
 > `examples/coding-agent/`. Pass [`--safe`](#safe-mode) to confine them instead.
 
+### The workspace
+
+Every tool runs in a **workspace**: a directory of its own, which is also its
+working directory and the place it writes. It is `$HEDDLE_WORKSPACE`, and a tool
+starts inside it, so a relative path is a path in the workspace.
+
+```
+$HEDDLE_WORKSPACE/       # the tool's cwd, and its scratch
+└── .heddle/bin/         # every tool, reachable by name
+```
+
+**One workspace per `AgentNode` execution**, shared by every tool call that agent
+makes — so an agent's tools can pass files to each other (write a CSV in one
+call, run a script over it in the next) while a different agent sees an empty
+one. It is removed when the agent finishes. A bare `ToolNode` gets a throwaway
+of its own.
+
+Every tool is also linked into `.heddle/bin`, which is on `PATH`, so a tool can
+run a peer by the name the model uses for it. `--no-mount-tools` turns that off;
+see the note under [Limits](#limits) for when you want to.
+
+**Putting something in it.** `--mount` copies a file or directory into every
+workspace before the run starts:
+
+```bash
+heddle run flow.yaml --tools-dir ./tools \
+  --mount ./skills \
+  --mount ./data/report.csv:input.csv \
+  --mount ./notes:notes:rw
+```
+
+`<src>`, then optionally `:<dest>` (where it lands, relative to the workspace
+root — the source's own name by default) and `:ro` or `:rw`. `ro` is the default
+and is a copy: every node gets its own, and the original is untouched. `rw` is
+shared — copied in when a node's scope opens, and the files that node changed
+copied back when it closes. Deletions never propagate, last writer wins, and a
+copy-back that fails is reported rather than raised.
+
+A plugin can ship files the same way, by declaring `files` in its manifest
+([reference](https://heddle.run/docs/plugins/manifest#files)).
+[examples/skills-agent](examples/skills-agent) is one: two tools and a directory
+of procedures, with no entry point and no process to start.
+
+**Keeping it.** `--workspace <dir>` puts each node's workspace in
+`<dir>/<node-name>` and leaves it there, so what the run produced is still
+around afterwards.
+
+<a id="workspace-not-confinement"></a>
+
+> A workspace is not confinement. Without `--safe` nothing stops a tool writing
+> elsewhere; what the workspace gives you is somewhere sensible for it to write
+> by default, and somewhere its peers know to look. `$HEDDLE_SANDBOX` is what
+> says whether anything is enforcing the edges.
+
 ### Safe Mode
 
 `--safe` runs every tool inside an OS sandbox:
@@ -231,11 +296,11 @@ Inside the sandbox a tool gets:
 | | |
 |---|---|
 | System directories | read-only |
-| Working directory | read-only (opt in with `--allow-write`) |
+| Launch directory | read-only — where you ran heddle, not where the tool starts (opt in with `--allow-write`) |
 | Tools directory | read-only — a tool cannot rewrite itself or its siblings |
 | `$HOME` | a throwaway directory; the real one is unreachable, so `~/.ssh`, `~/.aws` and `~/.config` are not exposed |
 | `$TMPDIR` | private scratch, discarded when the tool exits |
-| `$HEDDLE_WORKSPACE` | writable, shared with the other tools in the same agent execution |
+| `$HEDDLE_WORKSPACE` | writable, and the tool's working directory — see [The workspace](#the-workspace). `.heddle` inside it is read-only, so a tool cannot rewrite a peer |
 | Environment | only `PATH`, `HOME`, `TMPDIR`, locale, and anything named with `--allow-env` — so `OPENAI_API_KEY` and other secrets in heddle's own environment are not handed to tool code |
 | Network | allowed by default; `--deny-net` turns it off |
 
@@ -244,15 +309,22 @@ rather than fail.
 
 #### Per-agent sessions
 
-Every `AgentNode` execution opens its own sandbox session. Each tool call is
-still its own container, but all calls within one agent execution share a
-single `$HEDDLE_WORKSPACE` directory — so an agent's tools can pass files to
-each other, while a different agent's tools see a different, empty workspace.
-The workspace is destroyed when the agent finishes. Tool calls made outside any
-agent (a bare `ToolNode`) get a throwaway session of their own.
+Every `AgentNode` execution opens its own sandbox session, over that node's own
+[workspace](#the-workspace). Each tool call is still its own container, and what
+`--safe` adds is enforcement: the workspace becomes the only place a tool *can*
+write, and a `ro` mount inside it is refused a write outright.
 
 #### Limits
 
+- **A tool on `PATH` is a tool the model can reach without asking.** Every tool
+  is in the workspace's `bin`, so a shell tool can exec a peer — and that call is
+  dispatched by the tool, not by the model, so it passes no `toolCall`
+  middleware and emits no `tool_call` event. An approval gate refuses the calls
+  the model makes and not the calls a tool makes. This is not a hole in the
+  sandbox: the program that ran is one you installed, inside the same
+  confinement, with the same paths. What changed is who chose to run it.
+  `--no-mount-tools` empties the workspace's `bin` if you need the narrower
+  guarantee.
 - Sandboxing applies to **tools**, not to plugins. Plugin modules are imported
   into the heddle process itself and run with full Node privileges; only the
   tools they invoke via `ctx.runTool` are confined.

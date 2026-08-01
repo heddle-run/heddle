@@ -183,14 +183,16 @@ one bespoke drawing, and it is a diagram, not an icon.
    frames and converging into a single mark, the active thread in accent. It is
    simultaneously the brand drawing and the execution pipeline: parse →
    validate → compile → run
-4. **Manifest** — 001, the inventory. Twelve batteries as a checklist, over a
+4. **Manifest** — 001, the inventory. Thirteen batteries as a checklist, over a
    boxed frame of four zeros counting what they add to the reader's project.
    **This section is what makes the lead claim falsifiable**, so every line has
    to name a feature that exists in the README — treat it the way `safeMode` is
    treated, and delete a line rather than let it drift. It is a list, not a card
    grid, because the claim is breadth and a reader should be able to count it.
-   The `.hd-manifest` grid is sized to leave whole rows: three columns of four
-   wide, two of six at tablet width. Twelve is load-bearing for that.
+   The count is whatever ships, not a number the layout picked: three columns at
+   desktop, two at tablet, and a rule in `globals.css` centres the final item
+   when it would otherwise sit alone against the left edge. Add a battery when
+   heddle grows one; do not drop a real one to keep the rows square.
 5. **Manifesto** — 002, the position: batteries-included usually means a bigger
    library, and why heddle does not make that trade
 6. **Steps** — 003, three step cards, each over its own code fragment
