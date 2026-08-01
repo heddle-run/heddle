@@ -6,15 +6,19 @@ import { useTheme } from "@/lib/theme";
 import { GITHUB_URL, PLAYGROUND_URL } from "@/lib/constants";
 import Wordmark from "./Wordmark";
 
-/* One entry for the playground: the comparison is a view of it, not a page of
+/* Destinations only. This row used to also carry anchors into the landing
+   page's own sections, named after their editorial labels — "Included",
+   "Method", "Isolation" — which read as insider vocabulary next to two real
+   navigations, and hid the whole row below 960px to fit. The numbered sections
+   do their own wayfinding on scroll, and the footer carries the full index.
+   The section ids stay put as deep-link targets.
+
+   One entry for the playground: the comparison is a view of it, not a page of
    its own. Its address is another origin once the subdomain is configured, so
    the anchor is chosen per link rather than assumed. */
 const links = [
-  { label: "Included", href: "/#included" },
-  { label: "Method", href: "/#method" },
-  { label: "Isolation", href: "/#safe" },
-  { label: "Playground", href: PLAYGROUND_URL },
   { label: "Docs", href: "/docs" },
+  { label: "Playground", href: PLAYGROUND_URL },
 ];
 
 export default function Nav() {
@@ -97,7 +101,10 @@ export default function Nav() {
           >
             <Icon name="github" size={18} />
           </a>
-          <Link href="/docs">
+          {/* Not /docs — the link two elements to the left already goes there,
+              and a CTA that repeats its neighbour is a wasted slot. This is the
+              page a reader who has decided actually wants. */}
+          <Link href="/docs/getting-started">
             <Button size="sm" beam iconAfter="arrow-right">
               Get started
             </Button>

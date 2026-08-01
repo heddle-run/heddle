@@ -438,9 +438,11 @@ body {
 .hd-nav-links {
   display: none;
 }
-/* Five links plus the wordmark, the toggle and the CTA need more room than
-   the four this was set for. */
-@media (min-width: 960px) {
+/* Two short destinations, so the row fits long before the desktop breakpoint.
+   It was 960px when the nav also carried three section anchors, which left
+   phones and tablets with no route to the docs or the playground at all —
+   raise this again only if links are added back. */
+@media (min-width: 600px) {
   .hd-nav-links {
     display: flex;
   }
