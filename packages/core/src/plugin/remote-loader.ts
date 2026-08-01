@@ -1,6 +1,7 @@
 import { readFileSync, realpathSync, statSync } from 'node:fs';
 import { dirname, isAbsolute, resolve, sep } from 'node:path';
 import type { SandboxSession } from '../sandbox/types.js';
+import type { Workspace } from '../workspace/index.js';
 import { PluginError } from '../errors.js';
 import { PluginHost, type PluginHostOptions } from './host.js';
 import {
@@ -48,6 +49,8 @@ const RUNTIME_IMPORT = `data:text/javascript,${encodeURIComponent(
 export interface RemotePluginOptions {
   timeout?: number;
   session?: SandboxSession;
+  /** Somewhere the plugin's process may write. See `PluginHostOptions`. */
+  workspace?: Workspace;
   env?: Record<string, string>;
   capabilities?: PluginCapability[];
   refusedBecause?: Partial<Record<PluginCapability, string>>;
@@ -120,6 +123,7 @@ function hostOptionsFor(
     cwd: root,
     timeout: options.timeout,
     session: options.session,
+    workspace: options.workspace,
     env: options.env,
     capabilities: manifest.capabilities,
     seams: admittedVerdicts(manifest),

@@ -143,6 +143,29 @@ When an agent calls a tool, a failure is reported back to the model as a tool me
 By default tools run as subprocesses of `heddle` and inherit its full environment, including any API keys, and a tool can read and write anything the invoking user can. Treat a tools directory the way you would treat a directory of shell scripts you are about to run, and be especially careful with tools that execute commands or write files on the model's behalf.
 </Callout>
 
+## The workspace
+
+Every tool runs in a **workspace**: a directory of its own, which is also its working
+directory and the place it may write. It is `$HEDDLE_WORKSPACE`, and a tool is started
+inside it, so a relative path is a path in the workspace.
+
+```
+$HEDDLE_WORKSPACE/       # the tool's cwd, and its scratch
+└── .heddle/bin/         # reserved
+```
+
+**One workspace per `AgentNode` execution**, shared by every tool call that agent makes.
+That is what lets an agent's tools hand each other files — write a CSV in one call, run a
+script over it in the next — while a different agent in the same flow sees an empty one.
+It is removed when the agent finishes.
+
+<Callout>
+A workspace is not confinement. Without `--safe` nothing stops a tool from writing
+elsewhere; what the workspace gives you is somewhere sensible for it to write *by
+default*, and somewhere its peers know to look. `$HEDDLE_SANDBOX` is the variable that
+says whether anything is enforcing the edges.
+</Callout>
+
 ## Safe mode
 
 `--safe` runs each tool inside an OS sandbox instead — bubblewrap on Linux, Seatbelt on macOS, selected automatically:
@@ -151,9 +174,9 @@ By default tools run as subprocesses of `heddle` and inherit its full environmen
 heddle run flow.json --tools-dir ./tools --safe
 ```
 
-A confined tool gets read-only system paths and working directory, a throwaway `$HOME` (so `~/.ssh` and `~/.aws` are unreachable), a private `$TMPDIR`, and only the environment variables named with `--allow-env` — so API keys in heddle's environment are not handed to tool code. Network access is allowed unless you pass `--deny-net`.
+A confined tool gets read-only system paths, a throwaway `$HOME` (so `~/.ssh` and `~/.aws` are unreachable), a private `$TMPDIR`, and only the environment variables named with `--allow-env` — so API keys in heddle's environment are not handed to tool code. Network access is allowed unless you pass `--deny-net`.
 
-Each `AgentNode` execution opens its own sandbox session. Every tool call is still its own container, but all calls within one agent share a single `$HEDDLE_WORKSPACE` directory, so an agent's tools can pass files to each other while a different agent sees an empty workspace. The workspace is destroyed when the agent finishes.
+What `--safe` adds to the workspace is enforcement: the workspace becomes the only place a tool *can* write, and the directory heddle was launched from becomes readable and nothing more. Each `AgentNode` execution opens its own sandbox session over its own workspace, so every tool call is still its own container while all calls within one agent share the directory.
 
 Widen the policy with `--allow-read <path>` and `--allow-write <path>`.
 

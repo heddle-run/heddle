@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import type { SandboxSession } from '../sandbox/types.js';
+import type { Workspace } from '../workspace/index.js';
 import { PluginError } from '../errors.js';
 import {
   encode,
@@ -46,6 +47,15 @@ export interface PluginHostOptions {
   cwd?: string;
   timeout?: number;
   session?: SandboxSession;
+  /**
+   * Somewhere this plugin's process may write.
+   *
+   * Arrives beside the session rather than from it, since a session no longer
+   * makes one. Disposed here because nothing else holds a reference — a host
+   * that skipped it would leave a directory per plugin behind, once per run on
+   * a server that accepts submitted plugins.
+   */
+  workspace?: Workspace;
   env?: Record<string, string>;
   capabilities?: PluginCapability[];
   seams?: Record<string, AfterAction[]>;
@@ -182,11 +192,10 @@ export class PluginHost {
     this.cleanupSandbox?.();
     this.cleanupSandbox = undefined;
     // The scratch directory above belongs to one wrapped command; this is the
-    // workspace the session made when it was created, which both backends
-    // `mkdtemp` eagerly. Nothing else holds a reference to it, so a host that
-    // does not remove it leaves a directory per plugin behind — once per run on
-    // a server that accepts submitted plugins.
+    // process's own workspace. Session first, so a backend still holding a
+    // handle has let go before the directory goes.
     this.options.session?.dispose();
+    this.options.workspace?.dispose();
   }
 
   private assertCallable(method: string, signal: AbortSignal | undefined): void {

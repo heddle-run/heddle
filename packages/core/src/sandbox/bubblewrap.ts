@@ -6,7 +6,7 @@ import type {
   SandboxSession,
 } from './types.js';
 import { baseEnv } from './types.js';
-import { createWorkspace, removeDir } from './workspace.js';
+import type { Workspace, WorkspaceGrant } from '../workspace/index.js';
 
 const SYSTEM_PATHS = [
   '/usr',
@@ -35,19 +35,25 @@ const ISOLATION_ARGS = [
 
 class BubblewrapSession implements SandboxSession {
   readonly name = 'bubblewrap';
-  readonly workspace: string;
+  readonly workspace: Workspace;
 
   private readonly policy: SandboxPolicy;
   private readonly bwrapPath: string;
 
-  constructor(policy: SandboxPolicy, bwrapPath: string, workspace: string) {
+  constructor(policy: SandboxPolicy, bwrapPath: string, workspace: Workspace) {
     this.policy = policy;
     this.bwrapPath = bwrapPath;
     this.workspace = workspace;
   }
 
   wrap(toolPath: string, extraArgs: string[] = []): SandboxCommand {
-    const cwd = resolve(this.policy.cwd ?? process.cwd());
+    // Still bound read-only, and no longer where the tool starts. heddle's own
+    // working directory is where the flow file and whatever sits beside it
+    // live, so a tool naming an absolute path into it keeps working; a tool
+    // reading `./something` now reads it out of the workspace, which is the
+    // point.
+    const launchedFrom = resolve(this.policy.cwd ?? process.cwd());
+    const cwd = this.workspace.root;
     const tool = resolve(toolPath);
     const env = baseEnv(this.policy, SANDBOX_HOME, SANDBOX_TMP, this.workspace);
 
@@ -56,8 +62,9 @@ class BubblewrapSession implements SandboxSession {
       ...networkArgs(this.policy),
       ...filesystemArgs(),
       ...systemBindArgs(),
-      ...readBindArgs([cwd, tool, ...this.policy.readPaths]),
-      ...writeBindArgs(this.workspace, this.policy.writePaths),
+      ...readBindArgs([launchedFrom, tool, ...this.policy.readPaths]),
+      ...writeBindArgs(this.policy.writePaths),
+      ...grantArgs(this.workspace.grants()),
       '--chdir',
       cwd,
       '--clearenv',
@@ -71,7 +78,7 @@ class BubblewrapSession implements SandboxSession {
   }
 
   dispose(): void {
-    removeDir(this.workspace);
+    return;
   }
 }
 
@@ -86,12 +93,8 @@ export class BubblewrapSandbox implements Sandbox {
     this.bwrapPath = bwrapPath;
   }
 
-  session(label: string): SandboxSession {
-    return new BubblewrapSession(
-      this.policy,
-      this.bwrapPath,
-      createWorkspace(label),
-    );
+  session(label: string, workspace: Workspace): SandboxSession {
+    return new BubblewrapSession(this.policy, this.bwrapPath, workspace);
   }
 }
 
@@ -127,16 +130,26 @@ function readBindArgs(paths: string[]): string[] {
   });
 }
 
-function writeBindArgs(workspace: string, writePaths: string[]): string[] {
-  return [
-    '--bind',
-    workspace,
-    workspace,
-    ...writePaths.flatMap((path) => {
-      const absolute = resolve(path);
-      return ['--bind-try', absolute, absolute];
-    }),
-  ];
+function writeBindArgs(writePaths: string[]): string[] {
+  return writePaths.flatMap((path) => {
+    const absolute = resolve(path);
+    return ['--bind-try', absolute, absolute];
+  });
+}
+
+/**
+ * The workspace's own binds, last and in order.
+ *
+ * bwrap applies binds in the order it is given them, so a grant nested inside
+ * an earlier one resolves to the later — which is how the read-only `.heddle`
+ * inside the writable root works, and why this list must not be sorted or
+ * deduplicated.
+ */
+function grantArgs(grants: WorkspaceGrant[]): string[] {
+  return grants.flatMap((grant) => {
+    const absolute = resolve(grant.path);
+    return [grant.access === 'write' ? '--bind' : '--ro-bind', absolute, absolute];
+  });
 }
 
 function envArgs(env: Record<string, string>): string[] {

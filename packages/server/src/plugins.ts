@@ -1,4 +1,5 @@
 import {
+  createScratchWorkspace,
   loadRemotePlugin,
   PluginRegistry,
   type PluginCapability,
@@ -71,13 +72,17 @@ export function buildPlugins(
       refuseMiddleware(plugin.manifest);
       refuseDiscovery(plugin.manifest);
 
+      const label = `plugin-${plugin.name}`;
+      const workspace = createScratchWorkspace(label);
+
       registry.addRemote(
         loadRemotePlugin(plugin.manifest, plugin.path, {
           timeout: Math.min(config.pluginCallTimeout, config.timeout),
           env: {},
           capabilities,
           refusedBecause: { callModel: NO_CALL_MODEL },
-          session: config.sandbox?.session(`plugin-${plugin.name}`),
+          workspace,
+          session: config.sandbox?.session(label, workspace),
         }),
       );
     }

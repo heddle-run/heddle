@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { createSandbox } from '../index.js';
 import { DEFAULT_SANDBOX_POLICY } from '../types.js';
 import { SubprocessExecutor } from '../../tool/executor.js';
+import { createScratchWorkspace } from '../../workspace/index.js';
 
 function backendAvailable(): boolean {
   if (process.platform === 'darwin') return true;
@@ -19,19 +20,25 @@ function writeProbeTool(dir: string): string {
     path,
     `#!/bin/sh
 REAL_HOME='${homedir()}'
+LAUNCH_DIR='${dir}'
 INPUT=$(cat)
 probe() { if "$@" >/dev/null 2>&1; then echo true; else echo false; fi; }
 cat <<EOF
 {
   "echoed": $INPUT,
   "readHome": $(probe ls "$REAL_HOME"),
-  "readCwd": $(probe ls .),
-  "writeCwd": $(probe touch ./sandbox-escape),
+  "readLaunchDir": $(probe ls "$LAUNCH_DIR"),
+  "writeLaunchDir": $(probe touch "$LAUNCH_DIR/sandbox-escape"),
+  "writeCwd": $(probe touch ./from-cwd),
+  "cwdIsWorkspace": $(probe test "$PWD" = "$HEDDLE_WORKSPACE"),
   "writeTmp": $(probe touch "$TMPDIR/scratch-ok"),
   "writeHome": $(probe touch "$HOME/home-ok"),
   "sawPeerFile": $(probe test -f "$HEDDLE_WORKSPACE/from-tool"),
   "writeWorkspace": $(probe touch "$HEDDLE_WORKSPACE/from-tool"),
+  "writeBin": $(probe touch "$HEDDLE_WORKSPACE/.heddle/bin/evil"),
   "workspace": "$HEDDLE_WORKSPACE",
+  "bin": "$HEDDLE_WORKSPACE_BIN",
+  "binFirstOnPath": $(probe test "\${PATH%%:*}" = "$HEDDLE_WORKSPACE_BIN"),
   "marker": "$HEDDLE_SANDBOX"
 }
 EOF
@@ -74,10 +81,28 @@ describe.runIf(backendAvailable())('sandbox enforcement', () => {
     expect(out.writeHome).toBe(true);
   });
 
-  it('allows reading the working directory but not writing it', async () => {
+  it('starts the tool in its workspace, not where heddle was launched', async () => {
     const out = await run();
-    expect(out.readCwd).toBe(true);
-    expect(out.writeCwd).toBe(false);
+    expect(out.cwdIsWorkspace).toBe(true);
+    expect(out.writeCwd).toBe(true);
+  });
+
+  it('leaves the launch directory readable and not writable', async () => {
+    const out = await run();
+    expect(out.readLaunchDir).toBe(true);
+    expect(out.writeLaunchDir).toBe(false);
+  });
+
+  /**
+   * The reserved directory is read-only inside a writable root, which both
+   * backends express by ordering rather than by a path list — a later bind on
+   * Linux, a trailing deny on macOS. Probed rather than reasoned about: get it
+   * wrong and a tool rewrites its peers, and heddle runs the result.
+   */
+  it('refuses a write into the workspace bin', async () => {
+    const out = await run();
+    expect(out.writeBin).toBe(false);
+    expect(out.binFirstOnPath).toBe(true);
   });
 
   it('gives the tool a writable scratch directory', async () => {
@@ -85,18 +110,20 @@ describe.runIf(backendAvailable())('sandbox enforcement', () => {
     expect(out.writeTmp).toBe(true);
   });
 
-  it('makes the working directory writable when explicitly allowed', async () => {
+  it('makes a named directory writable when explicitly allowed', async () => {
     const out = await run({ writePaths: [sandboxDir] });
-    expect(out.writeCwd).toBe(true);
+    expect(out.writeLaunchDir).toBe(true);
   });
 
   it('does not leak the real home directory into the sandbox env', async () => {
     const sandbox = createSandbox('auto', { ...DEFAULT_SANDBOX_POLICY, cwd: sandboxDir });
-    const session = sandbox.session('probe');
+    const workspace = createScratchWorkspace('probe');
+    const session = sandbox.session('probe', workspace);
     const cmd = session.wrap(probe);
     expect(cmd.env.HOME).not.toBe(homedir());
     cmd.cleanup?.();
     session.dispose();
+    workspace.dispose();
   });
 });
 

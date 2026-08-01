@@ -35,11 +35,20 @@ install it if missing. seatbelt ships with macOS.
 - **Read-only system paths.** `/usr`, `/bin`, `/sbin`, `/lib`, `/lib64`, `/lib32`, `/etc`
   and `/opt`, bound read-only.
 - **A fresh `/tmp`** per invocation, as tmpfs — nothing survives between tools.
-- **The working directory and the tool itself, read-only.** A tool can be run; it cannot
-  rewrite itself or its siblings.
-- **A writable workspace**, shared with the other tools in the same node's scope so they
-  can hand each other files.
+- **The directory heddle was launched from, and the tool itself, read-only.** A tool can
+  be run; it cannot rewrite itself or its siblings, or the flow it came from.
+- **Its [workspace](/docs/tools#the-workspace), writable, and as its working directory** —
+  shared with the other tools in the same node's scope so they can hand each other files.
+  `.heddle` inside it is read-only, so a tool cannot rewrite a peer and have heddle run
+  the result.
 - **Nothing from the environment** unless named with `--allow-env`.
+
+<Callout>
+The workspace itself is not a `--safe` feature: a tool has one on every run, and `--safe`
+is what makes its edges enforced rather than conventional. Under `--safe` the workspace is
+the only place a tool can write; without it, the workspace is where a tool starts and what
+its peers read, and nothing stops it going elsewhere.
+</Callout>
 
 Everything else is added explicitly:
 

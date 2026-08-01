@@ -7,6 +7,7 @@ import { discoverTools, loadRemotePlugin, readManifest } from './remote-loader.j
 import type { PluginManifest } from './manifest.js';
 import { PLUGIN_CAPABILITIES, type PluginCapability } from './protocol.js';
 import type { Sandbox } from '../sandbox/types.js';
+import { createScratchWorkspace } from '../workspace/index.js';
 import { PluginError } from '../errors.js';
 
 const MANIFEST_EXTENSION = '.json';
@@ -171,13 +172,16 @@ function remotePluginFrom(specifier: string, options: LoadPluginsOptions) {
   const manifest = readManifest(path);
 
   const log = options.log;
+  const label = `plugin-${manifest.name}`;
+  const workspace = createScratchWorkspace(label);
 
   return loadRemotePlugin(manifest, entryFor(path), {
     root: dirname(path),
     capabilities: PLUGIN_CAPABILITIES,
     timeout: options.timeout,
     shared: options.shared,
-    session: options.sandbox?.session(`plugin-${manifest.name}`),
+    workspace,
+    session: options.sandbox?.session(label, workspace),
     onStderr: log
       ? (chunk) => log(`plugin "${manifest.name}": ${chunk.trimEnd()}`)
       : undefined,

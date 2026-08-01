@@ -1465,9 +1465,10 @@ serve(
 
 /* Every path is taken relative to $HEDDLE_WORKSPACE, and refused if it climbs
    out. Here the sandbox has already made that true and this is belt and braces.
-   Run the same tool locally under heddle run without --safe and there is no
-   workspace: it falls back to the working directory, which is then the whole of
-   what the model can reach. Start it somewhere empty. */
+   Run the same tool locally under heddle run without --safe and the variable is
+   still set -- a workspace is opened on every run -- but nothing is enforcing
+   its edges, so the refusal below is the only thing keeping a written path
+   inside it. */
 const WORKSPACE_PATH = `import json, os, sys
 
 data = json.load(sys.stdin)

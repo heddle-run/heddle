@@ -13,6 +13,7 @@ import { DEFAULT_RUNNER_OPTIONS } from '../../runner/options.js';
 import type { Event } from '../../runner/events.js';
 import type { PluginCapability } from '../protocol.js';
 import type { SandboxSession } from '../../sandbox/types.js';
+import type { Workspace } from '../../workspace/index.js';
 
 let scratch: string;
 const open: PluginRegistry[] = [];
@@ -78,10 +79,19 @@ function writeRawPlugin(name: string, source: string): string {
   return entry;
 }
 
+function stubWorkspace(): Workspace {
+  return {
+    root: scratch,
+    bin: join(scratch, '.heddle', 'bin'),
+    grants: () => [],
+    dispose: () => {},
+  };
+}
+
 function stubSession(): SandboxSession {
   return {
     name: 'stub',
-    workspace: scratch,
+    workspace: stubWorkspace(),
     wrap: (toolPath, args) => ({
       command: toolPath,
       args: args ?? [],
