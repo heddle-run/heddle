@@ -173,6 +173,14 @@ body {
   .hd-manifest {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
+  /* An inventory is however long the inventory is, so the count will not always
+     divide by three. When the last row holds a single item, centre it: alone
+     against the left edge it reads as something that fell off the row above,
+     and in the middle it reads as the end of a list. Keyed off the count rather
+     than a nth-child number, so adding a battery cannot silently strand one. */
+  .hd-manifest > :last-child:nth-child(3n + 1) {
+    grid-column: 2;
+  }
 }
 
 .hd-playground {

@@ -123,6 +123,11 @@ export const manifest = [
     title: "Scaffolding",
     detail: "heddle init writes a flow and a working tool to run.",
   },
+  {
+    icon: "layers",
+    title: "Per-agent workspace",
+    detail: "One directory an agent's tools share; --mount seeds it.",
+  },
 ];
 
 /* The other half of the claim: what the batteries cost you. Everything a
@@ -223,7 +228,7 @@ export const features = [
     hue: "var(--hue-blue)",
     title: "A boundary the kernel enforces",
     description:
-      "--safe puts every tool in an OS sandbox: no $HOME, no writes outside the workspace, and only the environment variables you name. Ask for a backend the machine cannot provide and the run fails rather than quietly continuing unconfined.",
+      "Every agent gets a workspace: one directory its tools share, so they can hand each other files. --safe makes its edges a kernel boundary — no $HOME, nothing writable outside it, and only the environment variables you name. Ask for a backend the machine cannot provide and the run fails rather than quietly continuing unconfined.",
   },
   {
     icon: "network",
@@ -256,7 +261,7 @@ export const safeMode = {
       hue: "var(--brand-pink)",
       title: "Tools run confined",
       description:
-        "A tool subprocess gets no $HOME, cannot write outside the run workspace, and sees only the environment variables --allow-env names. bubblewrap on Linux, seatbelt on macOS.",
+        "A tool subprocess gets no $HOME, sees only the environment variables --allow-env names, and can write nowhere but its own workspace. bubblewrap on Linux, seatbelt on macOS.",
     },
     {
       icon: "boxes",
@@ -352,7 +357,7 @@ export const faqItems = [
   {
     question: "What does batteries-included actually mean here?",
     answer:
-      "That the equipment an agent needs in production is already in the runtime rather than left to you: a tool-calling loop, pre-flight graph validation, an OS-level sandbox, an HTTP server with event streaming, guardrail transforms, retry and approval policies, branching, chat sessions, wire-protocol encoders and project scaffolding. The manifest on this page lists them, and each one is a feature you can check against the README rather than a claim about quality.",
+      "That the equipment an agent needs in production is already in the runtime rather than left to you: a tool-calling loop, pre-flight graph validation, an OS-level sandbox, a per-agent workspace, an HTTP server with event streaming, guardrail transforms, retry and approval policies, branching, chat sessions, wire-protocol encoders and project scaffolding. The manifest on this page lists them, and each one is a feature you can check against the README rather than a claim about quality.",
   },
   {
     question: "How is this different from other agent frameworks?",
@@ -383,6 +388,11 @@ export const faqItems = [
     question: "Which LLM providers are supported?",
     answer:
       "OpenAI, vLLM, Ollama, and any OpenAI-compatible endpoint, out of the box. Changing provider is a few lines in the spec; the flow itself does not change.",
+  },
+  {
+    question: "Where do tools write, and how do they pass files to each other?",
+    answer:
+      "Each agent execution gets a workspace: one directory its tools share, and the working directory each of them starts in. Write a CSV in one call and run a script over it in the next; a different agent in the same flow sees an empty one, and it is removed when the agent finishes. Tools are also reachable by name from inside it, so a tool can run a peer. To put your own files there before the run starts, use --mount — read-only by default, or :rw to have what the run changed copied back out. --workspace keeps each workspace on disk afterwards instead of discarding it.",
   },
   {
     question: "How do I write a tool?",
