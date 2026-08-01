@@ -14,7 +14,7 @@ export default function Steps() {
   return (
     <section id="method" className="hd-section" style={{ scrollMarginTop: 80 }}>
       <div className="hd-container">
-        <SectionLabel index="002">Method</SectionLabel>
+        <SectionLabel index="003">Method</SectionLabel>
 
         <div style={{ textAlign: "center", marginBottom: "var(--space-16)" }}>
           <h2

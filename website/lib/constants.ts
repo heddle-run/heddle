@@ -39,11 +39,80 @@ export const definition = {
   body: "The part of a loom that lifts individual warp threads to form the shed — the opening through which the weft passes. It decides, thread by thread, what the pattern becomes.",
 };
 
-export const stats = [
-  { value: "0", label: "SDKs to install" },
+/* The inventory that makes "batteries included" a countable claim rather than
+   an adjective. Every line here is a feature heddle actually ships — check it
+   against the README before adding one, the same way safeMode is checked
+   against packages/core/src/sandbox/. */
+export const manifest = [
+  {
+    icon: "bot",
+    title: "Tool-calling loop",
+    detail: "Up to ten rounds per agent, every call traced.",
+  },
+  {
+    icon: "circle-check-big",
+    title: "Pre-flight validation",
+    detail: "Spec, graph and reachability checked before a token is spent.",
+  },
+  {
+    icon: "shield",
+    title: "OS-level sandbox",
+    detail: "bubblewrap on Linux, seatbelt on macOS, under --safe.",
+  },
+  {
+    icon: "network",
+    title: "HTTP server",
+    detail: "heddle-server streams execution events over SSE.",
+  },
+  {
+    icon: "list-checks",
+    title: "Guardrails",
+    detail: "Pre- and post-model transforms; a rejected prompt costs nothing.",
+  },
+  {
+    icon: "repeat",
+    title: "Policies",
+    detail: "Retry, approval gates and rate limits, installed at the seams.",
+  },
+  {
+    icon: "git-branch",
+    title: "Branching",
+    detail: "Conditional routing, checked for reachability before it runs.",
+  },
+  {
+    icon: "terminal",
+    title: "Any-language tools",
+    detail: "A JSON-speaking executable. Bash, Python, Go, Node.",
+  },
+  {
+    icon: "shuffle",
+    title: "Provider swap",
+    detail: "OpenAI, vLLM, Ollama, or any OpenAI-compatible endpoint.",
+  },
+  {
+    icon: "message-square",
+    title: "Interactive chat",
+    detail: "--chat opens a multi-turn session, transcripts kept on disk.",
+  },
+  {
+    icon: "webhook",
+    title: "Protocol encoders",
+    detail: "Render the server's event stream as AG-UI, chosen per request.",
+  },
+  {
+    icon: "package",
+    title: "Scaffolding",
+    detail: "heddle init writes a flow and a working tool to run.",
+  },
+];
+
+/* The other half of the claim: what the batteries cost you. Everything a
+   library would have added to the project, at zero. */
+export const notInProject = [
+  { value: "0", label: "Packages in your lockfile" },
+  { value: "0", label: "Classes to subclass" },
   { value: "0", label: "Lines of glue code" },
-  { value: "2", label: "Ways to run a spec" },
-  { value: "4", label: "LLM providers" },
+  { value: "0", label: "Accounts or gateways" },
 ];
 
 export const steps = [
@@ -112,48 +181,51 @@ json.dump({
   },
 ];
 
+/* The manifest lists what is included; this goes deep on the handful that are
+   hard to copy. Every other batteries-included runtime is a library, so its
+   batteries arrive as dependencies — that difference leads. */
 export const features = [
   {
-    icon: "file-json",
+    icon: "package",
     hue: "var(--brand-pink)",
-    title: "No SDK to install",
+    title: "The batteries stay outside your codebase",
     description:
-      "Every other framework starts with an import: a class to subclass, a decorator to remember, a graph to assemble in code. heddle starts with a document. Write the flow in YAML or JSON and hand it to the runtime — there is no library in your dependency tree, and nothing to migrate when the framework changes its mind.",
+      "Included usually means installed. A framework that ships a sandbox, a server and a retry policy ships them into your project, and every one becomes an import, a version to pin and an abstraction to work around. heddle is a runtime, not a library: the same equipment sits behind a binary you point at a document. Nothing enters your lockfile, so nothing has to be migrated when the framework changes its mind.",
   },
   {
-    icon: "git-branch",
+    icon: "circle-check-big",
     hue: "var(--hue-purple)",
-    title: "Graph execution",
+    title: "Checked before it costs anything",
     description:
-      "Flows compile into a directed graph of control-flow and data-flow edges, validated for reachability before anything runs.",
+      "Parse, validate, compile, validate again — the whole graph is proved reachable and well-formed before the first request leaves your machine. A malformed flow fails in milliseconds, not halfway through a paid run.",
   },
   {
-    icon: "bot",
+    icon: "shield",
     hue: "var(--hue-blue)",
-    title: "Tool-calling loop",
+    title: "A boundary the kernel enforces",
     description:
-      "Agent nodes call tools autonomously until the task is finished — up to ten rounds per node, with every call traced.",
-  },
-  {
-    icon: "terminal",
-    hue: "var(--hue-emerald)",
-    title: "Any-language tools",
-    description:
-      "A tool is a subprocess that speaks JSON over stdin and stdout. If it runs on your machine, it works here.",
-  },
-  {
-    icon: "shuffle",
-    hue: "var(--hue-amber)",
-    title: "Provider agnostic",
-    description:
-      "OpenAI, vLLM, Ollama, or any OpenAI-compatible endpoint. Swap the model without touching the flow.",
+      "--safe puts every tool in an OS sandbox: no $HOME, no writes outside the workspace, and only the environment variables you name. Ask for a backend the machine cannot provide and the run fails rather than quietly continuing unconfined.",
   },
   {
     icon: "network",
-    hue: "var(--hue-rose)",
-    title: "CLI or HTTP server",
+    hue: "var(--hue-emerald)",
+    title: "One document, two runtimes",
     description:
-      "The same spec runs two ways: heddle run on your machine, or heddle-server streaming events over HTTP. One engine, no rewrite between them.",
+      "heddle run on your machine and heddle-server over HTTP are the same engine reading the same file. Moving from a laptop to a service is a deployment, not a rewrite.",
+  },
+  {
+    icon: "git-branch",
+    hue: "var(--hue-amber)",
+    title: "Portable off heddle",
+    description:
+      "The document is an Open Agent Specification flow — a format published by Oracle, not invented here. A flow written for heddle runs on any other conforming runtime, which makes leaving cheap and staying a choice.",
+  },
+  {
+    icon: "blocks",
+    hue: "var(--hue-rose)",
+    title: "Extended without a fork",
+    description:
+      "Plugins add component types, transforms, wire-protocol encoders and run middleware from outside the engine. They are named on the command line, never inside a flow, so sharing a spec can never execute code.",
   },
 ];
 
@@ -256,12 +328,22 @@ export const faqItems = [
   {
     question: "What is heddle?",
     answer:
-      "heddle is a lightweight runtime for agentic workflows. You declare a multi-step flow in YAML or JSON using the Open Agent Specification, and heddle parses it, validates it, compiles it into an executable graph, and runs it — from the CLI on your machine, or behind an HTTP server.",
+      "A batteries-included declarative agent runtime. You declare a multi-step flow in YAML or JSON using the Open Agent Specification, and heddle parses it, validates it, compiles it into an executable graph, and runs it — from the CLI on your machine, or behind an HTTP server. The tool-calling loop, the sandbox, the guardrails, the retry policies and the event stream come with it.",
+  },
+  {
+    question: "What does batteries-included actually mean here?",
+    answer:
+      "That the equipment an agent needs in production is already in the runtime rather than left to you: a tool-calling loop, pre-flight graph validation, an OS-level sandbox, an HTTP server with event streaming, guardrail transforms, retry and approval policies, branching, chat sessions, wire-protocol encoders and project scaffolding. The manifest on this page lists them, and each one is a feature you can check against the README rather than a claim about quality.",
   },
   {
     question: "How is this different from other agent frameworks?",
     answer:
-      "There is no SDK. Frameworks like LangGraph, CrewAI and AutoGen are libraries: you install them, import them, and assemble the graph in Python or TypeScript, so your agent is code that depends on their abstractions. heddle inverts that. The flow is a document you write, and heddle is a runtime you point at it. Nothing enters your dependency tree, no class needs subclassing, and because the document conforms to a published specification rather than to this project, the same flow runs on any other compliant runtime.",
+      "Frameworks like LangGraph, CrewAI and Mastra are libraries: you install them, import them, and assemble the graph in Python or TypeScript, so your agent is code that depends on their abstractions. When one of them says batteries-included, the batteries arrive as dependencies. heddle inverts that. The flow is a document you write, and heddle is a runtime you point at it. Nothing enters your dependency tree, no class needs subclassing, and because the document conforms to a published specification rather than to this project, the same flow runs on any other compliant runtime.",
+  },
+  {
+    question: "How is this different from other declarative agent runtimes?",
+    answer:
+      "Declarative agents in YAML are no longer unusual — Docker Agent, Microsoft's declarative workflows and Google's ADK all offer a version of it, and that is a good thing for everyone writing agents. Two things separate heddle. The format is the Open Agent Specification, published by Oracle rather than defined by this project, so a flow is portable to any conforming runtime instead of to one vendor's product. And the sandbox is a kernel boundary on your own machine — bubblewrap or seatbelt — rather than a container or a hosted execution service, with a documented refusal to degrade into an unconfined run.",
   },
   {
     question: "Can I run it as a service?",

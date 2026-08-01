@@ -6,7 +6,7 @@ export default function FAQ() {
   return (
     <section className="hd-section">
       <div className="hd-container">
-        <SectionLabel index="006">Questions</SectionLabel>
+        <SectionLabel index="007">Questions</SectionLabel>
 
         <div className="hd-split" style={{ alignItems: "start" }}>
           <h2

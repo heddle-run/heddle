@@ -1,8 +1,8 @@
 import Nav from "@/components/Nav";
 import Hero from "@/components/Hero";
+import Manifest from "@/components/Manifest";
 import Manifesto from "@/components/Manifesto";
 import Steps from "@/components/Steps";
-import Stats from "@/components/Stats";
 import Features from "@/components/Features";
 import SafeMode from "@/components/SafeMode";
 import Spread from "@/components/Spread";
@@ -22,9 +22,9 @@ export default function Home() {
 
       <main id="main">
         <Hero />
+        <Manifest />
         <Manifesto />
         <Steps />
-        <Stats />
         <Features />
         <SafeMode />
         <Spread />
