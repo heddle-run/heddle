@@ -156,6 +156,25 @@ body {
   }
 }
 
+/* The inventory checklist. Twelve entries, so the column count is chosen to
+   leave whole rows: three columns of four on a wide screen, two of six at
+   tablet width. */
+.hd-manifest {
+  display: grid;
+  gap: var(--space-6) var(--space-8);
+  grid-template-columns: 1fr;
+}
+@media (min-width: 640px) {
+  .hd-manifest {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (min-width: 1100px) {
+  .hd-manifest {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
 .hd-playground {
   display: flex;
   flex-direction: column;

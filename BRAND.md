@@ -10,7 +10,9 @@ to sit alongside it.
 
 - **Name:** heddle (always lowercase, including at the start of a sentence)
 - **Domain:** heddle.run
-- **Tagline:** Weave agents from spec.
+- **Descriptor:** A batteries-included declarative agent runtime.
+- **Tagline:** Weave agents from spec. (retained as the loom voice — it runs the
+  `Definition` epigraph and the CTA badge, but it is no longer what the hero says)
 - **Package:** `@heddle/cli` · **Binary:** `heddle` · **Tap:** `spichen/tap/heddle`
 - **Server:** `@heddle/server` · **Binary:** `heddle-server`
 - **Images:** `salahpichen/heddle` · `salahpichen/heddle-server` on Docker Hub,
@@ -31,12 +33,27 @@ exclamation marks, no "blazing fast", no emoji. State what the thing does and
 stop. British-leaning spelling in prose ("licence", "standardised"); American
 in code and identifiers.
 
-**The claim that leads.** heddle needs no SDK. Other agent frameworks are
-libraries — you install them, import them, and assemble the graph in code, so
-the agent ends up depending on their abstractions. heddle inverts that: the
-flow is a document you write, and heddle is a runtime you point at it. Say this
-before saying anything about features. The second claim is that one document
-runs two ways, `heddle run` or `heddle-server`, with no rewrite between them.
+**The claim that leads.** heddle is a batteries-included declarative agent
+runtime: the tool-calling loop, the sandbox, the HTTP server, the guardrails
+and the retry policies ship with it rather than being left to the reader.
+
+**The claim that must follow it immediately.** Both halves of that descriptor
+are contested. "Declarative agent runtime" is what Docker Agent, Microsoft's
+declarative workflows, Snap's Agent Format and Google's ADK all say; "batteries
+included" is LangChain deepagents' actual subtitle and is claimed by Mastra,
+AgentStart, the Microsoft Agent Framework and OpenClaw. So the descriptor
+alone places heddle in a crowded room saying the same sentence as everyone
+else, and it must never be left to stand on its own.
+
+What separates heddle is that **every other batteries-included runtime is a
+library, so its batteries arrive inside your codebase.** More complete means
+more imported, pinned, upgraded and worked around. heddle is a runtime you
+point at a document, so the same equipment costs the project nothing — zero
+packages in the lockfile, zero classes to subclass, zero lines of glue. Say
+this in the next breath after the descriptor, every time. The supporting
+claims, in order: the flow is a portable Open Agent Specification document that
+runs on any conforming runtime, and one document runs two ways, `heddle run` or
+`heddle-server`, with no rewrite between them.
 
 **Security copy is load-bearing.** The site makes falsifiable claims about
 sandboxing. They live in `safeMode` in `lib/constants.ts` and are checked
@@ -157,21 +174,39 @@ one bespoke drawing, and it is a diagram, not an icon.
 
 1. **Nav** — sticky, translucent, blurred; wordmark, links, theme toggle, CTA
 2. **Hero** — version badge, per-word hero, sub-copy, dual CTA, install
-   commands, capability chips, then the **Loom** inside a boxed frame
+   commands, capability chips, then the **Loom** inside a boxed frame. Only the
+   four content words take a hover hue; the leading article is set plainly.
+   `batteries-included` is one 18-character word, so the hero clamp is
+   `34px…72px` with `overflow-wrap: break-word` — check a 375px viewport before
+   changing either.
 3. **Loom** (`components/Loom.tsx`) — nine warp threads lifted by four heddle
    frames and converging into a single mark, the active thread in accent. It is
    simultaneously the brand drawing and the execution pipeline: parse →
    validate → compile → run
-4. **Manifesto** — 001, the no-SDK position
-5. **Steps** — 002, three step cards, each over its own code fragment
-6. **Stats** — four countable claims in a boxed frame
-7. **Features** — 003, bento: one tall cell plus five tiles
-8. **SafeMode** — 004, the sandboxing claims (see the security note above)
-9. **Spread** — 005, the document beside the run, in two window-chromed panels
+4. **Manifest** — 001, the inventory. Twelve batteries as a checklist, over a
+   boxed frame of four zeros counting what they add to the reader's project.
+   **This section is what makes the lead claim falsifiable**, so every line has
+   to name a feature that exists in the README — treat it the way `safeMode` is
+   treated, and delete a line rather than let it drift. It is a list, not a card
+   grid, because the claim is breadth and a reader should be able to count it.
+   The `.hd-manifest` grid is sized to leave whole rows: three columns of four
+   wide, two of six at tablet width. Twelve is load-bearing for that.
+5. **Manifesto** — 002, the position: batteries-included usually means a bigger
+   library, and why heddle does not make that trade
+6. **Steps** — 003, three step cards, each over its own code fragment
+7. **Features** — 004, bento: one tall cell plus five tiles. Depth on the
+   handful that are hard to copy, where the Manifest is breadth — the tall cell
+   is the batteries-outside-your-codebase argument.
+8. **SafeMode** — 005, the sandboxing claims (see the security note above)
+9. **Spread** — 006, the document beside the run, in two window-chromed panels
 10. **Definition** — the dictionary epigraph
-11. **FAQ** — 006, native `<details>`
+11. **FAQ** — 007, native `<details>`
 12. **CTA** — boxed frame, install commands
 13. **Footer** — four columns under a hairline
+
+There is no longer a standalone Stats band; its four numerals were folded into
+the Manifest, where the contrast between what is included and what it costs
+lands in one eyeful instead of two scrolls apart.
 
 Copy and data live in `lib/constants.ts`; sections read from it rather than
 hard-coding strings.

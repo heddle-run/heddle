@@ -14,13 +14,16 @@ const inter = Inter({
 export const metadata: Metadata = {
   metadataBase: new URL("https://heddle.run"),
   title: {
-    default: "heddle — Weave agents from spec",
+    default: "heddle — A batteries-included declarative agent runtime",
     template: "%s — heddle",
   },
   description:
-    "Build agents without an SDK. heddle is a runtime for the Open Agent Specification: declare the flow as a YAML or JSON document, wire tools in any language, and run it from the CLI or behind an HTTP server — with every tool confined to a sandbox under --safe.",
+    "A batteries-included declarative agent runtime. The tool-calling loop, OS-level sandbox, HTTP server, guardrails and retry policies ship with heddle — and none of them enter your codebase. Declare the flow as an Open Agent Specification document in YAML or JSON, wire tools in any language, and run it from the CLI or behind an HTTP server.",
   keywords: [
     "heddle",
+    "declarative agent runtime",
+    "batteries included",
+    "agent runtime",
     "agent spec",
     "open agent specification",
     "ai agents",
@@ -28,13 +31,14 @@ export const metadata: Metadata = {
     "no sdk",
     "declarative agents",
     "agent sandbox",
+    "yaml agents",
     "cli",
     "llm",
   ],
   openGraph: {
-    title: "heddle — Weave agents from spec",
+    title: "heddle — A batteries-included declarative agent runtime",
     description:
-      "No SDK, no imports. Declare the agent as a document and run it from the CLI or an HTTP server, with tools confined to a sandbox.",
+      "Sandbox, HTTP server, guardrails, retries and streaming already in the runtime — and none of it in your codebase. Declare the agent as a document and point heddle at it.",
     url: "https://heddle.run",
     siteName: "heddle",
     type: "website",

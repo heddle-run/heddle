@@ -10,6 +10,7 @@ import Wordmark from "./Wordmark";
    its own. Its address is another origin once the subdomain is configured, so
    the anchor is chosen per link rather than assumed. */
 const links = [
+  { label: "Included", href: "/#included" },
   { label: "Method", href: "/#method" },
   { label: "Isolation", href: "/#safe" },
   { label: "Playground", href: PLAYGROUND_URL },

@@ -8,12 +8,12 @@ export default function Features() {
   return (
     <section className="hd-section">
       <div className="hd-container">
-        <SectionLabel index="003">Apparatus</SectionLabel>
+        <SectionLabel index="004">Apparatus</SectionLabel>
 
         <h2
           style={{
             margin: "0 0 var(--space-12)",
-            maxWidth: "20ch",
+            maxWidth: "22ch",
             fontSize: "clamp(30px,4vw,48px)",
             fontWeight: "var(--fw-semibold)",
             letterSpacing: "var(--tracking-tight)",
@@ -21,7 +21,7 @@ export default function Features() {
             color: "var(--text-strong)",
           }}
         >
-          What comes in the box.
+          The parts that are hard to copy.
         </h2>
 
         <div className="hd-bento">

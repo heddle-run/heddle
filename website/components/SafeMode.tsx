@@ -7,7 +7,7 @@ export default function SafeMode() {
   return (
     <section id="safe" className="hd-section" style={{ scrollMarginTop: 80 }}>
       <div className="hd-container">
-        <SectionLabel index="004">Isolation</SectionLabel>
+        <SectionLabel index="005">Isolation</SectionLabel>
 
         <div className="hd-split" style={{ alignItems: "start" }}>
           <div>

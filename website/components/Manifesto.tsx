@@ -6,7 +6,7 @@ export default function Manifesto() {
   return (
     <section className="hd-section">
       <div className="hd-container">
-        <SectionLabel index="001">Position</SectionLabel>
+        <SectionLabel index="002">Position</SectionLabel>
 
         <BoxedFrame corners="diagonal" edges="horizontal" pad="var(--space-8)">
           <div className="hd-split" style={{ alignItems: "start" }}>
@@ -20,7 +20,7 @@ export default function Manifesto() {
                 color: "var(--text-strong)",
               }}
             >
-              Orchestration is not a library problem.
+              Batteries included usually means a bigger library.
             </h2>
 
             <div>
@@ -32,15 +32,16 @@ export default function Manifesto() {
                   color: "var(--text-body)",
                 }}
               >
-                Most agent frameworks ship as an SDK. You install the library
-                and adopt its abstractions before you can express your own — a
-                class to subclass, a decorator to remember, a runtime to keep
-                alive — and what you end up with is code that depends on them.
-                heddle takes the opposite position. The specification is the
-                program. A flow is a document: nodes, control-flow edges,
-                data-flow edges. heddle is the small, unexciting machine that
-                reads that document, proves it well-formed, and executes it in
-                order.
+                It is a good promise with an awkward bill. When a framework
+                ships the sandbox, the server and the retry policy, it ships
+                them <em>into your project</em> — so the more complete it gets,
+                the more of it you import, pin, upgrade and eventually work
+                around. Completeness and weight arrive together, and you pay for
+                the batteries whether or not you use them. heddle refuses the
+                trade. The specification is the program: a flow is a document of
+                nodes, control-flow edges and data-flow edges. heddle is the
+                machine that reads that document, proves it well-formed, and
+                executes it in order.
               </p>
 
               <p
@@ -55,8 +56,9 @@ export default function Manifesto() {
                 executables on disk. Models are endpoints you already pay for.
                 State is a plain object handed from one node to the next, never
                 mutated in place. Nothing is hidden behind a service, so nothing
-                has to be trusted on faith — and a flow that runs here runs on
-                any other conforming runtime unchanged.
+                has to be trusted on faith — and because the document conforms
+                to a published specification rather than to this project, a flow
+                that runs here runs on any other conforming runtime unchanged.
               </p>
 
               <a

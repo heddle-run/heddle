@@ -16,7 +16,7 @@ export default function Spread() {
   return (
     <section className="hd-section">
       <div className="hd-container">
-        <SectionLabel index="005">In practice</SectionLabel>
+        <SectionLabel index="006">In practice</SectionLabel>
 
         <h2
           style={{

@@ -10,17 +10,19 @@ import {
 } from "@/lib/constants";
 
 const marks = [
-  { icon: "braces", label: "No SDK required" },
-  { icon: "shield", label: "Agent Spec compliant" },
+  { icon: "braces", label: "Nothing in your lockfile" },
+  { icon: "shield", label: "OS-level sandbox" },
   { icon: "network", label: "CLI or HTTP server" },
   { icon: "scroll-text", label: "MIT licensed" },
 ];
 
+/* The leading article is set plainly: only the content words take a hover hue,
+   so "A" does not glow on its own. */
 const HERO_WORDS = [
-  { text: "Weave", hue: "var(--hue-purple)" },
-  { text: "agents", hue: "var(--hue-blue)" },
-  { text: "from", hue: "var(--hue-emerald)" },
-  { text: "spec.", hue: "var(--brand-pink)" },
+  { text: "batteries-included", hue: "var(--hue-purple)" },
+  { text: "declarative", hue: "var(--hue-blue)" },
+  { text: "agent", hue: "var(--hue-emerald)" },
+  { text: "runtime.", hue: "var(--brand-pink)" },
 ];
 
 export default function Hero() {
@@ -42,14 +44,19 @@ export default function Hero() {
             flexWrap: "wrap",
             justifyContent: "center",
             gap: "0 .28em",
-            fontSize: "clamp(48px,8vw,96px)",
+            fontSize: "clamp(34px,6vw,72px)",
             fontWeight: "var(--fw-medium)",
             letterSpacing: "var(--tracking-tighter)",
             lineHeight: "var(--lh-tight)",
             color: "var(--text-strong)",
             textAlign: "center",
+            /* "batteries-included" is a single 18-character word; at the small
+               end of the clamp it has to be allowed to break rather than push
+               the line past a phone's viewport. */
+            overflowWrap: "break-word",
           }}
         >
+          <span>A</span>
           {HERO_WORDS.map((w) => (
             <span
               key={w.text}
@@ -72,7 +79,9 @@ export default function Hero() {
             color: "var(--text-body)",
           }}
         >
-          heddle compiles a declarative{" "}
+          The tool-calling loop, the sandbox, the HTTP server, the guardrails
+          and the retry policies are already in the runtime. None of them are in
+          your codebase. Write the flow as an{" "}
           <a
             href={AGENT_SPEC_URL}
             target="_blank"
@@ -83,12 +92,9 @@ export default function Hero() {
               textUnderlineOffset: 3,
             }}
           >
-            Agent Spec
+            Open Agent Spec
           </a>{" "}
-          into an executable graph — tool-calling loop, branching and
-          any-language tools already in the box. There is no SDK to install and
-          nothing to subclass: the flow is a document, not code. Run it from the
-          CLI, or serve it over HTTP.
+          document, and heddle is what you point at it.
         </p>
 
         <div
