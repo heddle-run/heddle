@@ -1,7 +1,8 @@
 import type { CompiledGraph, CompiledNode } from '../graph/types.js';
 import { State } from '../state/state.js';
 import type { Event } from './events.js';
-import type { RunnerOptions } from './options.js';
+import type { RunnerOptions, RunPosition } from './options.js';
+import { RunSuspended, isSuspended, readResume } from '../session/suspend.js';
 import { RunError } from '../errors.js';
 import {
   MiddlewareError,
@@ -33,25 +34,40 @@ export class Runner {
     private readonly opts: RunnerOptions,
   ) {}
 
+  /**
+   * Walk the graph, from the start or from where a previous run stopped.
+   *
+   * `from` is the whole of resuming. Everything the walk carries is restored
+   * from it — the node to enter, the state accumulated so far, and the outputs
+   * earlier nodes produced, which is what the data-flow edges resolve against.
+   * A resumed run is not a special mode; it is the same loop entered in the
+   * middle.
+   */
   async run(
     signal: AbortSignal | undefined,
     inputs: Record<string, unknown>,
+    from?: RunPosition,
   ): Promise<State> {
     const signals = [AbortSignal.timeout(this.opts.timeout)];
     if (signal) signals.push(signal);
-    return this.walk(AbortSignal.any(signals), inputs);
+    return this.walk(AbortSignal.any(signals), inputs, from);
   }
 
   private async walk(
     signal: AbortSignal,
     inputs: Record<string, unknown>,
+    from: RunPosition | undefined,
   ): Promise<State> {
     this.emit({ type: 'flow_start' });
 
-    const nodeOutputs = new Map<string, State>();
-    let current = this.startNode();
-    let carried = new State(inputs);
-    let attempt = 1;
+    const nodeOutputs = restoredOutputs(from);
+    let current = from ? this.resumeNode(from.node) : this.startNode();
+    // On a resume the checkpoint supplies the state and `inputs` is layered
+    // over it, rather than replacing it. That layer is how an answer reaches
+    // the node that asked for one — the runner puts it in the state and never
+    // looks at it, which is what keeps `_resume` the executor's business.
+    let carried = new State(from ? { ...from.carried, ...inputs } : inputs);
+    let attempt = from?.attempt ?? 1;
     let retries = 0;
 
     for (let iteration = 0; iteration < this.opts.maxIterations; iteration++) {
@@ -67,9 +83,10 @@ export class Runner {
         attempt,
       });
 
-      const result = await this.attemptNode(
+      const result = await this.attemptOrSuspend(
         current,
-        this.resolveInputs(current, nodeOutputs, carried),
+        carried,
+        nodeOutputs,
         attempt,
         signal,
       );
@@ -92,12 +109,21 @@ export class Runner {
 
       if (current.type === 'EndNode') {
         this.emit({ type: 'flow_complete', state: result.output });
+        // Cleared before the answer is handed back, so a caller that reads the
+        // session on seeing the result never finds a checkpoint for a run that
+        // is already over — which `openTurn` would refuse the next message for.
+        await this.opts.checkpoints?.clear();
         return result.output;
       }
 
       carried = carried.merge(result.output);
       current = this.advance(current, result);
       attempt = 1;
+
+      // After advancing, so what is recorded is where to *resume* rather than
+      // what just ran. A checkpoint naming the node that finished would re-run
+      // it, and a node that already called a tool is not free to run twice.
+      await this.checkpoint(current, carried, nodeOutputs);
     }
 
     throw new RunError(
@@ -111,6 +137,82 @@ export class Runner {
       throw new RunError(`start node "${this.graph.start}" not found`);
     }
     return start;
+  }
+
+  /**
+   * The node a checkpoint names, in the graph being resumed with.
+   *
+   * Missing means the flow changed under the checkpoint — a node was renamed or
+   * removed between the run stopping and somebody continuing it. Worth its own
+   * message, because "no such node" against a graph the caller just supplied
+   * reads as a bad flow rather than as a stale checkpoint.
+   */
+  private resumeNode(name: string): CompiledNode {
+    const node = this.graph.getNode(name);
+    if (!node) {
+      throw new RunError(
+        `cannot resume at "${name}": this flow has no such node. The ` +
+          `checkpoint was written by a run of a different version of ` +
+          `"${this.graph.name}" — resume against the flow it stopped in, or ` +
+          `delete the checkpoint and start the turn again.`,
+      );
+    }
+    return node;
+  }
+
+  private async checkpoint(
+    next: CompiledNode,
+    carried: State,
+    nodeOutputs: Map<string, State>,
+  ): Promise<void> {
+    const sink = this.opts.checkpoints;
+    if (!sink || !this.opts.durable) return;
+
+    await sink.save(positionAt(next.name, carried, nodeOutputs, 1));
+  }
+
+  /**
+   * Attempt a node, and write the run down if a middleware stopped it.
+   *
+   * The checkpoint names *this* node rather than the next one — a suspension is
+   * not a boundary crossed, it is a node that has not finished — and it carries
+   * the executor's own bookmark, which is what lets the node be re-entered
+   * partway through rather than from the top.
+   *
+   * A suspension with nowhere to write is refused here rather than at the seam.
+   * The middleware did nothing wrong: it is the run that has no session, and
+   * the person who has to hear about it is whoever started it that way.
+   */
+  private async attemptOrSuspend(
+    node: CompiledNode,
+    carried: State,
+    nodeOutputs: Map<string, State>,
+    attempt: number,
+    signal: AbortSignal,
+  ): Promise<NodeAttempt> {
+    try {
+      return await this.attemptNode(
+        node,
+        this.resolveInputs(node, nodeOutputs, carried),
+        attempt,
+        signal,
+      );
+    } catch (err) {
+      if (!isSuspended(err)) throw err;
+
+      const sink = this.opts.checkpoints;
+      if (!sink) {
+        throw new RunError(unresumableMessage(err.suspension.by, node.name), {
+          cause: err,
+        });
+      }
+
+      await sink.suspend(
+        positionAt(node.name, carried, nodeOutputs, attempt),
+        err.suspension,
+      );
+      throw err;
+    }
   }
 
   /**
@@ -139,6 +241,18 @@ export class Runner {
     if (gate.action === 'reject') {
       throw new RunError(rejectedMessage(gate.by, node.name, gate.reason));
     }
+    if (gate.action === 'suspend') {
+      // No bookmark: nothing in this node has run, so re-entering it from the
+      // top *is* resuming. The answer reaches the node as `_resume` in its
+      // input, which is where a node type that wants one looks.
+      throw new RunSuspended({
+        by: gate.by,
+        seam: 'node',
+        ask: gate.ask,
+        node: node.name,
+        resume: {},
+      });
+    }
     if (gate.action === 'replace') {
       this.warn(node, unrunWarning(gate.by, node.name));
       return this.afterNode(
@@ -159,6 +273,12 @@ export class Runner {
         output: await node.executor.execute(signal, effective),
       };
     } catch (err) {
+      // A suspension is not an outcome this seam has anything to say about.
+      // Emitting `node_error` would report a run that stopped on purpose as a
+      // failure, and consulting `nodeError` would offer a middleware the chance
+      // to retry a node that is waiting on a person.
+      if (isSuspended(err)) throw err;
+
       const failure = err instanceof Error ? err : new Error(String(err));
 
       this.emit({
@@ -249,6 +369,13 @@ export class Runner {
     const chain = this.opts.middleware;
     if (!chain?.hasBefore('node')) return { action: 'proceed' };
 
+    // The answer, when this node is the one a suspension is being resumed into.
+    // Without it a gate here has no way to tell "asked again, and here is what
+    // they said" from "asked for the first time", and would suspend forever.
+    // `toolCall` needs no equivalent: its bookmark replays the answer as the
+    // call's result, so that gate is never consulted a second time.
+    const resumed = readResume(input, node.name);
+
     return this.guarded(node, undefined, () =>
       chain.consultBefore(
         'node',
@@ -257,6 +384,7 @@ export class Runner {
         signal,
         this.opts.eventHandler,
         { attempt, maxAttempts: this.opts.maxNodeAttempts },
+        resumed?.answer,
       ),
     );
   }
@@ -423,6 +551,42 @@ export class Runner {
   private emit(event: Event): void {
     this.opts.eventHandler?.(event);
   }
+}
+
+function positionAt(
+  node: string,
+  carried: State,
+  nodeOutputs: Map<string, State>,
+  attempt: number,
+): RunPosition {
+  return {
+    node,
+    carried: carried.toData(),
+    nodeOutputs: Object.fromEntries(
+      [...nodeOutputs].map(([name, state]) => [name, state.toData()]),
+    ),
+    attempt,
+  };
+}
+
+function unresumableMessage(by: string, nodeName: string): string {
+  return (
+    `middleware "${by}" suspended "${nodeName}" to wait on a human, but this ` +
+    `run has nowhere to be written down — so there would be no way to answer ` +
+    `it. Run it in a session (--session on the CLI, "session" in a request), ` +
+    `which is where a suspended run waits.`
+  );
+}
+
+function restoredOutputs(from: RunPosition | undefined): Map<string, State> {
+  if (!from) return new Map();
+
+  return new Map(
+    Object.entries(from.nodeOutputs).map(([name, data]) => [
+      name,
+      new State(data),
+    ]),
+  );
 }
 
 /** What the runner does with an outcome nothing wanted to change. */

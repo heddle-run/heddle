@@ -142,7 +142,12 @@ Commands:
   run <flow>               Run an Agent Spec flow (JSON or YAML)
     --tools-dir <dir>      Directory containing tool executables
     --input <json>         Input JSON object
-    --chat                 Open an interactive chat session
+    --session [id]         Keep this run in a conversation on disk
+    --session-dir <dir>    Where sessions are kept
+    --durable              Checkpoint at every node boundary
+    --resume               Continue this session's unfinished run
+    --answer <json>        Answer a run that stopped for a human, with --resume
+    -i, --interactive      Open the terminal chat UI
     --plugin <module>      Plugin providing custom component types (repeatable)
     --mount <src[:dest][:ro|:rw]>
                            Put a file or directory in every workspace
@@ -166,15 +171,45 @@ Commands:
     --plugin <module>      Plugin providing custom component types (repeatable)
 
   init <project-name>      Scaffold a new heddle project
+
+  sessions ls              List conversations, most recently used first
+  sessions show <id>       Print a transcript
+  sessions rm <id>         Delete a conversation
 ```
 
 There is no `--version` flag yet; use `heddle --help` to check the install.
 
-### Chat Mode
+### Sessions
 
-`--chat` opens a multi-turn session that re-runs the flow for each message, passing the
-conversation so far to the agent. Transcripts are saved to
-`~/.heddle/conversations/<session-id>.json`. Type `/exit` to quit.
+`--session` keeps a run in a conversation on disk and gives the agent the turns before it.
+Each invocation is one turn:
+
+```bash
+heddle run flow.yaml --session support-42 --input '{"query":"where is my order?"}'
+heddle run flow.yaml --session support-42 --input '{"query":"and the second one?"}'
+```
+
+With no id, a new session is created and its id printed to stderr. Sessions live in
+`~/.heddle/sessions/<id>/` — a `meta.json`, a `turns.jsonl` appended to per turn, and a
+`checkpoint.json` that exists only while a run is unfinished. `$HEDDLE_SESSION_DIR` or
+`--session-dir` moves them.
+
+The same mechanism works over HTTP: `POST /v1/sessions` issues an id, and `"session": "<id>"`
+in a run body continues it. See [packages/server/README.md](packages/server/README.md).
+
+### Durable runs and human in the loop
+
+`--durable` writes the run down at every node boundary, so a process that dies can be picked
+up with `--resume`. Independently of that, a middleware may **suspend** a run to wait on a
+person — the run stops, the question is written into the session, and `--resume --answer` continues
+it without re-running anything that already ran. See
+[examples/approval-gate](examples/approval-gate/README.md).
+
+### Interactive chat
+
+`-i` opens a terminal chat UI. On its own the conversation lasts as long as the terminal does;
+with `--session` it is kept, and a later `-i --session <id>` opens on the conversation so far.
+Type `/exit` to quit.
 
 Your message is bound to the first output declared on the flow's start node, falling back
 to `query` when none is declared.

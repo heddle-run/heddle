@@ -74,16 +74,16 @@ needs it, below.
 
 ## Chat
 
-Chat mode draws a terminal UI, which needs a TTY:
+The chat UI draws a terminal interface, which needs a TTY:
 
 ```bash
 docker run --rm -it \
   -e OPENAI_API_KEY \
   -v "$PWD:/work" \
-  salahpichen/heddle run flow.json --tools-dir tools --chat
+  salahpichen/heddle run flow.json --tools-dir tools -i --session demo
 ```
 
-Transcripts are written to `~/.heddle/conversations` inside the container and
+Sessions are written to `~/.heddle/sessions` inside the container and
 leave with it. To keep them, give that directory a volume:
 
 ```bash

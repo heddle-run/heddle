@@ -2835,7 +2835,9 @@ Four decisions, each argued in a comment where it is made:
   a pretty-printed object appended to it is a parse error for anything reading a line at a time.
   `flow_complete` carries the whole run state anyway.
 - **`--chat` plus `--protocol` is refused**, before `loadFlow` so a missing file is never blamed for
-  a flag conflict.
+  a flag conflict. (`--chat` was later split into `--session` and `--interactive`; the refusal
+  narrowed to `--interactive`, which is the half that owns stdout. See
+  `docs/session-persistence-design.md`.)
 
 `contentType` is deliberately dropped on this path: it is the header a *server* sends, and carrying
 it here would be a field nothing reads.

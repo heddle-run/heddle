@@ -111,7 +111,7 @@ export const manifest = [
   {
     icon: "message-square",
     title: "Interactive chat",
-    detail: "--chat opens a multi-turn session, transcripts kept on disk.",
+    detail: "--session keeps the conversation, on disk or in your own store.",
   },
   {
     icon: "webhook",

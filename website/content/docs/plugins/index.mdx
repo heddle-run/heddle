@@ -12,7 +12,7 @@ Plugins are named by whoever runs heddle, never inside a flow document. Sharing 
 can therefore never cause code to be executed. A document selects among what was
 already loaded; it cannot ask for anything to be loaded.
 
-## The six kinds
+## The seven kinds
 
 What distinguishes them is not what they do — it is **who chooses them**. That decides
 where a plugin's name may appear, and it is the first thing to settle when you are
@@ -25,13 +25,17 @@ deciding what to write.
 | `provider` | the spec | an `llm_config`, beside `OpenAiConfig` |
 | `component` | the spec | any other custom component the document names |
 | `middleware` | the operator | nothing — no document may name one |
+| `store` | the operator | nothing — `--session-store <ComponentType>` selects it |
 | `encoder` | the request | `?protocol=<name>` on a server run |
 
 The first four are written into the document, so a flow's author picks them. A
 middleware runs on every node of every flow whether that flow asked or not, which is
-exactly why it is installed by whoever runs heddle rather than chosen per run. An
-encoder renders the run for a client, and two clients hitting one flow can legitimately
-want different renderings — so the request picks.
+exactly why it is installed by whoever runs heddle rather than chosen per run. A store
+holds every conversation the deployment has, which is why it is the operator's too — and
+why only one may be installed: a process writes its conversations to one place, and
+there is no flag that would mean "both". An encoder renders the run for a client, and two
+clients hitting one flow can legitimately want different renderings — so the request
+picks.
 
 Tools are not a kind. A tool is already a first-class thing with its own namespace that
 a spec writes into, so a plugin contributing tools needs no component type at all. See

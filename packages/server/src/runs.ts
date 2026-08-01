@@ -4,18 +4,32 @@ import {
   compile,
   validate,
   collectToolNames,
+  checkpointSink,
+  closeTurn,
+  isSuspended,
+  openTurn,
+  positionOf,
+  resumeInputs,
+  resumeTurn,
+  withoutReserved,
   EncoderStream,
   FileRegistry,
   MiddlewareChain,
   PluginRegistry,
+  State,
   SubprocessExecutor,
   Runner,
   type CompiledGraph,
   type Dependencies,
   type Event,
+  type OpenedTurn,
   type ParsedFlow,
   type Registry,
   type RunnerOptions,
+  type RunPosition,
+  type RunSuspended,
+  type SessionStore,
+  type TurnOutcome,
   type WorkspaceFactory,
   type WorkspaceTool,
 } from '@heddle/core';
@@ -34,11 +48,26 @@ import {
   type RequestCode,
 } from './request-code.js';
 import { resolveEncoder, requireStreamFor } from './encoders.js';
+import { resolveSession } from './sessions.js';
 import { SseStream } from './sse.js';
 import { assertToolsAvailable, mergeRegistries } from './tools.js';
 
 interface RunRequest extends FlowRequest, RequestCode {
   inputs?: Record<string, unknown>;
+  session?: string;
+  durable?: boolean;
+  resume?: boolean;
+  /** What to tell a run that stopped on a human, with "resume". */
+  answer?: Record<string, unknown>;
+}
+
+/** The conversation a run belongs to, once its turn has been opened. */
+interface SessionTurn {
+  store: SessionStore;
+  id: string;
+  opened: OpenedTurn;
+  /** Where to re-enter the graph, when this turn is continuing a run. */
+  from?: RunPosition;
 }
 
 interface Prepared {
@@ -56,6 +85,7 @@ interface RunPlan {
   workspaces: WorkspaceFactory;
   abort: AbortController;
   headers: Record<string, string>;
+  session?: SessionTurn;
 }
 
 const SERVER_SIDE_FIELDS = [
@@ -107,15 +137,21 @@ export async function handleRun(
     // shadowing it, which is why it can be the caller's 400.
     workspaces = asBadRequest(() => config.workspaces.extend(code.mounts));
 
+    // Before anything is compiled, so a session that is busy or unknown is
+    // refused without the request having spent a graph on it — and so the
+    // history is in the inputs the graph is then given.
+    const session = await openSession(config, runBody, inputs);
+
     const plan: RunPlan = {
       config,
       body: runBody,
-      inputs,
+      inputs: session?.opened.inputs ?? inputs,
       code,
       plugins,
       workspaces,
       abort: abort.controller,
       headers,
+      session,
     };
 
     if (stream) await runStreaming(res, plan, protocol);
@@ -133,18 +169,195 @@ export async function handleRun(
   }
 }
 
-async function runBuffered(res: ServerResponse, plan: RunPlan): Promise<void> {
-  const { graph, middleware } = await prepare(plan, IGNORE_EVENTS);
-  const runner = new Runner(
-    graph,
-    runnerOptions(plan.config, IGNORE_EVENTS, middleware),
+async function openSession(
+  config: ServerConfig,
+  body: RunRequest,
+  inputs: Record<string, unknown>,
+): Promise<SessionTurn | undefined> {
+  if (body.session === undefined) {
+    assertNoSessionOnlyFields(body);
+    return undefined;
+  }
+
+  const { store, id } = await resolveSession(config, body.session);
+
+  if (body.resume === true) {
+    const resumed = await resumeTurn(store, id);
+    const { suspension } = resumed.checkpoint;
+
+    if (suspension) {
+      const answer = readAnswer(body, suspension.ask);
+      resumed.inputs = { ...resumed.inputs, ...resumeInputs(suspension, answer) };
+    }
+
+    return { store, id, opened: resumed, from: positionOf(resumed.checkpoint) };
+  }
+
+  const opened = await openTurn(store, id, inputs, { flow: flowLabel(body) });
+  return { store, id, opened };
+}
+
+/**
+ * Refuse the fields that only mean something inside a conversation.
+ *
+ * Ignoring them would leave a caller believing a run is recoverable when
+ * nothing recorded it, which is the kind of mistake that is only discovered
+ * when somebody tries to recover.
+ */
+function assertNoSessionOnlyFields(body: RunRequest): void {
+  for (const field of ['durable', 'resume', 'answer'] as const) {
+    if (body[field] !== undefined) {
+      throw new HttpError(
+        400,
+        `"${field}" needs a "session". A run is written down in a ` +
+          `conversation, so there is nowhere to put a checkpoint — or to find ` +
+          `one — without naming which.`,
+      );
+    }
+  }
+}
+
+/**
+ * The sink this run writes through, if it belongs to a conversation.
+ *
+ * Present whenever there is a session, not only when the request asked to be
+ * durable: a middleware may suspend the run, and a suspension with nowhere to
+ * go is a run stopped with no way back. `durable` is what turns on the per-node
+ * writes, which is the part that costs something.
+ */
+function checkpointsFor(
+  plan: RunPlan,
+): RunnerOptions['checkpoints'] | undefined {
+  const { session } = plan;
+  if (!session) return undefined;
+
+  return checkpointSink({
+    store: session.store,
+    sessionId: session.id,
+    runId: session.opened.runId,
+    input: session.opened.input,
+  });
+}
+
+function readAnswer(
+  body: RunRequest,
+  ask: Record<string, unknown>,
+): Record<string, unknown> {
+  const { answer } = body;
+  if (typeof answer !== 'object' || answer === null || Array.isArray(answer)) {
+    throw new HttpError(
+      400,
+      `this run stopped for a human and is waiting on an answer to ` +
+        `${JSON.stringify(ask)}. Send it as an "answer" object alongside ` +
+        `"resume": true.`,
+      'AnswerRequired',
+    );
+  }
+  return answer;
+}
+
+/**
+ * What a caller is told when a run stopped on a person.
+ *
+ * 202 rather than 200: the request was accepted and the work is not finished,
+ * which is exactly what has happened. Not an error status — nothing failed, and
+ * a client retrying on 4xx or 5xx would be retrying a run that is patiently
+ * waiting for them.
+ */
+function sendSuspended(
+  res: ServerResponse,
+  plan: RunPlan,
+  failure: RunSuspended,
+): void {
+  const { by, seam, ask, node } = failure.suspension;
+
+  sendJson(
+    res,
+    202,
+    {
+      session: plan.session?.id,
+      status: 'suspended',
+      suspended: { by, seam, node, ask },
+    },
+    plan.headers,
   );
-  const state = await runner.run(plan.abort.signal, plan.inputs);
+}
+
+/**
+ * What the turn records about where the flow came from.
+ *
+ * A path when the request named one, and the flow's own name when it inlined
+ * the document — never the document itself. A transcript is read back by
+ * somebody asking what this conversation was with, and a spec pasted into every
+ * turn answers that question at the cost of making the file unreadable.
+ */
+function flowLabel(body: RunRequest): string | undefined {
+  const path = (body as { flowPath?: unknown }).flowPath;
+  if (typeof path === 'string') return path;
+
+  const flow = body.flow as { name?: unknown } | undefined;
+  return typeof flow?.name === 'string' ? flow.name : undefined;
+}
+
+/** Record what the run came to, whichever way it ended. */
+async function closeSession(
+  session: SessionTurn | undefined,
+  outcome: TurnOutcome,
+): Promise<void> {
+  if (!session) return;
+  await closeTurn(session.store, session.id, session.opened, outcome);
+}
+
+function failureOutcome(err: unknown): TurnOutcome {
+  const error = err instanceof Error ? err : new Error(String(err));
+  return { error: { name: error.name, message: error.message } };
+}
+
+async function runBuffered(res: ServerResponse, plan: RunPlan): Promise<void> {
+  let graph: CompiledGraph | undefined;
+  let state: State;
+
+  try {
+    const prepared = await prepare(plan, IGNORE_EVENTS);
+    graph = prepared.graph;
+
+    const runner = new Runner(
+      prepared.graph,
+      runnerOptions(plan.config, IGNORE_EVENTS, prepared.middleware, plan),
+    );
+    state = await runner.run(plan.abort.signal, plan.inputs, plan.session?.from);
+  } catch (err) {
+    // A suspended run has not finished its turn, so nothing is recorded: the
+    // turn stays open, its checkpoint holds the question, and the answer
+    // continues it. Closing here would end a conversation that is mid-sentence.
+    if (isSuspended(err)) {
+      sendSuspended(res, plan, err);
+      return;
+    }
+    // Recorded before it is rethrown. A session that dropped its failed turns
+    // would answer the next message having forgotten the question that broke,
+    // and would hold a version one behind what actually happened.
+    await closeSession(plan.session, failureOutcome(err));
+    throw err;
+  }
+
+  // Stripped on the session path so the answer a client is handed is the answer
+  // that was kept — and so a client echoing it back into its next "inputs" is
+  // not refused for bringing its own conversation to a session.
+  const answer = plan.session
+    ? withoutReserved(state.toData())
+    : state.toData();
+
+  await closeSession(plan.session, { output: answer });
 
   sendJson(
     res,
     200,
-    { flow: graph.name, state: state.toData() },
+    {
+      flow: graph.name,
+      state: answer,
+      ...(plan.session ? { session: plan.session.id } : {}),
+    },
     plan.headers,
   );
 }
@@ -163,6 +376,7 @@ async function runStreaming(
   try {
     prepared = await prepare(plan, (event) => events?.offer(event));
   } catch (err) {
+    await closeSession(plan.session, failureOutcome(err));
     const { status, body } = toErrorResponse(err);
     sendJson(res, status, body, plan.headers);
     return;
@@ -178,18 +392,46 @@ async function runStreaming(
 
   const runner = new Runner(
     prepared.graph,
-    runnerOptions(plan.config, events.handler(), prepared.middleware),
+    runnerOptions(plan.config, events.handler(), prepared.middleware, plan),
   );
 
   let failure: unknown;
+  let state: State | undefined;
   try {
-    await runner.run(plan.abort.signal, plan.inputs);
+    state = await runner.run(plan.abort.signal, plan.inputs, plan.session?.from);
   } catch (err) {
     failure = err;
   }
 
   try {
     await events.close();
+  } catch (err) {
+    failure = err;
+  }
+
+  // A suspension is not the end of the turn: the checkpoint holds the question
+  // and an answer continues it, so the transcript stays open. The frame is what
+  // tells a streaming client the run stopped on purpose rather than just ended.
+  if (isSuspended(failure)) {
+    sse.send('suspended', {
+      session: plan.session?.id,
+      ...failure.suspension,
+    });
+    sse.close();
+    return;
+  }
+
+  // Before the error frame, so a client that reads the session after seeing the
+  // stream end finds the turn already recorded either way. A store that fails
+  // here replaces the run's own failure, for the same reason `close()` does: it
+  // is the more recent thing that went wrong and the one nothing else reports.
+  try {
+    await closeSession(
+      plan.session,
+      failure
+        ? failureOutcome(failure)
+        : { output: withoutReserved((state as State).toData()) },
+    );
   } catch (err) {
     failure = err;
   }
@@ -300,6 +542,7 @@ function runnerOptions(
   config: ServerConfig,
   eventHandler: (event: Event) => void,
   middleware: MiddlewareChain,
+  plan: RunPlan,
 ): RunnerOptions {
   return {
     maxIterations: config.maxIterations,
@@ -308,6 +551,8 @@ function runnerOptions(
     eventHandler,
     maxNodeAttempts: config.maxNodeAttempts,
     middleware,
+    checkpoints: checkpointsFor(plan),
+    durable: plan.body.durable === true || plan.body.resume === true,
   };
 }
 

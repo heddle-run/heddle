@@ -29,6 +29,13 @@ export function handleCapabilities(
       // A caller cannot select middleware, but it can reject their tool call or
       // end their run, and the name they would see in that error is this one.
       middleware: installedMiddleware(config),
+      // Whether a caller can hold a conversation here at all, said before they
+      // try. Sessions are off unless the operator turned them on, so without
+      // this the only way to find out is a 400 on a run somebody meant.
+      sessions: {
+        enabled: Boolean(config.sessionStore),
+        store: config.sessionStoreName ?? null,
+      },
       eventContract: EVENT_CONTRACT_VERSION,
       limits: {
         maxIterations: config.maxIterations,

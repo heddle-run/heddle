@@ -9,11 +9,14 @@ import {
   parsePluginConfig,
   DEFAULT_MOUNT_MAX_BYTES,
   DEFAULT_MOUNT_MAX_ENTRIES,
+  FileSessionStore,
   type PluginRegistry,
   type Sandbox,
   type SandboxBackend,
+  type SessionStore,
   type WorkspaceFactory,
 } from '@heddle/core';
+import { storeFromPlugins } from './plugins.js';
 import { startServer, type StartedServer } from './server.js';
 import {
   DEFAULT_HOST,
@@ -49,6 +52,15 @@ Options:
                          default: reading a manifest runs nothing. Never
                          available to a submitted plugin, whichever way this is
                          set
+  --session-store <kind> Keep conversations across requests. "file" is the only
+                         kind built in; any other name is a "store" component
+                         from an installed plugin. Off by default — without it,
+                         a request naming a session is refused and this server
+                         stays stateless. Turning it on has two costs worth
+                         choosing deliberately: conversations are written down,
+                         and replicas backed by "file" do not share them
+  --session-dir <dir>    Where the "file" store keeps sessions (default:
+                         $HEDDLE_SESSION_DIR, then ~/.heddle/sessions)
   --max-node-attempts <n> How many times one arrival at a node may be attempted
                          when installed middleware asks to retry it
   --max-iterations <n>   Maximum node executions per run
@@ -106,6 +118,12 @@ SECURITY: there is no authentication. Every caller can execute the tools in
 --tools-dir. The default bind address is loopback; overriding --host exposes an
 unauthenticated remote-code-execution surface.
 
+With --session-store on, a session id is a bearer capability: whoever holds one
+can read and continue that conversation. Ids are issued by this server and are
+random, and a request naming an id this server never issued is refused — but
+that is unguessability, not authorization. Terminate authentication in front of
+this if conversations are worth protecting.
+
 --allow-request-code lets callers submit their own tool scripts and plugin
 modules. Both run in their own processes, neither receives any of this process's
 environment, and both stop when the run ends. A submitted spec cannot
@@ -130,6 +148,8 @@ async function main(): Promise<void> {
       plugin: { type: 'string', multiple: true },
       'plugin-config': { type: 'string', multiple: true },
       'discover-tools': { type: 'boolean' },
+      'session-store': { type: 'string' },
+      'session-dir': { type: 'string' },
       'max-node-attempts': { type: 'string' },
       'max-iterations': { type: 'string' },
       timeout: { type: 'string' },
@@ -178,15 +198,34 @@ async function main(): Promise<void> {
     log,
   });
 
+  const pluginConfig = parsePluginConfig(values['plugin-config']);
+  let sessions: { store: SessionStore; name: string } | undefined;
+  try {
+    sessions = buildSessionStore(
+      values['session-store'],
+      values['session-dir'],
+      plugins,
+      pluginConfig,
+    );
+  } catch (err) {
+    // The same reasoning as the catch below: a store that will not build is a
+    // server that never starts, and the plugin processes discovery may already
+    // have spawned are this function's to stop.
+    plugins?.dispose();
+    throw err;
+  }
+
   let started: StartedServer;
   try {
     started = await startServer({
       host: values.host,
+      sessionStore: sessions?.store,
+      sessionStoreName: sessions?.name,
       port: toInt(values.port, '--port'),
       toolsDir,
       flowsRoot: values['flows-root'],
       plugins,
-      pluginConfig: parsePluginConfig(values['plugin-config']),
+      pluginConfig,
       maxNodeAttempts: toPositiveInt(
         values['max-node-attempts'],
         '--max-node-attempts',
@@ -216,6 +255,53 @@ async function main(): Promise<void> {
   }
 
   installShutdownHandlers(started);
+}
+
+const FILE_STORE = 'file';
+
+/**
+ * Where this server keeps conversations, if it keeps any.
+ *
+ * `file` is built in. Any other name is a `store` component an installed plugin
+ * provides, which is how a deployment with more than one replica gets a store
+ * they share — the file store is per-machine, and two pods backed by it hold
+ * two different sets of conversations under the same ids.
+ */
+function buildSessionStore(
+  kind: string | undefined,
+  dir: string | undefined,
+  plugins: PluginRegistry | undefined,
+  pluginConfig: Record<string, Record<string, unknown>>,
+): { store: SessionStore; name: string } | undefined {
+  if (kind === undefined) {
+    if (dir !== undefined) {
+      throw new Error('--session-dir requires --session-store file');
+    }
+    return undefined;
+  }
+
+  if (kind === FILE_STORE) {
+    return { store: new FileSessionStore({ root: dir }), name: FILE_STORE };
+  }
+
+  if (dir !== undefined) {
+    throw new Error(
+      `--session-dir is a setting of the built-in "${FILE_STORE}" store, and ` +
+        `this server was asked for "${kind}". A plugin store is configured ` +
+        `with --plugin-config ${kind}=<json>.`,
+    );
+  }
+
+  const store = storeFromPlugins(plugins, kind, pluginConfig);
+  if (!store) {
+    throw new Error(
+      `--session-store "${kind}" names no store. Built in: "${FILE_STORE}". ` +
+        `Anything else is a component with "kind": "store" from a plugin, ` +
+        `which has to be installed with --plugin as well as named here.`,
+    );
+  }
+
+  return { store, name: kind };
 }
 
 /**

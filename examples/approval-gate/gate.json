@@ -1,0 +1,22 @@
+{
+  "name": "approval-gate",
+  "version": "1.0.0",
+  "capabilities": [],
+  "components": [
+    {
+      "componentType": "ApprovalGate",
+      "kind": "middleware",
+      "seams": { "toolCall": ["before"] },
+      "schema": {
+        "type": "object",
+        "properties": {
+          "tools": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Tool names that need a person to say yes. Everything else runs."
+          }
+        }
+      }
+    }
+  ]
+}

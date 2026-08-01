@@ -139,17 +139,23 @@ describe('a frame on stdout', () => {
   });
 });
 
-describe('--protocol with --chat', () => {
+describe('--protocol with --interactive', () => {
   it('is refused, naming what each of the two owns', async () => {
-    await expect(run(FLOW, '--chat', '--protocol', 'ag-ui')).rejects.toThrow(
-      /--protocol and --chat cannot be combined/,
-    );
+    await expect(
+      run(FLOW, '--interactive', '--protocol', 'ag-ui'),
+    ).rejects.toThrow(/--protocol and --interactive cannot be combined/);
   });
 
   it('is refused before the flow is read, so a missing file is not blamed', async () => {
     await expect(
-      run('does-not-exist.json', '--chat', '--protocol', 'ag-ui'),
-    ).rejects.toThrow(/--protocol and --chat cannot be combined/);
+      run('does-not-exist.json', '-i', '--protocol', 'ag-ui'),
+    ).rejects.toThrow(/--protocol and --interactive cannot be combined/);
+  });
+
+  it('points at the flag that does compose with an encoder', async () => {
+    await expect(run(FLOW, '-i', '--protocol', 'ag-ui')).rejects.toThrow(
+      /--session, which composes with --protocol/,
+    );
   });
 });
 

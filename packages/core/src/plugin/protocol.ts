@@ -33,6 +33,13 @@ export interface HostMethods {
   encode: EncodeParams;
   finishEncode: FinishEncodeParams;
   listTools: ListToolsParams;
+  sessionCreate: SessionCreateParams;
+  sessionRead: SessionIdParams;
+  sessionAppend: SessionAppendParams;
+  sessionCheckpointRead: SessionIdParams;
+  sessionCheckpointWrite: SessionCheckpointWriteParams;
+  sessionList: SessionListParams;
+  sessionDelete: SessionIdParams;
 }
 
 export type HostMethod = keyof HostMethods;
@@ -145,6 +152,59 @@ export interface ApplyParams extends Record<string, unknown> {
   messages: unknown[];
 }
 
+/**
+ * The seven verbs a `store` component answers.
+ *
+ * The widest single addition this protocol has taken, and the alternative was
+ * considered and refused: one `session` verb carrying an `op`. Every other verb
+ * here is one operation, and an `op` field would be the first dispatcher inside
+ * the protocol rather than in the plugin serving it. `encode`/`finishEncode`
+ * and `before`/`after` already set the precedent — one object, one verb per
+ * method — and a store is not different enough to earn a different shape.
+ *
+ * What they cost, which is worth knowing before writing one: a store is on the
+ * hot path of every turn, so `pluginCallTimeout` applies to each of these and a
+ * slow store stalls runs while holding a concurrency slot.
+ */
+/**
+ * What every session verb carries, including the store's own settings.
+ *
+ * `config` on each call rather than once at construction, because there is no
+ * verb that constructs one — a store is built on heddle's side and the process
+ * behind it may not have been started yet when it is. Sending it every time
+ * keeps the plugin free to open its connection lazily, on whichever call
+ * arrives first, which is what a store that is configured but never used should
+ * do: nothing.
+ */
+export interface SessionParams extends Record<string, unknown> {
+  componentType: string;
+  config: Record<string, unknown>;
+}
+
+export interface SessionIdParams extends SessionParams {
+  id: string;
+}
+
+export interface SessionCreateParams extends SessionIdParams {
+  flow?: string;
+}
+
+export interface SessionAppendParams extends SessionIdParams {
+  turn: Record<string, unknown>;
+  /** The version the caller read. A store answers a mismatch with a conflict. */
+  expect: number;
+}
+
+export interface SessionCheckpointWriteParams extends SessionIdParams {
+  /** `null` clears it, which is what a run that finished writes. */
+  checkpoint: Record<string, unknown> | null;
+}
+
+export interface SessionListParams extends SessionParams {
+  limit?: number;
+  cursor?: string;
+}
+
 export interface SeamSubject {
   nodeName?: string;
   nodeType?: string;
@@ -192,6 +252,12 @@ export interface BeforeParams extends Record<string, unknown> {
   subject: SeamSubject;
   /** What the call site is about to be given. For `toolCall`, the arguments. */
   input: Record<string, unknown>;
+  /**
+   * The answer a human gave, when this is a resumed `node` suspension.
+   *
+   * See `MiddlewareContext.answered` for why only that seam has one.
+   */
+  answered?: Record<string, unknown>;
 }
 
 /**
@@ -207,7 +273,8 @@ export type BeforeVerdict =
   | { action: 'proceed' }
   | { action: 'modify'; input: Record<string, unknown> }
   | { action: 'replace'; value: Record<string, unknown> }
-  | { action: 'reject'; reason: string };
+  | { action: 'reject'; reason: string }
+  | { action: 'suspend'; ask: Record<string, unknown> };
 
 interface InFlight extends Record<string, unknown> {
   call: number | string;
@@ -391,6 +458,54 @@ export function readChatChunk(raw: unknown, where: string): ChatChunk {
   return chunk;
 }
 
+/**
+ * Read a record a store answered with, or nothing.
+ *
+ * `null` is an answer — "no such session" — and is the one a first turn gets.
+ * `undefined` is not: a store that returned nothing at all did not answer, and
+ * treating that as "absent" would turn a broken plugin into a conversation that
+ * silently starts over.
+ */
+export function readStoredRecord<T>(
+  raw: unknown,
+  where: string,
+  shape: string,
+): T | undefined {
+  if (raw === null) return undefined;
+  if (!isObject(raw)) {
+    throw new PluginError(
+      `${where} returned ${typeName(raw)}, expected ${shape} or null. A store ` +
+        `with nothing under that id answers null, which is not the same as ` +
+        `not answering.`,
+    );
+  }
+  return raw as T;
+}
+
+/** Read the version a store reports after a write. */
+export function readStoredVersion(raw: unknown, where: string): number {
+  if (!isObject(raw) || typeof raw.version !== 'number') {
+    throw new PluginError(
+      `${where} returned no numeric "version". It is what the next write to ` +
+        `this session will be checked against, so a store that does not ` +
+        `report one cannot detect a second writer.`,
+    );
+  }
+  return raw.version;
+}
+
+/** Read a listing a store answered with. */
+export function readStoredList<T>(raw: unknown, where: string): T[] {
+  const sessions = isObject(raw) ? raw.sessions : raw;
+  if (!Array.isArray(sessions)) {
+    throw new PluginError(
+      `${where} returned ${typeName(raw)}, expected { sessions: [...] }. A ` +
+        `store holding none answers with an empty array.`,
+    );
+  }
+  return sessions as T[];
+}
+
 export function readWireFrames(raw: unknown, where: string): WireFrame[] {
   if (!Array.isArray(raw)) {
     throw new PluginError(
@@ -478,7 +593,30 @@ export function readBeforeVerdict(
       return { action: 'replace', value: readReplacement(raw.value, where) };
     case 'reject':
       return { action: 'reject', reason: readFailReason(raw.reason, where) };
+    case 'suspend':
+      return { action: 'suspend', ask: readAsk(raw.ask, where) };
   }
+}
+
+/**
+ * Read the question a suspension is asking.
+ *
+ * Required, and required to be an object, because it is the only thing that
+ * reaches the human. A suspension with nothing in it stops a run and leaves
+ * whoever finds it with a session id and no idea what was wanted — and the
+ * answer they send back is shaped by this, so an empty ask makes the resume
+ * unanswerable too.
+ */
+function readAsk(ask: unknown, where: string): Record<string, unknown> {
+  if (!isObject(ask)) {
+    throw new PluginError(
+      `${where}: returned "suspend" without an "ask" object. It is what is put ` +
+        `to the human — the tool, the arguments, whatever they need to decide — ` +
+        `and it is carried in the checkpoint, so a suspension without one stops ` +
+        `the run and tells nobody why.`,
+    );
+  }
+  return ask;
 }
 
 /**

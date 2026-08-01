@@ -8,6 +8,7 @@ import type {
 import type { Dependencies } from '../node/types.js';
 import type { ToolDef } from '../tool/types.js';
 import type { Event, LogLevel } from '../runner/events.js';
+import type { SessionStore } from '../session/store.js';
 import type { AfterVerdict, BeforeVerdict } from './protocol.js';
 import type { Seam, SeamSubscription } from './seams.js';
 
@@ -109,6 +110,18 @@ export interface MiddlewareContext extends PluginServices {
   component: Record<string, unknown>;
   attempt: number;
   maxAttempts: number;
+  /**
+   * The answer a human gave, when this consultation is a resumed suspension.
+   *
+   * Only ever set on `node.before`, and it closes a hole that seam would
+   * otherwise have. A `toolCall` suspension is never re-consulted — the agent's
+   * bookmark replays the answer as the call's result, so the gate is not asked
+   * again. A `node` suspension *is*: resuming re-enters the node, and every
+   * `before` hook is consulted afresh. A gate with no way to tell "I am being
+   * asked again, and here is what they said" from "I am being asked for the
+   * first time" would suspend forever.
+   */
+  answered?: Record<string, unknown>;
 }
 
 export type SeamOutcome =
@@ -171,6 +184,22 @@ export interface PluginMiddlewareDef {
   ): PluginMiddlewareExecutor;
 }
 
+/**
+ * Where a deployment keeps its conversations.
+ *
+ * Installed by the operator and never named by a spec, like a middleware and an
+ * encoder — a flow does not get to choose where its transcript goes. Unlike
+ * both, exactly one is ever *in use*: a store is selected by name at startup,
+ * and a process has one place it writes.
+ *
+ * Built once, at startup, rather than per run. It is the one plugin component
+ * whose whole value is outliving a run — a connection pool that were rebuilt
+ * per request would cost more than the file store it replaced.
+ */
+export interface PluginStoreDef extends PluginComponentDef {
+  createStore(config: Record<string, unknown>): SessionStore;
+}
+
 export interface HeddlePlugin {
   name: string;
   version: string;
@@ -180,6 +209,7 @@ export interface HeddlePlugin {
   providers?: PluginProviderDef[];
   encoders?: PluginEncoderDef[];
   middleware?: PluginMiddlewareDef[];
+  stores?: PluginStoreDef[];
   tools?: ToolDef[];
   /**
    * Files this plugin puts in the workspace of every node that runs.

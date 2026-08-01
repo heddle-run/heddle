@@ -24,10 +24,12 @@ import { readChatRequest, readChatResponse } from '../plugin/protocol.js';
 import type { SeamOutcome } from '../plugin/types.js';
 import { generationParams, providerFor } from '../llm/provider.js';
 import { TransformChain } from '../plugin/transform.js';
+import { historyMessages } from '../session/history.js';
+import { CHAT_HISTORY_KEY, withoutReserved } from '../session/reserved.js';
+import { RunSuspended, readResume } from '../session/suspend.js';
 import { LLMError, RunError, ToolError } from '../errors.js';
 
 const MAX_TOOL_ROUNDS = 10;
-const CHAT_HISTORY_KEY = '_chat_history';
 const MAX_REPORTED_ARGUMENT_LENGTH = 200;
 
 interface TurnCounter {
@@ -39,6 +41,29 @@ interface Rejection {
   transform: string;
   phase: string;
   replacement?: string;
+}
+
+/** Where a round is, so a call that suspends can say what it interrupted. */
+interface RoundContext {
+  round: number;
+  /** The conversation as it stands. Snapshotted if this round suspends. */
+  messages: Message[];
+  /** The calls after this one in the same round, not yet made. */
+  remaining: ToolCall[];
+}
+
+/**
+ * What an agent leaves behind when it is suspended, and reads on the way back.
+ *
+ * Opaque to the runner, which carries it in the checkpoint without looking
+ * inside — the shape belongs to this executor, and another node type suspending
+ * would leave something entirely different.
+ */
+interface AgentBookmark {
+  round: number;
+  messages: Message[];
+  pending: { id: string; name: string };
+  remaining: ToolCall[];
 }
 
 export class AgentExecutor implements NodeExecutor {
@@ -93,21 +118,22 @@ export class AgentExecutor implements NodeExecutor {
     input: State,
     scopedExecutor: Executor | undefined,
   ): Promise<State> {
-    const opening = await this.transforms.apply(
-      'pre',
-      this.openingMessages(input),
-      signal,
-    );
-    if (opening.rejected) return rejectionState(opening.rejected);
-
-    const messages = opening.messages;
     const tools = this.describeTools();
     const turn: TurnCounter = { emitted: 0 };
+
+    // A resumed node picks its conversation up out of the checkpoint rather
+    // than building one. Everything before the suspension — the system prompt,
+    // the history, the model's answers, the tool results already collected — is
+    // in there, which is what stops a resume re-running work that already ran.
+    const opened = await this.openConversation(signal, input, scopedExecutor);
+    if (opened.rejected) return rejectionState(opened.rejected);
+
+    const messages = opened.messages;
 
     // Counted from 1 because the number is part of the `agentRound` seam's
     // contract, and a policy capping three rounds should not have to know that
     // the third one is numbered 2.
-    for (let round = 1; round <= MAX_TOOL_ROUNDS; round++) {
+    for (let round = opened.round; round <= MAX_TOOL_ROUNDS; round++) {
       const gate = await this.beforeRound(signal, round);
       if (gate.action === 'reject') {
         throw new RunError(
@@ -131,8 +157,20 @@ export class AgentExecutor implements NodeExecutor {
         tool_calls: response.tool_calls,
       });
 
-      for (const call of response.tool_calls) {
-        messages.push(await this.runToolCall(signal, call, scopedExecutor));
+      // Indexed rather than iterated, so a call that suspends can record the
+      // ones after it. They belong to a model request already in `messages`,
+      // and a provider refuses a conversation where an assistant asked for a
+      // call that no tool message answers — so "not yet run" has to survive the
+      // suspension as data, not as a loop position.
+      const calls = response.tool_calls;
+      for (let index = 0; index < calls.length; index++) {
+        messages.push(
+          await this.runToolCall(signal, calls[index], scopedExecutor, {
+            round,
+            messages,
+            remaining: calls.slice(index + 1),
+          }),
+        );
       }
 
       const settled = await this.afterRound(signal, round, response.tool_calls);
@@ -149,13 +187,119 @@ export class AgentExecutor implements NodeExecutor {
     );
   }
 
+  /**
+   * Stop the run here, leaving enough behind to carry on from.
+   *
+   * The bookmark records the conversation as it stands, the call that is
+   * waiting, and the calls in this round that have not been made. Anything less
+   * and resuming would mean re-entering the node from the top: the model call
+   * that produced these tool calls would be made again, and every tool already
+   * run in this round would run a second time. Tool calls are not idempotent,
+   * so that is not a slower resume — it is a wrong one.
+   */
+  private suspend(
+    by: string,
+    ask: Record<string, unknown>,
+    call: ToolCall,
+    args: Record<string, unknown>,
+    round: RoundContext | undefined,
+  ): RunSuspended {
+    if (!round) {
+      throw new RunError(
+        `middleware "${by}" suspended the tool call "${call.name}", but this ` +
+          `call was not made inside a round heddle can resume. A suspension ` +
+          `has to record the conversation it stopped in, and there is none ` +
+          `here — this is a bug in heddle, not in the middleware.`,
+      );
+    }
+
+    this.warn(
+      `"${by}" suspended the run before "${call.name}" and is waiting on a ` +
+        `human.`,
+    );
+
+    const bookmark: AgentBookmark = {
+      round: round.round,
+      messages: [...round.messages],
+      pending: { id: call.id, name: call.name },
+      remaining: round.remaining,
+    };
+
+    return new RunSuspended({
+      by,
+      seam: 'toolCall',
+      // The tool and its arguments alongside whatever the middleware wants
+      // asked. A gate that returned only "approve?" would leave whoever answers
+      // it with no way to know what they are approving.
+      ask: { tool: call.name, arguments: args, ...ask },
+      node: this.node.name,
+      resume: bookmark as unknown as Record<string, unknown>,
+    });
+  }
+
+  /**
+   * The conversation this node starts from, and the round it starts at.
+   *
+   * Two ways in. Ordinarily the messages are built — system prompt, history,
+   * the input as a user turn — and the loop starts at round 1. On a resume they
+   * come out of the bookmark the suspension left, the human's answer is written
+   * in as the result of the call that was waiting on it, and any tool calls the
+   * suspended round had not reached yet are made now.
+   *
+   * The `pre` transforms are not re-applied on a resume. They shaped the
+   * opening messages once; running them again over a conversation that is
+   * already several rounds long would show them something they were never
+   * written for, and a rejecting one would end a run halfway through.
+   */
+  private async openConversation(
+    signal: AbortSignal | undefined,
+    input: State,
+    scopedExecutor: Executor | undefined,
+  ): Promise<{ messages: Message[]; round: number; rejected?: Rejection }> {
+    const resume = readResume(input, this.node.name);
+
+    if (!resume) {
+      const opening = await this.transforms.apply(
+        'pre',
+        this.openingMessages(input),
+        signal,
+      );
+      return {
+        messages: opening.messages,
+        round: 1,
+        rejected: opening.rejected,
+      };
+    }
+
+    const bookmark = readBookmark(this.node.name, resume.bookmark);
+    const messages = [...bookmark.messages];
+
+    messages.push({
+      role: 'tool',
+      tool_call_id: bookmark.pending.id,
+      content: JSON.stringify(resume.answer),
+    });
+    this.warn(
+      `"${bookmark.pending.name}" was answered by a human rather than run.`,
+    );
+
+    // The calls the suspended round never reached. They belong to the model
+    // request that is already in `messages`, so a provider would refuse the
+    // conversation without a tool message for each of them.
+    for (const call of bookmark.remaining) {
+      messages.push(await this.runToolCall(signal, call, scopedExecutor));
+    }
+
+    return { messages, round: bookmark.round + 1 };
+  }
+
   private openingMessages(input: State): Message[] {
     return [
       {
         role: 'system',
         content: substituteTemplate(this.agent.systemPrompt ?? '', input),
       },
-      ...chatHistoryOf(input),
+      ...historyMessages(input.get(CHAT_HISTORY_KEY)),
       { role: 'user', content: JSON.stringify(inputWithoutHistory(input)) },
     ];
   }
@@ -218,6 +362,7 @@ export class AgentExecutor implements NodeExecutor {
     signal: AbortSignal | undefined,
     call: ToolCall,
     scopedExecutor: Executor | undefined,
+    round?: RoundContext,
   ): Promise<Message> {
     const parsed = parseToolArguments(call);
     let args = withDefaults(parsed.args, this.agent.tools, call.name);
@@ -236,6 +381,10 @@ export class AgentExecutor implements NodeExecutor {
      */
     const gate = await this.beforeToolCall(signal, call, args);
     if (gate.action === 'modify') args = gate.input;
+
+    if (gate.action === 'suspend') {
+      throw this.suspend(gate.by, gate.ask, call, args, round);
+    }
 
     if (gate.action === 'reject' || gate.action === 'replace') {
       const refused = gate.action === 'reject';
@@ -815,20 +964,42 @@ function parseToolArguments(call: ToolCall): {
   return { args: value };
 }
 
-function chatHistoryOf(input: State): Message[] {
-  const history = input.get(CHAT_HISTORY_KEY);
-  if (!Array.isArray(history)) return [];
+/**
+ * Read the bookmark this node left, refusing one that will not resume.
+ *
+ * Checked rather than trusted because it has been through a store — possibly
+ * one somebody else wrote — and a malformed conversation would reach the
+ * provider as an API error naming the model, several frames from the checkpoint
+ * that actually caused it.
+ */
+function readBookmark(node: string, raw: Record<string, unknown>): AgentBookmark {
+  const { round, messages, pending, remaining } = raw as Partial<AgentBookmark>;
 
-  return (history as Array<{ role: string; content: string }>).map((entry) => ({
-    role: entry.role as Message['role'],
-    content: entry.content,
-  }));
+  if (
+    typeof round !== 'number' ||
+    !Array.isArray(messages) ||
+    messages.length === 0 ||
+    typeof pending?.id !== 'string' ||
+    typeof pending?.name !== 'string'
+  ) {
+    throw new RunError(
+      `AgentNode "${node}" cannot resume: the checkpoint holds no usable ` +
+        `conversation. It needs the messages built so far and the tool call ` +
+        `that was waiting — without them the model would be asked to answer a ` +
+        `conversation it never had.`,
+    );
+  }
+
+  return {
+    round,
+    messages,
+    pending,
+    remaining: Array.isArray(remaining) ? remaining : [],
+  };
 }
 
 function inputWithoutHistory(input: State): Record<string, unknown> {
-  const data = input.toData();
-  delete data[CHAT_HISTORY_KEY];
-  return data;
+  return withoutReserved(input.toData());
 }
 
 function answerFields(answer: string): Record<string, unknown> {

@@ -9,7 +9,12 @@ export type Seam =
 
 export type Half = 'before' | 'after';
 
-export type BeforeAction = 'proceed' | 'modify' | 'replace' | 'reject';
+export type BeforeAction =
+  | 'proceed'
+  | 'modify'
+  | 'replace'
+  | 'reject'
+  | 'suspend';
 
 export type AfterAction = 'pass' | 'replace' | 'retry' | 'fail';
 
@@ -47,11 +52,19 @@ export const SEAMS: Record<Seam, SeamDef> = {
    */
   node: {
     hooks: ['before', 'after'],
-    before: ['proceed', 'modify', 'replace', 'reject'],
+    before: ['proceed', 'modify', 'replace', 'reject', 'suspend'],
     after: ['pass', 'replace', 'fail'],
     implemented: true,
   },
-  /** Around a request to the model. The only seam that admits a retry. */
+  /**
+   * Around a request to the model. The only seam that admits a retry.
+   *
+   * No `suspend`, and the reason is the same one that keeps `retry` off
+   * `toolCall`: a suspension has to be resumable, and what would be resumed
+   * here is a request the run has not decided to make yet. A policy wanting a
+   * human before the model is consulted asks at `node`, which is the boundary
+   * that owns whether this node runs at all.
+   */
   modelCall: {
     hooks: ['before', 'after'],
     before: ['proceed', 'modify', 'replace', 'reject'],
@@ -66,10 +79,16 @@ export const SEAMS: Record<Seam, SeamDef> = {
    * verdict here governs what the model may ask for, not what the machine may
    * do. The controls over the machine are the sandbox's. `--no-mount-tools`
    * empties the workspace's bin for an operator who needs this to be a gate.
+   *
+   * It is also the seam an approval gate lives at, and the reason `suspend`
+   * exists. `reject` already expresses "no" — the model is told and carries on
+   * — but "ask somebody and come back" needs the run to stop and start again,
+   * which is a different thing entirely. The caveat above applies to it too: a
+   * suspension gates the model's request, not the machine.
    */
   toolCall: {
     hooks: ['before', 'after'],
-    before: ['proceed', 'modify', 'replace', 'reject'],
+    before: ['proceed', 'modify', 'replace', 'reject', 'suspend'],
     after: ['pass', 'replace', 'fail'],
     implemented: true,
   },

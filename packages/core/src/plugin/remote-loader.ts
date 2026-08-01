@@ -16,6 +16,7 @@ import {
   remoteComponentDef,
   remoteEncoderDef,
   remoteMiddlewareDef,
+  remoteStoreDef,
   remoteNodeDef,
   remoteProviderDef,
   remoteToolDef,
@@ -198,6 +199,7 @@ function buildPlugin(
     providers: [],
     middleware: [],
     encoders: [],
+    stores: [],
     tools: manifest.tools.map((tool) =>
       toolDefFor(manifest, tool, root, getHost),
     ),
@@ -227,6 +229,9 @@ function buildPlugin(
         break;
       case 'encoder':
         plugin.encoders?.push(remoteEncoderDef(manifest, component, getHost));
+        break;
+      case 'store':
+        plugin.stores?.push(remoteStoreDef(manifest, component, getHost));
         break;
     }
   }

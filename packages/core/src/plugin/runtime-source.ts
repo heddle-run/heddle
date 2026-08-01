@@ -36,6 +36,20 @@ function serve(handlers, options) {
   const EVENT_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
   const LOG_LEVELS = ['debug', 'info', 'warn', 'error'];
 
+  // The verb a store answers, and the handler name it answers it with. Named
+  // for the store's own method rather than the verb, so writing one reads like
+  // implementing an interface rather than like serving a protocol.
+  const SESSION_METHODS = {
+    sessionCreate: 'create',
+    sessionRead: 'read',
+    sessionAppend: 'append',
+    sessionCheckpointRead: 'readCheckpoint',
+    sessionCheckpointWrite: 'writeCheckpoint',
+    sessionList: 'list',
+    sessionDelete: 'delete',
+  };
+  const STORE_HANDLERS = Object.keys(SESSION_METHODS).map((k) => SESSION_METHODS[k]);
+
   const needs = (verb) => {
     if (granted.has(verb)) return;
     throw new Error(
@@ -192,6 +206,7 @@ function serve(handlers, options) {
     seam: params.seam,
     attempt: params.attempt,
     maxAttempts: params.maxAttempts,
+    answered: params.answered,
     admits: (seamAdmits[params.seam] || []).slice(),
     signal: controller.signal,
     emitEvent: (name, data) => emitEvent(request.id, name, data),
@@ -268,6 +283,22 @@ function serve(handlers, options) {
         return undefined;
       }
       return encoding ? await hook(params.event || {}, ctx) : await hook(ctx);
+    }
+    if (SESSION_METHODS[request.method]) {
+      const name = SESSION_METHODS[request.method];
+      const hook = handler[name];
+      if (!hook) {
+        missingHandler(
+          request,
+          '"' + params.componentType + '" is declared as a store in this ' +
+            "plugin's manifest but serves no " + name + ' handler. A store ' +
+            'answers all of: ' + STORE_HANDLERS.join(', ') + '. Write ' +
+            'serve({ ' + params.componentType + ': { ' + name +
+            '(params, ctx) { … } } }).',
+        );
+        return undefined;
+      }
+      return await hook(params, ctx);
     }
     return await handler.execute(params.input || {}, ctx);
   };

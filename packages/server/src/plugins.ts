@@ -3,12 +3,29 @@ import {
   loadRemotePlugin,
   PluginRegistry,
   type PluginCapability,
+  type SessionStore,
 } from '@heddle/core';
 import type { ServerConfig } from './config.js';
 import { HttpError } from './errors.js';
 import type { MaterializedCode } from './request-code.js';
 
 const GRANTED: PluginCapability[] = ['runTool', 'emitEvent', 'log'];
+
+/**
+ * The store an installed plugin provides under this component type.
+ *
+ * Only the operator's registry is consulted, never a request's. A store holds
+ * every conversation this server has, so a caller that could name one could
+ * name where everybody else's went — which is the same reasoning that keeps
+ * middleware out of a request body.
+ */
+export function storeFromPlugins(
+  plugins: PluginRegistry | undefined,
+  componentType: string,
+  config: Record<string, Record<string, unknown>> = {},
+): SessionStore | undefined {
+  return plugins?.createStore(componentType, config[componentType] ?? {});
+}
 
 const NO_CALL_MODEL =
   'callModel is not granted on this server because it supplies a default model ' +
@@ -70,6 +87,7 @@ export function buildPlugins(
     for (const plugin of code.plugins) {
       refuseShadowing(plugin.manifest);
       refuseMiddleware(plugin.manifest);
+      refuseStores(plugin.manifest);
       refuseDiscovery(plugin.manifest);
       refuseWorkspaceFiles(plugin.manifest);
 
@@ -156,7 +174,37 @@ function refuseWorkspaceFiles(rawManifest: unknown): void {
       `submitted plugin is a module with no directory — so there is nothing for ` +
       `them to resolve against. Send the content as this request's own "files", ` +
       `or ask whoever runs this server to mount it.`,
-    'PluginError',
+  );
+}
+
+/**
+ * Refuse a submitted plugin that wants to be where conversations are kept.
+ *
+ * The same rule as middleware, for a sharper reason. A store holds every
+ * conversation this server has — one a caller supplied could read the lot, and
+ * could be the destination for everybody else's. It is selected by name at
+ * startup, so a submitted one would not even be reachable; refusing it says
+ * why rather than letting it load and do nothing.
+ */
+function refuseStores(rawManifest: unknown): void {
+  const manifest = rawManifest as {
+    components?: Array<{ kind?: string; componentType?: string }>;
+  };
+  const stores = (manifest?.components ?? []).filter(
+    (component) => component?.kind === 'store',
+  );
+  if (stores.length === 0) return;
+
+  const names = stores
+    .map((component) => `"${component.componentType}"`)
+    .join(', ');
+
+  throw new HttpError(
+    400,
+    `this plugin declares a session store (${names}), which cannot be ` +
+      `submitted with a request. A store holds every conversation this server ` +
+      `has, so it is installed by whoever runs it — with --plugin and ` +
+      `--session-store, at startup — and never chosen per request.`,    'PluginError',
   );
 }
 

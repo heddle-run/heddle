@@ -81,6 +81,22 @@ describe('validate graph', () => {
 
     expect(() => validate(g)).toThrow(/orphan.*unreachable/);
   });
+
+  it('refuses a flow that declares a state key heddle reserves', () => {
+    const flow = parseFlow(
+      readFileSync(join(testdataDir, 'simple_flow.json'), 'utf-8'),
+    );
+    const startNode = flow.parsedNodes.find(
+      (node) => node.componentType === 'StartNode',
+    ) as { outputs?: unknown[] };
+    startNode.outputs = [
+      { title: '_chat_history', type: 'string' },
+    ];
+
+    expect(() => validate(compile(flow, {}))).toThrow(
+      /declares an output "_chat_history", which heddle reserves/,
+    );
+  });
 });
 
 describe('validate branch routing', () => {

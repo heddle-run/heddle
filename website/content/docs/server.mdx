@@ -21,6 +21,9 @@ surface that executes what it is sent.
 | `POST /v1/runs` | Execute a flow, buffered |
 | `POST /v1/runs?stream=true` | Execute a flow, streamed as Server-Sent Events |
 | `POST /v1/validate` | Parse, compile and validate without running |
+| `POST /v1/sessions` | Issue a session id, so runs can be held in a conversation |
+| `GET /v1/sessions/:id` | The transcript, and whether a run in it is unfinished |
+| `DELETE /v1/sessions/:id` | Delete a conversation and everything in it |
 | `GET /v1/capabilities` | What this server permits, so a client can adapt |
 | `GET /healthz` | Liveness — true while the event loop answers |
 | `GET /readyz` | Readiness — 503 the moment draining begins |
@@ -98,6 +101,81 @@ is in `flow_complete`.
 `?protocol=<name>` renders the run in a format a plugin supplies — AG-UI, for instance.
 A protocol nothing renders is a `400` listing what this server can. See
 [Encoders](/docs/plugins/encoders).
+
+## Sessions
+
+Off by default. `--session-store file` turns them on; `--session-store <ComponentType>` uses a
+[store plugin](/docs/plugins) instead. Without one, a request naming a session is refused rather
+than silently ignored.
+
+A conversation starts with an id this server issues:
+
+```bash
+curl -sX POST localhost:4319/v1/sessions -d '{}'
+# {"id":"2f1a…"}
+```
+
+Then each run names it, and the agent is given the turns before it:
+
+```json
+{ "flowPath": "support.yaml", "inputs": { "query": "and the second order?" }, "session": "2f1a…" }
+```
+
+The run answers as usual, plus the session id. `GET /v1/sessions/:id` returns the turns, the same
+`messages` the model was shown, and whether a run in it is `unfinished`.
+
+Sending `_chat_history` yourself alongside `"session"` is refused: the session *is* the
+conversation, and heddle would have to pick one of the two to discard.
+
+### Two things sessions cost
+
+**Ids are issued, never chosen.** A run naming an id this server never minted is a 404, not a new
+conversation by that name. Ids are random for a reason:
+
+<Callout type="warn">
+A session id is a **bearer capability**. This server has no authentication, so whoever holds one
+can read and continue that conversation. Unguessability is not authorization — terminate auth in
+front of this if conversations are worth protecting.
+</Callout>
+
+**The server stops being stateless.** Two replicas backed by the `file` store hold two different
+sets of conversations under the same ids, so a caller's second message can reach a pod that has
+never heard of them. That is what the pluggable store is *for*: a shared store is what makes more
+than one replica work.
+
+### Durable runs, and stopping for a human
+
+`"durable": true` checkpoints the run at every node boundary. `"resume": true` picks up an
+unfinished one:
+
+```json
+{ "flowPath": "support.yaml", "session": "2f1a…", "resume": true }
+```
+
+A [middleware](/docs/plugins/middleware) may also **suspend** a run to wait on a person. The run
+answers `202`, not an error — nothing failed:
+
+```json
+{
+  "session": "2f1a…",
+  "status": "suspended",
+  "suspended": {
+    "by": "ApprovalGate",
+    "seam": "toolCall",
+    "node": "assistant",
+    "ask": { "tool": "refund", "arguments": { "amount": 4200 } }
+  }
+}
+```
+
+Streamed runs get a `suspended` event before the stream closes. Continue it with an `answer`:
+
+```json
+{ "flowPath": "support.yaml", "session": "2f1a…", "resume": true, "answer": { "approved": true } }
+```
+
+The answer reaches the run as the result of the call that was waiting. Nothing that already ran
+runs again — see [the approval-gate example](https://github.com/spichen/specrun/tree/main/examples/approval-gate).
 
 ## Installed plugins
 

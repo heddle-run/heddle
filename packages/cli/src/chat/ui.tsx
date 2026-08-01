@@ -2,13 +2,17 @@ import React, { useState, useCallback, useEffect } from 'react';
 import { render, Box, Text, useInput, useApp } from 'ink';
 import TextInput from 'ink-text-input';
 import {
+  CHAT_HISTORY_KEY,
   Runner,
+  closeTurn,
+  historyFromTurns,
+  openTurn,
   type CompiledGraph,
   type RunnerOptions,
   type Event,
+  type SessionStore,
+  type Turn,
 } from '@heddle/core';
-import type { ChatSession } from './session.js';
-import { addMessage } from './session.js';
 import { getToolIcon, getToolTitle, formatDuration } from './tool-display.js';
 
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
@@ -16,7 +20,6 @@ const SPINNER_INTERVAL_MS = 80;
 const INDENT = '   ';
 const SEPARATOR = '·';
 const EXIT_COMMANDS = new Set(['/exit', '/quit']);
-const CHAT_HISTORY_KEY = '_chat_history';
 
 interface ToolCallEntry {
   id: string;
@@ -35,31 +38,36 @@ interface MessageEntry {
 
 type ChatEntry = MessageEntry | ToolCallEntry;
 
+/** The conversation this chat is kept in, when it is kept in one. */
+export interface ChatSession {
+  store: SessionStore;
+  id: string;
+  /** What the store already had, so the UI opens on the conversation so far. */
+  turns: Turn[];
+}
+
 export interface StartChatOptions {
   graph: CompiledGraph;
   opts: RunnerOptions;
-  session: ChatSession;
+  session: ChatSession | undefined;
+  flowPath: string;
   inputKey: string;
 }
 
-export function startChat({
-  graph,
-  opts,
-  session,
-  inputKey,
-}: StartChatOptions): void {
-  const instance = render(
-    <Chat graph={graph} opts={opts} session={session} inputKey={inputKey} />,
-  );
+export function startChat(options: StartChatOptions): void {
+  const instance = render(<Chat {...options} />);
   instance.waitUntilExit().catch(() => {});
 }
 
-function Chat({ graph, opts, session, inputKey }: StartChatOptions) {
+function Chat({ graph, opts, session, flowPath, inputKey }: StartChatOptions) {
   const { exit } = useApp();
-  const [history, setHistory] = useState<ChatEntry[]>([]);
+  const [history, setHistory] = useState<ChatEntry[]>(() =>
+    historyFromTurns(session?.turns ?? []).map((message) => ({ ...message })),
+  );
   const [input, setInput] = useState('');
   const [running, setRunning] = useState(false);
   const [streamed, setStreamed] = useState('');
+  const [failure, setFailure] = useState<string | undefined>();
 
   useInput((typed, key) => {
     if (key.ctrl && typed === 'c') exit();
@@ -80,36 +88,33 @@ function Chat({ graph, opts, session, inputKey }: StartChatOptions) {
 
       setInput('');
       setStreamed('');
+      setFailure(undefined);
       setHistory((prev) => [...prev, { role: 'user', content: message }]);
-
-      const previousMessages = session.messages.map((entry) => ({
-        role: entry.role,
-        content: entry.content,
-      }));
-      addMessage(session, 'user', message);
       setRunning(true);
+
+      const inputs = { [inputKey]: message };
 
       try {
         opts.eventHandler = (event: Event) => {
           applyEvent(event, setStreamed, setHistory);
         };
 
-        const runner = new Runner(graph, opts);
-        const result = await runner.run(undefined, {
-          [inputKey]: message,
-          [CHAT_HISTORY_KEY]: previousMessages,
-        });
+        const answer = session
+          ? await runRecorded(graph, opts, session, flowPath, inputs)
+          : await runEphemeral(graph, opts, history, inputs);
 
-        recordAssistantReply(session, setHistory, formatResult(result.toData()));
+        setHistory((prev) => [...prev, { role: 'assistant', content: answer }]);
       } catch (err) {
-        const detail = err instanceof Error ? err.message : String(err);
-        recordAssistantReply(session, setHistory, `Error: ${detail}`);
+        // Not appended as an assistant turn: the model did not say this, and a
+        // conversation that records heddle's own errors as answers feeds them
+        // back to the model on the next message.
+        setFailure(err instanceof Error ? err.message : String(err));
       } finally {
         setStreamed('');
         setRunning(false);
       }
     },
-    [graph, opts, session, inputKey, running, exit],
+    [graph, opts, session, flowPath, inputKey, running, history, exit],
   );
 
   return (
@@ -122,7 +127,8 @@ function Chat({ graph, opts, session, inputKey }: StartChatOptions) {
       </Box>
       <Box marginBottom={1}>
         <Text dimColor>
-          Session: {session.id} | Type /exit to quit | Ctrl+C to abort
+          {session ? `Session: ${session.id}` : 'Not saved (add --session)'} |
+          Type /exit to quit | Ctrl+C to abort
         </Text>
       </Box>
 
@@ -151,6 +157,15 @@ function Chat({ graph, opts, session, inputKey }: StartChatOptions) {
         </Box>
       )}
 
+      {failure && (
+        <Box marginTop={0}>
+          <Text color="red">
+            {INDENT}
+            {failure}
+          </Text>
+        </Box>
+      )}
+
       <Box marginTop={history.length > 0 ? 1 : 0}>
         <Text bold color="green">
           {'> '}
@@ -164,6 +179,57 @@ function Chat({ graph, opts, session, inputKey }: StartChatOptions) {
       </Box>
     </Box>
   );
+}
+
+/**
+ * A turn that the store owns from both ends.
+ *
+ * The history comes from `openTurn` rather than from this component's state, so
+ * a session picked up in a second process opens on the same conversation the
+ * first one left — which is the whole difference between a transcript and a log.
+ */
+async function runRecorded(
+  graph: CompiledGraph,
+  opts: RunnerOptions,
+  session: ChatSession,
+  flowPath: string,
+  inputs: Record<string, unknown>,
+): Promise<string> {
+  const opened = await openTurn(session.store, session.id, inputs, {
+    flow: flowPath,
+  });
+
+  try {
+    const state = await new Runner(graph, opts).run(undefined, opened.inputs);
+    const output = state.toData();
+    await closeTurn(session.store, session.id, opened, { output });
+    return answerOf(output);
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    await closeTurn(session.store, session.id, opened, {
+      error: { name: error.name, message: error.message },
+    });
+    throw error;
+  }
+}
+
+/** A conversation that lives as long as the terminal does. */
+async function runEphemeral(
+  graph: CompiledGraph,
+  opts: RunnerOptions,
+  history: ChatEntry[],
+  inputs: Record<string, unknown>,
+): Promise<string> {
+  const conversation = history
+    .filter((entry): entry is MessageEntry => !isToolCall(entry))
+    .map(({ role, content }) => ({ role, content }));
+
+  const state = await new Runner(graph, opts).run(undefined, {
+    ...inputs,
+    ...(conversation.length > 0 ? { [CHAT_HISTORY_KEY]: conversation } : {}),
+  });
+
+  return answerOf(state.toData());
 }
 
 function MessageLine({ entry }: { entry: MessageEntry }) {
@@ -272,16 +338,7 @@ function finishToolCall(entry: ChatEntry, event: Event): ChatEntry {
   };
 }
 
-function recordAssistantReply(
-  session: ChatSession,
-  setHistory: React.Dispatch<React.SetStateAction<ChatEntry[]>>,
-  content: string,
-): void {
-  setHistory((prev) => [...prev, { role: 'assistant', content }]);
-  addMessage(session, 'assistant', content);
-}
-
-function formatResult(data: Record<string, unknown>): string {
+function answerOf(data: Record<string, unknown>): string {
   return typeof data.result === 'string'
     ? data.result
     : JSON.stringify(data, null, 2);
