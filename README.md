@@ -411,12 +411,12 @@ runs a spec against a stub model so a new agent can be smoke-tested with no API
 key:
 
 ```bash
-npx skills add heddle-run/heddle --skill run-heddle-agent
+npx skills add heddle-run/heddle --skill create-heddle-agent
 ```
 
 It works in any project that can reach a `heddle` binary. Inside a clone of this
 repo it is already there, at
-[.claude/skills/run-heddle-agent](.claude/skills/run-heddle-agent/SKILL.md).
+[.claude/skills/create-heddle-agent](.claude/skills/create-heddle-agent/SKILL.md).
 
 ## Development
 
