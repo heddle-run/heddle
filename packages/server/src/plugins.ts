@@ -71,6 +71,7 @@ export function buildPlugins(
       refuseShadowing(plugin.manifest);
       refuseMiddleware(plugin.manifest);
       refuseDiscovery(plugin.manifest);
+      refuseWorkspaceFiles(plugin.manifest);
 
       const label = `plugin-${plugin.name}`;
       const workspace = createScratchWorkspace(label);
@@ -124,6 +125,37 @@ function refuseMiddleware(rawManifest: unknown): void {
       `— with --plugin, at startup — rather than chosen per request. A component ` +
       `your own flow selects is a node, a transform or a provider; a rendering ` +
       `your own client selects is an encoder, which you may submit.`,
+    'PluginError',
+  );
+}
+
+/**
+ * A submitted plugin may not put files in the workspace.
+ *
+ * The shallow reason is that it could not work: a submitted plugin is
+ * materialised from JSON — `request-code.ts` writes its source and nothing else
+ * — so a "path" names a file that is not beside it, and every one of these
+ * would fail to resolve.
+ *
+ * The real reason is why that is left as a refusal rather than fixed. `files`
+ * puts bytes in the working directory of *every* node in the run, before the
+ * flow starts and outside the toolCall seam. What a request may carry is code
+ * that runs when something calls it. Content in everybody's working directory
+ * is the operator's to decide, which is what `--mount` is for — and a caller
+ * who wants files of their own has the request's own `files`, which are the
+ * caller's own bytes on the caller's own budget.
+ */
+function refuseWorkspaceFiles(rawManifest: unknown): void {
+  const files = (rawManifest as { files?: unknown })?.files;
+  if (!Array.isArray(files) || files.length === 0) return;
+
+  throw new HttpError(
+    400,
+    `this plugin declares "files", which cannot be submitted with a request. A ` +
+      `plugin's files are read from the directory it was installed in, and a ` +
+      `submitted plugin is a module with no directory — so there is nothing for ` +
+      `them to resolve against. Send the content as this request's own "files", ` +
+      `or ask whoever runs this server to mount it.`,
     'PluginError',
   );
 }

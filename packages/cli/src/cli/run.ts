@@ -179,7 +179,7 @@ async function runFlow(
   const flow = loadFlow(flowPath, plugins);
   // Before the sandbox, because a `--workspace` directory has to be on the
   // policy's write paths and the policy is fixed once the sandbox is made.
-  const workspaces = buildWorkspaces(options);
+  const workspaces = buildWorkspaces(options, plugins);
   const sandbox = buildSandbox(
     options,
     options.toolsDir,
@@ -401,9 +401,14 @@ function detectInputKey(flow: ParsedFlow): string {
  * run, and where a run's files come from is not a question about confinement.
  * `--safe` decides only whether anything enforces the workspace's edges.
  */
-function buildWorkspaces(options: RunOptions): WorkspaceFactory {
+function buildWorkspaces(
+  options: RunOptions,
+  plugins: PluginRegistry,
+): WorkspaceFactory {
   return createWorkspaceFactory({
-    mounts: options.mount.map(parseMount),
+    // The operator's first, so a collision reads as "your --mount and this
+    // plugin want the same path" rather than the other way round.
+    mounts: [...options.mount.map(parseMount), ...plugins.workspaceMounts()],
     root: options.workspace,
     budget: {
       maxBytes: positive('--mount-max-bytes', options.mountMaxBytes, DEFAULT_MOUNT_MAX_BYTES),

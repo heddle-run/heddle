@@ -13,6 +13,7 @@ import { BUILTIN_PROTOCOL, PROTOCOL_NAME } from './encoder.js';
 import { HeddleDeserializationPlugin } from './deserializer.js';
 import type { PluginHost } from './host.js';
 import type { Registry, ToolDef } from '../tool/types.js';
+import { assertNoCollisions, type Mount } from '../workspace/index.js';
 import { PluginError } from '../errors.js';
 
 export type ComponentKind =
@@ -53,6 +54,7 @@ export class PluginRegistry {
   private readonly encoders = new Map<string, RegisteredEncoder>();
   private readonly toolDefs: ToolDef[] = [];
   private readonly toolOwners = new Map<string, string>();
+  private readonly mounts: Mount[] = [];
   private hosts: PluginHost[] = [];
   private deserializerInstance: AgentSpecDeserializer | undefined;
 
@@ -73,6 +75,7 @@ export class PluginRegistry {
     this.registerMiddleware(plugin);
     this.registerEncoders(plugin);
     this.registerTools(plugin);
+    this.registerFiles(plugin);
 
     this.sdkPlugins.push(new HeddleDeserializationPlugin(plugin));
     this.pluginNames.push(`${plugin.name}@${plugin.version}`);
@@ -114,6 +117,11 @@ export class PluginRegistry {
     copy.pluginNames.push(...this.pluginNames);
     copy.middlewares.push(...this.middlewares);
     copy.toolDefs.push(...this.toolDefs);
+    // Carried over for the reason names are: a submitted plugin must not be
+    // able to take a workspace path an installed one already claimed. Moot on
+    // a server, which refuses `files` in a request outright, but the invariant
+    // should hold by construction rather than by a second rule agreeing.
+    copy.mounts.push(...this.mounts);
 
     return copy;
   }
@@ -224,6 +232,36 @@ export class PluginRegistry {
       }
       this.toolOwners.set(tool.name, plugin.name);
       this.toolDefs.push(tool);
+    }
+  }
+
+  /**
+   * What the loaded plugins put in every workspace.
+   *
+   * Mounts, because that is what a workspace already knows how to take, and
+   * `--mount` and a plugin then collide against each other in one namespace
+   * rather than in two that have to be reconciled. Read-only without exception:
+   * a plugin ships files, and a writable channel onto the operator's disk is
+   * not something a manifest gets to ask for.
+   */
+  workspaceMounts(): Mount[] {
+    return [...this.mounts];
+  }
+
+  private registerFiles(plugin: HeddlePlugin): void {
+    for (const file of plugin.files ?? []) {
+      const mount: Mount = {
+        source: file.path,
+        dest: file.dest,
+        mode: 'ro',
+        origin: `plugin "${plugin.name}"`,
+      };
+      // Every mount against every mount, by prefix rather than by equality, so
+      // "skills" and "skills/extra" collide. The message names both origins,
+      // which matters because one of them is usually a plugin the operator did
+      // not write.
+      assertNoCollisions([...this.mounts, mount]);
+      this.mounts.push(mount);
     }
   }
 

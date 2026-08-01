@@ -194,7 +194,7 @@ async function main(): Promise<void> {
       allowRequestCode: values['allow-request-code'],
       allowNet: values['allow-net'],
       workDir: values['work-dir'],
-      workspaces: buildWorkspaces(values),
+      workspaces: buildWorkspaces(values, plugins),
       defaultLlmKey: process.env.HEDDLE_LLM_DEFAULT_KEY || undefined,
       defaultLlmUrl: values['llm-default-url'],
       stream: boolEnv('HEDDLE_STREAM', process.env.HEDDLE_STREAM),
@@ -308,11 +308,17 @@ function buildSandbox(
  * Unlike the sandbox flags it is not gated on `--safe` — a workspace exists
  * whether or not anything is enforcing its edges.
  */
-function buildWorkspaces(values: Record<string, unknown>): WorkspaceFactory {
-  const mounts = ((values.mount as string[] | undefined) ?? []).map(parseMount);
-
+function buildWorkspaces(
+  values: Record<string, unknown>,
+  plugins: PluginRegistry | undefined,
+): WorkspaceFactory {
   return createWorkspaceFactory({
-    mounts,
+    // The operator's first, so a collision reads as "your --mount and this
+    // plugin want the same path" rather than the other way round.
+    mounts: [
+      ...((values.mount as string[] | undefined) ?? []).map(parseMount),
+      ...(plugins?.workspaceMounts() ?? []),
+    ],
     root: values.workspace as string | undefined,
     budget: {
       maxBytes: positive(

@@ -181,6 +181,29 @@ export interface HeddlePlugin {
   encoders?: PluginEncoderDef[];
   middleware?: PluginMiddlewareDef[];
   tools?: ToolDef[];
+  /**
+   * Files this plugin puts in the workspace of every node that runs.
+   *
+   * Not a seventh kind — nothing chooses these, and there is no verb behind
+   * them. They are the second thing a plugin *ships*, beside its tools, and
+   * heddle copies them without starting anything.
+   *
+   * Absolute host paths. An out-of-process plugin's are resolved inside its own
+   * directory by the rule `ManifestTool.path` follows; an in-process plugin
+   * supplies its own, unchecked, because it is already running with the
+   * privileges of whatever imported it and a check there would be theatre.
+   *
+   * Always read-only in the workspace. A plugin ships files; it does not get a
+   * writable channel onto the operator's disk.
+   */
+  files?: WorkspaceFile[];
+}
+
+export interface WorkspaceFile {
+  /** An absolute host path: a file or a directory. */
+  path: string;
+  /** Where it lands in the workspace, relative to the root. */
+  dest: string;
 }
 
 export function definePlugin(plugin: HeddlePlugin): HeddlePlugin {

@@ -1,3 +1,4 @@
+import { basename } from 'node:path';
 import { PluginError } from '../errors.js';
 import { PROTOCOL_NAME } from './encoder.js';
 import {
@@ -40,6 +41,19 @@ export interface PluginManifest {
   components: ManifestComponent[];
   tools: ManifestTool[];
   /**
+   * Files this plugin puts in the workspace of every node that runs.
+   *
+   * Top level rather than per component, for the same reason `tools` is: every
+   * component of a plugin runs against the same workspace, so on a component
+   * this would be a field nothing reads. `notOnComponents` refuses one written
+   * there rather than ignoring it.
+   *
+   * Data, like the rest of this file — no verb behind it, nothing started to
+   * find out. A plugin does not *write* into a workspace; it declares what it
+   * ships and heddle copies, which is why this costs no capability.
+   */
+  files: ManifestFile[];
+  /**
    * Whether this plugin's tool list has to be asked for rather than read.
    *
    * The exception to the rule the rest of this file exists to enforce, and it is
@@ -57,6 +71,19 @@ export interface PluginManifest {
    * to. See `discoverTools` in `remote-loader.ts`.
    */
   discoverTools?: boolean;
+}
+
+export interface ManifestFile {
+  /**
+   * A path inside the plugin's own directory. A file or a directory.
+   *
+   * The same word for the same rule as {@link ManifestTool.path}: resolved
+   * against the plugin's directory and refused if it lands outside. A second
+   * word would make one rule look like two.
+   */
+  path: string;
+  /** Where it lands in the workspace. `basename(path)` by default. */
+  dest?: string;
 }
 
 export interface ManifestTool {
@@ -87,6 +114,17 @@ const RENDERING_FIELDS = ['protocol', 'contentType'] as const;
 const MAX_SCHEMA_BYTES = 64 * 1024;
 const MAX_SCHEMA_DEPTH = 16;
 
+/**
+ * How many things one plugin may put in a workspace.
+ *
+ * A bound rather than a policy: each of these is copied into the workspace of
+ * every node in every run, so a plugin that ships a hundred of them is a
+ * hundred copies per node. The per-mount size budget is the operator's
+ * (`--mount-max-bytes`); this one is heddle's, because a plugin's manifest is
+ * not something the operator wrote.
+ */
+const MAX_MANIFEST_FILES = 64;
+
 export function validateManifest(raw: unknown): PluginManifest {
   const manifest = asObject(raw, 'plugin manifest must be a JSON object');
   const name = readManifestName(manifest);
@@ -111,6 +149,7 @@ export function validateManifest(raw: unknown): PluginManifest {
     capabilities: asCapabilities(name, manifest.capabilities),
     components,
     tools: asTools(name, manifest.tools, componentTypes),
+    files: asFiles(name, manifest.files),
     discoverTools: manifest.discoverTools === true,
   };
 }
@@ -156,10 +195,20 @@ function assertDeclaresSomething(
   const promisesTools = manifest.discoverTools === true;
 
   if (!declaresTools && !declaresComponents && !promisesTools) {
+    // "files" deliberately does not count. A plugin that declares only files is
+    // a data package, and heddle already has a way to put files in a workspace
+    // that does not involve loading somebody's code -- so the error names it,
+    // rather than letting "plugin" quietly become a file-shipping format.
+    const onlyFiles = Array.isArray(manifest.files) && manifest.files.length > 0;
+
     fail(
       `plugin "${name}" manifest declares no components and no tools. A plugin ` +
         `whose tools are not known until it runs declares "discoverTools": true ` +
-        `instead.`,
+        `instead.` +
+        (onlyFiles
+          ? ` This one declares only "files", which is a directory rather than a ` +
+            `plugin: mount it with --mount and load no code at all.`
+          : ''),
     );
   }
 }
@@ -214,6 +263,8 @@ function readComponent(
 
   onlyOn(component, 'stream', kind, 'provider', plugin, componentType);
   assertBooleanField(component, 'stream', plugin, componentType);
+
+  notOnComponents(component, 'files', plugin, componentType);
 
   const rendering = asRendering(plugin, componentType, kind, component);
 
@@ -421,6 +472,73 @@ function onlyOn(
       `"${kind}". Only a ${required} uses it, so on a ${kind} it would be read by ` +
       `nothing — remove it, or correct the kind.`,
   );
+}
+
+/**
+ * `onlyOn` arrived at from the other side.
+ *
+ * That one refuses a field belonging to a different *kind*; this refuses one
+ * belonging to the *plugin*. Both are the same failure — a field heddle will
+ * never read — and both are a misunderstanding rather than a harmless extra.
+ */
+function notOnComponents(
+  component: Record<string, unknown>,
+  field: string,
+  plugin: string,
+  componentType: string,
+): void {
+  if (component[field] === undefined) return;
+  fail(
+    `plugin "${plugin}": ${componentType} declares "${field}", which is the ` +
+      `plugin's rather than a component's. Every component of a plugin runs ` +
+      `against the same workspace, so here it would be read by nothing — move ` +
+      `it to the top level of the manifest.`,
+  );
+}
+
+function asFiles(plugin: string, raw: unknown): ManifestFile[] {
+  if (raw === undefined) return [];
+  if (!Array.isArray(raw)) {
+    fail(`plugin "${plugin}" manifest has a "files" that is not an array`);
+  }
+  if (raw.length > MAX_MANIFEST_FILES) {
+    fail(
+      `plugin "${plugin}" declares ${raw.length} files, over heddle's ` +
+        `${MAX_MANIFEST_FILES}. Each one is copied into the workspace of every ` +
+        `node in every run, so ship a directory rather than its contents.`,
+    );
+  }
+
+  const claimed = new Set<string>();
+
+  return raw.map((entry) => {
+    const file = asObject(entry, `plugin "${plugin}": each file must be an object`);
+
+    if (typeof file.path !== 'string' || file.path.length === 0) {
+      fail(`plugin "${plugin}": a file has no "path"`);
+    }
+    if (
+      file.dest !== undefined &&
+      (typeof file.dest !== 'string' || file.dest.length === 0)
+    ) {
+      fail(
+        `plugin "${plugin}": file "${file.path}" has a "dest" that is not a ` +
+          `non-empty string`,
+      );
+    }
+
+    const dest = (file.dest as string | undefined) ?? basename(file.path);
+    if (claimed.has(dest)) {
+      fail(
+        `plugin "${plugin}" declares two files landing on "${dest}". One would ` +
+          `be written over the other, and which depends on the order they were ` +
+          `copied.`,
+      );
+    }
+    claimed.add(dest);
+
+    return { path: file.path, dest };
+  });
 }
 
 function asRendering(

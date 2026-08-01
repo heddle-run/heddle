@@ -1,5 +1,5 @@
 import { readFileSync, realpathSync, statSync } from 'node:fs';
-import { dirname, isAbsolute, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, resolve, sep } from 'node:path';
 import type { SandboxSession } from '../sandbox/types.js';
 import type { Workspace } from '../workspace/index.js';
 import { PluginError } from '../errors.js';
@@ -23,7 +23,7 @@ import {
 } from './remote.js';
 import { PLUGIN_RUNTIME_JS } from './runtime-source.js';
 import { SEAMS, type AfterAction, type Seam } from './seams.js';
-import type { HeddlePlugin } from './types.js';
+import type { HeddlePlugin, WorkspaceFile } from './types.js';
 
 const EXECUTABLE_BITS = 0o111;
 const SCRIPT_EXTENSIONS = ['.mjs', '.js'];
@@ -188,6 +188,7 @@ function buildPlugin(
     tools: manifest.tools.map((tool) =>
       toolDefFor(manifest, tool, root, getHost),
     ),
+    files: resolveShippedFiles(manifest, root),
   };
 
   for (const component of manifest.components) {
@@ -313,7 +314,12 @@ function resolveShippedExecutable(
   tool: ManifestTool,
   root: string,
 ): string {
-  const real = resolveInsidePlugin(manifest, tool, root);
+  const real = resolveInsidePlugin(
+    manifest.name,
+    tool.path as string,
+    root,
+    `tool "${tool.name}"`,
+  );
   const info = statSync(real);
 
   if (!info.isFile()) {
@@ -334,12 +340,26 @@ function resolveShippedExecutable(
   return real;
 }
 
+/**
+ * A path a manifest declared, resolved against the plugin's own directory.
+ *
+ * Shared by tools and by workspace files, and deliberately one function: they
+ * are the same rule, and a second copy of it is a second place for the rule to
+ * drift. `what` is how the caller is named in the error — "tool \"bash\"", or
+ * the file's own destination.
+ *
+ * Both sides are realpath'd before the comparison, so a link inside the plugin
+ * directory pointing out of it is caught. Escaping is what this exists to
+ * refuse: a manifest is data, and data heddle reads without running should not
+ * be able to name a path outside what it ships.
+ */
 function resolveInsidePlugin(
-  manifest: PluginManifest,
-  tool: ManifestTool,
+  plugin: string,
+  declared: string,
   root: string,
+  what: string,
 ): string {
-  const target = resolve(root, tool.path as string);
+  const target = resolve(root, declared);
 
   let real: string;
   let realRoot: string;
@@ -348,21 +368,44 @@ function resolveInsidePlugin(
     realRoot = realpathSync(root);
   } catch (err) {
     throw new PluginError(
-      `plugin "${manifest.name}": tool "${tool.name}" names "${tool.path}", which is ` +
-        `not there beside the plugin.`,
+      `plugin "${plugin}": ${what} names "${declared}", which is not there ` +
+        `beside the plugin.`,
       { cause: err },
     );
   }
 
   if (real !== realRoot && !real.startsWith(realRoot + sep)) {
     throw new PluginError(
-      `plugin "${manifest.name}": tool "${tool.name}" resolves to "${real}", outside ` +
-        `the plugin's own directory. A plugin ships the executables it declares; to ` +
-        `reach a program elsewhere, ship a wrapper that calls it.`,
+      `plugin "${plugin}": ${what} resolves to "${real}", outside the plugin's ` +
+        `own directory. A plugin ships what it declares; to reach something ` +
+        `elsewhere, ship a wrapper or ask the operator to mount it.`,
     );
   }
 
   return real;
+}
+
+/**
+ * What this plugin puts in every workspace, as mounts heddle already knows how
+ * to copy.
+ *
+ * Always read-only. A plugin ships files; it does not get a writable channel
+ * onto the operator's disk — the same line the capability set draws, in the one
+ * place a plugin could otherwise have reached past it.
+ */
+function resolveShippedFiles(
+  manifest: PluginManifest,
+  root: string,
+): WorkspaceFile[] {
+  return manifest.files.map((file) => ({
+    path: resolveInsidePlugin(
+      manifest.name,
+      file.path,
+      root,
+      `file "${file.dest ?? file.path}"`,
+    ),
+    dest: file.dest ?? basename(file.path),
+  }));
 }
 
 function checkGrant(
