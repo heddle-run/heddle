@@ -36,6 +36,7 @@ cat <<EOF
   "sawPeerFile": $(probe test -f "$HEDDLE_WORKSPACE/from-tool"),
   "writeWorkspace": $(probe touch "$HEDDLE_WORKSPACE/from-tool"),
   "writeBin": $(probe touch "$HEDDLE_WORKSPACE/.heddle/bin/evil"),
+  "execPeer": $(probe sh -c 'peer'),
   "workspace": "$HEDDLE_WORKSPACE",
   "bin": "$HEDDLE_WORKSPACE_BIN",
   "binFirstOnPath": $(probe test "\${PATH%%:*}" = "$HEDDLE_WORKSPACE_BIN"),
@@ -48,9 +49,17 @@ EOF
   return path;
 }
 
+/** A second program, so "can a tool run a peer" has something to answer with. */
+function writePeerTool(dir: string): string {
+  const path = join(dir, 'peer.sh');
+  writeFileSync(path, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+  return path;
+}
+
 describe.runIf(backendAvailable())('sandbox enforcement', () => {
   const sandboxDir = mkdtempSync(join(tmpdir(), 'heddle-enforce-'));
   const probe = writeProbeTool(sandboxDir);
+  const peer = writePeerTool(sandboxDir);
 
   function makeExecutor(policyOverrides = {}) {
     const sandbox = createSandbox('auto', {
@@ -59,7 +68,11 @@ describe.runIf(backendAvailable())('sandbox enforcement', () => {
       cwd: sandboxDir,
       ...policyOverrides,
     });
-    return new SubprocessExecutor({ sandbox });
+    return new SubprocessExecutor({
+      sandbox,
+      // The probe's own peer, reachable by name from inside the workspace.
+      tools: [{ name: 'peer', target: peer }],
+    });
   }
 
   async function run(policyOverrides = {}) {
@@ -103,6 +116,16 @@ describe.runIf(backendAvailable())('sandbox enforcement', () => {
     const out = await run();
     expect(out.writeBin).toBe(false);
     expect(out.binFirstOnPath).toBe(true);
+  });
+
+  /**
+   * The link is only reachable if its target is, and heddle's read paths come
+   * from flags — so this also proves the workspace tells the backend where its
+   * bin points rather than hoping a flag happened to cover it.
+   */
+  it('lets a tool run a peer by the name the model uses for it', async () => {
+    const out = await run();
+    expect(out.execPeer).toBe(true);
   });
 
   it('gives the tool a writable scratch directory', async () => {

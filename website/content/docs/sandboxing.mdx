@@ -80,6 +80,42 @@ When plugins are loaded, the directory of every plugin-contributed tool that shi
 executable is added to the read paths automatically. An operator auditing their
 `--allow-read` list is therefore looking at a narrower set than what is actually bound.
 
+## What a tool can reach
+
+Every tool is in the workspace's `bin` and first on `$PATH`, so a tool can run a peer by
+the name the model uses for it — `bash` can call `write_file`, and a procedure written as
+a sequence of tool calls can be written as a script instead.
+
+<Callout type="warn">
+**A tool on `PATH` is a tool the model can reach without asking.**
+
+Every seam heddle offers over a tool call hangs on one call site: the place an agent
+dispatches a call the *model* made. A tool that another tool exec'd goes around all of it.
+The [`toolCall` middleware](/docs/plugins/middleware) is not consulted, `tool_call` and
+`tool_result` are not emitted, and the run's own transcript stops being a complete account
+of what ran.
+
+So an approval gate refuses the calls the model makes. It does not refuse the calls a tool
+makes. On a flow whose agent has a shell, that is the difference between a gate and a note.
+</Callout>
+
+**This is not a hole in the sandbox.** The program that ran is one you installed, inside
+the same confinement, with the same read and write paths. What changed is who chose to run
+it and whether anybody was asked.
+
+The rule worth carrying: **a `toolCall` middleware is a control over the model, not over
+the machine.** A control over the machine is `--allow-write`, `--deny-net` and the tools
+you install — the things the kernel enforces, which no shell can talk its way past.
+
+`--no-mount-tools` empties `bin`, so the only way to reach a tool is a call the model made.
+It costs a tool the ability to run a peer and buys back the guarantee above; take it if you
+are running an approval gate and want it to be one.
+
+A tool a plugin answers over its own channel is not a program, so there is nothing to link.
+It gets a one-line shim that says so and exits non-zero, rather than nothing at all —
+`command not found` would tell the model the tool does not exist, and it does. Those tools
+stay reachable only through a model tool call, and every one of those still passes the seam.
+
 ## What it does not confine
 
 <Callout type="warn">

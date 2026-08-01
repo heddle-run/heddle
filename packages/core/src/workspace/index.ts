@@ -4,6 +4,7 @@ export type {
   Workspace,
   WorkspaceFactory,
   WorkspaceGrant,
+  WorkspaceTool,
 } from './types.js';
 export { createScratchWorkspace, createWorkspaceFactory } from './factory.js';
 export type { WorkspaceFactoryOptions } from './factory.js';

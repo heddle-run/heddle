@@ -45,6 +45,7 @@ heddle run <flow> [options]
 | `--workspace <dir>` | Keep each node's workspace under this directory instead of a temporary one, so what the run produced is still there afterwards |
 | `--mount-max-bytes <n>` | Largest a `--mount` may be, in bytes. Default 67108864 (64 MiB) |
 | `--mount-max-entries <n>` | Most files and directories a `--mount` may hold. Default 4096 |
+| `--no-mount-tools` | Keep the tools out of the workspace's `bin`, so the only way to reach one is a call the model made. See [what a tool can reach](/docs/sandboxing#what-a-tool-can-reach) |
 | `--safe` | Run tools inside an OS sandbox |
 | `--sandbox <backend>` | Sandbox backend: `auto` (default), `bubblewrap`, or `seatbelt` |
 | `--allow-read <path>` | Grant sandboxed tools read access to a path (repeatable) |

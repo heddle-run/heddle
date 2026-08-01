@@ -62,7 +62,15 @@ class BubblewrapSession implements SandboxSession {
       ...networkArgs(this.policy),
       ...filesystemArgs(),
       ...systemBindArgs(),
-      ...readBindArgs([launchedFrom, tool, ...this.policy.readPaths]),
+      ...readBindArgs([
+        launchedFrom,
+        tool,
+        ...this.policy.readPaths,
+        // Where the workspace's bin links point. A symlink is only reachable if
+        // its target is, and heddle's own read paths come from flags -- so a
+        // per-request tool would otherwise be linked and unopenable.
+        ...this.workspace.toolPaths(),
+      ]),
       ...writeBindArgs(this.policy.writePaths),
       ...grantArgs(this.workspace.grants()),
       '--chdir',

@@ -84,6 +84,7 @@ function stubWorkspace(): Workspace {
     root: scratch,
     bin: join(scratch, '.heddle', 'bin'),
     grants: () => [],
+    toolPaths: () => [],
     dispose: () => {},
   };
 }

@@ -57,6 +57,7 @@ heddle-server --tools-dir ./tools
 | `--workspace <dir>` | `$TMPDIR` | Keep each node's workspace under this directory instead of a temporary one. Every run of every request writes here. |
 | `--mount-max-bytes <n>` | `67108864` | Largest a `--mount` may be. It is copied once per node. |
 | `--mount-max-entries <n>` | `4096` | Most files and directories a `--mount` may hold. |
+| `--no-mount-tools` | off | Keep the tools out of the workspace, so the only way to reach one is a call the model made. What an installed approval gate is written against. |
 | `--llm-default-url <url>` | none | Endpoint the default model credential (`HEDDLE_LLM_DEFAULT_KEY`) belongs to. |
 | `--safe` | off | Run tool subprocesses inside an OS sandbox. |
 | `--sandbox <backend>` | `auto` | `auto`, `bubblewrap` or `seatbelt`. Requires `--safe`. |

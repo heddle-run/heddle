@@ -33,6 +33,7 @@ import {
   type Sandbox,
   type SandboxBackend,
   type WorkspaceFactory,
+  type WorkspaceTool,
 } from '@heddle/core';
 import { frameLine, resolveEncoder, type EncoderFactory } from './encoders.js';
 import { createProgressWriter, renderEvent } from './progress.js';
@@ -53,6 +54,7 @@ interface SafeOptions {
 interface WorkspaceOptions {
   mount: string[];
   workspace?: string;
+  mountTools?: boolean;
   mountMaxBytes?: string;
   mountMaxEntries?: string;
 }
@@ -127,6 +129,12 @@ export const runCommand = new Command('run')
     '--mount-max-entries <n>',
     `Most files and directories a --mount may hold (default ${DEFAULT_MOUNT_MAX_ENTRIES})`,
   )
+  .option(
+    '--no-mount-tools',
+    'Keep the tools out of the workspace, so the only way to reach one is a ' +
+      'call the model made. Costs a tool the ability to run a peer; buys back ' +
+      'the guarantee that every tool call passes the toolCall seam',
+  )
   .option('--safe', 'Run tools inside an OS sandbox')
   .option(
     '--sandbox <backend>',
@@ -198,7 +206,11 @@ async function runFlow(
   applyMaxNodeAttempts(runnerOpts, options.maxNodeAttempts);
 
   const deps: Dependencies = {
-    toolExecutor: new SubprocessExecutor({ sandbox, workspaces }),
+    toolExecutor: new SubprocessExecutor({
+      sandbox,
+      workspaces,
+      tools: options.mountTools === false ? [] : workspaceTools(registry),
+    }),
     toolRegistry: registry,
     plugins,
     eventHandler: (event: Event) => runnerOpts.eventHandler?.(event),
@@ -420,6 +432,22 @@ function buildWorkspaces(
     },
     onWarn: (message) => console.error(message),
   });
+}
+
+/**
+ * Every tool, as something a workspace can put in `bin`.
+ *
+ * A tool a plugin answers over its own channel has no program to link, and gets
+ * a shim that says so — see `workspace/bin.ts`. The alternative was leaving it
+ * out, and `command not found` is the wrong thing to tell a model about a tool
+ * that exists.
+ */
+function workspaceTools(registry: Registry): WorkspaceTool[] {
+  return registry.all().map((tool) => ({
+    name: tool.name,
+    target: tool.impl.kind === 'path' ? tool.impl.path : undefined,
+    servedBy: tool.impl.kind === 'plugin' ? tool.impl.plugin : undefined,
+  }));
 }
 
 function positive(flag: string, raw: string | undefined, fallback: number): number {

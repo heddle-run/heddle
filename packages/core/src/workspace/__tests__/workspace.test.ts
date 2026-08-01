@@ -1,8 +1,9 @@
 import { describe, it, expect, afterEach, beforeAll, afterAll } from 'vitest';
+import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
-import { realpathSync, rmSync } from 'node:fs';
+import { lstatSync, readdirSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { createScratchWorkspace, createWorkspaceFactory } from '../factory.js';
 import { RESERVED_DIR } from '../workspace.js';
 import { workspaceEnv } from '../env.js';
@@ -10,6 +11,20 @@ import type { Workspace } from '../types.js';
 import { SubprocessExecutor } from '../../tool/executor.js';
 
 const opened: Workspace[] = [];
+
+/** A real program, so a link in `bin` has something to point at. */
+let probeToolPath: string;
+let probeDir: string;
+
+beforeAll(() => {
+  probeDir = mkdtempSync(join(tmpdir(), 'heddle-bin-'));
+  probeToolPath = join(probeDir, 'probe.sh');
+  writeFileSync(probeToolPath, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+});
+
+afterAll(() => {
+  rmSync(probeDir, { recursive: true, force: true });
+});
 
 afterEach(() => {
   while (opened.length) opened.pop()!.dispose();
@@ -66,6 +81,63 @@ describe('the layout a tool can rely on', () => {
       { path: ws.root, access: 'write' },
       { path: join(ws.root, RESERVED_DIR), access: 'read' },
     ]);
+  });
+});
+
+describe('the tools in bin', () => {
+  it('are links named after the tool, not after the file', () => {
+    const ws = track(
+      createWorkspaceFactory().create('agent', [
+        { name: 'read_file', target: probeToolPath },
+      ]),
+    );
+
+    const link = join(ws.bin, 'read_file');
+    expect(lstatSync(link).isSymbolicLink()).toBe(true);
+    expect(realpathSync(link)).toBe(realpathSync(probeToolPath));
+  });
+
+  /**
+   * Not copies. A copy would break a tool that reads a data file beside itself,
+   * because `realpath(__file__)` would land in a directory holding only its
+   * siblings.
+   */
+  it('report the host directories they point into', () => {
+    const ws = track(
+      createWorkspaceFactory().create('agent', [
+        { name: 'probe', target: probeToolPath },
+      ]),
+    );
+
+    expect(ws.toolPaths()).toEqual([realpathSync(dirname(probeToolPath))]);
+  });
+
+  /**
+   * A plugin-served tool is not a program. Silence would tell the model it does
+   * not exist, and it does — so the shim says which problem this actually is.
+   */
+  it('leave an explaining shim where a plugin-served tool would be', () => {
+    const ws = track(
+      createWorkspaceFactory().create('agent', [
+        { name: 'read_skill', servedBy: 'skills' },
+      ]),
+    );
+
+    const shim = join(ws.bin, 'read_skill');
+    const result = spawnSync(shim, { encoding: 'utf-8' });
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('is not a program');
+    expect(result.stderr).toContain('"skills"');
+    // No target, so nothing outside the workspace has to be reachable for it.
+    expect(ws.toolPaths()).toEqual([]);
+  });
+
+  it('are absent when nothing was handed over', () => {
+    const ws = track(createWorkspaceFactory().create('agent'));
+
+    expect(readdirSync(ws.bin)).toEqual([]);
+    expect(ws.toolPaths()).toEqual([]);
   });
 });
 

@@ -67,6 +67,9 @@ class SeatbeltSession implements SandboxSession {
         launchedFrom,
         tool,
         ...this.policy.readPaths,
+        // Where the workspace's bin links point -- see the same list in the
+        // bubblewrap backend.
+        ...this.workspace.toolPaths(),
         ...pathsWith(grants, 'read'),
       ],
       writePaths: [
@@ -77,7 +80,10 @@ class SeatbeltSession implements SandboxSession {
       ],
       // Written back as a deny after the allows, because a read grant sits
       // inside a writable one — `.heddle` inside the workspace root — and a
-      // profile resolves that by taking the last rule that matches.
+      // profile resolves that by taking the last rule that matches. Only the
+      // grants, never `toolPaths`: those are outside the workspace, so denying
+      // writes there would quietly overrule an `--allow-write` the operator
+      // asked for.
       readOnlyPaths: pathsWith(grants, 'read'),
       network: this.policy.network,
     });

@@ -952,6 +952,7 @@ function stubSession(): StubSession {
       root: scratch,
       bin: join(scratch, '.heddle', 'bin'),
       grants: () => [],
+      toolPaths: () => [],
       dispose: () => {},
     },
     wrap(toolPath, args) {

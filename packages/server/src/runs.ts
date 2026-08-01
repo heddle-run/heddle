@@ -16,6 +16,7 @@ import {
   type ParsedFlow,
   type Registry,
   type RunnerOptions,
+  type WorkspaceTool,
 } from '@heddle/core';
 import type { ServerConfig } from './config.js';
 import { HttpError, toErrorResponse } from './errors.js';
@@ -211,6 +212,9 @@ function buildDependencies(
     toolExecutor: new SubprocessExecutor({
       sandbox: config.sandbox,
       workspaces: config.workspaces,
+      // Per run, because the registry is: a request may have submitted tools of
+      // its own, and they belong in that run's workspaces and no others.
+      tools: config.mountTools ? workspaceTools(registry) : [],
     }),
     toolRegistry: registry,
     plugins: plan.plugins,
@@ -245,6 +249,21 @@ function buildDependencies(
   deps.middleware = middleware;
 
   return { deps, middleware };
+}
+
+/**
+ * Every tool, as something a workspace can put in `bin`.
+ *
+ * A tool a plugin answers over its own channel has no program to link and gets
+ * a shim that says so, rather than being left out: `command not found` is the
+ * wrong thing to tell a model about a tool that exists.
+ */
+function workspaceTools(registry: Registry): WorkspaceTool[] {
+  return registry.all().map((tool) => ({
+    name: tool.name,
+    target: tool.impl.kind === 'path' ? tool.impl.path : undefined,
+    servedBy: tool.impl.kind === 'plugin' ? tool.impl.plugin : undefined,
+  }));
 }
 
 function buildRegistry(

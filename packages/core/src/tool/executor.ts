@@ -1,7 +1,11 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import type { ExecResult, Executor, ExecutorScope } from './types.js';
 import type { Sandbox, SandboxCommand, SandboxSession } from '../sandbox/index.js';
-import type { Workspace, WorkspaceFactory } from '../workspace/index.js';
+import type {
+  Workspace,
+  WorkspaceFactory,
+  WorkspaceTool,
+} from '../workspace/index.js';
 import { createWorkspaceFactory, workspaceEnv } from '../workspace/index.js';
 import { ToolError } from '../errors.js';
 
@@ -22,6 +26,13 @@ export interface SubprocessExecutorOptions {
   workspaces?: WorkspaceFactory;
   /** This scope's workspace. Set on the executor a `beginScope` returns. */
   workspace?: Workspace;
+  /**
+   * What goes in each workspace's `bin`, reachable by name from inside it.
+   *
+   * Supplied by whoever built the tool registry, since that is who knows — on a
+   * server the registry is per run, so this cannot be settled at startup.
+   */
+  tools?: WorkspaceTool[];
 }
 
 export class SubprocessExecutor implements Executor {
@@ -30,6 +41,7 @@ export class SubprocessExecutor implements Executor {
   private readonly session?: SandboxSession;
   private readonly workspaces: WorkspaceFactory;
   private readonly workspace?: Workspace;
+  private readonly tools: WorkspaceTool[];
 
   constructor(options?: SubprocessExecutorOptions) {
     this.timeout = options?.timeout ?? DEFAULT_TIMEOUT;
@@ -37,10 +49,11 @@ export class SubprocessExecutor implements Executor {
     this.session = options?.session;
     this.workspaces = options?.workspaces ?? createWorkspaceFactory();
     this.workspace = options?.workspace;
+    this.tools = options?.tools ?? [];
   }
 
   beginScope(label: string): ExecutorScope {
-    const workspace = this.workspaces.create(label);
+    const workspace = this.workspaces.create(label, this.tools);
     const session = this.sandbox?.session(label, workspace);
 
     return {
@@ -48,6 +61,7 @@ export class SubprocessExecutor implements Executor {
         timeout: this.timeout,
         sandbox: this.sandbox,
         workspaces: this.workspaces,
+        tools: this.tools,
         session,
         workspace,
       }),
@@ -70,7 +84,8 @@ export class SubprocessExecutor implements Executor {
     // A bare `ToolNode` opens no scope, so it gets a throwaway workspace of its
     // own for the length of one call — as it always got a throwaway session.
     const workspace =
-      this.workspace ?? this.workspaces.create(UNSCOPED_SESSION_LABEL);
+      this.workspace ??
+      this.workspaces.create(UNSCOPED_SESSION_LABEL, this.tools);
     const ownsWorkspace = workspace !== this.workspace;
 
     const session =

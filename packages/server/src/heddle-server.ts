@@ -77,6 +77,11 @@ Options:
                          here, so this is a directory you are choosing to fill
   --mount-max-bytes <n>  Largest a --mount may be, in bytes
   --mount-max-entries <n> Most files and directories a --mount may hold
+  --no-mount-tools       Keep the tools out of the workspace, so the only way to
+                         reach one is a call the model made. Costs a tool the
+                         ability to run a peer; buys back the guarantee that
+                         every tool call passes the toolCall seam, which is what
+                         an installed approval gate is written against
   --llm-default-url <url> Endpoint the default model credential belongs to. The
                          credential itself is read from HEDDLE_LLM_DEFAULT_KEY,
                          and is only ever used with this URL: a spec choosing
@@ -139,6 +144,7 @@ async function main(): Promise<void> {
       workspace: { type: 'string' },
       'mount-max-bytes': { type: 'string' },
       'mount-max-entries': { type: 'string' },
+      'no-mount-tools': { type: 'boolean' },
       'llm-default-url': { type: 'string' },
       safe: { type: 'boolean' },
       sandbox: { type: 'string' },
@@ -195,6 +201,7 @@ async function main(): Promise<void> {
       allowNet: values['allow-net'],
       workDir: values['work-dir'],
       workspaces: buildWorkspaces(values, plugins),
+      mountTools: values['no-mount-tools'] !== true,
       defaultLlmKey: process.env.HEDDLE_LLM_DEFAULT_KEY || undefined,
       defaultLlmUrl: values['llm-default-url'],
       stream: boolEnv('HEDDLE_STREAM', process.env.HEDDLE_STREAM),

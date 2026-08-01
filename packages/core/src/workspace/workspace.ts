@@ -2,7 +2,13 @@ import { mkdirSync, realpathSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { removeDir } from './dir.js';
 import { copyBack, type MountBaseline } from './copy.js';
-import type { Mount, Workspace, WorkspaceGrant } from './types.js';
+import { fillBin } from './bin.js';
+import type {
+  Mount,
+  Workspace,
+  WorkspaceGrant,
+  WorkspaceTool,
+} from './types.js';
 
 /**
  * The one name reserved inside a workspace, and it is hidden.
@@ -34,6 +40,8 @@ export interface ScopeWorkspaceOptions {
   /** Read-only mount destinations, relative to the root. */
   readOnly?: string[];
   writable?: WritableMount[];
+  /** Put in `bin`, and first on `$PATH`. */
+  tools?: WorkspaceTool[];
   onWarn?(message: string): void;
 }
 
@@ -42,6 +50,7 @@ export class ScopeWorkspace implements Workspace {
   readonly bin: string;
 
   private readonly options: ScopeWorkspaceOptions;
+  private readonly reachable: string[];
 
   constructor(options: ScopeWorkspaceOptions) {
     mkdirSync(options.root, { recursive: true });
@@ -57,6 +66,11 @@ export class ScopeWorkspace implements Workspace {
     this.options = options;
 
     mkdirSync(this.bin, { recursive: true });
+    this.reachable = fillBin(this.bin, options.tools ?? []);
+  }
+
+  toolPaths(): string[] {
+    return [...this.reachable];
   }
 
   /**

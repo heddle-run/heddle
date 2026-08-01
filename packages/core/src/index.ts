@@ -239,6 +239,7 @@ export type {
   WorkspaceFactory,
   WorkspaceFactoryOptions,
   WorkspaceGrant,
+  WorkspaceTool,
 } from './workspace/index.js';
 
 export {

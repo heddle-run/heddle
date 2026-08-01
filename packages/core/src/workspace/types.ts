@@ -63,11 +63,36 @@ export interface WorkspaceGrant {
  * `.heddle`, which holds `bin`. Hidden because the model lists this directory
  * constantly and what it is looking for is its own files.
  */
+/**
+ * A tool as a workspace sees it: a name, and something to put behind it.
+ *
+ * Deliberately not `ToolDef`. The tool layer builds on this module, so taking
+ * its type here would close a cycle — and a workspace needs two of a `ToolDef`'s
+ * fields, which is a good sign it should say so rather than take the whole
+ * thing.
+ */
+export interface WorkspaceTool {
+  name: string;
+  /** The real path, for a tool that is a program heddle runs. */
+  target?: string;
+  /** The plugin that answers it, when there is no program to link. */
+  servedBy?: string;
+}
+
 export interface Workspace {
   readonly root: string;
   /** `<root>/.heddle/bin`. First on `$PATH`, and read-only. */
   readonly bin: string;
   grants(): WorkspaceGrant[];
+  /**
+   * Host directories outside the workspace that its contents point into.
+   *
+   * The directories the `bin` symlinks resolve to. Separate from `grants()`
+   * because these are not nested in the root and carry none of that list's
+   * ordering meaning: a backend adds them where it already adds `--tools-dir`,
+   * which is the honest place for "a path the tools need to be able to read".
+   */
+  toolPaths(): string[];
   /**
    * Copies `rw` mounts back, then removes the root unless it was given.
    *
@@ -94,6 +119,11 @@ export interface Workspace {
  * signature instead of by discipline.
  */
 export interface WorkspaceFactory {
-  create(label: string): Workspace;
+  /**
+   * `tools` are put in `bin` and go first on `$PATH`, so a tool can reach a
+   * peer by the name the model uses for it. They arrive per scope rather than
+   * being held here, because on a server the tool registry is per run.
+   */
+  create(label: string, tools?: WorkspaceTool[]): Workspace;
   dispose(): void;
 }

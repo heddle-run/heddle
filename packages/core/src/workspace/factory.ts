@@ -5,7 +5,12 @@ import { createWorkspace, removeDir, slug } from './dir.js';
 import { copyTree, stampTree, type CopyBudget } from './copy.js';
 import { assertNoCollisions } from './mount.js';
 import { ScopeWorkspace, mountParent, type WritableMount } from './workspace.js';
-import type { Mount, Workspace, WorkspaceFactory } from './types.js';
+import type {
+  Mount,
+  Workspace,
+  WorkspaceFactory,
+  WorkspaceTool,
+} from './types.js';
 
 export interface WorkspaceFactoryOptions {
   /** What every scope starts with. Validated here, copied once. */
@@ -71,7 +76,7 @@ class ScopedWorkspaceFactory implements WorkspaceFactory {
     if (this.readOnly.length > 0) this.template = this.buildTemplate();
   }
 
-  create(label: string): Workspace {
+  create(label: string, tools: WorkspaceTool[] = []): Workspace {
     const root = this.rootFor(label);
     if (this.template) copyTree(this.template, root, 'workspace template');
 
@@ -80,6 +85,7 @@ class ScopedWorkspaceFactory implements WorkspaceFactory {
       keep: this.options.root !== undefined,
       readOnly: this.readOnly.map((mount) => mount.dest),
       writable: this.writable.map((mount) => this.takeWritable(root, mount)),
+      tools,
       onWarn: this.options.onWarn,
     });
   }

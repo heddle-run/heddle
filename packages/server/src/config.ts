@@ -37,6 +37,14 @@ export interface ServerConfig {
    */
   workspaces: WorkspaceFactory;
   /**
+   * Whether a tool can reach a peer by name from inside the workspace.
+   *
+   * On by default. Off is what an operator running an approval gate wants: the
+   * gate sees the calls the model made, and a tool that exec'd a peer made a
+   * call it never saw. See `workspace/bin.ts`.
+   */
+  mountTools: boolean;
+  /**
    * Plugins the operator installed, already loaded.
    *
    * The other half of the plugin system, and the half a request cannot reach.
@@ -112,6 +120,7 @@ export function resolveConfig(options: ServerOptions = {}): ServerConfig {
     allowNet: options.allowNet ?? [],
     sandbox: options.sandbox,
     workspaces: options.workspaces ?? createWorkspaceFactory(),
+    mountTools: options.mountTools ?? true,
     plugins: options.plugins,
     pluginConfig: options.pluginConfig ?? {},
     maxNodeAttempts:

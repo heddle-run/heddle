@@ -58,7 +58,15 @@ export const SEAMS: Record<Seam, SeamDef> = {
     after: ['pass', 'replace', 'retry', 'fail'],
     implemented: true,
   },
-  /** Around a tool the model asked for. No retry: the request is already said. */
+  /**
+   * Around a tool *the model asked for*. No retry: the request is already said.
+   *
+   * The emphasis is load-bearing. Every tool is on `$PATH` inside the node's
+   * workspace, so a tool that exec's a peer never reaches this call site — a
+   * verdict here governs what the model may ask for, not what the machine may
+   * do. The controls over the machine are the sandbox's. `--no-mount-tools`
+   * empties the workspace's bin for an operator who needs this to be a gate.
+   */
   toolCall: {
     hooks: ['before', 'after'],
     before: ['proceed', 'modify', 'replace', 'reject'],
