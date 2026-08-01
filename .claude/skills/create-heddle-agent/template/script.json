@@ -1,0 +1,5 @@
+[
+  { "tool": "log_search", "arguments": { "pattern": "readiness probe", "limit": 2 } },
+  { "tool": "runbook_lookup", "arguments": { "service": "search-indexer" } },
+  { "content": "{\"result\":\"probes failing after payments-gw timeouts; roll back\"}" }
+]

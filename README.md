@@ -403,6 +403,21 @@ reads `MY_KEY` and fails with a clear error when it is unset.
 > with no `api_key` fails at startup unless `OPENAI_API_KEY` is set — even for Ollama and vLLM,
 > which ignore the key. Export any placeholder value for local servers.
 
+## Agent skill
+
+If you write heddle agents with a coding agent, install the skill that teaches it
+how — the flow schema, what belongs in a tool versus a plugin, and a driver that
+runs a spec against a stub model so a new agent can be smoke-tested with no API
+key:
+
+```bash
+npx skills add heddle-run/heddle --skill create-heddle-agent
+```
+
+It works in any project that can reach a `heddle` binary. Inside a clone of this
+repo it is already there, at
+[.claude/skills/create-heddle-agent](.claude/skills/create-heddle-agent/SKILL.md).
+
 ## Development
 
 This repo uses [pnpm](https://pnpm.io/).
