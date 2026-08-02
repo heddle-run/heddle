@@ -3,6 +3,12 @@
 Where heddle keeps conversations, replaced. The built-in store writes a directory per session under
 `~/.heddle/sessions`; this one writes rows, which is the shape a store backed by anything shared has.
 
+> **Needs Node 22.5 or newer.** It imports `node:sqlite`, which arrived then. heddle itself supports
+> Node 18, so this example is deliberately not a floor for the runtime — a store for an older Node
+> uses a driver from npm, and nothing else about it changes. The store *contract* is tested against
+> every Node this repo supports, using a fixture that needs nothing at all
+> (`packages/core/src/plugin/__tests__/fixtures/memory-store.mjs`).
+
 ```bash
 heddle-server \
   --plugin examples/session-store/store.json \

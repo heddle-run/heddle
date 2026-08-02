@@ -11,6 +11,20 @@ import type { Checkpoint, Turn } from '../../session/types.js';
 
 const repoRoot = join(import.meta.dirname, '../../../../..');
 const SQLITE_STORE = join(repoRoot, 'examples/session-store/store.json');
+const MEMORY_STORE = join(import.meta.dirname, 'fixtures/memory-store.json');
+
+/**
+ * Whether this Node can run the SQLite example.
+ *
+ * `node:sqlite` arrived in 22.5 and this repo supports 18, so the example is
+ * not runnable everywhere — CI is on 20. The protocol tests below use a
+ * fixture with no such requirement, so what is skipped here is the example's
+ * own smoke test rather than any coverage of the store contract.
+ */
+const hasNodeSqlite = await import('node:sqlite').then(
+  () => true,
+  () => false,
+);
 
 const loaded: PluginRegistry[] = [];
 
@@ -19,13 +33,22 @@ afterEach(() => {
   loaded.length = 0;
 });
 
-async function sqliteStore(): Promise<SessionStore> {
-  const registry = await loadPlugins([SQLITE_STORE], {});
+async function storeFrom(
+  manifest: string,
+  componentType: string,
+  config: Record<string, unknown> = {},
+): Promise<SessionStore> {
+  const registry = await loadPlugins([manifest], {});
   loaded.push(registry);
 
-  const store = registry.createStore('SqliteSessionStore', { path: ':memory:' });
+  const store = registry.createStore(componentType, config);
   expect(store).toBeDefined();
   return store as SessionStore;
+}
+
+/** The dependency-free fixture. Runs on every Node this repo supports. */
+function remoteStore(): Promise<SessionStore> {
+  return storeFrom(MEMORY_STORE, 'MemorySessionStore');
 }
 
 function turn(overrides: Partial<Turn> = {}): Turn {
@@ -139,7 +162,7 @@ describe('the store manifest kind', () => {
 
 describe('a store in another process', () => {
   it('holds a conversation across the boundary', async () => {
-    const store = await sqliteStore();
+    const store = await remoteStore();
 
     await store.create('s1', { flow: 'flows/support.yaml' });
     expect(await store.append('s1', turn(), 0)).toBe(1);
@@ -154,7 +177,7 @@ describe('a store in another process', () => {
   }, 30_000);
 
   it('answers an unknown session with absence, not a failure', async () => {
-    const store = await sqliteStore();
+    const store = await remoteStore();
 
     expect(await store.read('never')).toBeUndefined();
     expect(await store.readCheckpoint('never')).toBeUndefined();
@@ -162,7 +185,7 @@ describe('a store in another process', () => {
   }, 30_000);
 
   it('rebuilds a conflict as the error the caller catches', async () => {
-    const store = await sqliteStore();
+    const store = await remoteStore();
     await store.append('s1', turn(), 0);
 
     await expect(store.append('s1', turn(), 0)).rejects.toThrow(
@@ -174,7 +197,7 @@ describe('a store in another process', () => {
   }, 30_000);
 
   it('keeps the checkpoint off the transcript', async () => {
-    const store = await sqliteStore();
+    const store = await remoteStore();
     await store.append('s1', turn(), 0);
     await store.writeCheckpoint('s1', CHECKPOINT);
 
@@ -186,7 +209,7 @@ describe('a store in another process', () => {
   }, 30_000);
 
   it('lists and deletes', async () => {
-    const store = await sqliteStore();
+    const store = await remoteStore();
     await store.append('s1', turn(), 0);
     await store.writeCheckpoint('s2', CHECKPOINT);
 
@@ -199,7 +222,7 @@ describe('a store in another process', () => {
   }, 30_000);
 
   it('serves the same turn layer the file store does', async () => {
-    const store = await sqliteStore();
+    const store = await remoteStore();
 
     const first = await openTurn(store, 's1', { query: 'who are you' });
     await closeTurn(store, 's1', first, { output: { result: 'a bot' } });
@@ -213,11 +236,59 @@ describe('a store in another process', () => {
   }, 30_000);
 
   it('refuses configuration its manifest schema does not describe', async () => {
-    const registry = await loadPlugins([SQLITE_STORE], {});
+    const registry = await loadPlugins([MEMORY_STORE], {});
     loaded.push(registry);
 
+    // Checked before anything is spawned: a manifest is data, so a bad setting
+    // is caught without starting the store's process.
     expect(() =>
-      registry.createStore('SqliteSessionStore', { path: 42 }),
+      registry.createStore('MemorySessionStore', { label: 42 }),
     ).toThrow(PluginError);
+  }, 30_000);
+
+  it('carries the store its own configuration on every call', async () => {
+    // There is no verb that constructs a store, so its settings ride along.
+    const store = await storeFrom(MEMORY_STORE, 'MemorySessionStore', {
+      label: 'from-plugin-config',
+    });
+    await store.create('s1');
+
+    expect((await store.read('s1'))?.flow).toBe('from-plugin-config');
+  }, 30_000);
+});
+
+/**
+ * The shipped SQLite example, where the Node running the tests can load it.
+ *
+ * `node:sqlite` arrived in Node 22.5 and this repo supports 18, so this is the
+ * one part of the store suite that cannot run everywhere. The contract itself
+ * is covered above by a fixture with no such requirement — what is skipped here
+ * is whether the *example* works, not whether stores do.
+ */
+describe.skipIf(!hasNodeSqlite)('the shipped SQLite store', () => {
+  it('holds a conversation, and reports a conflict as a result', async () => {
+    const store = await storeFrom(SQLITE_STORE, 'SqliteSessionStore', {
+      path: ':memory:',
+    });
+
+    await store.create('s1', { flow: 'flows/support.yaml' });
+    expect(await store.append('s1', turn(), 0)).toBe(1);
+    expect(await store.read('s1')).toMatchObject({ version: 1 });
+
+    await expect(store.append('s1', turn(), 0)).rejects.toThrow(
+      SessionConflictError,
+    );
+  }, 30_000);
+
+  it('keeps the checkpoint off the transcript', async () => {
+    const store = await storeFrom(SQLITE_STORE, 'SqliteSessionStore', {
+      path: ':memory:',
+    });
+
+    await store.append('s1', turn(), 0);
+    await store.writeCheckpoint('s1', CHECKPOINT);
+
+    expect(await store.readCheckpoint('s1')).toMatchObject({ node: 'agent' });
+    expect((await store.read('s1'))?.version).toBe(1);
   }, 30_000);
 });
