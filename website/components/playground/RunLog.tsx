@@ -67,6 +67,10 @@ function describe(event: RunEvent): string {
   }
 }
 
+/* A run reads on the same palette the landing's terminal writes in: tool
+   traffic in blurple, the engine's own marks in slate, failures in red. */
+const FAILED_TINT = "color-mix(in srgb, var(--red-500) 14%, transparent)";
+
 /**
  * The run, in whichever vocabulary it arrived in.
  *
@@ -116,7 +120,14 @@ export default function RunLog({
           padding: "var(--space-16) var(--space-8)",
         }}
       >
-        <p className="hd-eyebrow" style={{ textAlign: "center", margin: 0 }}>
+        <p
+          className="hds-eyebrow"
+          style={{
+            textAlign: "center",
+            margin: 0,
+            color: "var(--slate-500)",
+          }}
+        >
           The run appears here
         </p>
       </div>
@@ -127,12 +138,12 @@ export default function RunLog({
     <div style={{ display: "flex", height: "100%", flexDirection: "column" }}>
       {raw && (
         <p
-          className="hd-eyebrow"
+          className="hds-eyebrow hds-eyebrow-inverse"
           style={{
             flexShrink: 0,
             margin: 0,
             padding: "var(--space-3) var(--space-5)",
-            borderBottom: "1px solid var(--border-hairline)",
+            borderBottom: "1px solid var(--border-inverse)",
           }}
         >
           Frames · {protocol}
@@ -161,14 +172,15 @@ export default function RunLog({
       {error && (
         <div
           style={{
-            borderTop: "1px solid var(--brand-pink-30)",
-            background: "var(--brand-pink-05)",
+            borderTop:
+              "1px solid color-mix(in srgb, var(--red-500) 45%, transparent)",
+            background: FAILED_TINT,
             padding: "var(--space-4) var(--space-5)",
           }}
         >
           <p
-            className="hd-eyebrow"
-            style={{ margin: 0, color: "var(--brand-pink)" }}
+            className="hds-eyebrow"
+            style={{ margin: 0, color: "var(--red-500)" }}
           >
             {error.type}
           </p>
@@ -176,10 +188,10 @@ export default function RunLog({
             style={{
               margin: "var(--space-2) 0 0",
               fontFamily: "var(--font-mono)",
-              fontSize: "var(--fs-xs)",
-              lineHeight: "var(--lh-relaxed)",
+              fontSize: "var(--fs-code-sm)",
+              lineHeight: "var(--lh-code)",
               overflowWrap: "break-word",
-              color: "var(--text-strong)",
+              color: "var(--code-fg)",
             }}
           >
             {error.message}
@@ -188,13 +200,14 @@ export default function RunLog({
       )}
 
       {result && (
-        <div style={{ borderTop: "1px solid var(--border-default)" }}>
+        <div style={{ borderTop: "1px solid var(--border-inverse)" }}>
           <p
-            className="hd-eyebrow"
+            className="hds-eyebrow hds-eyebrow-inverse"
             style={{
               margin: 0,
               padding: "var(--space-3) var(--space-5)",
-              borderBottom: "1px solid var(--border-hairline)",
+              borderBottom: "1px solid var(--border-inverse)",
+              background: "var(--surface-code-alt)",
             }}
           >
             Final state
@@ -206,9 +219,9 @@ export default function RunLog({
               overflow: "auto",
               padding: "var(--space-4) var(--space-5)",
               fontFamily: "var(--font-mono)",
-              fontSize: "var(--fs-xs)",
-              lineHeight: "var(--lh-relaxed)",
-              color: "var(--text-body)",
+              fontSize: "var(--fs-code-sm)",
+              lineHeight: "var(--lh-code)",
+              color: "var(--slate-200)",
             }}
           >
             <code>{JSON.stringify(result, null, 2)}</code>
@@ -231,10 +244,10 @@ function EventRow({ event }: { event: RunEvent }) {
       marker={label(event.type)}
       tone={
         failed
-          ? "var(--hue-red)"
+          ? "var(--red-500)"
           : accented
-            ? "var(--brand-pink)"
-            : "var(--text-faint)"
+            ? "var(--blurple-300)"
+            : "var(--code-punct)"
       }
       failed={failed}
       wrap={event.type === "token_delta"}
@@ -267,8 +280,8 @@ function FrameRow({ event, ordinal }: { event: RunEvent; ordinal: number }) {
       : "";
 
   return (
-    <Row marker={ordinal} tone="var(--text-faint)" failed={failed}>
-      <span style={{ color: failed ? "var(--hue-red)" : "var(--text-strong)" }}>
+    <Row marker={ordinal} tone="var(--code-punct)" failed={failed}>
+      <span style={{ color: failed ? "var(--red-500)" : "var(--code-key)" }}>
         {type}
       </span>
       {body && ` ${body}`}
@@ -298,12 +311,12 @@ function Row({
         display: "flex",
         gap: "var(--space-4)",
         padding: "var(--space-2) var(--space-5)",
-        borderBottom: "1px solid var(--border-hairline)",
-        background: failed ? "var(--brand-pink-05)" : undefined,
+        borderBottom: "1px solid var(--border-inverse)",
+        background: failed ? FAILED_TINT : undefined,
         fontFamily: "var(--font-mono)",
-        fontSize: "var(--fs-xs)",
-        lineHeight: "var(--lh-relaxed)",
-        color: "var(--text-body)",
+        fontSize: "var(--fs-code-sm)",
+        lineHeight: "var(--lh-code)",
+        color: "var(--slate-200)",
       }}
     >
       <span
@@ -311,10 +324,10 @@ function Row({
           width: 56,
           flexShrink: 0,
           textTransform: "uppercase",
-          letterSpacing: "var(--tracking-widest)",
+          letterSpacing: "var(--ls-label)",
           fontVariantNumeric: "tabular-nums",
-          fontSize: "var(--fs-2xs)",
-          paddingTop: 2,
+          fontSize: "var(--fs-label)",
+          paddingTop: 3,
           color: tone,
         }}
       >
@@ -325,7 +338,7 @@ function Row({
           minWidth: 0,
           flex: 1,
           overflowWrap: "break-word",
-          color: failed ? "var(--text-strong)" : "var(--text-body)",
+          color: failed ? "var(--code-fg)" : "var(--slate-200)",
           whiteSpace: wrap ? "pre-wrap" : undefined,
         }}
       >
@@ -336,7 +349,7 @@ function Row({
           style={{
             flexShrink: 0,
             fontVariantNumeric: "tabular-nums",
-            color: "var(--text-faint)",
+            color: "var(--code-punct)",
           }}
         >
           {formatDuration(duration)}

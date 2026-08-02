@@ -2,32 +2,34 @@
 @import "fumadocs-ui/css/neutral.css";
 @import "fumadocs-ui/css/preset.css";
 
-@import "../ds/tokens/index.css";
-
 @source '../node_modules/fumadocs-ui/dist/**/*.js';
 
-:root {
-  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system,
-    "Segoe UI", sans-serif;
-}
+/* The Heddle tokens themselves load from ds-heddle/styles.css, imported after
+   this file in app/layout.tsx so its `:root` block wins any name it shares
+   with fumadocs' preset. Everything below is the site's own layer on top. */
 
+/* fumadocs styles its shell with Tailwind utilities bound to these, so this
+   block is how the docs inherit the system rather than being restyled rule by
+   rule. Both themes come free: every alias on the right flips with html.dark.
+   Radix portals the search dialog and the mobile sidebar to <body>, which is
+   the reason these have to be on :root and not on a wrapper. */
 :root {
-  --color-fd-background: var(--bg-page);
+  --color-fd-background: var(--surface-page);
   --color-fd-foreground: var(--text-strong);
-  --color-fd-muted: var(--bg-sunken);
+  --color-fd-muted: var(--surface-sunken);
   --color-fd-muted-foreground: var(--text-muted);
-  --color-fd-popover: var(--bg-elevated);
+  --color-fd-popover: var(--surface-raised);
   --color-fd-popover-foreground: var(--text-strong);
   --color-fd-card: var(--surface-card);
   --color-fd-card-foreground: var(--text-strong);
-  --color-fd-border: var(--border-default);
-  --color-fd-primary: var(--brand-pink);
-  --color-fd-primary-foreground: #fff;
-  --color-fd-secondary: var(--bg-sunken);
+  --color-fd-border: var(--border-hairline);
+  --color-fd-primary: var(--text-accent);
+  --color-fd-primary-foreground: var(--action-primary-fg);
+  --color-fd-secondary: var(--surface-sunken);
   --color-fd-secondary-foreground: var(--text-strong);
-  --color-fd-accent: var(--bg-sunken);
+  --color-fd-accent: var(--surface-sunken);
   --color-fd-accent-foreground: var(--text-strong);
-  --color-fd-ring: var(--brand-pink);
+  --color-fd-ring: var(--focus-ring);
 }
 
 @theme inline {
@@ -47,15 +49,6 @@ html.dark {
 
 body {
   overflow-x: hidden;
-  background: var(--bg-page);
-  color: var(--text-body);
-  font-family: var(--font-sans);
-  transition: background-color var(--dur-base) var(--ease-standard);
-}
-
-.hd-content {
-  position: relative;
-  z-index: 10;
 }
 
 .skip-link {
@@ -66,475 +59,22 @@ body {
 .skip-link:focus {
   left: var(--space-6);
   top: var(--space-6);
-  background: var(--brand-pink);
-  color: #fff;
-  padding: var(--space-3) var(--space-6);
-  border-radius: var(--radius-full);
-  font-size: var(--fs-xs);
+  background: var(--action-primary-bg);
+  color: var(--action-primary-fg);
+  padding: 10px 16px;
+  border-radius: var(--radius-control);
+  font-family: var(--font-sans);
+  font-size: var(--fs-body-sm);
   font-weight: var(--fw-medium);
-  letter-spacing: var(--tracking-widest);
-  text-transform: uppercase;
+  text-decoration: none;
 }
 
-:where(a, button, input, select, textarea, [tabindex]):focus-visible {
-  outline: 2px solid var(--brand-pink);
-  outline-offset: 2px;
-}
-
-.hd-container {
-  width: 100%;
-  max-width: var(--container-max);
-  margin: 0 auto;
-  padding-left: var(--space-6);
-  padding-right: var(--space-6);
-}
-.hd-container-narrow {
-  max-width: var(--container-narrow);
-}
-
-.hd-section {
-  padding-top: var(--space-16);
-  padding-bottom: var(--space-16);
-}
-@media (min-width: 768px) {
-  .hd-section {
-    padding-top: var(--section-pad-y);
-    padding-bottom: var(--section-pad-y);
-  }
-}
-
-.hd-grid {
-  display: grid;
-  gap: var(--space-6);
-  grid-template-columns: 1fr;
-}
-@media (min-width: 640px) {
-  .hd-grid-4 {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-@media (min-width: 768px) {
-  .hd-grid-2 {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-@media (min-width: 900px) {
-  .hd-grid-3 {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-  .hd-grid-4 {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-}
-
-.hd-bento {
-  display: grid;
-  gap: var(--space-6);
-  grid-template-columns: 1fr;
-}
-@media (min-width: 900px) {
-  .hd-bento {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    grid-auto-rows: 300px;
-  }
-  .hd-bento > .hd-bento-hero {
-    grid-column: span 2;
-    grid-row: span 2;
-  }
-}
-
-.hd-split {
-  display: grid;
-  gap: var(--space-8);
-  grid-template-columns: 1fr;
-  align-items: center;
-}
-@media (min-width: 900px) {
-  .hd-split {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: var(--space-12);
-  }
-}
-
-/* The inventory checklist: three columns on a wide screen, two at tablet
-   width. The count is deliberately not part of that choice — see the rule
-   below, which is what lets the list be however long the list is. */
-.hd-manifest {
-  display: grid;
-  gap: var(--space-6) var(--space-8);
-  grid-template-columns: 1fr;
-}
-@media (min-width: 640px) {
-  .hd-manifest {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-@media (min-width: 1100px) {
-  .hd-manifest {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-  /* An inventory is however long the inventory is, so the count will not always
-     divide by three. When the last row holds a single item, centre it: alone
-     against the left edge it reads as something that fell off the row above,
-     and in the middle it reads as the end of a list. Keyed off the count rather
-     than a nth-child number, so adding a battery cannot silently strand one. */
-  .hd-manifest > :last-child:nth-child(3n + 1) {
-    grid-column: 2;
-  }
-}
-
-.hd-playground {
-  display: flex;
-  flex-direction: column;
-  min-height: 100dvh;
-}
-
-.hd-playground-body {
-  display: grid;
-  grid-template-columns: 1fr;
-  flex: 1;
-  min-height: 0;
-  background: var(--surface-panel);
-  backdrop-filter: blur(var(--blur-panel));
-}
-
-.hd-playground-pane {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  min-height: 24rem;
-}
-.hd-playground-pane:first-child {
-  border-bottom: 1px solid var(--border-hairline);
-}
-
-@media (min-width: 900px) {
-  .hd-playground {
-    height: 100dvh;
-  }
-  .hd-playground-body {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  }
-  .hd-playground-pane {
-    min-height: 0;
-  }
-  .hd-playground-pane:first-child {
-    border-bottom: 0;
-    border-right: 1px solid var(--border-hairline);
-  }
-}
-
-.hd-playground-blurb {
-  display: none;
-}
-@media (min-width: 1250px) {
-  .hd-playground-blurb {
-    display: block;
-    width: 18rem;
-  }
-}
-
-/* A comparison pane: the file list beside the code on a wide screen, above
-   it once the panes stack. */
-.hd-compare-pane-body {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
-}
-@media (min-width: 900px) {
-  .hd-compare-pane-body {
-    flex-direction: row;
-  }
-}
-
-/* The file list in each comparison pane. Below 900px, where the panes stack,
-   a 10rem gutter would be a third of the screen — so it is a strip of files
-   above the code instead, and the directory becomes a prefix on each name
-   rather than a heading of its own. */
-.hd-compare-tree {
-  display: flex;
-  flex: 0 0 auto;
-  min-height: 0;
-  overflow-x: auto;
-  overflow-y: hidden;
-  border-bottom: 1px solid var(--border-hairline);
-  background: var(--bg-sunken);
-}
-
-.hd-compare-tree-group {
-  display: flex;
-}
-
-.hd-compare-tree-dir {
-  display: none;
-}
-
-.hd-compare-tree-file {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-height: 44px;
-  padding: 0 var(--space-4);
-  border: 0;
-  border-bottom: 2px solid transparent;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  text-align: left;
-  white-space: nowrap;
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-  transition:
-    color var(--dur-base) var(--ease-standard),
-    background-color var(--dur-base) var(--ease-standard),
-    border-color var(--dur-base) var(--ease-standard);
-}
-
-.hd-compare-tree-file:hover {
-  color: var(--text-strong);
-}
-
-.hd-compare-tree-file[aria-current] {
-  border-bottom-color: var(--brand-pink);
-  background: var(--bg-inset);
-  color: var(--text-strong);
-}
-
-.hd-compare-tree-icon {
-  display: inline-flex;
-  flex: 0 0 auto;
-  color: var(--text-faint);
-}
-.hd-compare-tree-file[aria-current] .hd-compare-tree-icon {
-  color: var(--brand-pink);
-}
-
-.hd-compare-tree-prefix {
-  color: var(--text-faint);
-}
-
-@media (min-width: 900px) {
-  .hd-compare-tree {
-    display: block;
-    width: 10.5rem;
-    padding: var(--space-2) 0;
-    overflow-x: hidden;
-    overflow-y: auto;
-    border-bottom: 0;
-    border-right: 1px solid var(--border-hairline);
-  }
-
-  .hd-compare-tree-group {
-    display: block;
-  }
-
-  .hd-compare-tree-dir {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    min-height: 32px;
-    padding: 0 var(--space-4);
-    color: var(--text-faint);
-    font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
-    letter-spacing: var(--tracking-widest);
-    text-transform: uppercase;
-  }
-
-  .hd-compare-tree-file {
-    width: 100%;
-    padding: 0 var(--space-3) 0 var(--space-4);
-    border-bottom: 0;
-    border-left: 2px solid transparent;
-  }
-  .hd-compare-tree-file[aria-current] {
-    border-bottom-color: transparent;
-    border-left-color: var(--brand-pink);
-  }
-
-  .hd-compare-tree-group[data-dir] .hd-compare-tree-file {
-    padding-left: var(--space-6);
-  }
-
-  .hd-compare-tree-leaf {
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .hd-compare-tree-prefix {
-    display: none;
-  }
-}
-
-@media (min-width: 1100px) {
-  .hd-compare-tree {
-    width: 12.5rem;
-  }
-}
-
-/* The padding lives on the wrapper: with border-collapse, padding on the
-   table box itself is ignored. */
-.hd-compare-ledger-wrap {
-  padding: var(--space-4) var(--space-5);
-}
-
-.hd-compare-ledger {
-  width: 100%;
-  border-collapse: collapse;
-  text-align: left;
-}
-
-.hd-compare-ledger,
-.hd-compare-ledger thead,
-.hd-compare-ledger tbody,
-.hd-compare-ledger tr,
-.hd-compare-ledger th,
-.hd-compare-ledger td {
-  display: block;
-}
-
-.hd-compare-ledger thead {
-  display: none;
-}
-
-.hd-compare-ledger tr + tr {
-  margin-top: var(--space-4);
-}
-
-.hd-compare-ledger td[data-side]::before {
-  content: attr(data-side);
-  display: block;
-  margin-top: var(--space-2);
-  font-family: var(--font-mono);
-  font-size: var(--fs-2xs);
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-widest);
-  color: var(--text-faint);
-}
-
-@media (min-width: 900px) {
-  .hd-compare-ledger {
-    display: table;
-  }
-  .hd-compare-ledger thead {
-    display: table-header-group;
-  }
-  .hd-compare-ledger tbody {
-    display: table-row-group;
-  }
-  .hd-compare-ledger tr {
-    display: table-row;
-  }
-  .hd-compare-ledger th,
-  .hd-compare-ledger td {
-    display: table-cell;
-    vertical-align: baseline;
-    padding: var(--space-1) var(--space-6) var(--space-1) 0;
-  }
-  .hd-compare-ledger th[scope="row"] {
-    width: 1%;
-  }
-  .hd-compare-ledger tr + tr {
-    margin-top: 0;
-  }
-  .hd-compare-ledger td[data-side]::before {
-    content: none;
-  }
-}
-
-.hd-nav-links {
-  display: none;
-}
-/* Two short destinations, so the row fits long before the desktop breakpoint.
-   It was 960px when the nav also carried three section anchors, which left
-   phones and tablets with no route to the docs or the playground at all —
-   raise this again only if links are added back. */
-@media (min-width: 600px) {
-  .hd-nav-links {
-    display: flex;
-  }
-}
-.hd-nav-secondary {
-  display: none;
-}
-@media (min-width: 640px) {
-  .hd-nav-secondary {
-    display: flex;
-  }
-}
-
-.hd-footer-grid {
-  display: grid;
-  gap: var(--space-8);
-  grid-template-columns: 1fr;
-}
-@media (min-width: 640px) {
-  .hd-footer-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-@media (min-width: 900px) {
-  .hd-footer-grid {
-    grid-template-columns: 2fr 1fr 1fr 1fr;
-    gap: var(--space-12);
-  }
-}
-
-.hd-footer-bottom {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-  align-items: flex-start;
-}
-@media (min-width: 640px) {
-  .hd-footer-bottom {
-    flex-direction: row;
-    justify-content: space-between;
-    align-items: center;
-  }
-}
-
-.hd-faq summary::-webkit-details-marker,
-.hd-faq summary::marker {
-  display: none;
-  content: "";
-}
-.hd-faq-chevron {
-  transition: transform var(--dur-base) var(--ease-standard);
-}
-.hd-faq[open] .hd-faq-chevron {
-  transform: rotate(180deg);
-  color: var(--brand-pink);
-}
-.hd-faq:hover {
-  border-color: var(--border-strong);
-}
-
-.hd-hero-word {
-  cursor: default;
-  transition:
-    color var(--dur-slow) var(--ease-standard),
-    text-shadow var(--dur-base) ease;
-}
-.hd-hero-word:hover {
-  color: var(--hd-hue);
-  text-shadow: 0 0 30px currentColor;
-}
-
-.hd-mono {
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-  letter-spacing: 0;
-}
-.hd-eyebrow {
-  font-family: var(--font-mono);
-  font-size: var(--fs-2xs);
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-widest);
-  font-weight: var(--fw-semibold);
-  color: var(--text-muted);
-}
+/* ── The docs shell (#nd-*) ───────────────────────────────────────────────
+   fumadocs draws its own chrome. The --color-fd-* block at the top of this
+   file hands it the palette; these rules are the shape the system asks for on
+   top of that — hairline rules instead of background changes, mono uppercase
+   for small labels, and code in navy windows. Both themes come from the
+   aliases, so nothing here is written twice. */
 
 #nd-docs-layout,
 #nd-page,
@@ -542,66 +82,102 @@ body {
 #nd-nav,
 #nd-tocnav {
   font-family: var(--font-sans);
+  letter-spacing: var(--ls-body);
 }
 
-#nd-nav {
+/* Paper, translucent, blurred — the landing nav, given fumadocs' markup. */
+#nd-nav,
+#nd-subnav {
   border-bottom: 1px solid var(--border-hairline);
-  background: var(--surface-chrome);
-  backdrop-filter: blur(var(--blur-chrome));
+  background: color-mix(in srgb, var(--surface-page) 85%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 #nd-sidebar {
   border-right: 1px solid var(--border-hairline);
-  background: var(--surface-chrome);
-  backdrop-filter: blur(var(--blur-chrome));
+  background: transparent;
 }
 
 #nd-sidebar a,
 #nd-tocnav a,
 #nd-toc a {
-  font-size: var(--fs-sm);
-  letter-spacing: 0;
+  font-size: var(--fs-body-sm);
+  letter-spacing: var(--ls-body);
 }
 
-#nd-sidebar p[class*="font-medium"],
-#nd-sidebar h3 {
+/* The sidebar's group headings are the numbered eyebrows of the landing, doing
+   the same job one level down. Its only <p> elements are those headings —
+   checked against the rendered tree rather than guessed from fumadocs' utility
+   classes, which are not a stable interface. The table of contents gets the
+   same treatment below, after the heading rules it would otherwise lose to. */
+#nd-sidebar p {
   font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  font-weight: var(--fw-regular);
   text-transform: uppercase;
-  letter-spacing: var(--tracking-widest);
-  font-size: var(--fs-2xs);
-  color: var(--text-faint);
+  letter-spacing: var(--ls-label);
+  color: var(--text-subtle);
 }
 
 #nd-page h1,
 #nd-page h2,
 #nd-page h3,
 #nd-page h4 {
-  letter-spacing: var(--tracking-tight);
-  font-weight: var(--fw-semibold);
+  font-family: var(--font-sans);
+  font-weight: var(--fw-medium);
+  letter-spacing: var(--ls-heading);
+  line-height: var(--lh-heading);
   color: var(--text-strong);
 }
 
 #nd-page h1 {
-  font-size: var(--fs-4xl);
-  line-height: var(--lh-tight);
+  font-size: var(--fs-h1);
+  font-weight: var(--fw-light);
+  letter-spacing: var(--ls-display);
+  line-height: var(--lh-snug);
 }
 
+/* Sections divide by hairline rather than by background — the one rule the
+   landing repeats most, and the reason the docs read as the same paper. */
 #nd-page h2 {
-  border-top: 1px solid var(--border-default);
+  font-size: var(--fs-h2);
+  border-top: 1px solid var(--border-hairline);
   padding-top: var(--space-6);
   margin-top: var(--space-12);
 }
 
+#nd-page h3 {
+  font-size: var(--fs-h3);
+}
+
+/* The table of contents sits inside #nd-page, so its title is an <h3> the rule
+   above would otherwise size as a section heading. Same specificity, so this
+   has to come after it. */
+#nd-toc h3,
+#nd-tocnav h3 {
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  font-weight: var(--fw-regular);
+  text-transform: uppercase;
+  letter-spacing: var(--ls-label);
+  color: var(--text-subtle);
+}
+
 #nd-page .prose :where(p, li) {
   color: var(--text-body);
-  line-height: var(--lh-relaxed);
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
 }
 
 #nd-page .prose :where(a) {
-  color: var(--brand-pink);
+  color: var(--text-link);
   text-decoration: underline;
   text-underline-offset: 3px;
   text-decoration-thickness: 1px;
+}
+#nd-page .prose :where(a):hover {
+  color: var(--text-link-hover);
 }
 
 #nd-page .prose :where(h1, h2, h3, h4, h5, h6) a,
@@ -610,62 +186,91 @@ body {
   text-decoration: none;
 }
 #nd-page :where(h1, h2, h3, h4, h5, h6) a:hover {
-  color: var(--brand-pink);
+  color: var(--text-accent);
 }
 
 #nd-page .prose :where(table) {
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
   overflow: hidden;
+  font-size: var(--fs-body-sm);
 }
 
 #nd-page .prose :where(th) {
   font-family: var(--font-mono);
+  font-weight: var(--fw-regular);
   text-transform: uppercase;
-  letter-spacing: var(--tracking-widest);
-  font-size: var(--fs-2xs);
-  border-bottom: 1px solid var(--border-default);
-  color: var(--text-faint);
+  letter-spacing: var(--ls-label);
+  font-size: var(--fs-label);
+  border-bottom: 1px solid var(--border-hairline);
+  color: var(--text-subtle);
 }
 
 #nd-page .prose :where(blockquote) {
-  border-left: 2px solid var(--brand-pink);
+  border-left: 2px solid var(--border-accent);
   font-style: normal;
   color: var(--text-muted);
 }
 
+/* Code is always navy, in the docs as everywhere else. The shiki theme is
+   pinned dark for both site themes in source.config.ts, which is what lets one
+   background serve both. */
 #nd-page figure:has(pre),
 #nd-page pre:not(figure pre) {
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-xl);
-  background: var(--bg-inset);
+  border: 1px solid var(--border-inverse);
+  border-radius: var(--radius-card);
+  background: var(--surface-code);
+  color-scheme: dark;
 }
 
-#nd-page figure:has(pre) pre {
+#nd-page figure:has(pre) pre,
+#nd-page figure:has(pre) code {
   border: 0;
   background: transparent;
+}
+
+/* The filename bar above a ```lang title="…" block, as the window header the
+   hero and the playground both use. fumadocs puts the name in a <figcaption>
+   inside a wrapping <div> that carries the rule, so the surface goes on the
+   div and the type on the caption. Its `border-b` otherwise takes the paper
+   hairline, which draws a bright line across the navy. */
+#nd-page figure:has(pre) > div:has(> figcaption) {
+  background: var(--surface-code-alt);
+  border-bottom-color: var(--border-inverse);
+}
+
+#nd-page figure:has(pre) figcaption {
+  color: var(--slate-300);
+  font-family: var(--font-mono);
+  font-size: var(--fs-code-sm);
 }
 
 #nd-page .shiki,
 #nd-page .shiki span {
   font-family: var(--font-mono);
-  font-size: var(--fs-sm);
+  font-size: var(--fs-code);
+  line-height: var(--lh-code);
+}
+
+/* The copy button rides on navy, so it takes the inverse ramp rather than the
+   paper one the rest of the shell uses. */
+#nd-page figure:has(pre) button {
+  color: var(--slate-400);
+  border-color: var(--border-inverse);
+}
+#nd-page figure:has(pre) button:hover {
+  color: var(--code-fg);
+  background: color-mix(in srgb, var(--code-fg) 10%, transparent);
 }
 
 #nd-page :not(pre) > code {
   font-family: var(--font-mono);
-  border: 1px solid var(--border-default);
-  background: var(--bg-sunken);
+  border: 1px solid var(--border-hairline);
+  background: var(--surface-sunken);
   border-radius: var(--radius-sm);
   padding: 0.1em 0.35em;
   font-size: 0.875em;
   color: var(--text-strong);
-}
-
-#nd-docs-layout a:focus-visible,
-#nd-docs-layout button:focus-visible {
-  outline: 2px solid var(--brand-pink);
-  outline-offset: 2px;
 }
 
 .hide-scrollbar {
@@ -685,26 +290,34 @@ body {
     transition-duration: 0.001ms !important;
     scroll-behavior: auto !important;
   }
-  .ff-fade-in-up {
-    opacity: 1;
-    transform: none;
-  }
-  .ff-swirl,
-  .ff-beam-runner {
-    display: none;
-  }
 }
 
-/* ── Heddle-system landing layout (hds-*) ─────────────────────────────────
-   Media-query helpers for the pages built on ds-heddle/. Same rule as the
-   hd-* set above: these exist only for what inline styles cannot express.
-   Everything else on those pages uses the system's own tokens directly. */
+/* ── Site layout helpers (hds-*) ──────────────────────────────────────────
+   These exist only for what inline styles cannot express: media queries,
+   ::placeholder, ::-webkit-scrollbar, hover. Everything else styles inline
+   from the system's own tokens. */
 
 .hds-container {
   max-width: var(--maxw-container);
   margin: 0 auto;
   padding-left: 24px;
   padding-right: 24px;
+}
+
+/* The mono uppercase label the whole system marks small things with — section
+   eyebrows on the landing, every field label and status term in the playground. */
+.hds-eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  font-weight: var(--fw-regular);
+  text-transform: uppercase;
+  letter-spacing: var(--ls-label);
+  color: var(--text-muted);
+}
+/* The same label inside a navy window, where the paper text ramp has no
+   contrast to give. */
+.hds-eyebrow-inverse {
+  color: var(--slate-400);
 }
 
 .hds-nav-links {
@@ -855,10 +468,320 @@ body {
   margin-left: auto;
 }
 
+/* ── The playground ───────────────────────────────────────────────────────
+   An application rather than a composed page: it fills the viewport, the two
+   panes scroll independently and the page itself does not. The panes are the
+   landing's navy code windows, inset on the paper ground with the bar above
+   and the status bar below — the same window language as the hero, given the
+   whole screen. Below 900px they stack and the page scrolls. */
+
+.hds-playground {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  background: var(--surface-page);
+}
+
+.hds-playground-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+  padding: 12px;
+}
+
+.hds-playground-pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 24rem;
+  overflow: hidden;
+  background: var(--surface-code);
+  border: 1px solid var(--border-inverse);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--shadow-sm);
+  /* The panes are dark in the light theme too, and the scrollbars, dropdowns
+     and text selection the browser draws inside them have to know it. */
+  color-scheme: dark;
+}
+
+/* `color-scheme` alone leaves a light scrollbar drawn across the navy on some
+   platforms, and the panes scroll in both directions in four places. Mixed
+   from the code foreground so it holds against navy and against the near-black
+   the dark theme swaps in. */
+.hds-playground-pane ::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+.hds-playground-pane ::-webkit-scrollbar-track,
+.hds-playground-pane ::-webkit-scrollbar-corner {
+  background: transparent;
+}
+.hds-playground-pane ::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--code-fg) 16%, transparent);
+  background-clip: content-box;
+  border: 3px solid transparent;
+  border-radius: var(--radius-pill);
+}
+.hds-playground-pane ::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--code-fg) 30%, transparent);
+  background-clip: content-box;
+}
+
+/* The controls and tabs inside a window. Hover is the one thing the inline
+   styles the rest of this uses cannot say. */
+.hds-window-tab:hover {
+  color: var(--code-fg);
+}
+.hds-window-control:hover {
+  border-color: var(--slate-600);
+  color: var(--code-fg);
+}
+
+@media (min-width: 900px) {
+  .hds-playground {
+    height: 100dvh;
+  }
+  .hds-playground-body {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .hds-playground-pane {
+    min-height: 0;
+  }
+}
+
+/* Placeholders inside a window. The browser default is a dark grey drawn for
+   paper fields and it disappears against navy; ::placeholder cannot be reached
+   from the inline styles everything else here uses. */
+.hds-code-input::placeholder {
+  color: var(--code-punct);
+  opacity: 0.75;
+}
+
+/* The one-line description beside a picker. There is no room for it until the
+   bar has spare width. */
+.hds-playground-blurb {
+  display: none;
+}
+@media (min-width: 1250px) {
+  .hds-playground-blurb {
+    display: block;
+    width: 18rem;
+  }
+}
+
+/* A comparison pane: the file list beside the code on a wide screen, above
+   it once the panes stack. */
+.hds-compare-pane-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+@media (min-width: 900px) {
+  .hds-compare-pane-body {
+    flex-direction: row;
+  }
+}
+
+/* The file list in each comparison pane — the window's own gutter, so it is
+   dark with the code rather than chrome around it. Below 900px, where the
+   panes stack, a 10rem gutter would be a third of the screen, so it becomes a
+   strip of files above the code and the directory becomes a prefix on each
+   name rather than a heading of its own. */
+.hds-compare-tree {
+  display: flex;
+  flex: 0 0 auto;
+  min-height: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border-bottom: 1px solid var(--border-inverse);
+  background: var(--surface-code-alt);
+}
+
+.hds-compare-tree-group {
+  display: flex;
+}
+
+.hds-compare-tree-dir {
+  display: none;
+}
+
+.hds-compare-tree-file {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 40px;
+  padding: 0 var(--space-4);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--slate-400);
+  cursor: pointer;
+  text-align: left;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--fs-code-sm);
+  transition: var(--transition-control);
+}
+
+.hds-compare-tree-file:hover {
+  color: var(--code-fg);
+}
+
+.hds-compare-tree-file[aria-current] {
+  border-bottom-color: var(--cyan-500);
+  background: var(--surface-code);
+  color: var(--code-fg);
+}
+
+.hds-compare-tree-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--code-punct);
+}
+.hds-compare-tree-file[aria-current] .hds-compare-tree-icon {
+  color: var(--cyan-500);
+}
+
+.hds-compare-tree-prefix {
+  color: var(--code-punct);
+}
+
+@media (min-width: 900px) {
+  .hds-compare-tree {
+    display: block;
+    width: 10.5rem;
+    padding: var(--space-2) 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    border-bottom: 0;
+    border-right: 1px solid var(--border-inverse);
+  }
+
+  .hds-compare-tree-group {
+    display: block;
+  }
+
+  .hds-compare-tree-dir {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: 32px;
+    padding: 0 var(--space-4);
+    color: var(--slate-500);
+    font-family: var(--font-mono);
+    font-size: var(--fs-label);
+    letter-spacing: var(--ls-label);
+    text-transform: uppercase;
+  }
+
+  .hds-compare-tree-file {
+    width: 100%;
+    padding: 0 var(--space-3) 0 var(--space-4);
+    border-bottom: 0;
+    border-left: 2px solid transparent;
+  }
+  .hds-compare-tree-file[aria-current] {
+    border-bottom-color: transparent;
+    border-left-color: var(--cyan-500);
+  }
+
+  .hds-compare-tree-group[data-dir] .hds-compare-tree-file {
+    padding-left: var(--space-6);
+  }
+
+  .hds-compare-tree-leaf {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .hds-compare-tree-prefix {
+    display: none;
+  }
+}
+
+@media (min-width: 1100px) {
+  .hds-compare-tree {
+    width: 12.5rem;
+  }
+}
+
+/* The padding lives on the wrapper: with border-collapse, padding on the
+   table box itself is ignored. */
+.hds-compare-ledger-wrap {
+  padding: var(--space-4) var(--space-5);
+}
+
+.hds-compare-ledger {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.hds-compare-ledger,
+.hds-compare-ledger thead,
+.hds-compare-ledger tbody,
+.hds-compare-ledger tr,
+.hds-compare-ledger th,
+.hds-compare-ledger td {
+  display: block;
+}
+
+.hds-compare-ledger thead {
+  display: none;
+}
+
+.hds-compare-ledger tr + tr {
+  margin-top: var(--space-4);
+}
+
+.hds-compare-ledger td[data-side]::before {
+  content: attr(data-side);
+  display: block;
+  margin-top: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  text-transform: uppercase;
+  letter-spacing: var(--ls-label);
+  color: var(--text-subtle);
+}
+
+@media (min-width: 900px) {
+  .hds-compare-ledger {
+    display: table;
+  }
+  .hds-compare-ledger thead {
+    display: table-header-group;
+  }
+  .hds-compare-ledger tbody {
+    display: table-row-group;
+  }
+  .hds-compare-ledger tr {
+    display: table-row;
+  }
+  .hds-compare-ledger th,
+  .hds-compare-ledger td {
+    display: table-cell;
+    vertical-align: baseline;
+    padding: var(--space-1) var(--space-6) var(--space-1) 0;
+  }
+  .hds-compare-ledger th[scope="row"] {
+    width: 1%;
+  }
+  .hds-compare-ledger tr + tr {
+    margin-top: 0;
+  }
+  .hds-compare-ledger td[data-side]::before {
+    content: none;
+  }
+}
+
 /* Upstream defines --gradient-warp with literal white stops, so it does not
    flip with the theme; the design template's dark hero is a black radial.
    Overridden here rather than in the vendored tokens. */
-html.dark .hds {
+html.dark {
   --gradient-warp: radial-gradient(80% 60% at 50% 0%, #111111 0%, #000000 70%);
 }
 
@@ -868,6 +791,6 @@ html.dark .hds {
    always-dark windows ended up with white borders. The design template gives
    its windows their own border that stays dark: #1f4468 light, #262626 dark.
    Pin the dark value here, matching the template's --t-winborder. */
-html.dark .hds {
+html.dark {
   --border-inverse: #262626;
 }

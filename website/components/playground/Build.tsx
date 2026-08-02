@@ -1,10 +1,12 @@
 "use client";
 
 import Editor from "./Editor";
-import Tabs from "../Tabs";
+import WindowTabs from "./WindowTabs";
+import { WindowIconButton, WindowSelect } from "./WindowControls";
 import CodeList from "./CodeList";
 import RunLog from "./RunLog";
-import { Icon, Select } from "@/ds";
+import Glyph from "../Glyph";
+import { Icon } from "@/ds-heddle";
 import {
   API_BASE,
   type Capabilities,
@@ -34,11 +36,22 @@ const PLUGIN_MANIFEST_STUB = {
 
 const FILE_STUB = "Whatever a tool in this run should be able to read.\n";
 
+/* Cyan is the accent on a navy surface the way blurple is on paper, so a run
+   in flight reads in the same colour the window's keys do. */
 const statusTone: Record<Status, string> = {
-  idle: "var(--text-faint)",
-  running: "var(--brand-pink)",
-  done: "var(--hue-emerald)",
-  error: "var(--hue-red)",
+  idle: "var(--slate-500)",
+  running: "var(--cyan-400)",
+  done: "var(--green-500)",
+  error: "var(--red-500)",
+};
+
+/** The window strip a pane is titled by, above the code. */
+const windowBar: React.CSSProperties = {
+  display: "flex",
+  flexShrink: 0,
+  alignItems: "stretch",
+  justifyContent: "space-between",
+  borderBottom: "1px solid var(--border-inverse)",
 };
 
 /** The spec on the left, the run it produced on the right. */
@@ -49,18 +62,10 @@ export default function Build({ pg }: { pg: Playground }) {
         id="editors"
         tabIndex={-1}
         aria-label="Specification"
-        className="hd-playground-pane"
+        className="hds-playground-pane"
       >
-        <div
-          style={{
-            display: "flex",
-            flexShrink: 0,
-            alignItems: "stretch",
-            justifyContent: "space-between",
-            borderBottom: "1px solid var(--border-hairline)",
-          }}
-        >
-          <Tabs
+        <div style={windowBar}>
+          <WindowTabs
             label="Editors"
             tabs={[
               { id: "spec", label: "Spec" },
@@ -72,27 +77,20 @@ export default function Build({ pg }: { pg: Playground }) {
             active={pg.tab}
             onSelect={pg.setTab}
           />
-          <button
-            type="button"
+          <WindowIconButton
+            size="md"
+            bordered={false}
+            label="Restore example"
             onClick={pg.restore}
             title={`Restore the "${pg.example.title}" example`}
             style={{
-              display: "flex",
-              minHeight: 44,
-              width: 44,
-              flexShrink: 0,
-              alignItems: "center",
-              justifyContent: "center",
-              border: 0,
-              borderLeft: "1px solid var(--border-hairline)",
-              background: "transparent",
-              color: "var(--text-faint)",
-              cursor: "pointer",
+              minHeight: 40,
+              width: 40,
+              borderLeft: "1px solid var(--border-inverse)",
             }}
           >
-            <Icon name="rotate-ccw" size={14} />
-            <span className="sr-only">Restore example</span>
-          </button>
+            <Glyph name="rotateCcw" size={14} />
+          </WindowIconButton>
         </div>
 
         <div
@@ -177,18 +175,15 @@ export default function Build({ pg }: { pg: Playground }) {
         </div>
       </section>
 
-      <section aria-label="Run" className="hd-playground-pane">
+      <section aria-label="Run" className="hds-playground-pane">
         <div
           style={{
-            display: "flex",
+            ...windowBar,
             flexWrap: "wrap",
-            minHeight: 44,
-            flexShrink: 0,
+            minHeight: 40,
             alignItems: "center",
-            justifyContent: "space-between",
             gap: "var(--space-3) var(--space-5)",
-            padding: "0 var(--space-5)",
-            borderBottom: "1px solid var(--border-hairline)",
+            padding: "var(--space-2) var(--space-5)",
           }}
         >
           <div
@@ -199,7 +194,7 @@ export default function Build({ pg }: { pg: Playground }) {
               minWidth: 0,
             }}
           >
-            <span className="hd-eyebrow">Run</span>
+            <span className="hds-eyebrow hds-eyebrow-inverse">Run</span>
             <ProtocolPicker pg={pg} />
           </div>
 
@@ -210,9 +205,9 @@ export default function Build({ pg }: { pg: Playground }) {
               alignItems: "center",
               gap: "var(--space-2)",
               fontFamily: "var(--font-mono)",
-              fontSize: "var(--fs-2xs)",
+              fontSize: "var(--fs-label)",
               textTransform: "uppercase",
-              letterSpacing: "var(--tracking-widest)",
+              letterSpacing: "var(--ls-label)",
               color: statusTone[pg.status],
             }}
           >
@@ -270,10 +265,13 @@ function ProtocolPicker({ pg }: { pg: Playground }) {
         minWidth: 0,
       }}
     >
-      <label className="hd-eyebrow" htmlFor="playground-protocol">
+      <label
+        className="hds-eyebrow hds-eyebrow-inverse"
+        htmlFor="playground-protocol"
+      >
         Protocol
       </label>
-      <Select
+      <WindowSelect
         id="playground-protocol"
         value={pg.protocol}
         onChange={(event: React.ChangeEvent<HTMLSelectElement>) =>
@@ -349,8 +347,9 @@ export function BuildStatusBar({
         gap: "var(--space-3) var(--space-8)",
         padding: "var(--space-3) var(--space-5)",
         borderTop: "1px solid var(--border-hairline)",
-        background: "var(--surface-chrome)",
-        backdropFilter: "blur(var(--blur-chrome))",
+        background: "color-mix(in srgb, var(--surface-page) 85%, transparent)",
+        backdropFilter: "blur(12px)",
+        WebkitBackdropFilter: "blur(12px)",
       }}
     >
       <p
@@ -360,15 +359,15 @@ export function BuildStatusBar({
           margin: 0,
           flex: "1 1 48ch",
           minWidth: 0,
-          fontSize: "var(--fs-xs)",
-          lineHeight: "var(--lh-relaxed)",
+          fontSize: "var(--fs-caption)",
+          lineHeight: 1.6,
           color: "var(--text-muted)",
         }}
       >
         <span
           aria-hidden
           style={{
-            color: "var(--brand-pink)",
+            color: "var(--text-accent)",
             display: "inline-flex",
             flex: "0 0 auto",
             marginTop: 2,
@@ -399,12 +398,12 @@ export function BuildStatusBar({
               gap: "var(--space-2)",
             }}
           >
-            <dt className="hd-eyebrow">{term}</dt>
+            <dt className="hds-eyebrow">{term}</dt>
             <dd
               style={{
                 margin: 0,
                 fontFamily: "var(--font-mono)",
-                fontSize: "var(--fs-xs)",
+                fontSize: "var(--fs-code-sm)",
                 fontVariantNumeric: "tabular-nums",
                 color: "var(--text-strong)",
               }}
@@ -418,16 +417,20 @@ export function BuildStatusBar({
   );
 }
 
+/* A configuration problem rather than a failure, so it is the system's warning
+   amber. The hue is mixed rather than taken from the --amber-100 pair, which
+   is a light tint that does not flip with the theme. */
 function Notice({ children }: { children: React.ReactNode }) {
   return (
     <p
       style={{
         margin: 0,
         padding: "var(--space-4) var(--space-5)",
-        borderBottom: "1px solid var(--brand-pink-20)",
-        background: "var(--brand-pink-05)",
-        fontSize: "var(--fs-sm)",
-        lineHeight: "var(--lh-relaxed)",
+        borderBottom:
+          "1px solid color-mix(in srgb, var(--amber-500) 35%, transparent)",
+        background: "color-mix(in srgb, var(--amber-500) 9%, transparent)",
+        fontSize: "var(--fs-body-sm)",
+        lineHeight: 1.6,
         color: "var(--text-body)",
       }}
     >

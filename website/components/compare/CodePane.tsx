@@ -3,8 +3,9 @@
 import type { CompareFile } from "@/lib/compare";
 
 /* The one piece of colour a line gets: a comment is dimmed and everything
-   else is body text. Full syntax highlighting would need a tokeniser per
-   language and would fight the monochrome palette for no reading benefit. */
+   else is code text. Full syntax highlighting would need a tokeniser per
+   language, and the columns are being compared for length rather than read
+   line by line, so it would buy nothing. */
 const COMMENT: Record<string, string> = {
   yaml: "#",
   python: "#",
@@ -31,7 +32,7 @@ function Line({ text, marker }: { text: string; marker?: string }) {
   return (
     <>
       {text.slice(0, split)}
-      <span style={{ color: "var(--text-faint)" }}>{text.slice(split)}</span>
+      <span style={{ color: "var(--code-comment)" }}>{text.slice(split)}</span>
     </>
   );
 }
@@ -49,11 +50,11 @@ export default function CodePane({ file }: { file: CompareFile }) {
         margin: 0,
         padding: "var(--space-4) var(--space-5)",
         minHeight: "100%",
-        background: "var(--bg-inset)",
         fontFamily: "var(--font-mono)",
-        fontSize: "var(--fs-xs)",
-        lineHeight: "var(--lh-relaxed)",
-        color: "var(--text-body)",
+        fontSize: "var(--fs-code-sm)",
+        lineHeight: "var(--lh-code)",
+        letterSpacing: "var(--ls-mono)",
+        color: "var(--slate-200)",
       }}
     >
       <span
@@ -61,7 +62,8 @@ export default function CodePane({ file }: { file: CompareFile }) {
         style={{
           flex: "0 0 auto",
           textAlign: "right",
-          color: "var(--text-faint)",
+          color: "var(--code-punct)",
+          opacity: 0.55,
           fontVariantNumeric: "tabular-nums",
           userSelect: "none",
         }}

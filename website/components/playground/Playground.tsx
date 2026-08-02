@@ -2,11 +2,11 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import Build, { BuildStatusBar, EngineNotice } from "./Build";
-import Wordmark from "../Wordmark";
+import Glyph, { type GlyphName } from "../Glyph";
+import ThemeSwitch from "../ThemeSwitch";
 import { ComparePanes, CompareLedger } from "../compare/Compare";
-import { useTheme } from "@/lib/theme";
 import { usePlayground } from "@/lib/use-playground";
-import { Badge, Button, Icon, Select, ThemeToggle } from "@/ds";
+import { Badge, Button, Select } from "@/ds-heddle";
 import { HOME_URL } from "@/lib/constants";
 import { EXAMPLES, exampleById, type Example } from "@/lib/playground";
 import {
@@ -18,9 +18,9 @@ import {
 
 type View = "build" | "compare";
 
-const VIEWS: { id: View; label: string; icon: string }[] = [
+const VIEWS: { id: View; label: string; icon: GlyphName }[] = [
   { id: "build", label: "Build", icon: "braces" },
-  { id: "compare", label: "Compare", icon: "columns2" },
+  { id: "compare", label: "Compare", icon: "columns" },
 ];
 
 /* The prerendered HTML is the Build view, because a static export has no
@@ -42,8 +42,6 @@ const useBrowserLayoutEffect =
  * and the button in that column hands it to the editor.
  */
 export default function Playground() {
-  const { dark, toggle } = useTheme();
-
   const pg = usePlayground();
   const [view, setView] = useState<View>("build");
   const [useCase, setUseCase] = useState<UseCase>(USE_CASES[0]);
@@ -111,7 +109,7 @@ export default function Playground() {
   const building = view === "build";
 
   return (
-    <div className="hd-playground">
+    <div className="hds-playground">
       <header
         style={{
           position: "sticky",
@@ -121,30 +119,37 @@ export default function Playground() {
           flexWrap: "wrap",
           alignItems: "center",
           gap: "var(--space-3) var(--space-5)",
+          minHeight: 60,
           padding: "var(--space-3) var(--space-5)",
           borderBottom: "1px solid var(--border-hairline)",
-          background: "var(--surface-chrome)",
-          backdropFilter: "blur(var(--blur-chrome))",
+          background:
+            "color-mix(in srgb, var(--surface-page) 85%, transparent)",
+          backdropFilter: "blur(12px)",
+          WebkitBackdropFilter: "blur(12px)",
         }}
       >
         <div
           style={{
             display: "flex",
             alignItems: "center",
-            gap: "var(--space-3)",
+            gap: "var(--space-4)",
           }}
         >
-          <a href={HOME_URL} aria-label="heddle — home">
-            <Wordmark size="sm" />
-          </a>
-          <span
-            aria-hidden
+          {/* The way back to the site, and the only branding the application
+              carries — the wordmark is the word, set as the nav sets it. */}
+          <a
+            href={HOME_URL}
+            aria-label="heddle — home"
             style={{
-              width: 1,
-              height: 16,
-              background: "var(--border-default)",
+              fontWeight: "var(--fw-medium)",
+              fontSize: 17,
+              letterSpacing: "-0.02em",
+              color: "var(--text-strong)",
+              textDecoration: "none",
             }}
-          />
+          >
+            heddle
+          </a>
           <ViewSwitch view={view} onSelect={setView} />
         </div>
 
@@ -169,17 +174,17 @@ export default function Playground() {
           {building ? (
             <>
               <Button
-                shape="rounded"
-                variant={pg.busy ? "accent" : "solid"}
-                icon={pg.busy ? "square" : "play"}
+                size="sm"
+                variant={pg.busy ? "accent" : "primary"}
+                iconLeft={<Glyph name={pg.busy ? "stop" : "play"} size={14} />}
                 onClick={pg.busy ? pg.stop : pg.run}
               >
                 {pg.busy ? "Stop" : "Run"}
               </Button>
               <Button
-                shape="rounded"
-                variant="subtle"
-                icon="check-check"
+                size="sm"
+                variant="secondary"
+                iconLeft={<Glyph name="checkCheck" size={14} />}
                 onClick={pg.check}
                 disabled={pg.busy}
               >
@@ -189,7 +194,7 @@ export default function Playground() {
           ) : (
             <RivalPicker current={rival} onSelect={setRival} />
           )}
-          <ThemeToggle dark={dark} onToggle={toggle} />
+          <ThemeSwitch />
         </div>
       </header>
 
@@ -203,7 +208,7 @@ export default function Playground() {
             ? "The specification and the run"
             : "The same use case, two frameworks"
         }
-        className="hd-playground-body"
+        className="hds-playground-body"
       >
         {building ? (
           <Build pg={pg} />
@@ -229,6 +234,9 @@ export default function Playground() {
   );
 }
 
+/* Two views of one application, in the system's small-control language — the
+   same shape the landing's install tabs take, because it is the same choice:
+   one of a short set, none of them a destination. */
 function ViewSwitch({
   view,
   onSelect,
@@ -237,17 +245,7 @@ function ViewSwitch({
   onSelect: (view: View) => void;
 }) {
   return (
-    <div
-      role="group"
-      aria-label="View"
-      style={{
-        display: "flex",
-        gap: 2,
-        padding: 2,
-        border: "1px solid var(--border-hairline)",
-        borderRadius: "var(--radius-full)",
-      }}
-    >
+    <div role="group" aria-label="View" style={{ display: "flex", gap: 4 }}>
       {VIEWS.map(({ id, label, icon }) => {
         const selected = id === view;
         return (
@@ -260,32 +258,27 @@ function ViewSwitch({
               display: "inline-flex",
               alignItems: "center",
               gap: "var(--space-2)",
-              minHeight: 30,
-              padding: "0 var(--space-4)",
-              border: 0,
-              borderRadius: "var(--radius-full)",
-              background: selected ? "var(--bg-sunken)" : "transparent",
-              color: selected ? "var(--text-strong)" : "var(--text-muted)",
+              height: 30,
+              padding: "0 12px",
               cursor: "pointer",
-              fontFamily: "var(--font-sans)",
-              fontSize: "var(--fs-2xs)",
-              fontWeight: selected
-                ? "var(--fw-semibold)"
-                : "var(--fw-medium)",
-              textTransform: "uppercase",
-              letterSpacing: "var(--tracking-widest)",
-              transition:
-                "color var(--dur-base) var(--ease-standard), background-color var(--dur-base) var(--ease-standard)",
+              fontFamily: "var(--font-mono)",
+              fontSize: 12,
+              letterSpacing: "0.04em",
+              borderRadius: "var(--radius-control)",
+              border: `1px solid ${selected ? "var(--border-default)" : "transparent"}`,
+              background: selected ? "var(--surface-raised)" : "transparent",
+              color: selected ? "var(--text-strong)" : "var(--text-subtle)",
+              transition: "var(--transition-control)",
             }}
           >
             <span
               aria-hidden
               style={{
                 display: "inline-flex",
-                color: selected ? "var(--brand-pink)" : "currentColor",
+                color: selected ? "var(--text-accent)" : "currentColor",
               }}
             >
-              <Icon name={icon} size={13} />
+              <Glyph name={icon} size={13} />
             </span>
             {label}
           </button>
@@ -305,9 +298,10 @@ function ExamplePicker({
   disabled: boolean;
 }) {
   return (
-    <Picker label="Example" htmlFor="playground-example" blurb={current.blurb}>
+    <Picker label="Example" id="playground-example" blurb={current.blurb}>
       <Select
-        id="playground-example"
+        size="sm"
+        aria-labelledby="playground-example-label"
         value={current.title}
         onChange={(event: React.ChangeEvent<HTMLSelectElement>) => {
           const next = EXAMPLES.find((e) => e.title === event.target.value);
@@ -318,10 +312,17 @@ function ExamplePicker({
         style={{ width: 260, flex: "0 0 auto" }}
       />
 
+      {/* The Badge takes no arbitrary attributes, so the tooltip hangs on a
+          wrapper rather than on the badge itself. */}
       {current.needsKey && (
-        <Badge tone="neutral" uppercase title="Needs your own model credential">
-          key
-        </Badge>
+        <span
+          title="Needs your own model credential"
+          style={{ display: "inline-flex", flex: "0 0 auto" }}
+        >
+          <Badge tone="neutral" mono>
+            key
+          </Badge>
+        </span>
       )}
     </Picker>
   );
@@ -335,9 +336,10 @@ function UseCasePicker({
   onSelect: (useCase: UseCase) => void;
 }) {
   return (
-    <Picker label="Use case" htmlFor="compare-use-case" blurb={current.blurb}>
+    <Picker label="Use case" id="compare-use-case" blurb={current.blurb}>
       <Select
-        id="compare-use-case"
+        size="sm"
+        aria-labelledby="compare-use-case-label"
         value={current.title}
         onChange={(event: React.ChangeEvent<HTMLSelectElement>) => {
           const next = USE_CASES.find(
@@ -361,11 +363,12 @@ function RivalPicker({
 }) {
   return (
     <>
-      <label className="hd-eyebrow" htmlFor="compare-framework">
+      <span id="compare-framework-label" className="hds-eyebrow">
         Against
-      </label>
+      </span>
       <Select
-        id="compare-framework"
+        size="sm"
+        aria-labelledby="compare-framework-label"
         value={current.name}
         onChange={(event: React.ChangeEvent<HTMLSelectElement>) => {
           const next = RIVALS.find(
@@ -380,15 +383,21 @@ function RivalPicker({
   );
 }
 
-/** A labelled select in the bar, with the one-line description beside it. */
+/**
+ * A labelled select in the bar, with the one-line description beside it.
+ *
+ * The label names the select through `aria-labelledby` rather than `htmlFor`:
+ * the vendored Select wraps its control in a label of its own, and two
+ * associated labels leave the accessible name to tree order.
+ */
 function Picker({
   label,
-  htmlFor,
+  id,
   blurb,
   children,
 }: {
   label: string;
-  htmlFor: string;
+  id: string;
   blurb: string;
   children: React.ReactNode;
 }) {
@@ -401,20 +410,20 @@ function Picker({
         minWidth: 0,
       }}
     >
-      <label className="hd-eyebrow" htmlFor={htmlFor}>
+      <span id={`${id}-label`} className="hds-eyebrow">
         {label}
-      </label>
+      </span>
 
       {children}
 
       <span
-        className="hd-playground-blurb"
+        className="hds-playground-blurb"
         style={{
           overflow: "hidden",
           textOverflow: "ellipsis",
           whiteSpace: "nowrap",
-          fontSize: "var(--fs-xs)",
-          color: "var(--text-muted)",
+          fontSize: "var(--fs-caption)",
+          color: "var(--text-subtle)",
         }}
       >
         {blurb}

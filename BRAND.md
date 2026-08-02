@@ -66,26 +66,27 @@ blanket promise.
 
 ---
 
-## Design systems: Heddle (landing) and FormFlow (everything else)
+## The design system
 
-The site is mid-migration between two vendored design systems, and the seam is
-deliberate:
+One vendored system now drives every page: the **Heddle design system**, in
+`website/ds-heddle/`, from the "Heddle Design System" Claude Design project
+(`2028ba65-c304-4d64-a4c6-09cbf88891be`). Three deviations from upstream are
+recorded in `website/ds-heddle/DEVIATIONS.md` — read it before changing
+anything under `ds-heddle/`. Its tokens are on `:root` and its element styles
+on `body`, exactly as upstream ships them.
 
-- **Heddle design system** — vendored into `website/ds-heddle/` from the
-  "Heddle Design System" Claude Design project
-  (`2028ba65-c304-4d64-a4c6-09cbf88891be`). The landing page and the 404 run on
-  it. Four deviations from upstream are recorded in
-  `website/ds-heddle/DEVIATIONS.md` — read it before changing anything under
-  `ds-heddle/`. Its tokens are scoped under a `.hds` wrapper class so the two
-  systems can coexist; the landing wraps itself in `<div className="hds">`.
-- **FormFlow** — still vendored verbatim in `website/ds/`, still driving the
-  playground, compare and docs (see `website/ds/DEVIATIONS.md`). Its dark
-  near-monochrome hairline language and pink accent are unchanged there.
-  Migrating those pages onto the Heddle system is open follow-up work; when it
-  lands, `ds/` goes away and the `.hds` scoping can revert to `:root`.
+The site ran two systems for a while: FormFlow in `website/ds/` drove the
+playground, compare and docs while the landing was rebuilt on Heddle, and the
+Heddle tokens were scoped under a `.hds` wrapper so the two could coexist
+without forty-two colliding property names. Both are gone — `ds/`, the `.hds`
+wrapper, the `hd-*` helper classes, the FormFlow `Backdrop`, `lucide-react`
+and the Inter font were all removed when the docs migrated. **If you find a
+`--brand-pink`, a `--fs-xs`, a `--text-faint` or an `hd-` class anywhere, it is
+a leftover and it resolves to nothing.** The pink accent is not part of this
+brand.
 
 heddle's own components live in `website/components/` and are built *from* the
-vendored systems — no site-specific code belongs inside either `ds/` dir.
+vendored system — no site-specific code belongs inside `ds-heddle/`.
 
 ### The Heddle system, in one idea
 
@@ -122,7 +123,7 @@ Light with `--ls-display` tracking; **IBM Plex Mono** (400/500) for code,
 commands, numbered eyebrows, stats and uppercase labels at `--ls-label`;
 **Instrument Serif** for editorial moments only — the dictionary definition and
 pull quotes. All three load through `next/font/google` in `app/layout.tsx`
-(deviation §3). Headings are sentence case and end in periods. Numbered mono
+(deviation §2). Headings are sentence case and end in periods. Numbered mono
 eyebrows mark the sections: `001 Inventory`, `002 Position`, …
 
 ### Geometry and depth
@@ -147,10 +148,14 @@ bounces. `prefers-reduced-motion` zeroes the duration tokens in
 
 The system's `Icon` is self-contained inline SVG paths (1.5px stroke, round
 caps, `currentColor`) in `ds-heddle/components/core/Icon.jsx` — no CDN, no
-icon-font. Mono glyphs are legitimate icons in this brand: `⚙` for tool calls,
-`$` prompts, `01`–`04` step numerals. There is no logo; the wordmark is the
-lowercase word "heddle" set in Plex Sans Medium. No emoji, ever. (FormFlow
-pages keep `lucide-react` through `ds/` — see its DEVIATIONS.md.)
+icon-font. It holds eleven glyphs drawn for a marketing page and takes no site
+additions, so what the playground needs beyond them (run controls, a file
+tree, the sun and moon) lives in `components/Glyph.tsx`: lucide paths on the
+same 24 grid at the same stroke, indistinguishable beside it. Reach for `Icon`
+first. Mono glyphs are legitimate icons in this brand: `⚙` for tool calls, `$`
+prompts, `01`–`04` step numerals. There is no logo; the wordmark is the
+lowercase word "heddle" set in Plex Sans Medium, which is all
+`components/Wordmark.tsx` renders. No emoji, ever.
 
 ### Accessibility
 
@@ -165,7 +170,7 @@ pages keep `lucide-react` through `ds/` — see its DEVIATIONS.md.)
 
 ## Page composition
 
-`app/page.tsx` assembles, in order (everything inside the `.hds` wrapper):
+`app/page.tsx` assembles, in order:
 
 1. **Nav** — sticky, paper-translucent, blurred; text wordmark, Docs / Spec /
    Playground links, mono theme-toggle button, GitHub
@@ -220,9 +225,27 @@ the anchor.
 The playground is not composed this way. It is an application: it fills the
 viewport, carries its own bar and status bar instead of the site's nav and
 footer, and has no numbered sections and no marketing copy. The wordmark in
-the bar is the way back to the site. Two panes scroll independently and the
-page itself does not scroll; below 900px they stack and it does. Its layout
-classes are the `hd-playground*` set in `globals.css`.
+the bar is the way back to the site, set the way the nav sets it. Two panes
+scroll independently and the page itself does not scroll; below 900px they
+stack and it does. Its layout classes are the `hds-playground*` and
+`hds-compare*` sets in `globals.css`.
+
+**The panes are the landing's navy code windows, given the whole screen.** The
+rule that code is always navy does not stop being true because the page is an
+application — the playground is mostly code, so paper is only the bar and the
+status bar, and everything between them is a window inset on the page ground
+with a 12px gutter. Inside a window: the tab strip is the hero's
+`flow.yaml · tools/ · README` strip made selectable, `--surface-code-alt`
+marking the one you are on; the body is `--surface-code`; every rule is
+`--border-inverse`, never `--border-hairline`. **Cyan is the accent inside a
+window and blurple is the accent on paper** — `--text-accent` has no contrast
+against navy, and `--cyan-500` is what the system already puts on a dark
+surface. The system's `Select`, `Input` and `IconButton` are paper controls
+and read as holes punched in a window, so the inverse versions in
+`components/playground/WindowControls.tsx` are what goes inside one, following
+`IconButton`'s own `inverse` variant. Panes carry `color-scheme: dark` and
+style their own scrollbars, because a light scrollbar drawn across the navy is
+the one thing the tokens cannot reach.
 
 It is one page with two views, switched in the bar and carried in the address
 as `?view=`. **Build** is the editor, the engine and the run log. **Compare**
@@ -269,9 +292,9 @@ it — unset, every link stays relative and nothing breaks.
 ## Theme
 
 Light is the default since the Heddle system landed — it is light-first, with
-a navy-black dark theme a toggle away. (Dark was the default in the FormFlow
-era; the playground and docs support both, so they follow the site-wide
-choice.) **next-themes is the single source of truth**, configured
+a navy-black dark theme a toggle away. (Dark was the default before the
+redesign; every page supports both now.) **next-themes is the single source
+of truth**, configured
 on fumadocs' `RootProvider` in `app/layout.tsx` — fumadocs already runs it for
 the `/docs` shell, so introducing a second theme system meant a toggle in the
 docs sidebar that did nothing. It writes `class="dark"` on `<html>`, which is
@@ -287,15 +310,36 @@ Both themes are supported everywhere. Check both before shipping a change.
 
 ## Stack
 
-Next.js 15 (static export) · React 19 · two vendored design systems —
-`website/ds-heddle/` (landing, 404) and `website/ds/` (playground, compare,
-docs) — both styled with CSS custom properties and inline styles rather than
-utility classes · Tailwind v4 retained **only** because fumadocs needs it ·
-fumadocs for `/docs`, remapped onto the FormFlow tokens in `globals.css` ·
-`lucide-react` for icons on the FormFlow pages. Deployed to Cloudflare Pages.
+Next.js 15 (static export) · React 19 · one vendored design system in
+`website/ds-heddle/`, styled with CSS custom properties and inline styles
+rather than utility classes · Tailwind v4 retained **only** because fumadocs
+needs it · fumadocs for `/docs`, remapped onto the system's tokens in
+`globals.css`. Deployed to Cloudflare Pages.
 
-Layout helpers in `globals.css` are prefixed `hd-` (FormFlow pages) and `hds-`
-(Heddle landing) and exist only for what inline styles cannot express — media
-queries. Everything else uses the systems' own tokens directly. The FormFlow
-`Backdrop` renders only on FormFlow routes, gated by
-`components/RouteBackdrop.tsx`.
+Layout helpers in `globals.css` are prefixed `hds-` and exist only for what
+inline styles cannot express — media queries, `::placeholder`,
+`::-webkit-scrollbar`, hover. Everything else uses the system's own tokens
+directly.
+
+### The docs shell
+
+`/docs` is fumadocs, which draws its own chrome from Tailwind utilities bound
+to `--color-fd-*`. Those are remapped onto the system's aliases at the top of
+`globals.css`, and **that block is how the docs inherit the brand** — both
+themes come free, because every alias on the right flips with `html.dark`. The
+`#nd-*` rules under it are only the shape on top: hairline section rules above
+each `h2`, mono uppercase for the sidebar groups and the table of contents,
+navy code windows. They are the reason the tokens had to go back on `:root`:
+Radix portals the search dialog and the mobile sidebar to `<body>`, where a
+wrapper class cannot reach them.
+
+Two fumadocs details are load-bearing. Its markup is not a stable interface,
+so the selectors that catch the sidebar groups (`#nd-sidebar p`) and the
+table-of-contents title (`#nd-toc h3`) were checked against the rendered tree
+rather than guessed from utility classes — re-check them after a fumadocs
+upgrade. And the TOC lives inside `#nd-page`, so its title rule has to come
+*after* the `#nd-page` heading rules it ties with.
+
+Both shiki themes in `source.config.ts` are `github-dark`, on purpose: fumadocs
+would otherwise swap in a light theme with the site theme, and code is always
+navy here.

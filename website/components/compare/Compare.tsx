@@ -3,7 +3,8 @@
 import { useState } from "react";
 import CodePane from "./CodePane";
 import FileTree from "./FileTree";
-import { Button, Icon } from "@/ds";
+import Glyph from "../Glyph";
+import { Icon } from "@/ds-heddle";
 import { GITHUB_URL } from "@/lib/constants";
 import {
   countLines,
@@ -92,13 +93,14 @@ function PaneHeading({
     <div
       style={{
         display: "flex",
-        minHeight: 44,
+        minHeight: 40,
         flexShrink: 0,
         alignItems: "center",
         justifyContent: "space-between",
         gap: "var(--space-4)",
         padding: "0 var(--space-5)",
-        borderBottom: "1px solid var(--border-hairline)",
+        borderBottom: "1px solid var(--border-inverse)",
+        background: "var(--surface-code-alt)",
       }}
     >
       <a
@@ -107,15 +109,15 @@ function PaneHeading({
           ? { target: "_blank", rel: "noopener noreferrer" }
           : {})}
         title={`${framework.name} documentation`}
-        className="ff-text-transition"
         style={{
           display: "inline-flex",
           alignItems: "center",
           gap: "var(--space-2)",
-          fontSize: "var(--fs-sm)",
-          fontWeight: "var(--fw-semibold)",
-          letterSpacing: "var(--tracking-tight)",
-          color: "var(--text-strong)",
+          fontFamily: "var(--font-mono)",
+          fontSize: "var(--fs-code-sm)",
+          letterSpacing: "var(--ls-mono)",
+          color: "var(--code-fg)",
+          textDecoration: "none",
         }}
       >
         {accent && (
@@ -125,24 +127,24 @@ function PaneHeading({
               width: 6,
               height: 6,
               borderRadius: "50%",
-              background: "var(--brand-pink)",
+              background: "var(--cyan-500)",
             }}
           />
         )}
         {framework.name}
-        <span aria-hidden style={{ color: "var(--text-faint)" }}>
-          <Icon name="arrow-up-right" size={12} />
+        <span aria-hidden style={{ color: "var(--code-punct)" }}>
+          <Glyph name="arrowUpRight" size={12} />
         </span>
       </a>
 
       <span
         style={{
           fontFamily: "var(--font-mono)",
-          fontSize: "var(--fs-2xs)",
+          fontSize: "var(--fs-label)",
           fontVariantNumeric: "tabular-nums",
           textTransform: "uppercase",
-          letterSpacing: "var(--tracking-widest)",
-          color: "var(--text-faint)",
+          letterSpacing: "var(--ls-label)",
+          color: "var(--slate-500)",
           whiteSpace: "nowrap",
         }}
       >
@@ -166,7 +168,7 @@ function GapPane({
   accent: boolean;
 }) {
   return (
-    <section aria-label={framework.name} className="hd-playground-pane">
+    <section aria-label={framework.name} className="hds-playground-pane">
       <PaneHeading
         framework={framework}
         accent={accent}
@@ -179,9 +181,9 @@ function GapPane({
             margin: 0,
             padding: "var(--space-5)",
             maxWidth: "56ch",
-            fontSize: "var(--fs-xs)",
-            lineHeight: "var(--lh-relaxed)",
-            color: "var(--text-muted)",
+            fontSize: "var(--fs-body-sm)",
+            lineHeight: 1.7,
+            color: "var(--slate-300)",
           }}
         >
           {reason}
@@ -216,7 +218,7 @@ function ImplementationPane({
   const packages = framework.packages.length;
 
   return (
-    <section aria-label={framework.name} className="hd-playground-pane">
+    <section aria-label={framework.name} className="hds-playground-pane">
       <PaneHeading
         framework={framework}
         accent={accent}
@@ -227,7 +229,7 @@ function ImplementationPane({
         }
       />
 
-      <div className="hd-compare-pane-body">
+      <div className="hds-compare-pane-body">
         <FileTree
           files={implementation.files}
           active={file.name}
@@ -246,9 +248,9 @@ function ImplementationPane({
           display: "flex",
           alignItems: "center",
           gap: "var(--space-4)",
-          padding: "var(--space-3) var(--space-5)",
-          borderTop: "1px solid var(--border-hairline)",
-          background: "var(--surface-panel)",
+          padding: "var(--space-2) var(--space-5)",
+          borderTop: "1px solid var(--border-inverse)",
+          background: "var(--surface-code-alt)",
         }}
       >
         <div
@@ -262,9 +264,9 @@ function ImplementationPane({
           <span
             aria-hidden
             style={{
-              color: "var(--brand-pink)",
+              color: "var(--blurple-400)",
               flex: "0 0 auto",
-              marginTop: 1,
+              marginTop: 3,
             }}
           >
             <Icon name="terminal" size={13} />
@@ -273,9 +275,9 @@ function ImplementationPane({
             style={{
               margin: 0,
               fontFamily: "var(--font-mono)",
-              fontSize: "var(--fs-2xs)",
-              lineHeight: "var(--lh-relaxed)",
-              color: "var(--text-muted)",
+              fontSize: "var(--fs-code-sm)",
+              lineHeight: "var(--lh-code)",
+              color: "var(--slate-300)",
               whiteSpace: "pre",
             }}
           >
@@ -287,17 +289,32 @@ function ImplementationPane({
             example, so the reader can run it here instead of installing
             anything. No other framework's column can make that offer. */}
         {onOpen && (
-          <Button
-            size="sm"
-            variant="subtle"
-            shape="rounded"
-            icon="braces"
+          <button
+            type="button"
             onClick={onOpen}
             title="Load this flow into the editor"
-            style={{ flex: "0 0 auto", marginLeft: "auto" }}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "var(--space-2)",
+              flex: "0 0 auto",
+              marginLeft: "auto",
+              height: 28,
+              padding: "0 10px",
+              cursor: "pointer",
+              background: "transparent",
+              border: "1px solid var(--border-inverse)",
+              borderRadius: "var(--radius-control)",
+              color: "var(--cyan-300)",
+              fontFamily: "var(--font-mono)",
+              fontSize: "var(--fs-code-sm)",
+              whiteSpace: "nowrap",
+              transition: "var(--transition-control)",
+            }}
           >
+            <Glyph name="braces" size={13} />
             Open in the editor
-          </Button>
+          </button>
         )}
       </div>
     </section>
@@ -346,12 +363,13 @@ export function CompareLedger({
       style={{
         flexShrink: 0,
         borderTop: "1px solid var(--border-hairline)",
-        background: "var(--surface-chrome)",
-        backdropFilter: "blur(var(--blur-chrome))",
+        background: "color-mix(in srgb, var(--surface-page) 85%, transparent)",
+        backdropFilter: "blur(12px)",
+        WebkitBackdropFilter: "blur(12px)",
       }}
     >
-      <div className="hd-compare-ledger-wrap">
-        <table className="hd-compare-ledger">
+      <div className="hds-compare-ledger-wrap">
+        <table className="hds-compare-ledger">
           <caption className="sr-only">
             heddle compared with {rival.name}
           </caption>
@@ -363,9 +381,9 @@ export function CompareLedger({
               <th
                 scope="col"
                 style={{
-                  fontSize: "var(--fs-xs)",
-                  fontWeight: "var(--fw-semibold)",
-                  color: "var(--brand-pink)",
+                  fontSize: "var(--fs-body-sm)",
+                  fontWeight: "var(--fw-medium)",
+                  color: "var(--text-accent)",
                 }}
               >
                 heddle
@@ -373,8 +391,8 @@ export function CompareLedger({
               <th
                 scope="col"
                 style={{
-                  fontSize: "var(--fs-xs)",
-                  fontWeight: "var(--fw-semibold)",
+                  fontSize: "var(--fs-body-sm)",
+                  fontWeight: "var(--fw-medium)",
                   color: "var(--text-strong)",
                 }}
               >
@@ -386,14 +404,16 @@ export function CompareLedger({
             {rows.map(({ term, mine, theirs, prose }) => {
               const style = {
                 fontFamily: prose ? "var(--font-sans)" : "var(--font-mono)",
-                fontSize: "var(--fs-xs)",
-                lineHeight: "var(--lh-relaxed)",
+                fontSize: prose
+                  ? "var(--fs-body-sm)"
+                  : "var(--fs-code-sm)",
+                lineHeight: 1.6,
               };
               return (
                 <tr key={term}>
                   <th
                     scope="row"
-                    className="hd-eyebrow"
+                    className="hds-eyebrow"
                     style={{ whiteSpace: "nowrap" }}
                   >
                     {term}
@@ -424,16 +444,16 @@ export function CompareLedger({
           margin: 0,
           padding: "var(--space-3) var(--space-5)",
           borderTop: "1px solid var(--border-hairline)",
-          fontSize: "var(--fs-xs)",
-          lineHeight: "var(--lh-relaxed)",
+          fontSize: "var(--fs-caption)",
+          lineHeight: 1.6,
           color: "var(--text-muted)",
         }}
       >
         <span
           aria-hidden
-          style={{ color: "var(--brand-pink)", flex: "0 0 auto", marginTop: 2 }}
+          style={{ color: "var(--text-accent)", flex: "0 0 auto", marginTop: 2 }}
         >
-          <Icon name="scroll-text" size={14} />
+          <Glyph name="scrollText" size={14} />
         </span>
         <span>
           Every column is the shortest version that framework&apos;s own
@@ -444,7 +464,7 @@ export function CompareLedger({
             href={`${GITHUB_URL}/issues/new`}
             target="_blank"
             rel="noopener noreferrer"
-            style={{ color: "var(--text-body)", textDecoration: "underline" }}
+            style={{ color: "var(--text-link)", textDecoration: "underline" }}
           >
             Open an issue
           </a>{" "}

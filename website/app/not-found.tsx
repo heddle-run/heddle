@@ -5,7 +5,7 @@ import { Button, Icon } from "@/ds-heddle";
 
 export default function NotFound() {
   return (
-    <div className="hds" style={{ minHeight: "100vh" }}>
+    <div style={{ minHeight: "100vh" }}>
       <Nav />
 
       <main>

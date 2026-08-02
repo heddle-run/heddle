@@ -1,6 +1,7 @@
 "use client";
 
-import { Icon } from "@/ds";
+import Glyph from "../Glyph";
+import { Icon } from "@/ds-heddle";
 import type { CompareFile } from "@/lib/compare";
 
 interface Entry {
@@ -61,16 +62,16 @@ export default function FileTree({
   label: string;
 }) {
   return (
-    <nav aria-label={label} className="hd-compare-tree">
+    <nav aria-label={label} className="hds-compare-tree">
       {group(files).map((entry) => (
         <div
           key={entry.directory ?? "/"}
-          className="hd-compare-tree-group"
+          className="hds-compare-tree-group"
           data-dir={entry.directory}
         >
           {entry.directory && (
-            <div className="hd-compare-tree-dir">
-              <Icon name="chevron-down" size={11} />
+            <div className="hds-compare-tree-dir">
+              <Icon name="chevronDown" size={11} />
               <span>{entry.directory}</span>
             </div>
           )}
@@ -79,17 +80,17 @@ export default function FileTree({
             <button
               key={file.name}
               type="button"
-              className="hd-compare-tree-file"
+              className="hds-compare-tree-file"
               aria-current={file.name === active ? "true" : undefined}
               onClick={() => onSelect(file.name)}
               title={file.name}
             >
-              <span aria-hidden className="hd-compare-tree-icon">
-                <Icon name="file-code" size={12} />
+              <span aria-hidden className="hds-compare-tree-icon">
+                <Glyph name="fileCode" size={12} />
               </span>
-              <span className="hd-compare-tree-leaf">
+              <span className="hds-compare-tree-leaf">
                 {entry.directory && (
-                  <span className="hd-compare-tree-prefix">
+                  <span className="hds-compare-tree-prefix">
                     {entry.directory}/
                   </span>
                 )}
