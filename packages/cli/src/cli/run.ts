@@ -46,6 +46,7 @@ import {
 } from '@heddle-run/core';
 import { mergeBundleOptions, openBundle, type OpenedBundle } from './bundles.js';
 import { frameLine, resolveEncoder, type EncoderFactory } from './encoders.js';
+import { askForEnvRefs } from './env-prompt.js';
 import { createProgressWriter, renderEvent } from './progress.js';
 import { selectSession, type SelectedSession, type SessionFlags } from './sessions.js';
 
@@ -54,6 +55,7 @@ const DEFAULT_INPUT_KEY = 'query';
 interface RunOptions extends SandboxOptions, WorkspaceOptions, SessionFlags {
   toolsDir?: string;
   mountTools?: boolean;
+  askEnv?: boolean;
   input?: string;
   interactive?: boolean;
   durable?: boolean;
@@ -134,6 +136,12 @@ export const runCommand = new Command('run')
   .option(
     '--no-stream',
     'Ask the model for one buffered response instead of a token stream',
+  )
+  .option(
+    '--no-ask-env',
+    'Never ask for an environment variable the spec names and this shell does ' +
+      'not have. Without it a terminal is asked before the run starts; the ' +
+      'answer lives in this process only',
   )
   .option(
     '--protocol <name>',
@@ -296,6 +304,12 @@ async function runFlow(
 
   const graph = compile(flow, deps);
   validate(graph);
+
+  // After everything that can be decided from the spec and the flags, and
+  // before anything that runs: a spec that will be refused should be refused
+  // without first asking somebody to type a key into it. Also before the chat
+  // UI, which takes the terminal this question is asked on.
+  if (options.askEnv !== false) await askForEnvRefs(flow);
 
   if (interactive) {
     await startChatSession(flowPath, flow, graph, runnerOpts, plugins, session);

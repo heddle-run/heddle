@@ -47,6 +47,10 @@ resolvable one, local models included:
 export OPENAI_API_KEY=sk-...
 ```
 
+Or do not: on a terminal, `run` asks for the variables a spec names and the
+shell does not have before it starts, hidden as you type and kept in that
+process only.
+
 ```bash
 npx @heddle-run/cli run my-project/flow.json \
   --tools-dir my-project/tools \

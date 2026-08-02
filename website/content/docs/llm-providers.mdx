@@ -106,6 +106,26 @@ compile time, and fails with a clear error if the variable is unset. A value wit
 prefix is used literally. Because resolution is deferred, `heddle validate` never reaches a
 credential: a spec naming `$OPENAI_API_KEY` validates with nothing in the environment.
 
+`heddle run` looks ahead of that. Before the run starts it reads every variable the spec's
+`api_key` fields name and asks for the ones this shell does not have:
+
+```
+OPENAI_API_KEY is not set, and this flow reads it from the environment.
+An answer is used for this run only — it is not echoed, and it is not written anywhere.
+Press enter to leave one unset.
+
+  OPENAI_API_KEY:
+```
+
+What you type is used by that process and nothing else: it is not echoed, and nothing is
+written to disk. Export the variable to stop being asked. Pressing enter leaves it unset
+and the run goes ahead — a variable named on a branch the run never takes is one the run
+never needs, and whatever is skipped fails where it always did.
+
+The question needs a terminal on both stdin and stderr, so a pipeline, a CI job, a server
+or a `--protocol` stream is never asked and fails at the first model call exactly as
+before. [`--no-ask-env`](/docs/cli-reference#heddle-run) turns it off on a terminal too.
+
 <Callout type="warn">
 **This resolution is conditional, and the condition is who wrote the spec.** A server
 started with `--allow-request-code` refuses `$VAR` in a submitted spec entirely. The
