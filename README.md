@@ -287,6 +287,12 @@ The builtin names and extensions are reserved, and two plugins claiming the
 same name or extension are refused at load — what a spec file means may not
 depend on plugin load order.
 
+`parse` does not have to be a decoder: a format for a *different spec* is a
+translator into Agent Spec's vocabulary. See
+[examples/docker-agent](examples/docker-agent) for a worked one that reads a
+[Docker agent file](https://docs.docker.com/ai/docker-agent/configuration/overview/)
+and runs it as the flow it describes.
+
 ### Node Types
 
 | Node | Description |
