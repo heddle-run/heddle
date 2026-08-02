@@ -748,19 +748,6 @@ body {
   }
 }
 
-.hds-inventory-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 40px;
-  align-items: start;
-}
-@media (min-width: 900px) {
-  .hds-inventory-grid {
-    grid-template-columns: minmax(0, 1.5fr) minmax(0, 0.8fr);
-    gap: 56px;
-  }
-}
-
 .hds-inventory-list {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -769,18 +756,6 @@ body {
   .hds-inventory-list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     column-gap: 44px;
-  }
-}
-
-.hds-stats {
-  display: grid;
-  gap: 28px;
-  padding-top: 18px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-@media (min-width: 900px) {
-  .hds-stats {
-    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -885,4 +860,14 @@ body {
    Overridden here rather than in the vendored tokens. */
 html.dark .hds {
   --gradient-warp: radial-gradient(80% 60% at 50% 0%, #111111 0%, #000000 70%);
+}
+
+/* The code windows, terminal and install command border with --border-inverse.
+   In dark theme upstream flips that alias to a light value (#e6ebf1 — it is
+   meant for bordering inverse surfaces, which are white in dark mode), so the
+   always-dark windows ended up with white borders. The design template gives
+   its windows their own border that stays dark: #1f4468 light, #262626 dark.
+   Pin the dark value here, matching the template's --t-winborder. */
+html.dark .hds {
+  --border-inverse: #262626;
 }
