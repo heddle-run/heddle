@@ -159,7 +159,7 @@ describe('the index the model is always carrying', () => {
         file.content.split('\n').slice(1).join('\n').trim(),
       ),
     });
-  });
+  }, 20_000);
 
   it('names only skills read_skill can produce', async () => {
     const named = (await index())

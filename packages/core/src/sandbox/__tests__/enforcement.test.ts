@@ -82,11 +82,13 @@ describe.runIf(backendAvailable())('sandbox enforcement', () => {
     return result.output as Record<string, unknown>;
   }
 
+  // The first sandboxed spawn pays the backend's cold start, which under a
+  // loaded full-suite run has crossed the default five seconds.
   it('passes input and output through the sandbox boundary', async () => {
     const out = await run();
     expect(out.echoed).toEqual({ hello: 'world' });
     expect(out.marker).toBe('1');
-  });
+  }, 20_000);
 
   it('denies access to the real home directory', async () => {
     const out = await run();

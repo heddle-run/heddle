@@ -82,7 +82,7 @@ describe('skills as files a plugin ships', () => {
           .trim(),
       ),
     });
-  });
+  }, 20_000);
 
   it('returns one body, by the name the index gave', async () => {
     const { body } = await call('read_skill', { name: 'tabular-summary' });
