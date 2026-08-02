@@ -201,6 +201,16 @@ export interface PluginStoreDef extends PluginComponentDef {
   createStore(config: Record<string, unknown>): SessionStore;
 }
 
+/**
+ * What an in-process plugin is: a named bag of definitions, one array per kind
+ * of thing a plugin can provide — node types, transforms, providers, encoders,
+ * middleware, stores, plus the tools and files it ships.
+ *
+ * This is the shape a JavaScript plugin module's default export has, and the
+ * in-process twin of the manifest an out-of-process plugin declares. Nothing
+ * here runs at load time: each definition is a factory heddle calls when a
+ * spec (or, for middleware, the operator) names its componentType.
+ */
 export interface HeddlePlugin {
   name: string;
   version: string;
@@ -246,6 +256,11 @@ export interface WorkspaceFile {
   dest: string;
 }
 
+/**
+ * The identity function, exported for its type: wrapping a plugin object in
+ * `definePlugin` gets an author completion and type-checking on the whole
+ * {@link HeddlePlugin} shape without writing the type annotation themselves.
+ */
 export function definePlugin(plugin: HeddlePlugin): HeddlePlugin {
   return plugin;
 }

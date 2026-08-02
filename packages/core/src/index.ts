@@ -57,6 +57,8 @@ export { CompiledGraph } from './graph/types.js';
 export type { CompiledNode, DataSource } from './graph/types.js';
 
 export { Runner } from './runner/runner.js';
+export { runFlow } from './run-flow.js';
+export type { RunFlowOptions } from './run-flow.js';
 export { DEFAULT_RUNNER_OPTIONS } from './runner/options.js';
 export type {
   CheckpointSink,
@@ -151,7 +153,7 @@ export {
   checkMiddlewareConfig,
   MAX_RETRY_DELAY,
 } from './plugin/middleware.js';
-export type { ChainVerdict } from './plugin/middleware.js';
+export type { ChainBefore, ChainVerdict } from './plugin/middleware.js';
 export { SEAMS, SEAM_NAMES, isSeam } from './plugin/seams.js';
 export type {
   AfterAction,
@@ -197,6 +199,7 @@ export {
 export type {
   AfterParams,
   AfterVerdict,
+  SeamSubject,
   ApplyParams,
   BeforeParams,
   BeforeVerdict,
@@ -229,6 +232,9 @@ export { validateManifest } from './plugin/manifest.js';
 export type {
   PluginManifest,
   ManifestComponent,
+  ManifestFile,
+  ManifestKind,
+  ManifestTool,
   JsonSchemaFragment,
 } from './plugin/manifest.js';
 export { checkSchema } from './plugin/schema.js';
@@ -259,6 +265,7 @@ export type {
   TransformPhase,
   TransformResult,
   WireFrame,
+  WorkspaceFile,
 } from './plugin/types.js';
 
 export {
@@ -344,6 +351,7 @@ export {
   isBuiltinConfigType,
   providerFor,
 } from './llm/provider.js';
+export type { ProviderOptions } from './llm/provider.js';
 // The egress policy, which decides where a spec heddle did not write may send
 // heddle's own requests. Exported because an embedder accepting submitted specs
 // needs the same rule the server applies.

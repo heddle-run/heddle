@@ -1,11 +1,11 @@
 ---
 title: Plugins
-description: Add component types, answer model calls, intercept failures, or render a run — in any language, in a process of their own.
+description: Add component types, answer model calls, intercept failures, or render a run, in any language and in a process of their own.
 ---
 
 A plugin teaches heddle something the engine does not ship: a node type, a message
 transform, a model provider, an error policy, a wire format, a tool. Agent Spec's own
-plugin system covers serialisation only — it teaches a deserialiser to read a custom
+plugin system covers serialisation only: it teaches a deserialiser to read a custom
 `component_type` and says nothing about how to run it. heddle's covers both halves.
 
 Plugins are named by whoever runs heddle, never inside a flow document. Sharing a spec
@@ -14,7 +14,7 @@ already loaded; it cannot ask for anything to be loaded.
 
 ## The seven kinds
 
-What distinguishes them is not what they do — it is **who chooses them**. That decides
+What distinguishes them is not what they do but **who chooses them**. That decides
 where a plugin's name may appear, and it is the first thing to settle when you are
 deciding what to write.
 
@@ -24,17 +24,17 @@ deciding what to write.
 | `transform` | the spec | an entry in `Agent.transforms` |
 | `provider` | the spec | an `llm_config`, beside `OpenAiConfig` |
 | `component` | the spec | any other custom component the document names |
-| `middleware` | the operator | nothing — no document may name one |
-| `store` | the operator | nothing — `--session-store <ComponentType>` selects it |
+| `middleware` | the operator | nothing; no document may name one |
+| `store` | the operator | nothing; `--session-store <ComponentType>` selects it |
 | `encoder` | the request | `?protocol=<name>` on a server run |
 
 The first four are written into the document, so a flow's author picks them. A
 middleware runs on every node of every flow whether that flow asked or not, which is
 exactly why it is installed by whoever runs heddle rather than chosen per run. A store
-holds every conversation the deployment has, which is why it is the operator's too — and
+holds every conversation the deployment has, which is why it is the operator's too, and
 why only one may be installed: a process writes its conversations to one place, and
 there is no flag that would mean "both". An encoder renders the run for a client, and two
-clients hitting one flow can legitimately want different renderings — so the request
+clients hitting one flow can legitimately want different renderings, so the request
 picks.
 
 Tools are not a kind. A tool is already a first-class thing with its own namespace that
@@ -42,14 +42,14 @@ a spec writes into, so a plugin contributing tools needs no component type at al
 [Tools](/docs/tools).
 
 Neither are [input formats](/docs/plugins/formats), the mirror of an encoder: where an
-encoder renders the run's output into another wire format, an input format reads the spec
-document in from one — chosen by the file's extension, `--format`, or the request's
-`"format"` field, before any component of any kind is resolved.
+encoder renders the run's output into another wire format, an input format reads the
+spec document in from one. It is chosen by the file's extension, `--format`, or the
+request's `"format"` field, before any component of any kind is resolved.
 
 Neither are [`files`](/docs/plugins/manifest#files), the other thing a plugin ships:
 whatever it declares there is copied into every node's [workspace](/docs/tools#the-workspace).
 Nothing chooses them, there is no verb behind them, and heddle reads them off the manifest
-without starting anything — a skill pack is a plugin with two tools and a directory.
+without starting anything. A skill pack is a plugin with two tools and a directory.
 
 ## Two ways to write one
 
@@ -61,7 +61,7 @@ if you would run its author's code directly.
 
 **In process.** A module that default-exports a plain object. heddle imports it, so the
 plugin is the same program as heddle. It is the shorter path and the one the examples
-use — and it imports nothing: a plugin, like a flow, is something heddle reads, not
+use, and it imports nothing: a plugin, like a flow, is something heddle reads, not
 something built on heddle's types.
 
 ```js
@@ -85,7 +85,7 @@ export default {
 heddle run flow.json --plugin ./my-plugin.js
 ```
 
-If you want your editor to check the shape, `@heddle/core` exports `definePlugin` — an
+If you want your editor to check the shape, `@heddle/core` exports `definePlugin`, an
 identity function that only adds types. Wrapping the object above in it changes nothing
 at run time.
 
@@ -114,7 +114,7 @@ Two properties follow from the process boundary, and neither is available in pro
   answers what the plugin provides, so `heddle validate` starts nobody's process.
 
 It also means a plugin can be written in any language with a JSON parser and a read
-loop — the same bar a tool already clears.
+loop, the same bar a tool already clears.
 
 ## What a plugin may ask heddle to do
 
@@ -135,7 +135,7 @@ and re-granting them over RPC would hand back exactly what the boundary bought.
 
 `callModel` is the one worth understanding before you use it. **The plugin composes the
 request; the spec chooses the model.** The call goes to the `llm_config` on the plugin's
-own component — the same field an agent carries — so a plugin ships no SDK, holds no
+own component, the same field an agent carries, so a plugin ships no SDK, holds no
 credential, and cannot send a request anywhere the document does not say it will go.
 
 ```yaml

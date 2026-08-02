@@ -13,6 +13,15 @@ export interface NodeExecutor {
   branch(): string;
 }
 
+/**
+ * Everything a node's executor may need that is not in the flow document: the
+ * tool registry and executor, the plugin registry, the model client, the event
+ * handler. Handed to `compile`, which binds it into every executor it builds —
+ * so this is the seam an embedder injects at, and every field is optional
+ * because every capability is. A test swaps `createProvider` for a stub model
+ * and `toolExecutor` for a recorder; a flow that calls no tools and no model
+ * runs fine against `{}`.
+ */
 export interface Dependencies {
   toolExecutor?: Executor;
   toolRegistry?: Registry;

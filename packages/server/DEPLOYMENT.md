@@ -1,7 +1,7 @@
 # Deploying heddle-server as a public playground
 
 This describes running `heddle-server --allow-request-code` where anyone can
-reach it — a service that compiles and executes flows, tool scripts and plugins
+reach it: a service that compiles and executes flows, tool scripts and plugins
 written by its callers.
 
 > **Trusted callers instead?** With `--allow-request-code` off, none of this is
@@ -10,12 +10,12 @@ written by its callers.
 ## What confines what
 
 Submitted code arrives in two kinds, and each is confined by something
-specific. This used to be one blunt rule — a container per run — because
+specific. This used to be one blunt rule, a container per run, because
 plugins ran inside the server process. They no longer do.
 
 | | Mechanism | Confined by |
 |---|---|---|
-| **Tool scripts** | executed as subprocesses | `--safe`: no `$HOME`, no writes outside the run workspace, environment cut to what `--allow-env` names. Note a tool can exec a peer from the workspace's `bin`, so a `toolCall` middleware bounds the *model*, not the machine — `--no-mount-tools` if you need it to bound both |
+| **Tool scripts** | executed as subprocesses | `--safe`: no `$HOME`, no writes outside the run workspace, environment cut to what `--allow-env` names. Note a tool can exec a peer from the workspace's `bin`, so a `toolCall` middleware bounds the *model*, not the machine; use `--no-mount-tools` if you need it to bound both |
 | **Plugin modules** | executed in their own process | own process, none of the server's environment, killed when the run ends |
 | **The spec itself** | parsed as data | `$VAR` refused, so it cannot read this process's environment |
 
@@ -29,7 +29,7 @@ this document used to say:
 
 heddle loaded a plugin with a dynamic `import()`, so the plugin *was* the
 server: same heap, same globals, same `process.env`. Three ordinary requests
-were enough to exploit it — one plants a hook on a global, an unrelated run
+were enough to exploit it: one plants a hook on a global, an unrelated run
 passes through, the first reads back what the hook captured.
 
 A submitted plugin now declares its shape in a manifest (data, so parsing
@@ -52,7 +52,7 @@ variable exists or not.
 
 With `--allow-request-code` on, every executable in `--tools-dir` is something
 you are offering your callers. A submitted flow can name one from a `ToolNode`,
-and a submitted plugin granted `runTool` can name one too — with input of its
+and a submitted plugin granted `runTool` can name one too, with input of its
 own choosing and without the flow mentioning it, since a plugin's reverse call
 is checked against the tool registry and never against the spec.
 
@@ -71,8 +71,8 @@ llm_config:
   api_key: sk-the-callers-own-key
 ```
 
-That is a better arrangement than an operator key behind a proxy — no shared
-quota, no spend to meter, nothing to steal — but it moves an obligation onto
+That is a better arrangement than an operator key behind a proxy, with no shared
+quota, no spend to meter and nothing to steal, but it moves an obligation onto
 you, because a caller's credential now transits your infrastructure:
 
 - **TLS is not optional.** The key is in the request body.
@@ -82,8 +82,8 @@ you, because a caller's credential now transits your infrastructure:
   be told where it goes.
 
 The key is in the engine's memory for the duration of the run. Nothing
-submitted can read it — plugins are out of process, tools get a stripped
-environment — but a core dump or a heap snapshot would contain it.
+submitted can read it, since plugins are out of process and tools get a stripped
+environment, but a core dump or a heap snapshot would contain it.
 
 ## Egress is the remaining hole
 
@@ -93,7 +93,7 @@ open proxy out of it.
 
 - **Deny `169.254.169.254`.** On a cloud host this is the instance metadata
   service, one HTTP GET from credentials for the whole account. Deny only that
-  address — on OCI, `169.254.2.x` serves iSCSI boot volumes and blocking the
+  address. On OCI, `169.254.2.x` serves iSCSI boot volumes and blocking the
   range detaches the root disk.
 - **Deny RFC1918 and anything else internal.**
 - **Allow the public internet**, or an allow-list of model providers if you
@@ -120,7 +120,7 @@ docker run --rm \
 | Flag | Why |
 |---|---|
 | `--read-only` | Submitted code cannot modify the image it runs from. |
-| `mode=1777` on the run dir | The tmpfs shadows the image's directory; without a mode the server cannot create run directories at all. **Not `noexec`** — tool scripts are executed from there by design. |
+| `mode=1777` on the run dir | The tmpfs shadows the image's directory; without a mode the server cannot create run directories at all. **Not `noexec`**, since tool scripts are executed from there by design. |
 | `noexec` on `/tmp` | Denies the obvious drop-and-run path. |
 | `--cap-drop ALL` | Nothing here needs a capability. |
 | `--pids-limit` | A fork bomb is three characters of shell. Size it above `--max-concurrent` × the processes a run can spawn. |
@@ -132,8 +132,8 @@ attack on this service is not an escape, it is `:(){ :|:& };:`.
 ### `--safe` needs a runtime that permits nested namespaces
 
 `--safe --sandbox=bubblewrap` creates a user namespace and mounts `/proc` in
-it. Under runc with a hardened security context that is denied — `bwrap: Can't
-mount proc` — and dropping capabilities or relaxing seccomp does not change it.
+it. Under runc with a hardened security context that is denied, with `bwrap: Can't
+mount proc`, and dropping capabilities or relaxing seccomp does not change it.
 
 Verified behaviour:
 
@@ -174,17 +174,17 @@ gVisor needs `--security-opt label=disable` where SELinux is enforcing, and
 `--mount` and `--workspace` are yours, at startup, like `--safe`. A request cannot name
 either, for the same reason it cannot name a sandbox: what is in the working directory of
 every node of every run is not a caller's decision. A **submitted plugin declaring `files`
-is refused with a 400**, and the refusal is about the field rather than the plugin — a
+is refused with a 400**, and the refusal is about the field rather than the plugin: a
 submitted plugin is a module with no directory, so there is nothing for its paths to
 resolve against, and its files would land in every node's workspace before the flow starts.
 
 Two things to size if you use `--mount`. Each `ro` mount is copied into every node's
-workspace, so a large tree is paid for on every node of every run — `--mount-max-bytes`
+workspace, so a large tree is paid for on every node of every run. `--mount-max-bytes`
 (64 MiB) and `--mount-max-entries` (4096) are the ceilings, and they are checked at startup
 rather than mid-run. And a `rw` mount is shared with **every run this server executes**:
 last writer wins, deletions do not propagate, and heddle arbitrates nothing between two
 concurrent runs touching the same file. On a server that accepts submitted code, a `rw`
-mount is a shared writable directory reachable by any caller — treat it as one.
+mount is a shared writable directory reachable by any caller. Treat it as one.
 
 `--workspace <dir>` is the same warning in a different shape: every run of every request
 writes there and nothing is cleaned up. It is a debugging and archival flag, not a
@@ -201,7 +201,7 @@ over. A submitted plugin gets its own process per run, an empty environment and
 a kill when the run ends. An installed one is started once and serves every
 request, holds whatever capabilities its manifest declares, and runs for as long
 as the server does. It is the operator's code from the operator's filesystem,
-trusted the way `--tools-dir` is trusted — so install one you would be willing
+trusted the way `--tools-dir` is trusted, so install one you would be willing
 to `import()` into this process, because the isolation here is buying you
 concurrency, not containment.
 
@@ -212,7 +212,7 @@ Two consequences to size for:
   Nothing in heddle can catch this; it is the plugin's own invariant.
 - **A slow plugin is a slow server.** Every run's middleware call goes to the
   same process, and each holds a concurrency slot while outstanding.
-  `--plugin-timeout` bounds one call and kills a plugin that overruns — which
+  `--plugin-timeout` bounds one call and kills a plugin that overruns, which
   fails every other run then in flight against it, because they were talking to
   the process that just went away. The next call starts a fresh one, so this
   costs a moment rather than the deployment; a plugin that reads `ctx.signal`
@@ -221,7 +221,7 @@ Two consequences to size for:
 heddle refuses the one case it can see: an installed plugin asking to run a tool
 without saying which call it is acting for is refused rather than served from
 whichever run reached the process first. Its stderr goes to this server's log
-rather than into a caller's error body, for the same reason — one process's
+rather than into a caller's error body, for the same reason: one process's
 output spans every run.
 
 ## Deploying from CI
@@ -249,7 +249,7 @@ reading as a green one.
 
 The host holds its own pull credential, the same way it already holds the model
 key in `/etc/heddle/llm.env`. A registry token passed over `ssh` would sit in the
-remote process's argv, readable by anything that got as far as running `ps` — on
+remote process's argv, readable by anything that got as far as running `ps`. On
 a box whose whole design assumes callers are hostile.
 
 ```bash
@@ -259,7 +259,7 @@ a box whose whole design assumes callers are hostile.
 sudo podman login <region>.ocir.io
 ```
 
-Then add a deploy key for CI — its own keypair, not a person's:
+Then add a deploy key for CI, its own keypair rather than a person's:
 
 ```bash
 # On the host
@@ -274,18 +274,18 @@ cannot execute.
 
 | | Name | What |
 |---|---|---|
-| Variable | `OCIR_REGION` | e.g. `us-sanjose-1` — the host's own region, so pulls stay in the datacentre |
+| Variable | `OCIR_REGION` | e.g. `us-sanjose-1`, the host's own region, so pulls stay in the datacentre |
 | Variable | `OCIR_NAMESPACE` | the tenancy's object storage namespace (`oci os ns get`) |
 | Variable | `HEDDLE_API_URL` | the engine's public URL, for the post-deploy check |
 | Secret | `OCIR_USERNAME` | `<namespace>/<user>` |
 | Secret | `OCIR_TOKEN` | an OCI auth token |
 | Secret | `PLAYGROUND_SSH_KEY` | the deploy key's private half |
-| Secret | `PLAYGROUND_SSH_HOST` | the host's address — a secret, not a variable, because this repository is public and Cloudflare proxies the origin precisely so its address is not published |
+| Secret | `PLAYGROUND_SSH_HOST` | the host's address, kept a secret rather than a variable because this repository is public and Cloudflare proxies the origin precisely so its address is not published |
 | Secret | `PLAYGROUND_SSH_KNOWN_HOSTS` | the host's public keys, pinned. `ssh-keyscan` at deploy time would accept whatever answers on the address, which is the attack a host key exists to detect |
 
 ## What this still does not give you
 
-- **No authentication.** Terminate it in front — the engine has none by design.
+- **No authentication.** Terminate it in front; the engine has none by design.
 - **No rate limiting.** Same.
 - **No accounting.** Callers spend their own model credit, so there is nothing
   to meter, but compute is still yours.
@@ -301,5 +301,5 @@ cannot execute.
 - [ ] Run dir tmpfs is `mode=1777` and **not** `noexec`
 - [ ] `--safe` only under gVisor or another runtime that permits nested userns
 - [ ] Metadata IP denied; internal ranges denied
-- [ ] No credential in the engine's environment — callers bring their own
+- [ ] No credential in the engine's environment; callers bring their own
 - [ ] `--cors-origin` naming an exact origin

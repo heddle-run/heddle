@@ -324,8 +324,8 @@ export const langgraph: Framework = {
       run: "python agent.py",
       note:
         "The same constructor as the research column with the tools list " +
-        "left off — a graph is still compiled and still stepped through, " +
-        "for one model call.",
+        "left off. A graph is still compiled and still stepped through, for " +
+        "one model call.",
     },
 
     shell: {
@@ -341,9 +341,8 @@ export const langgraph: Framework = {
       files: [{ name: "skills.py", language: "python", source: SKILLS }],
       run: "python skills.py",
       note:
-        "Skills are not a framework concept here, and do not need to be — " +
-        "two tools over a directory and a prompt that insists they be " +
-        "called is the entire pattern.",
+        "Skills are not a framework concept here either. Two tools over a " +
+        "directory, and a prompt that insists they be called, covers it.",
     },
 
     "tool-and-plugin": {
@@ -353,7 +352,7 @@ export const langgraph: Framework = {
       run: "python pipeline.py",
       note:
         "Two nodes and a TypedDict for what passes between them. Only the " +
-        "first step is a subprocess, and that is this file's choice — the " +
+        "first step is a subprocess, and that is this file's choice. The " +
         "second is a function in this process because there is no other " +
         "kind of node to make it.",
     },

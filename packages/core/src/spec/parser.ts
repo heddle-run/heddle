@@ -28,6 +28,11 @@ export function parseFlowWith(
   return toFlow(documentOf(format, data), registry);
 }
 
+/**
+ * Parse a JSON Agent Spec flow document. Parsing only — `loadFlow` is this
+ * plus reading the file and `validateFlow`. The registry is how a document
+ * naming plugin component types parses; without it they are unknown types.
+ */
 export function parseFlow(
   data: string | Buffer,
   registry: PluginRegistry = NO_PLUGINS,
@@ -35,6 +40,7 @@ export function parseFlow(
   return parseFlowWith(JSON_INPUT_FORMAT, data, registry);
 }
 
+/** {@link parseFlow} for a YAML document. */
 export function parseFlowYaml(
   data: string,
   registry: PluginRegistry = NO_PLUGINS,
@@ -56,6 +62,11 @@ export function parseFlowObject(
   return toFlow(asDocument(raw, 'JSON'), registry);
 }
 
+/**
+ * Parse a JSON document that must be a standalone Agent, and refuse anything
+ * else by componentType — the caller who wants "whatever this is" uses
+ * {@link parseComponent}.
+ */
 export function parseAgent(
   data: string | Buffer,
   registry: PluginRegistry = NO_PLUGINS,
@@ -69,6 +80,11 @@ export function parseAgent(
   return agent;
 }
 
+/**
+ * Parse a JSON document that is either a Flow or an Agent, telling the two
+ * apart by componentType — for the surface that accepts both and dispatches
+ * afterwards. Anything else at the top level is a `SpecError`.
+ */
 export function parseComponent(
   data: string | Buffer,
   registry: PluginRegistry = NO_PLUGINS,
@@ -89,6 +105,11 @@ export function parseComponent(
   }
 }
 
+/**
+ * Parse any single Agent Spec component through any input format, without
+ * deciding what it is — the raw deserializer, for the caller that dispatches
+ * on the result.
+ */
 export function parseComponentWith(
   format: InputFormatDef,
   data: string | Buffer,
@@ -97,6 +118,7 @@ export function parseComponentWith(
   return deserialize(documentOf(format, data), registry);
 }
 
+/** {@link parseComponentWith} for a YAML document. */
 export function parseComponentYaml(
   data: string,
   registry: PluginRegistry = NO_PLUGINS,
@@ -104,6 +126,7 @@ export function parseComponentYaml(
   return parseComponentWith(YAML_INPUT_FORMAT, data, registry);
 }
 
+/** {@link parseComponentYaml} for a JSON document. */
 export function parseComponentJson(
   data: string | Buffer,
   registry: PluginRegistry = NO_PLUGINS,

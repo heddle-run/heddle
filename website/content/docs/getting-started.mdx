@@ -12,7 +12,7 @@ npx @heddle/cli --help
 ```
 
 Every `heddle` on this page can be spelled `npx @heddle/cli`. That is not a
-shortcut around a missing install step — it is the shape of the thing. heddle is
+shortcut around a missing install step; it is the shape of the thing. heddle is
 a runtime you point at a document, so it belongs outside your project: no
 dependency, no lockfile entry, nothing that has to be migrated when heddle
 changes.
@@ -51,7 +51,7 @@ docker run --rm salahpichen/heddle --help
 | CLI | `salahpichen/heddle` | `ghcr.io/heddle-run/heddle` |
 | Server | `salahpichen/heddle-server` | `ghcr.io/heddle-run/heddle-server` |
 
-One build pushes both, for `linux/amd64` and `linux/arm64`, with identical digests. Take whichever you prefer — Docker Hub caps anonymous pulls per IP, which is the difference a CI job feels first.
+One build pushes both, for `linux/amd64` and `linux/arm64`, with identical digests. Take whichever you prefer. Docker Hub caps anonymous pulls per IP, which is the difference a CI job feels first.
 
 The examples ship inside the image, so there is a working agent to run before you have written anything. It needs a key, which the next section covers:
 
@@ -81,9 +81,9 @@ alias heddle='docker run --rm -i -e OPENAI_API_KEY -v "$PWD:/work" salahpichen/h
 `-i`, not `-it`. A pty is one stream, so allocating one folds the progress output on stderr into the JSON result on stdout and `| jq` chokes on it. Chat mode is the exception, and it is spelled out below.
 </Callout>
 
-Tools run inside the container, so what matters is what the image can execute: `bash`, `python3` and `node` are all present. [The Docker guide](https://github.com/heddle-run/heddle/blob/main/docs/docker.md) covers the rest — file ownership, reaching a local model, `--safe` under a container runtime, and running the server image.
+Tools run inside the container, so what matters is what the image can execute: `bash`, `python3` and `node` are all present. [The Docker guide](https://github.com/heddle-run/heddle/blob/main/docs/docker.md) covers the rest: file ownership, reaching a local model, `--safe` under a container runtime, and running the server image.
 
-## Set an API Key
+## Set an API key
 
 The scaffolded project uses OpenAI, so export a key before running anything:
 
@@ -91,9 +91,9 @@ The scaffolded project uses OpenAI, so export a key before running anything:
 export OPENAI_API_KEY=sk-...
 ```
 
-Every provider needs a resolvable key, including local ones — see [LLM Providers](/docs/llm-providers) for how to point a flow at Ollama or vLLM instead.
+Every provider needs a resolvable key, including local ones. See [LLM Providers](/docs/llm-providers) for how to point a flow at Ollama or vLLM instead.
 
-## Create Your First Agent
+## Create your first agent
 
 Scaffold a new project:
 
@@ -112,7 +112,7 @@ my-agent/
 
 The generated flow is a single agent wired between a start and an end node. It takes one input, `query`, and its system prompt interpolates that value with `{{query}}`.
 
-## Run the Workflow
+## Run the workflow
 
 ```bash
 heddle run my-agent/flow.json \
@@ -122,7 +122,7 @@ heddle run my-agent/flow.json \
 
 `--input` is a JSON object that becomes the run's starting state. It is not checked
 against the start node: a key nothing declares is carried anyway, and a declared key you
-omit is simply absent — a prompt referencing `{{missing}}` reaches the model with the
+omit is simply absent, so a prompt referencing `{{missing}}` reaches the model with the
 placeholder still in it. The final state is printed to stdout as JSON; progress and errors
 go to stderr.
 
@@ -141,9 +141,9 @@ heddle run my-agent/flow.json --tools-dir my-agent/tools --session my-first --in
 heddle run my-agent/flow.json --tools-dir my-agent/tools --session my-first --input '{"query": "and again?"}'
 ```
 
-Sessions live in `~/.heddle/sessions/`. `heddle sessions ls` lists them and `heddle sessions show <id>` prints a transcript. [Sessions](/docs/sessions) covers the rest — what is on disk, runs that survive a dead process, and runs that stop to wait for a person.
+Sessions live in `~/.heddle/sessions/`. `heddle sessions ls` lists them and `heddle sessions show <id>` prints a transcript. [Sessions](/docs/sessions) covers the rest: what is on disk, runs that survive a dead process, and runs that stop to wait for a person.
 
-## Interactive Chat Mode
+## Interactive chat mode
 
 For debugging and exploration, add `-i`:
 
@@ -164,7 +164,7 @@ docker run --rm -it -e OPENAI_API_KEY -v "$PWD:/work" salahpichen/heddle \
 
 Sessions then live inside the container and leave with it. Mount a volume at `/home/node/.heddle` to keep them.
 
-## Validate a Spec
+## Validate a spec
 
 Check your workflow before running it:
 
@@ -183,10 +183,10 @@ so that a check which could not run is not mistaken for a fault. Read the output
 as the status.
 </Callout>
 
-## Share It
+## Share it
 
-Once the agent works, hand it to someone as one file — the spec, the tools and their
-executable bits, everything:
+Once the agent works, hand it to someone as one file: the spec, the tools and their
+executable bits, everything.
 
 ```bash
 heddle bundle my-agent/flow.json --tools-dir my-agent/tools -o my-agent.heddle
@@ -196,7 +196,7 @@ heddle bundle my-agent/flow.json --tools-dir my-agent/tools -o my-agent.heddle
 heddle run my-agent.heddle --input '{"query": "hello"}'
 ```
 
-The receiver needs heddle and an API key — a spec names its key as `$ENV_VAR`, resolved on
+The receiver needs heddle and an API key. A spec names its key as `$ENV_VAR`, resolved on
 the machine that runs, so credentials never travel. See [Bundles](/docs/bundles).
 
 ## Where to go next

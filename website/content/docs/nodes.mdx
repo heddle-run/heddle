@@ -17,14 +17,14 @@ specification can still fail here.
 </Callout>
 
 A seventh possibility is a node type a plugin registers. It is written into `nodes[]` like
-any other, brings its own executor, and declares its own inputs, outputs and branches —
-see [Plugins](/docs/plugins).
+any other, brings its own executor, and declares its own inputs, outputs and branches.
+See [Plugins](/docs/plugins).
 
 ## StartNode
 
 The entry point of a flow. Its `outputs` **document** what the flow expects to be given at
 run time; they do not enforce it. `--input` becomes the starting state whatever it
-contains — a key nothing declares is carried, and a declared key you omit is absent
+contains: a key nothing declares is carried, and a declared key you omit is absent
 rather than defaulted.
 
 ```yaml
@@ -109,7 +109,7 @@ without a default is required.
 the node's entire input state as JSON. The agent therefore sees its inputs whether or not
 the prompt mentions them.
 
-**`transforms`** attaches guardrails to the agent — see
+**`transforms`** attaches guardrails to the agent; see
 [Plugins](/docs/plugins). They change this node's contract in ways worth knowing: a `pre`
 transform that rejects skips the model call entirely and the node returns
 `transform_status: "rejected"` instead of its usual output, and an agent carrying a `post`
@@ -177,7 +177,7 @@ tool:
       type: string
 ```
 
-The tool's `name` must resolve in the flow's tool registry — an executable in
+The tool's `name` must resolve in the flow's tool registry: an executable in
 `--tools-dir`, or a tool a loaded plugin contributes, which exists nowhere on disk. See
 [Tools](/docs/tools).
 
@@ -211,7 +211,7 @@ data_flow_connections:
     destination_input: branching_mapping_key
 ```
 
-Unmatched values fall back in two steps: to the branch named by the special `DEFAULT_BRANCH` mapping key if you define one, and otherwise to the branch literally named `default`. If neither exists as an outgoing edge, the run fails with a "no next node" error — so give every branching node a default path.
+Unmatched values fall back in two steps: to the branch named by the special `DEFAULT_BRANCH` mapping key if you define one, and otherwise to the branch literally named `default`. If neither exists as an outgoing edge, the run fails with a "no next node" error, so give every branching node a default path.
 
 <Callout type="warn">
 If `branching_mapping_key` is missing from the input state entirely, the node falls back to the first string value it finds in that state, which makes routing depend on key ordering. Always wire `branching_mapping_key` explicitly.

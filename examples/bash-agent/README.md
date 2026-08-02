@@ -21,7 +21,7 @@ OPENAI_API_KEY=sk-... heddle run examples/bash-agent/spec.yaml --tools-dir examp
 ```
 
 (From a source checkout, `pnpm build` first and substitute
-`node packages/cli/dist/heddle.js` for `heddle` — the `pnpm dev` script runs
+`node packages/cli/dist/heddle.js` for `heddle`; the `pnpm dev` script runs
 with its own working directory, so the relative paths here would not resolve.)
 
 ```json
@@ -39,25 +39,25 @@ OPENAI_API_KEY=sk-... heddle run examples/bash-agent/spec.yaml --tools-dir examp
 ```
 
 > **Without `--safe` this agent is a remote shell on your machine.** Tools inherit
-> heddle's full environment — `OPENAI_API_KEY` included — and run as you, with your
+> heddle's full environment, `OPENAI_API_KEY` included, and run as you, with your
 > home directory and your credentials in reach. Drop `--safe` only against a
 > workspace you would hand to a stranger.
 
 ## Python and Node inside the sandbox
 
-A confined tool is handed a fixed PATH — `/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin`
-— rather than the one you have in your terminal. An interpreter installed anywhere
+A confined tool is handed a fixed PATH, `/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin`,
+rather than the one you have in your terminal. An interpreter installed anywhere
 else is invisible even when the sandbox can read it, so `tools/bash.py` prepends these
 directories when they exist:
 
 1. everything in `$HEDDLE_RUNTIME_PATH` (colon-separated)
-2. `/opt/homebrew/bin` — Homebrew on Apple Silicon
-3. `/usr/local/bin` — Homebrew on Intel, manual installs on Linux
-4. `/opt/nodejs/bin`, `/opt/python/bin` — tarballs unpacked under `/opt`
+2. `/opt/homebrew/bin`, for Homebrew on Apple Silicon
+3. `/usr/local/bin`, for Homebrew on Intel and manual installs on Linux
+4. `/opt/nodejs/bin` and `/opt/python/bin`, for tarballs unpacked under `/opt`
 
 PATH is only half of it. The sandbox also has to be able to *read* the binary: `/usr`,
 `/bin`, `/opt` and (on macOS) `/Library` are readable by default, and anything else
-needs `--allow-read`. Which is what makes version managers the awkward case — nvm,
+needs `--allow-read`. Which is what makes version managers the awkward case: nvm,
 pyenv and asdf all install under `$HOME`, and the sandbox hides `$HOME` precisely
 because that is where `~/.ssh` and `~/.aws` live.
 
@@ -77,7 +77,7 @@ HEDDLE_RUNTIME_PATH="$NODE_BIN" heddle run examples/bash-agent/spec.yaml --tools
 `lib/node_modules` beside it, so granting only `bin` gets you a `node` that runs and an
 `npm` that does not.
 
-To see what the agent will see, ask it — `'{"task":"run python3 -V, node -v and echo $PATH"}'`
+To see what the agent will see, ask it. `'{"task":"run python3 -V, node -v and echo $PATH"}'`
 costs one model call and reports the truth about the sandbox it is actually in. Piping
 into the tool directly answers a different question, since nothing is confined:
 
@@ -88,7 +88,7 @@ echo '{"command":"python3 -V; node -v"}' | examples/bash-agent/tools/bash.py
 ## Getting files out
 
 `$HEDDLE_WORKSPACE` is scratch. It is created when the agent starts, shared by that
-agent's tool calls, and deleted when the agent finishes — so a chart the model
+agent's tool calls, and deleted when the agent finishes, so a chart the model
 rendered is gone by the time you read the answer describing it. `present_file` copies
 one file to a directory that outlives the run:
 
@@ -116,7 +116,7 @@ things about `--safe` are worth knowing before it works:
 - **Nothing else on the host is writable**, which is the point of the flag. Without
   the grant, `present_file` returns
   `error: could not copy to .../heddle-out/report.csv: Operation not permitted.
-  Under --safe the output directory must be granted with --allow-write.` — the model
+  Under --safe the output directory must be granted with --allow-write.` The model
   reports that to you rather than retrying its way around it.
 
 Same-named files are kept rather than overwritten: a second `report.csv` lands as
@@ -130,7 +130,7 @@ Same-named files are kept rather than overwritten: a second `report.csv` lands a
 |---|---|---|
 | `command` | string | Required. Run through `bash -c`, or `sh` where bash is absent. |
 | `working_directory` | string | Defaults to `$HEDDLE_WORKSPACE`, and to heddle's own working directory when unsandboxed. |
-| `timeout` | integer | Seconds. Default 25, capped at 25 — heddle kills a tool at 30s, and a reported timeout is more useful to a model than a killed subprocess. |
+| `timeout` | integer | Seconds. Default 25, capped at 25, because heddle kills a tool at 30s, and a reported timeout is more useful to a model than a killed subprocess. |
 
 | Output | Type | |
 |---|---|---|
@@ -140,7 +140,7 @@ Same-named files are kept rather than overwritten: a second `report.csv` lands a
 
 A failed command is not a failed tool. `bash.py` always exits 0 and puts the failure in
 `exit_code`, because heddle treats a non-zero tool exit as a broken tool and aborts the
-round — which would deny the model the error message it needs to correct itself.
+round, which would deny the model the error message it needs to correct itself.
 `present_file.py` reports its own failures the same way, in an `error` field.
 
 ### `present_file`
@@ -154,7 +154,7 @@ round — which would deny the model the error message it needs to correct itsel
 |---|---|---|
 | `path` | string | Where the file now lives, empty on failure. |
 | `bytes` | integer | Size of the copy. |
-| `error` | string | Absent on success; on failure, why — usually a missing `--allow-write`. |
+| `error` | string | Absent on success; on failure, why, usually a missing `--allow-write`. |
 
 Directories are refused rather than walked (`tar` it up and present the archive), and
 anything over 50 MB is refused rather than copied.
@@ -190,7 +190,7 @@ $ env | grep -c OPENAI
 The repository is readable but not writable, `$HOME` is a throwaway directory created
 for that one command, and heddle's own secrets never entered the environment. Add
 `--deny-net` and the shell loses the network too, while heddle's own model calls keep
-working — they are made by heddle, not by the confined process.
+working, because they are made by heddle rather than by the confined process.
 
 See the [Safe Mode](../../README.md#safe-mode) section of the root README for the full
 policy and its limits.

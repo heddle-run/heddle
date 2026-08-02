@@ -167,8 +167,8 @@ pages keep `lucide-react` through `ds/` — see its DEVIATIONS.md.)
 
 `app/page.tsx` assembles, in order (everything inside the `.hds` wrapper):
 
-1. **Nav** — sticky, paper-translucent, blurred; text wordmark, version pill,
-   Docs / Spec / Playground links, mono theme-toggle button, GitHub
+1. **Nav** — sticky, paper-translucent, blurred; text wordmark, Docs / Spec /
+   Playground links, mono theme-toggle button, GitHub
 2. **Hero** — mono eyebrow, display-Light H1, the wedge sentence as lede, dual
    CTA, then the Humans/Agents install tabs (from `installTabs`). Beside it,
    the stacked windows: a navy `flow.yaml` editor showing the real Open Agent
@@ -176,14 +176,15 @@ pages keep `lucide-react` through `ds/` — see its DEVIATIONS.md.)
    (from `specimenSpread.terminal`) overlapping it. `batteries-included` is one
    18-character word, so the hero clamp is `34px…54px` with
    `overflow-wrap: break-word` — check a 375px viewport before changing either.
-3. **Inventory** — 001. The full manifest as a numbered hairline list beside
-   the four `notInProject` zeros. **This section is what makes the lead claim
-   falsifiable**, so every line has to name a feature that exists in the README
-   — treat it the way `safeMode` is treated, and delete a line rather than let
-   it drift. It is a list, not a card grid, because the claim is breadth and a
-   reader should be able to count it. Two columns at desktop, one on mobile;
-   the design project's five-item sample was deliberately replaced with the
-   whole manifest.
+3. **Inventory** — 001. The full manifest as a numbered hairline list. **This
+   section is what makes the lead claim falsifiable**, so every line has to
+   name a feature that exists in the README — treat it the way `safeMode` is
+   treated, and delete a line rather than let it drift. It is a list, not a
+   card grid, because the claim is breadth and a reader should be able to
+   count it. Two columns at desktop, one on mobile; the design project's
+   five-item sample was deliberately replaced with the whole manifest. The
+   `notInProject` zeros no longer render here — the what-it-costs half of the
+   claim is carried by the hero lede, Position and the CTA line.
 4. **Position** — 002, on the always-dark navy band: the specification is the
    program, the refusal of the bigger-library trade, and the
    portability-off-heddle claim, beside a window showing the real
@@ -200,7 +201,9 @@ pages keep `lucide-react` through `ds/` — see its DEVIATIONS.md.)
 9. **CTA** — the navy band with the warp texture: "Thread the loom.", accent
    Get started, ghost playground link, the npx command.
 10. **Footer** — brand blurb plus the Project / Source / Standard columns, and
-    a mono bottom bar (heddle.run · maintainer · version).
+    a mono bottom bar (heddle.run · "Woven by agents, heddled by humans" ·
+    version). The byline leans on the Definition block above it having
+    already taught the reader what a heddle does.
 
 The Loom drawing, the bento Features grid and the Spread section from the
 previous (FormFlow) landing page were retired with the redesign — the hero's

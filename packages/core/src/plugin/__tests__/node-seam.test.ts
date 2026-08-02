@@ -17,9 +17,8 @@ import { DEFAULT_RUNNER_OPTIONS } from '../../runner/options.js';
 import type { Event } from '../../runner/events.js';
 import { State } from '../../state/state.js';
 import { MiddlewareChain, MiddlewareError } from '../middleware.js';
-import { PluginRegistry } from '../registry.js';
 import type { CompiledGraph, CompiledNode } from '../../graph/types.js';
-import type { PluginMiddlewareDef } from '../types.js';
+import { chainOf, policy } from './helpers/seams.js';
 
 /**
  * start → work → done, where `work` fails as many times as it is told to.
@@ -100,20 +99,6 @@ function graphOf(spec: { failFor?: number; branchOut?: boolean } = {}): {
 
   return { graph, ran: () => ran };
 }
-
-function policy(
-  seams: PluginMiddlewareDef['seams'],
-  impl: Record<string, unknown>,
-  componentType = 'Policy',
-): PluginMiddlewareDef {
-  return { componentType, seams, createMiddleware: () => impl as never };
-}
-
-const chainOf = (...defs: PluginMiddlewareDef[]): MiddlewareChain =>
-  MiddlewareChain.build(
-    PluginRegistry.fromPlugins([{ name: 'p', version: '1.0.0', middleware: defs }]),
-    {},
-  );
 
 async function run(
   graph: CompiledGraph,

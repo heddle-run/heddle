@@ -1,3 +1,13 @@
+/**
+ * The bag of named values a run carries: what the inputs start it with, what
+ * each node adds, and what an `EndNode` hands back.
+ *
+ * Immutable — `set` and `merge` return a new `State`, and the constructor
+ * copies what it is given — which is what lets the runner keep a state per
+ * node output and hand states to middleware without any of them writing over
+ * the others. Values are whatever JSON holds; `merge` is a shallow spread, so
+ * on a key both sides have, the other state's value wins.
+ */
 export class State {
   private readonly data: Record<string, unknown>;
 

@@ -1,6 +1,6 @@
 # docs/
 
-User documentation lives at [heddle.run/docs](https://heddle.run/docs) — start
+User documentation lives at [heddle.run/docs](https://heddle.run/docs); start
 there for guides, the CLI reference, and the plugin authoring docs.
 
 What is in this directory:

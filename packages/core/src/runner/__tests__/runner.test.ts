@@ -38,15 +38,23 @@ describe('Runner', () => {
     ];
 
     for (const tt of tests) {
-      const opts = { ...DEFAULT_RUNNER_OPTIONS };
-      const runner = new Runner(cg, opts);
+      const events: Event[] = [];
+      const runner = new Runner(cg, {
+        ...DEFAULT_RUNNER_OPTIONS,
+        eventHandler: (e: Event) => events.push(e),
+      });
 
-      const result = await runner.run(undefined, {
+      await runner.run(undefined, {
         category: tt.input,
         branching_mapping_key: tt.input,
       });
 
-      expect(result).toBeDefined();
+      // The end node that ran is only observable on the event stream: the
+      // result state does not say where the walk came out.
+      const reached = events
+        .filter((e) => e.type === 'node_complete' && e.nodeType === 'EndNode')
+        .map((e) => e.nodeName);
+      expect(reached).toEqual([tt.wantEnd]);
     }
   });
 

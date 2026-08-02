@@ -1,6 +1,6 @@
 # Policies: retry, approval, audit and rate limiting
 
-This example adds nothing to a flow. It supplies four **middleware** — the one
+This example adds nothing to a flow. It supplies four **middleware**, the one
 plugin kind no document may name, installed by whoever runs heddle and consulted
 on every node of every flow that host serves.
 
@@ -35,7 +35,7 @@ plugin submitted to `heddle-server` that declares middleware is refused with a
 Run from the repository root. (From a source checkout, `pnpm build` first and
 substitute `node packages/cli/dist/heddle.js` for `heddle`.)
 
-### `nodeError` — a node that failed
+### `nodeError`: a node that failed
 
 `flaky` exits non-zero with a message that looks transient. `RetryPolicy` retries
 it with a growing backoff, and substitutes a stated value once the attempts are
@@ -66,7 +66,7 @@ can raise is not a ceiling.
 Set `FLAKY_MODE=fatal` and the tool reports an error `retryOn` does not match, so
 the policy substitutes immediately without retrying.
 
-### `toolCall` — a call the operator will not allow
+### `toolCall`: a call the operator will not allow
 
 `gated-flow.json` uses a stub model, so this needs no credential. It asks for
 `shell` with `rm -rf /var/data`:
@@ -85,7 +85,7 @@ Warning: "ApprovalGate" refused the tool call "shell": "shell" may not be called
 ```
 
 **A refused call is still answered.** The model receives a tool message carrying
-the reason, and replies to it — the turn is not skipped. That is not a courtesy:
+the reason, and replies to it; the turn is not skipped. That is not a courtesy:
 a provider refuses a request whose assistant message asked for a call that no
 tool message answers, so a rejection has to be a reply. It is also why `reject`
 carries a reason rather than being a way to abandon a turn.
@@ -93,11 +93,11 @@ carries a reason rather than being a way to abandon a turn.
 Drop the `--plugin-config` and the same run lets the command through, because the
 gate guards nothing it was not told to guard.
 
-### `node` — around every node there is
+### `node`: around every node there is
 
 `NodeAudit` is the widest of the four. It emits an event per settled node and, if
 the operator lists a node type under `dryRun`, answers for that type instead of
-letting it run — a flow's shape walked without its side effects:
+letting it run. A flow's shape walked without its side effects:
 
 ```bash
 heddle run examples/policies/flow.json --tools-dir ./examples/policies/tools --plugin ./examples/policies/policies.json --plugin-config NodeAudit='{"dryRun":["ToolNode"],"stub":{"answer":"not really run"}}' --input '{"query":"anything"}'
@@ -123,13 +123,13 @@ tool and the audit shows the nesting that matters:
 One line per node, not one per attempt. `node` wraps *an execution* and
 `nodeError` sits inside it: a retried attempt is abandoned for another, so it gets
 a second `before` with `ctx.attempt` moved on and no `after` at all. `after` is
-consulted once the attempt has settled — here at attempt 3, after `RetryPolicy`
+consulted once the attempt has settled, here at attempt 3, after `RetryPolicy`
 spent the other two.
 
 That also explains why `node`'s `after` admits no `retry`. The seam that does is
 the one nested inside it.
 
-### `modelCall` — and two policies composing
+### `modelCall`, and two policies composing
 
 `RateLimit` holds the whole process to a rate. The flow above makes two model
 calls, so a limit of one refuses the second:
@@ -153,7 +153,7 @@ Warning: "RetryPolicy" supplied a result for "agent" after it failed, so the run
 
 Two policies, two seams, one chain. `RateLimit` refuses at `modelCall.before`,
 which fails the node; that failure is what `nodeError` is consulted about, and
-`RetryPolicy` decides what to do with it. Neither knows the other exists — the
+`RetryPolicy` decides what to do with it. Neither knows the other exists; the
 operator composed them by loading both.
 
 The chain is walked in reverse load order and the first non-`pass` verdict wins,
@@ -193,7 +193,7 @@ caller's information to code they never asked for. A counter that outlives a run
 is a counter that silently belongs to somebody else.
 
 A process-wide rate is different. It is a fact about this process, which is
-exactly the thing being limited — so the state is honest, and the same code means
+exactly the thing being limited, so the state is honest and the same code means
 the same thing on the CLI, where the process serves one run anyway.
 
 heddle enforces the one part of this it can see: an installed plugin asking to run
@@ -202,7 +202,7 @@ whichever run reached the process first.
 
 ## What a middleware gets, and what it does not
 
-`ctx.component` is the operator's settings — `{}` when they gave none, never
+`ctx.component` is the operator's settings: `{}` when they gave none, never
 undefined. `ctx.attempt` and `ctx.maxAttempts` say where an attempt sits.
 `ctx.admits` carries the verdicts the current seam will honour, sent with the
 handshake, so a policy that works at more than one seam can fall back rather than
@@ -237,6 +237,6 @@ replacement.
 ## The stub model
 
 `StubModelConfig` is a provider, not a policy. It exists so the tool-call demo
-runs without a credential — it answers the first request with a tool call and the
+runs without a credential. It answers the first request with a tool call and the
 second with a sentence. Replace its `llm_config` in `gated-flow.json` with a real
 one and nothing about the policies changes.

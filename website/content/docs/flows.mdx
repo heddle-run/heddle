@@ -7,7 +7,7 @@ A flow is a directed graph of nodes connected by edges. It defines the execution
 
 Flows are written in JSON or YAML following the [Open Agent Specification](https://oracle.github.io/agent-spec/). Field names in the file are `snake_case`. JSON and YAML are the two builtin [input formats](/docs/plugins/formats); a plugin can add another wire format without touching anything downstream of the parse.
 
-## Component References
+## Component references
 
 Agent Spec files are *disaggregated*: components are defined once under `$referenced_components`, keyed by `id`, and referred to everywhere else by `$component_ref`.
 
@@ -27,9 +27,9 @@ $referenced_components:
     name: end
 ```
 
-This matters because a flow refers to the same node from several places — `start_node`, `nodes`, and both edge lists. References keep those pointing at one shared component. Writing the same node out twice inline is rejected, because the parser compares component identity rather than names.
+This matters because a flow refers to the same node from several places: `start_node`, `nodes`, and both edge lists. References keep those pointing at one shared component. Writing the same node out twice inline is rejected, because the parser compares component identity rather than names.
 
-## A Complete Flow
+## A complete flow
 
 This flow takes a `query`, runs it through an agent with one tool, and returns a `result`:
 
@@ -120,18 +120,20 @@ $referenced_components:
         type: string
 ```
 
-`id` is optional — a UUID is generated when you omit it — but any component you point at with `$component_ref` needs an explicit `id` to be addressable.
+`id` is optional, and a UUID is generated when you omit it, but any component you point at with `$component_ref` needs an explicit `id` to be addressable.
 
 ## Nodes
 
 Nodes are the building blocks of a flow. Every node has a `component_type` and a `name`:
 
-- **StartNode** — Entry point, defines the flow's inputs
-- **EndNode** — Exit point
-- **AgentNode** — LLM-powered agent with tools
-- **LlmNode** — Runs a prompt template through an LLM
-- **ToolNode** — Executes an external tool directly
-- **BranchingNode** — Routes execution based on an input value
+| Type | What it does |
+|---|---|
+| `StartNode` | Entry point; declares the flow's inputs |
+| `EndNode` | Exit point |
+| `AgentNode` | Runs an agent with tools |
+| `LlmNode` | Runs a prompt template through a model |
+| `ToolNode` | Executes an external tool directly |
+| `BranchingNode` | Routes execution on an input value |
 
 See [Nodes](/docs/nodes) for detailed documentation on each type.
 
@@ -152,7 +154,7 @@ A title cannot be empty, and cannot contain spaces, quotes, braces, commas, or p
 
 ## Edges
 
-### Control Flow Edges
+### Control flow edges
 
 `control_flow_connections` define execution order. Each edge names a `from_node` and a `to_node`, and optionally a `from_branch`:
 
@@ -167,11 +169,11 @@ control_flow_connections:
       $component_ref: agent
 ```
 
-`from_branch: null` — or leaving it out — makes the edge unconditional. Only branch-producing nodes need named branches; see [BranchingNode](/docs/nodes#branchingnode).
+`from_branch: null`, or leaving it out entirely, makes the edge unconditional. Only branch-producing nodes need named branches; see [BranchingNode](/docs/nodes#branchingnode).
 
 A node with several unconditional outgoing edges does not fan out in parallel. The first edge is taken and the others are ignored, so express alternatives with a `BranchingNode`.
 
-### Data Flow Edges
+### Data flow edges
 
 `data_flow_connections` map one node's output onto another node's input. `source_output` and `destination_input` are property titles:
 
@@ -205,9 +207,9 @@ Graph validation checks that every node is reachable from the start node, that a
 
 It also checks where a branch leads, which is otherwise something only the input that selects it reveals: a `BranchingNode` that maps a key to a branch no control flow edge leaves the node on is refused, as is an edge labelled with a branch its source never selects. Both would have ended a run mid-flight with `no next node from "<node>"`.
 
-Data flow edges are checked against what their source node can actually produce, where that is knowable. An `LlmNode` writes `generated_text` and nothing else, so an edge reading anything else from one is refused — the runner would have dropped the mapping silently and the destination would never have received the input. A source node the flow does not contain is refused for the same reason. Node types whose outputs are not fixed by heddle are not checked: an `AgentNode` writes `result` plus whatever keys its answer parsed to, a `ToolNode` writes what the tool returned, and a plugin node writes what its plugin returned.
+Data flow edges are checked against what their source node can actually produce, where that is knowable. An `LlmNode` writes `generated_text` and nothing else, so an edge reading anything else from one is refused; the runner would have dropped the mapping silently and the destination would never have received the input. A source node the flow does not contain is refused for the same reason. Node types whose outputs are not fixed by heddle are not checked: an `AgentNode` writes `result` plus whatever keys its answer parsed to, a `ToolNode` writes what the tool returned, and a plugin node writes what its plugin returned.
 
-### Runner Defaults
+### Runner defaults
 
 These are fixed and not currently configurable from the CLI:
 

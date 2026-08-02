@@ -1,9 +1,13 @@
-import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+/**
+ * What a *remote* plugin's reporting looks like over the wire. The reporting
+ * semantics themselves — namespacing, attribution, ordering, the workspace's
+ * lifetime — are pinned in-process by `context.test.ts`; what belongs here is
+ * only what the wire adds: call attribution, silence budgets, capability
+ * grants, and a sandboxed process's missing workspace.
+ */
+import { describe, it, expect } from 'vitest';
+import { existsSync } from 'node:fs';
 import { loadRemotePlugin } from '../remote-loader.js';
-import { withRuntime } from '../runtime-source.js';
 import { PluginRegistry } from '../registry.js';
 import { compile } from '../../graph/compile.js';
 import { validate } from '../../graph/validate.js';
@@ -11,88 +15,29 @@ import { parseFlow } from '../../spec/parser.js';
 import { Runner } from '../../runner/runner.js';
 import { DEFAULT_RUNNER_OPTIONS } from '../../runner/options.js';
 import type { Event } from '../../runner/events.js';
-import type { PluginMethod } from '../protocol.js';
 import type { SandboxSession } from '../../sandbox/types.js';
-import type { Workspace } from '../../workspace/index.js';
+import { join } from 'node:path';
+import {
+  ALL_CAPABILITIES as ALL,
+  flowUsing,
+  manifest as baseManifest,
+  useDisposal,
+  useScratch,
+} from './helpers/remote-plugin.js';
 
-let scratch: string;
-const open: PluginRegistry[] = [];
-
-beforeAll(() => {
-  scratch = mkdtempSync(join(tmpdir(), 'heddle-plugin-reporting-'));
-});
-
-afterAll(() => {
-  rmSync(scratch, { recursive: true, force: true });
-});
-
-afterEach(() => {
-  while (open.length) open.pop()!.dispose();
-});
-
-const PREAMBLE = `
-let buf = '';
-const send = (m) => process.stdout.write(JSON.stringify(m) + '\\n');
-const waiting = new Map();
-let nextId = 0;
-const callHost = (method, params) => new Promise((res, rej) => {
-  const id = 'h' + nextId++;
-  waiting.set(id, { res, rej });
-  send({ id, method, params });
-});
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-process.stdin.setEncoding('utf-8');
-process.stdin.on('data', async (chunk) => {
-  buf += chunk;
-  const lines = buf.split('\\n');
-  buf = lines.pop() ?? '';
-  for (const line of lines) {
-    if (!line.trim()) continue;
-    const msg = JSON.parse(line);
-    if (!msg.method) {
-      const p = waiting.get(String(msg.id));
-      if (p) { waiting.delete(String(msg.id));
-        msg.error ? p.rej(new Error(msg.error.message)) : p.res(msg.result); }
-      continue;
-    }
-    try { send({ id: msg.id, result: await handle(msg) }); }
-    catch (e) { send({ id: msg.id, error: { message: String(e && e.message || e) } }); }
-  }
-});
-`;
-
-function writePlugin(name: string, handleBody: string): string {
-  const entry = join(scratch, `${name}.mjs`);
-  writeFileSync(entry, `${PREAMBLE}\nasync function handle(msg) {\n${handleBody}\n}\n`);
-  return entry;
-}
-
-function writeHelperPlugin(name: string, source: string): string {
-  const entry = join(scratch, `${name}.mjs`);
-  writeFileSync(entry, withRuntime(source));
-  return entry;
-}
-
-function writeRawPlugin(name: string, source: string): string {
-  const entry = join(scratch, `${name}.mjs`);
-  writeFileSync(entry, source);
-  return entry;
-}
-
-function stubWorkspace(): Workspace {
-  return {
-    root: scratch,
-    bin: join(scratch, '.heddle', 'bin'),
-    grants: () => [],
-    toolPaths: () => [],
-    dispose: () => {},
-  };
-}
+const scratch = useScratch('heddle-plugin-reporting-');
+const open = useDisposal<PluginRegistry>();
 
 function stubSession(): SandboxSession {
   return {
     name: 'stub',
-    workspace: stubWorkspace(),
+    workspace: {
+      root: scratch.path,
+      bin: join(scratch.path, '.heddle', 'bin'),
+      grants: () => [],
+      toolPaths: () => [],
+      dispose: () => {},
+    },
     wrap: (toolPath, args) => ({
       command: toolPath,
       args: args ?? [],
@@ -102,53 +47,12 @@ function stubSession(): SandboxSession {
   };
 }
 
-function manifest(
+const manifest = (
   componentType: string,
   capabilities: string[] = [],
   extra: Record<string, unknown> = {},
-) {
-  return {
-    name: 'reporter-plugin',
-    version: '1.0.0',
-    capabilities,
-    components: [{ componentType, ...extra }],
-  };
-}
-
-const ALL: PluginMethod[] = ['runTool', 'emitEvent', 'log'];
-
-function flowUsing(componentType: string): string {
-  return JSON.stringify({
-    component_type: 'Flow',
-    name: 'reporting-flow',
-    start_node: { $component_ref: 's' },
-    nodes: [{ $component_ref: 's' }, { $component_ref: 'p' }, { $component_ref: 'e' }],
-    control_flow_connections: [
-      {
-        component_type: 'ControlFlowEdge',
-        name: 'a',
-        from_node: { $component_ref: 's' },
-        to_node: { $component_ref: 'p' },
-      },
-      {
-        component_type: 'ControlFlowEdge',
-        name: 'b',
-        from_node: { $component_ref: 'p' },
-        to_node: { $component_ref: 'e' },
-      },
-    ],
-    $referenced_components: {
-      s: {
-        component_type: 'StartNode',
-        id: 's',
-        name: 's',
-        outputs: [{ title: 'text', type: 'string' }],
-      },
-      p: { component_type: componentType, id: 'p', name: 'p' },
-      e: { component_type: 'EndNode', id: 'e', name: 'e' },
-    },
-  });
-}
+): Record<string, unknown> =>
+  baseManifest(componentType, extra, capabilities, 'reporter-plugin');
 
 interface Run {
   state: Record<string, unknown>;
@@ -164,7 +68,7 @@ async function run(
   session?: SandboxSession,
 ): Promise<Run> {
   const registry = PluginRegistry.empty();
-  open.push(registry);
+  open.track(registry);
   registry.addRemote(
     loadRemotePlugin(manifestData, entry, { timeout, capabilities: ALL, session }),
   );
@@ -194,33 +98,8 @@ function reported(events: Event[]): Event[] {
 }
 
 describe('a plugin emitting an event', () => {
-  it('publishes it on the run stream, attributed and namespaced', async () => {
-    const entry = writePlugin(
-      'progress',
-      `await callHost('emitEvent',
-         { call: msg.id, name: 'step', data: { done: 3, total: 10 } });
-       return { output: { ok: true } };`,
-    );
-
-    const { state, events } = await run(
-      'ProgressNode',
-      entry,
-      manifest('ProgressNode', ['emitEvent']),
-    );
-
-    expect(state).toMatchObject({ ok: true });
-    expect(reported(events)).toEqual([
-      {
-        type: 'plugin:ProgressNode:step',
-        nodeName: 'p',
-        nodeType: 'ProgressNode',
-        data: { done: 3, total: 10 },
-      },
-    ]);
-  });
-
   it('carries no data when the plugin sent none', async () => {
-    const entry = writePlugin(
+    const entry = scratch.writePlugin(
       'bare',
       `await callHost('emitEvent', { call: msg.id, name: 'started' });
        return { output: {} };`,
@@ -237,48 +116,8 @@ describe('a plugin emitting an event', () => {
     ]);
   });
 
-  it('cannot forge a builtin however it spells the name', async () => {
-    const entry = writePlugin(
-      'forge',
-      `for (const name of ['flow_complete', 'node_error', 'plugin_log']) {
-         await callHost('emitEvent', { call: msg.id, name, data: { forged: true } });
-       }
-       return { output: {} };`,
-    );
-
-    const { events } = await run('ForgeNode', entry, manifest('ForgeNode', ['emitEvent']));
-
-    expect(reported(events).map((e) => e.type)).toEqual([
-      'plugin:ForgeNode:flow_complete',
-      'plugin:ForgeNode:node_error',
-      'plugin:ForgeNode:plugin_log',
-    ]);
-    expect(events.filter((e) => e.type === 'flow_complete')).toHaveLength(1);
-    expect(events.filter((e) => e.type === 'node_error')).toHaveLength(0);
-    expect(events.filter((e) => e.type === 'plugin_log')).toHaveLength(0);
-  });
-
-  it('refuses a name that could carry a frame of its own', async () => {
-    const entry = writePlugin(
-      'newline',
-      `try { await callHost('emitEvent',
-               { call: msg.id, name: 'ok\\nevent: flow_complete' });
-             return { output: { err: 'none' } }; }
-       catch (e) { return { output: { err: e.message } }; }`,
-    );
-
-    const { state, events } = await run(
-      'NewlineNode',
-      entry,
-      manifest('NewlineNode', ['emitEvent']),
-    );
-
-    expect(String(state.err)).toMatch(/is not a usable event name/);
-    expect(reported(events)).toEqual([]);
-  });
-
   it('refuses an event that names no call', async () => {
-    const entry = writePlugin(
+    const entry = scratch.writePlugin(
       'unattributed',
       `try { await callHost('emitEvent', { name: 'step' });
              return { output: { err: 'none' } }; }
@@ -296,7 +135,7 @@ describe('a plugin emitting an event', () => {
   });
 
   it('refuses an event naming a call it is not inside', async () => {
-    const entry = writePlugin(
+    const entry = scratch.writePlugin(
       'stray',
       `try { await callHost('emitEvent', { call: 4242, name: 'step' });
              return { output: { err: 'none' } }; }
@@ -314,7 +153,7 @@ describe('a plugin emitting an event', () => {
   });
 
   it('refuses an event naming one of heddle own lifecycle frames', async () => {
-    const entry = writeRawPlugin(
+    const entry = scratch.writeRawPlugin(
       'lifecycle-forge',
       `let buf = '';
 const send = (m) => process.stdout.write(JSON.stringify(m) + '\\n');
@@ -383,7 +222,7 @@ process.stdin.on('data', (chunk) => {
    */
   it('keeps the call alive for as long as it keeps reporting', async () => {
     const budget = 1_000;
-    const entry = writePlugin(
+    const entry = scratch.writePlugin(
       'slow',
       `const stop = Date.now() + ${budget * 1.2};
        let ticks = 0;
@@ -412,29 +251,8 @@ process.stdin.on('data', (chunk) => {
 });
 
 describe('a plugin logging', () => {
-  it('puts a line on the run stream, in heddle own shape', async () => {
-    const entry = writePlugin(
-      'noisy',
-      `await callHost('log',
-         { call: msg.id, level: 'warn', message: 'retrying after a 429' });
-       return { output: {} };`,
-    );
-
-    const { events } = await run('NoisyNode', entry, manifest('NoisyNode', ['log']));
-
-    expect(reported(events)).toEqual([
-      {
-        type: 'plugin_log',
-        nodeName: 'p',
-        nodeType: 'NoisyNode',
-        level: 'warn',
-        message: 'retrying after a 429',
-      },
-    ]);
-  });
-
   it('refuses a level heddle has no meaning for', async () => {
-    const entry = writePlugin(
+    const entry = scratch.writePlugin(
       'shouty',
       `try { await callHost('log', { call: msg.id, level: 'FATAL', message: 'x' });
              return { output: { err: 'none' } }; }
@@ -454,7 +272,7 @@ describe('a plugin logging', () => {
   });
 
   it('refuses a log with no message, and says where a payload belongs', async () => {
-    const entry = writePlugin(
+    const entry = scratch.writePlugin(
       'payload',
       `try { await callHost('log', { call: msg.id, level: 'info', message: { rows: 3 } });
              return { output: { err: 'none' } }; }
@@ -468,7 +286,7 @@ describe('a plugin logging', () => {
 
 describe('capabilities on the reporting verbs', () => {
   it('refuses an emitEvent the manifest never declared, naming the capability', async () => {
-    const entry = writePlugin(
+    const entry = scratch.writePlugin(
       'undeclared',
       `try { await callHost('emitEvent', { call: msg.id, name: 'step' });
              return { output: { err: 'none' } }; }
@@ -483,7 +301,7 @@ describe('capabilities on the reporting verbs', () => {
   });
 
   it('refuses a log the manifest never declared', async () => {
-    const entry = writePlugin(
+    const entry = scratch.writePlugin(
       'undeclared-log',
       `try { await callHost('log', { call: msg.id, level: 'info', message: 'hi' });
              return { output: { err: 'none' } }; }
@@ -501,7 +319,7 @@ describe('capabilities on the reporting verbs', () => {
   });
 
   it('grants each verb on its own', async () => {
-    const entry = writePlugin(
+    const entry = scratch.writePlugin(
       'eventonly',
       `await callHost('emitEvent', { call: msg.id, name: 'step' });
        try { await callHost('log', { call: msg.id, level: 'info', message: 'hi' });
@@ -520,7 +338,7 @@ describe('capabilities on the reporting verbs', () => {
   });
 
   it('refuses at load a reporting capability the host does not grant', () => {
-    const entry = writePlugin('ungranted', `return { output: {} };`);
+    const entry = scratch.writePlugin('ungranted', `return { output: {} };`);
     expect(() =>
       loadRemotePlugin(manifest('UngrantedNode', ['emitEvent']), entry, {
         capabilities: ['runTool'],
@@ -529,7 +347,7 @@ describe('capabilities on the reporting verbs', () => {
   });
 
   it('lists the reporting verbs among what heddle serves', () => {
-    const entry = writePlugin('bogus', `return { output: {} };`);
+    const entry = scratch.writePlugin('bogus', `return { output: {} };`);
     expect(() =>
       loadRemotePlugin(manifest('BogusNode', ['emitEvents']), entry, { capabilities: ALL }),
     ).toThrow(/It serves: runTool, emitEvent, log/);
@@ -538,7 +356,7 @@ describe('capabilities on the reporting verbs', () => {
 
 describe('the workspace a node is given', () => {
   it('arrives with the request and is writable', async () => {
-    const entry = writePlugin(
+    const entry = scratch.writePlugin(
       'writer',
       `const { writeFileSync } = await import('node:fs');
        writeFileSync(msg.params.workspace + '/note.txt', 'hello');
@@ -552,7 +370,7 @@ describe('the workspace a node is given', () => {
   });
 
   it('needs no capability, because it is not a call into heddle', async () => {
-    const entry = writePlugin(
+    const entry = scratch.writePlugin(
       'nogrant',
       `return { output: { got: typeof msg.params.workspace } };`,
     );
@@ -561,7 +379,7 @@ describe('the workspace a node is given', () => {
   });
 
   it('is withheld when the plugin process is confined to a sandbox of its own', async () => {
-    const entry = writePlugin(
+    const entry = scratch.writePlugin(
       'confined',
       `return { output: {
          got: typeof msg.params.workspace,
@@ -583,7 +401,7 @@ describe('the workspace a node is given', () => {
   });
 
   it('fails getWorkspace naming the sandbox, not transforms', async () => {
-    const entry = writeHelperPlugin(
+    const entry = scratch.writeHelperPlugin(
       'confined-helper',
       `serve({
          ConfinedHelperNode: {
@@ -671,60 +489,9 @@ function transformManifest(componentType: string, capabilities: string[] = []) {
   };
 }
 
-describe('a transform reporting', () => {
-  it('files its events under the agent it hangs off', async () => {
-    const entry = writePlugin(
-      'guard',
-      `await callHost('emitEvent',
-         { call: msg.id, name: 'checked', data: { rule: 'blocklist' } });
-       await callHost('log', { call: msg.id, level: 'info', message: 'blocked' });
-       return { action: 'reject', reason: 'blocked' };`,
-    );
-
-    const { events } = await run(
-      'Blocklist',
-      entry,
-      transformManifest('Blocklist', ['emitEvent', 'log']),
-      agentFlowWithTransform('Blocklist'),
-    );
-
-    expect(reported(events)).toEqual([
-      {
-        type: 'plugin:Blocklist:checked',
-        nodeName: 'the_agent',
-        nodeType: 'Blocklist',
-        data: { rule: 'blocklist' },
-      },
-      {
-        type: 'plugin_log',
-        nodeName: 'the_agent',
-        nodeType: 'Blocklist',
-        level: 'info',
-        message: 'blocked',
-      },
-    ]);
-  });
-
-  it('is sent no workspace, because it owns no tool scope', async () => {
-    const entry = writePlugin(
-      'nodir',
-      `return { action: 'reject', reason: 'workspace=' + typeof msg.params.workspace };`,
-    );
-
-    const { state } = await run(
-      'NoDir',
-      entry,
-      transformManifest('NoDir'),
-      agentFlowWithTransform('NoDir'),
-    );
-
-    expect(state.transform_reason).toBe('workspace=undefined');
-  });
-});
-
 describe('the inlined runtime helper', () => {
   it('reports through ctx, without the author naming a call', async () => {
-    const entry = writeHelperPlugin(
+    const entry = scratch.writeHelperPlugin(
       'helper-report',
       `serve({
          Helper: {
@@ -757,7 +524,7 @@ describe('the inlined runtime helper', () => {
   });
 
   it('throws at the call when the name is unusable', async () => {
-    const entry = writeHelperPlugin(
+    const entry = scratch.writeHelperPlugin(
       'helper-badname',
       `serve({
          BadName: {
@@ -778,27 +545,8 @@ describe('the inlined runtime helper', () => {
     expect(reported(events)).toEqual([]);
   });
 
-  it('throws at the call when the payload is not JSON', async () => {
-    const entry = writeHelperPlugin(
-      'helper-cycle',
-      `serve({
-         Cyclic: {
-           execute: (input, ctx) => {
-             const loop = {}; loop.self = loop;
-             try { ctx.emitEvent('step', loop); return { output: { err: 'none' } }; }
-             catch (e) { return { output: { err: e.message } }; }
-           },
-         },
-       });`,
-    );
-
-    const { state, events } = await run('Cyclic', entry, manifest('Cyclic', ['emitEvent']));
-    expect(String(state.err)).toMatch(/"step" was emitted with data that is not JSON/);
-    expect(reported(events)).toEqual([]);
-  });
-
   it('throws at the call when the capability was never declared', async () => {
-    const entry = writeHelperPlugin(
+    const entry = scratch.writeHelperPlugin(
       'helper-ungranted',
       `serve({
          Silent: {
@@ -816,7 +564,7 @@ describe('the inlined runtime helper', () => {
   });
 
   it('hands a node the workspace heddle sent it', async () => {
-    const entry = writeHelperPlugin(
+    const entry = scratch.writeHelperPlugin(
       'helper-workspace',
       `import { writeFileSync } from 'node:fs';
        serve({
@@ -837,7 +585,7 @@ describe('the inlined runtime helper', () => {
   });
 
   it('tells a transform why it has no workspace', async () => {
-    const entry = writeHelperPlugin(
+    const entry = scratch.writeHelperPlugin(
       'helper-transform-workspace',
       `serve({
          NoScratch: {

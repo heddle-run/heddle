@@ -17,7 +17,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AgentExecutor } from '../../node/agent.js';
 import { MiddlewareChain } from '../middleware.js';
-import { PluginRegistry } from '../registry.js';
 import { State } from '../../state/state.js';
 import { CompiledGraph, type CompiledNode } from '../../graph/types.js';
 import { Runner } from '../../runner/runner.js';
@@ -31,6 +30,7 @@ import type { AgentNode } from '../../spec/types.js';
 import type { Message, Provider, ToolCall } from '../../llm/types.js';
 import type { Dependencies } from '../../node/types.js';
 import type { PluginMiddlewareDef } from '../types.js';
+import { chainOf } from './helpers/seams.js';
 
 let root: string;
 let store: FileSessionStore;
@@ -86,12 +86,6 @@ function gateOn(tool: string): PluginMiddlewareDef {
     }),
   };
 }
-
-const chainOf = (def: PluginMiddlewareDef): MiddlewareChain =>
-  MiddlewareChain.build(
-    PluginRegistry.fromPlugins([{ name: 'p', version: '1.0.0', middleware: [def] }]),
-    {},
-  );
 
 interface Built {
   node: CompiledNode;

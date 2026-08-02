@@ -1,15 +1,15 @@
 ---
 title: Sessions
-description: Conversations that outlive the process — turns on disk, durable runs, and stopping for a human.
+description: Conversations that outlive the process. Turns on disk, durable runs, and stopping for a human.
 ---
 
 A run of a flow starts, finishes, and is gone. A **session** is a conversation those runs
 belong to: heddle writes each exchange down, and the next run in the same session is given
-everything said before it. The conversation outlives the process — close the terminal,
+everything said before it. The conversation outlives the process. Close the terminal,
 come back tomorrow, continue where it stood.
 
 Each `heddle run` inside a session is one **turn**: what the run was given, and what it
-came to. Sessions also hold the other thing worth writing down — a run that has not
+came to. Sessions also hold the other thing worth writing down: a run that has not
 finished, either because the process died or because a [middleware](/docs/plugins/middleware)
 stopped it to wait for a person.
 
@@ -24,14 +24,14 @@ heddle run flow.json --tools-dir tools --session --input '{"query": "hello"}'
 heddle run flow.json --tools-dir tools --session 2f1a… --input '{"query": "and again?"}'
 ```
 
-On the CLI you may also name one yourself — `--session support-42` — because the store is
+On the CLI you may also name one yourself, as in `--session support-42`, because the store is
 your own home directory, where a memorable name costs nothing. Ids are up to 128
 characters of letters, digits, `-` and `_`. (The server refuses chosen ids; see
 [below](#sessions-over-http).)
 
 The agent is handed the turns before it as its conversation history, spliced between its
 system prompt and the new message. That history travels under a reserved state key,
-`_chat_history`, which heddle writes and the flow never declares — and passing it yourself
+`_chat_history`, which heddle writes and the flow never declares, and passing it yourself
 alongside `--session` is refused, because the session *is* the conversation and heddle
 would have to pick one of the two to throw away.
 
@@ -73,7 +73,7 @@ Three properties of the format are worth knowing, because they are what you rely
   rewriting it, and a half-written line damages one turn rather than the conversation.
 - **The checkpoint is a sibling, not a field.** Writing and clearing a run's position
   never touches the transcript. Its presence is what "unfinished" means.
-- **A failed turn is recorded too**, with its error — but contributes nothing to the
+- **A failed turn is recorded too**, with its error, but contributes nothing to the
   history a later run sees. A question the model already ignored once is not worth
   showing it again.
 
@@ -81,7 +81,7 @@ Three properties of the format are worth knowing, because they are what you rely
 
 By default a session records finished turns and nothing in between: a process that dies
 mid-run loses that run. `--durable` writes the run's position down at every node boundary,
-so `--resume` picks it up at the node it had reached — nothing before that node runs
+so `--resume` picks it up at the node it had reached. Nothing before that node runs
 again:
 
 ```bash
@@ -92,7 +92,7 @@ heddle run flow.yaml --tools-dir tools --session support-42 --resume
 
 It costs one store write per node, which is why it is asked for rather than implied by
 `--session`. The checkpoint holds the run's state as JSON, so everything a node produces
-has to survive `JSON.stringify` — a run whose state cannot is refused at the node that
+has to survive `JSON.stringify`, and a run whose state cannot is refused at the node that
 produced it, not on resume hours later.
 
 `--durable`, `--resume` and `--answer` are each an error without `--session`: they name a
@@ -106,12 +106,12 @@ order. Resume it, or `heddle sessions rm` it.
 
 ## Stopping for a human
 
-The reason suspension exists: an agent about to do something consequential — refund an
-order, deploy, delete — and a person who has to say yes first, possibly hours later, from
+The reason suspension exists: an agent about to do something consequential, whether refunding an
+order, deploying or deleting, and a person who has to say yes first, possibly hours later, from
 a different terminal.
 
-A [middleware](/docs/plugins/middleware) — a policy installed by whoever runs heddle,
-consulted around every node and tool call — may **suspend** the run. The run stops, the
+A [middleware](/docs/plugins/middleware), a policy installed by whoever runs heddle and
+consulted around every node and tool call, may **suspend** the run. The run stops, the
 question is written into the session's checkpoint, and the process can exit:
 
 ```
@@ -128,18 +128,18 @@ Answer it with:
 ```
 
 `--resume --answer '<json>'` continues it. The answer reaches the run as the result of
-the call that was waiting — the model sees `{"approved": true}` where it expected the
+the call that was waiting: the model sees `{"approved": true}` where it expected the
 tool's output. Nothing that already ran runs again: not the model call for that round,
 not the tools already called in it. Calls the round never reached are made on the way
 back, because tool calls are not idempotent and a resume that repeated them would not be
-slow — it would be wrong.
+slow; it would be wrong.
 
-`--answer` must be a JSON object, because a tool result is an object of named values —
+`--answer` must be a JSON object, because a tool result is an object of named values,
 wrap a bare value as `{"approved": true}`. Its shape beyond that is the middleware's own:
 whatever the `ask` requested.
 
 A suspension needs a session to be written into; a run without one is refused rather than
-stopped with no way back. It does **not** need `--durable` — a suspension is always
+stopped with no way back. It does **not** need `--durable`, because a suspension is always
 recorded, since a run stopped with nowhere to put the question would be unrecoverable.
 
 ### A worked example
@@ -157,7 +157,7 @@ heddle run my-agent/flow.json --tools-dir my-agent/tools \
 ```
 
 When the agent asks for `refund`, the run stops and prints the question above. Answer it
-— from this terminal, another one, or an hour later:
+from this terminal, another one, or an hour later:
 
 ```bash
 heddle run my-agent/flow.json --tools-dir my-agent/tools \
@@ -166,14 +166,14 @@ heddle run my-agent/flow.json --tools-dir my-agent/tools \
   --session support-42 --resume --answer '{"approved": true}'
 ```
 
-The gate itself is a dozen lines — its `toolCall.before` hook returns
+The gate itself is a dozen lines; its `toolCall.before` hook returns
 `{ action: "suspend", ask: {…} }` for the tools it gates and `{ action: "proceed" }` for
 everything else. [Middleware](/docs/plugins/middleware) covers writing one.
 
 ## Sessions over HTTP
 
 `heddle-server` has the same machinery with two rules of its own. Sessions are **off by
-default** — start it with `--session-store file` to turn them on, or
+default**. Start it with `--session-store file` to turn them on, or
 `--session-store <ComponentType>` to use a [store plugin](/docs/plugins) such as
 [`examples/session-store`](https://github.com/heddle-run/heddle/tree/main/examples/session-store),
 which is what makes more than one replica work. And **ids are issued, never chosen**: a
@@ -198,7 +198,7 @@ curl -sX POST localhost:4319/v1/runs \
 ```
 
 `"durable": true` and `"resume": true` in the body are the flags' equivalents. A run a
-middleware suspended answers `202` — nothing failed — with the question:
+middleware suspended answers `202` rather than an error, because nothing failed, and carries the question:
 
 ```json
 {
@@ -215,7 +215,7 @@ middleware suspended answers `202` — nothing failed — with the question:
 
 and a second request with `"resume": true` and an `"answer"` object continues it.
 Streamed runs get a `suspended` event before the stream closes. See
-[Server](/docs/server#sessions) for what sessions cost a deployment — the bearer-capability
+[Server](/docs/server#sessions) for what sessions cost a deployment: the bearer-capability
 warning is there, and it is worth reading before exposing any of this.
 
 ## Where to go next

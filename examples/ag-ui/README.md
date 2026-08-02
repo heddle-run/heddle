@@ -1,12 +1,12 @@
 # AG-UI: rendering a run for a client that speaks another protocol
 
 This example adds no component to a flow. It changes what the *run looks like on
-the wire*, by supplying an **encoder** — the one plugin kind that is not part of
+the wire*, by supplying an **encoder**, the one plugin kind that is not part of
 the flow at all.
 
 [AG-UI](https://docs.ag-ui.com) is a streaming event protocol for agent↔UI
 interaction, and the one CopilotKit speaks. heddle's own events already carry most
-of its lifecycle, so this encoder is mostly a rename and an id — plus the three
+of its lifecycle, so this encoder is mostly a rename and an id, plus the three
 pieces of bookkeeping that the two models genuinely disagree about, which are
 commented in `encoder.mjs` where they happen.
 
@@ -18,8 +18,8 @@ commented in `encoder.mjs` where they happen.
 
 ## How an encoder is selected
 
-Not by the spec, and not by the operator. **Whoever asked for the run picks it** —
-`--protocol` on the CLI, `?protocol=` over HTTP:
+Not by the spec, and not by the operator. **Whoever asked for the run picks it**:
+`--protocol` on the CLI, `?protocol=` over HTTP.
 
 ```
 POST /v1/runs?stream=true&protocol=ag-ui
@@ -30,7 +30,7 @@ different renderings of it, and neither the flow's author nor the person running
 the server is in a position to know which. A spec that names `AgUiEncoder` as a
 `component_type` is refused, saying so.
 
-`heddle` — or saying nothing — gets heddle's own frames, which are now one
+`heddle`, or saying nothing at all, gets heddle's own frames, which are now one
 encoder among however many are loaded rather than a privileged path beside them.
 A plugin may not claim that name.
 
@@ -98,8 +98,8 @@ data: {"type":"STATE_SNAPSHOT","snapshot":{"query":"hello"}}
 data: {"type":"RUN_FINISHED","threadId":"…","runId":"…"}
 ```
 
-Every frame is **nameless** — no `event:` line here, no `"event"` key on the CLI —
-with its type inside the payload. That is what AG-UI requires, and it is why
+Every frame is **nameless**, with no `event:` line here and no `"event"` key on the
+CLI, carrying its type inside the payload instead. That is what AG-UI requires, and it is why
 `WireFrame.event` is optional: heddle's own frames put the type in the name so a
 browser can subscribe to it, and AG-UI does the opposite.
 
@@ -119,34 +119,34 @@ frames` asks heddle for no tool, no model and no workspace, so an encoder is the
 one kind that is complete with an empty grant.
 
 It is also strictly one-directional. There is no verdict to return and no way to
-affect the run being rendered — given a return path it would be middleware with
+affect the run being rendered; given a return path it would be middleware with
 none of the ordering rules a seam has. The consequence shows up in `finish()`:
 AG-UI's `RUN_FINISHED` and `RUN_ERROR` are mutually exclusive, nothing tells the
-encoder which happened, so it reads the outcome off the stream instead — heddle
+encoder which happened, so it reads the outcome off the stream instead. heddle
 emits `flow_complete` only on success, so having seen one *is* success.
 
 ## Where the two event models disagree
 
 Most of this encoder is a rename and an id. The interesting part is the handful of
-places where heddle's model and AG-UI's are both reasonable and do not line up —
-each is commented in `encoder.mjs` where it happens, and each is a decision any
+places where heddle's model and AG-UI's are both reasonable and do not line up.
+Each is commented in `encoder.mjs` where it happens, and each is a decision any
 encoder author will have to make:
 
 - **Message boundaries are the encoder's.** heddle emits no event when a model's
   answer begins, because it cannot honestly claim one is starting before knowing
   whether the node will stream at all. It does say which node each `token_delta`
-  belongs to, and a node's deltas are contiguous — so a message opens on the first
+  belongs to, and a node's deltas are contiguous, so a message opens on the first
   delta for a node and closes when that node finishes.
 - **A message id is minted per node visit.** heddle's `attempt` cannot serve: it
   is absent from `token_delta`, and it resets when the flow advances, so a loop
   revisiting a streaming node would reuse an id. AG-UI treats a repeated
   `TEXT_MESSAGE_START` as a no-op and appends the content, so a reused id does not
-  fail — it silently glues two turns into one message.
+  fail. It silently glues two turns into one message.
 - **`node_error` is not `RUN_ERROR`, but it does close the step.** A node error is
   not terminal: a `nodeError` middleware may retry, and the same node can fail and
   then succeed. Rendering it as `RUN_ERROR` would tell every client the run was
   over while it carried on. Leaving the *step* open, though, means the retry emits
-  a second `STEP_STARTED` for a step already active — which AG-UI's verifier
+  a second `STEP_STARTED` for a step already active, which AG-UI's verifier
   refuses, aborting a run heddle went on to complete.
 - **A tool result is its own message.** `TOOL_CALL_RESULT.messageId` names a new
   tool message rather than the assistant message the call belongs to, so it gets
@@ -156,7 +156,7 @@ encoder author will have to make:
   `content` and no error field, so the message goes where the model's own copy of
   it goes.
 - **`STATE_SNAPSHOT` replaces the client's whole state**, while
-  `node_complete.state` is only that node's own output — the runner merges it in
+  `node_complete.state` is only that node's own output, and the runner merges it in
   one line later. So the encoder accumulates the run state itself; sending a node's
   output as a snapshot would delete what earlier nodes put there. The flow above
   hides this, because `StartNode` and `EndNode` compile to a passthrough whose

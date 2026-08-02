@@ -3,16 +3,16 @@ title: Tools
 description: Build custom tools in any language using stdin/stdout JSON.
 ---
 
-Tools in heddle are standalone executables that communicate via JSON over stdin/stdout. Write them in any language — no SDK required.
+Tools in heddle are standalone executables that communicate via JSON over stdin/stdout. Write them in any language. No SDK required.
 
-## How Tools Work
+## How tools work
 
 1. heddle calls your tool as a subprocess
 2. Input is sent as JSON via stdin
 3. Your tool processes the input
 4. Output is returned as JSON via stdout
 
-## Creating a Tool
+## Creating a tool
 
 ### Bash
 
@@ -50,7 +50,7 @@ process.stdin.on("end", () => {
 });
 ```
 
-## Tool Directory
+## Tool directory
 
 Place your tools in a directory and reference it with `--tools-dir`:
 
@@ -67,13 +67,13 @@ Make sure tools are executable:
 chmod +x tools/*
 ```
 
-A tool's name is its filename with the extension stripped, so `fetch_api.py` is declared in the spec as `fetch_api`. Two files that reduce to the same name — `search.sh` and `search.py` — collide, and only one of them is registered.
+A tool's name is its filename with the extension stripped, so `fetch_api.py` is declared in the spec as `fetch_api`. Two files that reduce to the same name, such as `search.sh` and `search.py`, collide, and only one of them is registered.
 
 ### Tools from a plugin
 
 A directory is not the only source. A plugin can contribute tools straight into the
 registry, either as executables it ships beside itself or as tools it implements in its own
-process — the latter existing nowhere on the filesystem. A flow names them exactly as it
+process, the latter existing nowhere on the filesystem. A flow names them exactly as it
 names a file-backed tool, and nothing downstream can tell the difference.
 
 ```bash
@@ -82,12 +82,12 @@ heddle run flow.json --tools-dir ./tools --plugin ./mcp-proxy/manifest.json
 
 The registries are composed, and a plugin's tools go in weakest: a name from `--tools-dir`
 and a name a caller typed both beat a name a manifest bound in bulk. A plugin tool that
-collides at all is refused at load unless its manifest explicitly declared `shadows` — and
+collides at all is refused at load unless its manifest explicitly declared `shadows`, and
 a server refuses to let a submitted plugin be the one to declare it.
 
 See [Plugins](/docs/plugins/manifest) for the manifest's `tools` field.
 
-## Declaring Tools in a Spec
+## Declaring tools in a spec
 
 Tools are declared inline as `ServerTool` components, not referenced by bare name. The `name` is what links the declaration to the executable in `--tools-dir`; `description`, `inputs`, and `outputs` are what the model sees when deciding whether to call it.
 
@@ -123,13 +123,13 @@ agent:
           type: string
 ```
 
-Each `inputs` entry becomes a parameter in the JSON Schema handed to the model. All of them are marked required — optional parameters are not yet expressible.
+Each `inputs` entry becomes a parameter in the JSON Schema handed to the model. All of them are marked required; optional parameters are not yet expressible.
 
 To run a tool directly, without an LLM choosing it, use a [ToolNode](/docs/nodes#toolnode).
 
 Running `heddle validate` with `--tools-dir` checks that every declared `ServerTool` has a matching executable.
 
-## Execution Details
+## Execution details
 
 - Tool timeout: 30 seconds
 - Input arrives on stdin as a single JSON object; output must be a JSON object on stdout
@@ -155,9 +155,9 @@ $HEDDLE_WORKSPACE/       # the tool's cwd, and its scratch
 ```
 
 **One workspace per `AgentNode` execution**, shared by every tool call that agent makes.
-That is what lets an agent's tools hand each other files — write a CSV in one call, run a
-script over it in the next — while a different agent in the same flow sees an empty one.
-It is removed when the agent finishes.
+That is what lets an agent's tools hand each other files: write a CSV in one call, run a
+script over it in the next. A different agent in the same flow sees an empty one, and it
+is removed when the agent finishes.
 
 ### Putting something in it
 
@@ -170,7 +170,7 @@ heddle run flow.yaml --tools-dir ./tools \
   --mount ./notes:notes:rw
 ```
 
-`<src>`, then optionally `:<dest>` (where it lands, relative to the workspace root — the
+`<src>`, then optionally `:<dest>` (where it lands, relative to the workspace root; the
 source's own name by default) and `:ro` or `:rw`.
 
 **`ro` is the default and is a copy.** Every node gets its own; a run that edits one is
@@ -190,7 +190,7 @@ wrote. Three rules worth knowing, because they are chosen rather than incidental
   the run's own error is the one worth having.
 
 A plugin can put files in every workspace too, by declaring them in its
-[manifest](/docs/plugins/manifest#files) — that is how `examples/skills-agent/` ships an
+[manifest](/docs/plugins/manifest#files). That is how `examples/skills-agent/` ships an
 agent with a folder of skills rather than a prompt full of them.
 
 Over HTTP a caller has the same option without needing a path on the server. A request to
@@ -212,7 +212,7 @@ heddle run flow.yaml --tools-dir ./tools --safe --workspace ./run-out
 
 Each node's workspace goes in `./run-out/<node-name>` and stays there. With `--safe` and no
 `--allow-write` at all, that is everything the run produced without granting a single
-writable path — the workspace was already writable, and now it survives.
+writable path: the workspace was already writable, and now it survives.
 
 <Callout>
 A workspace is not confinement. Without `--safe` nothing stops a tool from writing
@@ -223,20 +223,20 @@ says whether anything is enforcing the edges.
 
 ## Safe mode
 
-`--safe` runs each tool inside an OS sandbox instead — bubblewrap on Linux, Seatbelt on macOS, selected automatically:
+`--safe` runs each tool inside an OS sandbox instead: bubblewrap on Linux, Seatbelt on macOS, selected automatically.
 
 ```bash
 heddle run flow.json --tools-dir ./tools --safe
 ```
 
-A confined tool gets read-only system paths, a throwaway `$HOME` (so `~/.ssh` and `~/.aws` are unreachable), a private `$TMPDIR`, and only the environment variables named with `--allow-env` — so API keys in heddle's environment are not handed to tool code. Network access is allowed unless you pass `--deny-net`.
+A confined tool gets read-only system paths, a throwaway `$HOME` (so `~/.ssh` and `~/.aws` are unreachable), a private `$TMPDIR`, and only the environment variables named with `--allow-env`, so API keys in heddle's environment are not handed to tool code. Network access is allowed unless you pass `--deny-net`.
 
 What `--safe` adds to the workspace is enforcement: the workspace becomes the only place a tool *can* write, and the directory heddle was launched from becomes readable and nothing more. Each `AgentNode` execution opens its own sandbox session over its own workspace, so every tool call is still its own container while all calls within one agent share the directory.
 
 Widen the policy with `--allow-read <path>` and `--allow-write <path>`.
 
 <Callout type="warn">
-Plugins loaded with `--plugin` as an ES module are not sandboxed: the CLI imports the module into the heddle process, where it runs with full Node privileges. Only the tools it invokes via `ctx.runTool` are confined. A plugin loaded from a manifest is different — it runs in its own process with an empty environment, and is confined by the same sandbox as tools when one is configured.
+Plugins loaded with `--plugin` as an ES module are not sandboxed: the CLI imports the module into the heddle process, where it runs with full Node privileges. Only the tools it invokes via `ctx.runTool` are confined. A plugin loaded from a manifest is different: it runs in its own process with an empty environment, and is confined by the same sandbox as tools when one is configured.
 </Callout>
 
 See [Sandboxing](/docs/sandboxing) for the full policy, including which flags are a hard error without `--safe`.
