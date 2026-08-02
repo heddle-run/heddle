@@ -1,20 +1,23 @@
-# zoom-notetaker — a Zoom link in, the meeting's notes out.
+# zoom-notetaker — a Zoom link in, the meeting's notes out. No cloud API.
 #
-#   start ──> join (ToolNode) ──> capture (ToolNode) ──> route ──┬─> notes (LlmNode) ──> end
-#                                                                └─> end_failed
+#   start ──> attend (ToolNode) ──> route ──┬─> notes (LlmNode) ──> end
+#                                           └─> end_failed
 #
-# The two ToolNodes are the whole trick: `join` sends a notetaker bot to the
-# meeting through the Recall.ai API, `capture` waits until the call ends and
-# brings the transcript back, and only then does a model get involved. Neither
-# step has a decision in it, so neither is an agent — the flow is a pipeline
-# with one branch: did we get a transcript or not.
+# The one ToolNode is the whole trick: `attend` drives a local headless
+# Chromium into the meeting through Zoom's web client, harvests the live
+# captions as they stabilize in the DOM, and comes back when the meeting ends.
+# It is a single step because the browser session has to stay alive from the
+# first click to the last caption — and it has no decisions in it, so it is a
+# plain tool, not an agent. The flow's only branch is the one that matters:
+# did a transcript come back or not.
 component_type: Flow
 agentspec_version: 26.2.0
 id: flow_zoom_notetaker
 name: zoom-notetaker
 description: >
-  Sends a notetaker bot to a Zoom meeting, waits for the call to end, and turns
-  what was said into a summary, decisions, action items and open questions.
+  Sends a headless-browser notetaker into a Zoom meeting, waits for the call
+  to end, and turns the captions into a summary, decisions, action items and
+  open questions.
 metadata: {}
 inputs: []
 outputs: []
@@ -23,8 +26,7 @@ start_node:
   $component_ref: n_start
 nodes:
   - $component_ref: n_start
-  - $component_ref: n_join
-  - $component_ref: n_capture
+  - $component_ref: n_attend
   - $component_ref: n_route
   - $component_ref: n_notes
   - $component_ref: n_end
@@ -32,24 +34,17 @@ nodes:
 
 control_flow_connections:
   - component_type: ControlFlowEdge
-    id: e_start_join
-    name: start_to_join
+    id: e_start_attend
+    name: start_to_attend
     metadata: {}
     from_node: { $component_ref: n_start }
     from_branch: null
-    to_node: { $component_ref: n_join }
+    to_node: { $component_ref: n_attend }
   - component_type: ControlFlowEdge
-    id: e_join_capture
-    name: join_to_capture
+    id: e_attend_route
+    name: attend_to_route
     metadata: {}
-    from_node: { $component_ref: n_join }
-    from_branch: null
-    to_node: { $component_ref: n_capture }
-  - component_type: ControlFlowEdge
-    id: e_capture_route
-    name: capture_to_route
-    metadata: {}
-    from_node: { $component_ref: n_capture }
+    from_node: { $component_ref: n_attend }
     from_branch: null
     to_node: { $component_ref: n_route }
   - component_type: ControlFlowEdge
@@ -77,52 +72,34 @@ control_flow_connections:
 data_flow_connections:
   - component_type: DataFlowEdge
     id: e_url
-    name: url_to_join
+    name: url_to_attend
     metadata: {}
     source_node: { $component_ref: n_start }
     source_output: meeting_url
-    destination_node: { $component_ref: n_join }
+    destination_node: { $component_ref: n_attend }
     destination_input: meeting_url
   - component_type: DataFlowEdge
     id: e_bot_name
-    name: bot_name_to_join
+    name: bot_name_to_attend
     metadata: {}
     source_node: { $component_ref: n_start }
     source_output: bot_name
-    destination_node: { $component_ref: n_join }
+    destination_node: { $component_ref: n_attend }
     destination_input: bot_name
   - component_type: DataFlowEdge
-    id: e_bot_id
-    name: bot_id_to_capture
-    metadata: {}
-    source_node: { $component_ref: n_join }
-    source_output: bot_id
-    destination_node: { $component_ref: n_capture }
-    destination_input: bot_id
-  # When the join fails there is no bot to wait on. Its error rides along so
-  # `capture` can fail with the reason the join gave, not a vague one of its own.
-  - component_type: DataFlowEdge
-    id: e_join_error
-    name: join_error_to_capture
-    metadata: {}
-    source_node: { $component_ref: n_join }
-    source_output: error
-    destination_node: { $component_ref: n_capture }
-    destination_input: join_error
-  - component_type: DataFlowEdge
     id: e_max_wait
-    name: max_wait_to_capture
+    name: max_wait_to_attend
     metadata: {}
     source_node: { $component_ref: n_start }
     source_output: max_wait_minutes
-    destination_node: { $component_ref: n_capture }
+    destination_node: { $component_ref: n_attend }
     destination_input: max_wait_minutes
-  # `capture` answers outcome=captured or outcome=failed; the branch reads it.
+  # `attend` answers outcome=captured or outcome=failed; the branch reads it.
   - component_type: DataFlowEdge
     id: e_outcome
     name: outcome_to_route
     metadata: {}
-    source_node: { $component_ref: n_capture }
+    source_node: { $component_ref: n_attend }
     source_output: outcome
     destination_node: { $component_ref: n_route }
     destination_input: branching_mapping_key
@@ -130,7 +107,7 @@ data_flow_connections:
     id: e_transcript
     name: transcript_to_notes
     metadata: {}
-    source_node: { $component_ref: n_capture }
+    source_node: { $component_ref: n_attend }
     source_output: transcript
     destination_node: { $component_ref: n_notes }
     destination_input: transcript
@@ -149,7 +126,7 @@ data_flow_connections:
     id: e_error
     name: error_to_end_failed
     metadata: {}
-    source_node: { $component_ref: n_capture }
+    source_node: { $component_ref: n_attend }
     source_output: error
     destination_node: { $component_ref: n_end_failed }
     destination_input: error
@@ -167,46 +144,14 @@ $referenced_components:
       - { title: max_wait_minutes, type: integer }
     branches: [next]
 
-  n_join:
+  n_attend:
     component_type: ToolNode
-    id: n_join
-    name: join
+    id: n_attend
+    name: attend
     metadata: {}
     inputs:
       - { title: meeting_url, type: string }
       - { title: bot_name, type: string }
-    outputs:
-      - { title: bot_id, type: string }
-      - { title: status, type: string }
-      - { title: error, type: string }
-    branches: [next]
-    tool:
-      component_type: ServerTool
-      id: t_join
-      name: join_meeting
-      description: >
-        Send a notetaker bot to a meeting URL through the Recall.ai API.
-        Returns the bot's id, or error set and bot_id empty when the bot could
-        not be dispatched.
-      metadata: {}
-      inputs:
-        - { title: meeting_url, type: string }
-        - title: bot_name
-          type: string
-          default: heddle notetaker
-      outputs:
-        - { title: bot_id, type: string }
-        - { title: status, type: string }
-        - { title: error, type: string }
-
-  n_capture:
-    component_type: ToolNode
-    id: n_capture
-    name: capture
-    metadata: {}
-    inputs:
-      - { title: bot_id, type: string }
-      - { title: join_error, type: string }
       - { title: max_wait_minutes, type: integer }
     outputs:
       - { title: outcome, type: string }
@@ -215,21 +160,19 @@ $referenced_components:
     branches: [next]
     tool:
       component_type: ServerTool
-      id: t_capture
-      name: await_transcript
+      id: t_attend
+      name: attend_meeting
       description: >
-        Wait for the bot's meeting to end, then fetch and flatten its
-        transcript. Answers outcome=captured with the transcript, or
-        outcome=failed with error saying why — including when the join step
-        never produced a bot to wait on.
+        Join a Zoom meeting in a local headless Chromium via the web client,
+        collect the live captions until the call ends, and answer
+        outcome=captured with the transcript — or outcome=failed with error
+        saying why: no browser found, join refused, or no captions to read.
       metadata: {}
       inputs:
-        - title: bot_id
+        - { title: meeting_url, type: string }
+        - title: bot_name
           type: string
-          default: ""
-        - title: join_error
-          type: string
-          default: ""
+          default: heddle notetaker
         - title: max_wait_minutes
           type: integer
           default: 180
@@ -269,11 +212,11 @@ $referenced_components:
       model_id: gpt-4o-mini
       api_key: $OPENAI_API_KEY
     prompt_template: |
-      You attended a meeting as its notetaker, and the transcript below is what
-      the bot brought back. Machine captions are rough: names come through
-      misspelled, sentences arrive cut in half, and filler dominates. Write the
-      notes for someone who was not there, under exactly these four headings,
-      in this order:
+      You attended a meeting as its notetaker, and the transcript below is the
+      meeting's live captions. Machine captions are rough: names come through
+      misspelled, sentences arrive cut in half, lines repeat as the recognizer
+      corrects itself, and filler dominates. Write the notes for someone who
+      was not there, under exactly these four headings, in this order:
 
       ## Summary
       Two or three sentences: what the meeting was about and where it landed.

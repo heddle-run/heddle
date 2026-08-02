@@ -13,7 +13,7 @@ Browse them at [heddle.run/library](https://heddle.run/library).
 | [docs-qa](docs-qa/README.md) | Answers questions from a folder of documents, citing the file and line. | A model key, `python3` |
 | [csv-analyst](csv-analyst/README.md) | Answers questions about a folder of CSVs by writing SQL against them. | A model key, `python3` |
 | [changelog-writer](changelog-writer/README.md) | Reads a range of git commits and writes the release notes for them. | A model key, `git`, `python3` |
-| [zoom-notetaker](zoom-notetaker/README.md) | Joins a Zoom meeting from its link, waits out the call, and writes up the notes. | A model key, a [Recall.ai](https://recall.ai) key, `python3` |
+| [zoom-notetaker](zoom-notetaker/README.md) | Joins a Zoom meeting in a headless browser, waits out the call, and writes up the notes. | A model key, `node` ≥ 22, Chromium |
 
 Every one runs on `gpt-4o-mini` as written, and every one is a text file you can
 point at a different provider — see [LLM providers](https://heddle.run/docs/llm-providers).
@@ -118,4 +118,6 @@ heddle run library/dist/docs-qa.heddle --safe
 the workspace the bundle mounted into, which is what `--safe` leaves reachable.
 `changelog-writer` is the exception: it reads a repository elsewhere on the
 machine, so under `--safe` it also needs `--allow-read` for that path. Its README
-says so.
+says so. `zoom-notetaker` is the other: its one tool drives a full Chromium,
+which no tool sandbox will contain — run it unsandboxed and read the tool
+instead, as its README explains.
