@@ -1,13 +1,44 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import {
+  IBM_Plex_Mono,
+  IBM_Plex_Sans,
+  Instrument_Serif,
+  Inter,
+} from "next/font/google";
 import { RootProvider } from "fumadocs-ui/provider";
-import { Backdrop } from "@/ds";
+import RouteBackdrop from "@/components/RouteBackdrop";
 import "./globals.css";
+import "../ds-heddle/styles.css";
 
+/* Inter still drives the FormFlow pages (docs, playground, compare); the three
+   Heddle families drive the landing. All four are self-hosted through
+   next/font — see ds-heddle/DEVIATIONS.md §3. */
 const inter = Inter({
   subsets: ["latin"],
   weight: ["300", "400", "500", "600"],
   variable: "--font-inter",
+  display: "swap",
+});
+
+const plexSans = IBM_Plex_Sans({
+  subsets: ["latin"],
+  weight: ["300", "400", "500", "600"],
+  variable: "--font-plex-sans",
+  display: "swap",
+});
+
+const plexMono = IBM_Plex_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500"],
+  variable: "--font-plex-mono",
+  display: "swap",
+});
+
+const instrumentSerif = Instrument_Serif({
+  subsets: ["latin"],
+  weight: "400",
+  style: ["normal", "italic"],
+  variable: "--font-instrument",
   display: "swap",
 });
 
@@ -51,18 +82,25 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={inter.variable} suppressHydrationWarning>
+    <html
+      lang="en"
+      className={`${inter.variable} ${plexSans.variable} ${plexMono.variable} ${instrumentSerif.variable}`}
+      suppressHydrationWarning
+    >
       <body>
         <RootProvider
           theme={{
             enabled: true,
             attribute: "class",
-            defaultTheme: "dark",
+            /* Light since the Heddle system landed — it is light-first, with
+               the navy-black dark theme a toggle away. next-themes remains the
+               single source of truth for every page. */
+            defaultTheme: "light",
             enableSystem: false,
             disableTransitionOnChange: true,
           }}
         >
-          <Backdrop />
+          <RouteBackdrop />
           <div className="hd-content">{children}</div>
         </RootProvider>
       </body>

@@ -1,85 +1,66 @@
-import { Icon } from "@/ds";
-import SectionLabel from "./SectionLabel";
+import { Icon, SectionHeading } from "@/ds-heddle";
 import { faqItems } from "@/lib/constants";
 
+/* 005 — native <details>, keyboard-accessible without JavaScript. */
 export default function FAQ() {
   return (
-    <section className="hd-section">
-      <div className="hd-container">
-        <SectionLabel index="007">Questions</SectionLabel>
-
-        <div className="hd-split" style={{ alignItems: "start" }}>
-          <h2
-            style={{
-              margin: 0,
-              fontSize: "clamp(30px,4vw,48px)",
-              fontWeight: "var(--fw-semibold)",
-              letterSpacing: "var(--tracking-tight)",
-              lineHeight: "var(--lh-snug)",
-              color: "var(--text-strong)",
-            }}
-          >
-            Asked and answered.
-          </h2>
-
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: "var(--space-3)",
-            }}
-          >
-            {faqItems.map((item) => (
-              <details
-                key={item.question}
-                className="hd-faq"
+    <section
+      id="faq"
+      style={{ borderTop: "1px solid var(--border-hairline)" }}
+    >
+      <div
+        className="hds-container"
+        style={{
+          paddingTop: "var(--section-y)",
+          paddingBottom: "var(--section-y)",
+          maxWidth: "var(--maxw-narrow)",
+        }}
+      >
+        <SectionHeading
+          number="005"
+          eyebrow="Questions"
+          title="Asked and answered."
+        />
+        <div style={{ marginTop: 28 }} className="hds-faq">
+          {faqItems.map((item) => (
+            <details
+              key={item.question}
+              style={{ borderTop: "1px solid var(--border-hairline)" }}
+            >
+              <summary
                 style={{
-                  border: "1px solid var(--border-default)",
-                  borderRadius: "var(--radius-xl)",
-                  background: "var(--surface-subtle)",
-                  padding: "var(--space-4) var(--space-5)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 16,
+                  padding: "16px 0",
+                  cursor: "pointer",
+                  fontSize: 15.5,
+                  fontWeight: "var(--fw-medium)",
+                  color: "var(--text-strong)",
+                  letterSpacing: "var(--ls-heading)",
                 }}
               >
-                <summary
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    gap: "var(--space-4)",
-                    cursor: "pointer",
-                    listStyle: "none",
-                    fontSize: "var(--fs-base)",
-                    fontWeight: "var(--fw-medium)",
-                    color: "var(--text-strong)",
-                  }}
-                >
-                  {item.question}
-                  <span
-                    aria-hidden
-                    className="hd-faq-chevron"
-                    style={{
-                      display: "inline-flex",
-                      flex: "0 0 auto",
-                      color: "var(--text-faint)",
-                    }}
-                  >
-                    <Icon name="chevron-down" size={16} />
-                  </span>
-                </summary>
-                <p
-                  style={{
-                    margin: "var(--space-3) 0 0",
-                    paddingRight: "var(--space-8)",
-                    fontSize: "var(--fs-sm)",
-                    lineHeight: "var(--lh-relaxed)",
-                    color: "var(--text-body)",
-                  }}
-                >
-                  {item.answer}
-                </p>
-              </details>
-            ))}
-          </div>
+                {item.question}
+                <Icon
+                  name="chevronDown"
+                  size={16}
+                  style={{ color: "var(--text-subtle)" }}
+                />
+              </summary>
+              <p
+                style={{
+                  fontSize: 14.5,
+                  color: "var(--text-muted)",
+                  lineHeight: "var(--lh-body)",
+                  margin: "0 0 18px",
+                  maxWidth: "68ch",
+                }}
+              >
+                {item.answer}
+              </p>
+            </details>
+          ))}
         </div>
       </div>
     </section>
