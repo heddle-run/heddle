@@ -182,3 +182,19 @@ and a tool a flow names that nothing provides. The exception is a graph heddle c
 so that a check which could not run is not mistaken for a fault. Read the output as well
 as the status.
 </Callout>
+
+## Share It
+
+Once the agent works, hand it to someone as one file — the spec, the tools and their
+executable bits, everything:
+
+```bash
+heddle bundle my-agent/flow.json --tools-dir my-agent/tools -o my-agent.heddle
+```
+
+```bash
+heddle run my-agent.heddle --input '{"query": "hello"}'
+```
+
+The receiver needs heddle and an API key — a spec names its key as `$ENV_VAR`, resolved on
+the machine that runs, so credentials never travel. See [Bundles](/docs/bundles).

@@ -1,0 +1,146 @@
+---
+title: Bundles
+description: Pack a flow and everything it runs with into one .heddle file anyone can run.
+---
+
+A flow is rarely just a flow. By the time an agent works it is a spec **and** a directory
+of tools, a plugin or two, a folder of files the tools read, and the settings its
+middleware runs with — five paths on your machine, held together by one shell command
+only you have. A **bundle** is that command made into a file:
+
+```bash
+heddle bundle spec.yaml --tools-dir tools --plugin plugin.json \
+  --mount skills --input '{"query":"hello"}' -o agent.heddle
+```
+
+Send `agent.heddle` to anyone. Where heddle is installed, it runs with nothing else:
+
+```bash
+heddle run agent.heddle
+```
+
+## What goes in
+
+`heddle bundle` takes the same flags a run does, and packs what each names:
+
+| Flag | What travels |
+|------|--------------|
+| `<flow>` | The spec file, JSON or YAML |
+| `--tools-dir <dir>` | The tool executables, with their executable bits — read back exactly as a run reads a tools directory |
+| `--plugin <manifest>` | The plugin's **whole directory**. A manifest plugin may reference only what is inside its own directory, and that confinement rule is exactly what makes it shippable |
+| `--mount <src[:dest][:ro\|:rw]>` | The file or directory, with where it lands and whether changes copy back |
+| `--plugin-config <Type>=<json>` | The settings, resolved now — a `@file` value is read at pack time, so only its contents travel |
+| `--input <json>` | A default input, recorded so the receiver's first run can be zero-configuration |
+
+The bundle is checked before it is written: the spec must parse, the graph must compile
+and validate, and every tool the flow names must be carried by `--tools-dir` or a
+`--plugin`. A bundle that packs is a bundle that runs — the failure your recipient would
+have hit is the failure you get now, on the machine that can fix it.
+
+## Running one
+
+`heddle run` and `heddle validate` both take a `.heddle` where they take a flow. The rule
+for flags is: **the bundle proposes, the command line disposes.**
+
+```bash
+heddle run agent.heddle                            # the recorded input
+heddle run agent.heddle --input '{"query":"mine"}' # yours wins
+heddle run agent.heddle --mount ./more-data        # composes with the bundle's
+heddle run agent.heddle --session support-42       # sessions work as always
+```
+
+A singular flag you pass overrides what the bundle recorded; a repeatable one composes
+with it, the bundle's entries first. A `--plugin-config` for a component type the bundle
+also configures replaces that type's settings entirely.
+
+## What is inside
+
+A `.heddle` is a **gzipped tar archive** with a `heddle.json` manifest at its root. No
+custom container, no dependency acquired to read or write it — heddle carries its own
+ustar reader and writer over `node:zlib`. The practical consequence: you can inspect a
+bundle you were handed with tools you already trust, before heddle touches it.
+
+```bash
+$ tar -tzf agent.heddle
+heddle.json
+flow/spec.yaml
+tools/
+tools/bash.py
+tools/read_file.py
+plugins/skills/
+plugins/skills/plugin.json
+plugins/skills/bin/list_skills.py
+mounts/0/
+mounts/0/date-arithmetic.md
+```
+
+`heddle.json` names everything else, so the layout is data rather than convention:
+
+```json
+{
+  "format": 1,
+  "name": "skills",
+  "flow": "flow/spec.yaml",
+  "tools": "tools",
+  "plugins": ["plugins/skills/plugin.json"],
+  "pluginConfig": { "RetryPolicy": { "maxAttempts": 3 } },
+  "mounts": [{ "path": "mounts/0", "dest": "skills", "mode": "ro" }],
+  "input": { "query": "what skills do you have?" }
+}
+```
+
+`format` is the version. A bundle from a newer heddle is refused with an upgrade hint
+rather than half-read.
+
+## What deliberately does not travel
+
+A bundle carries what an agent *is*, not what an operator *decided*. Four things are left
+out on purpose, and asking for them is asking the wrong file:
+
+- **Credentials.** A spec references a key as `$ENV_VAR` and it resolves on the machine
+  that runs — never the one that packed. Nothing in a bundle can carry a secret unless you
+  put one in a mounted file yourself, so don't.
+- **Sandbox policy.** `--safe`, `--allow-read`, `--deny-net` are the receiving operator's
+  judgment about their own machine. A file that arrived in the mail does not get to make it.
+- **Sessions.** A conversation is machine-local state in `~/.heddle/sessions/`. A bundle
+  runs *in* a session (`--session` works as always); it does not bring one.
+- **Discovery grants.** A bundled plugin declaring `discoverTools` still needs
+  `--discover-tools` from whoever runs it, because that flag means "you may start this
+  plugin's process", and only the person running can grant it.
+
+One thing *cannot* travel: an **in-process plugin** — a `--plugin` that is an importable
+module rather than a `.json` manifest. What it imports lives in the author's
+`node_modules`, so its closure is not something a directory walk can collect, and a bundle
+that shipped only the entry file would run on one machine in the world. `heddle bundle`
+refuses it and points at the [manifest format](/docs/plugins/manifest), which is the
+shippable kind.
+
+## Receiving one
+
+A bundle is somebody else's code, packaged conveniently — treat it exactly as you would a
+repository you just cloned. heddle's side of that bargain:
+
+- Extraction refuses path traversal, absolute paths, and symlinks or hard links anywhere
+  in the archive, and caps what a bundle may unpack to, so *opening* one is safe.
+- Reading a plugin manifest runs nothing, so `heddle validate agent.heddle` inspects the
+  whole bundle — spec, graph, tools, plugin manifests — without executing a line of it.
+
+*Running* it is running its tools, like any tools directory. The same advice applies,
+with more reason:
+
+```bash
+heddle validate agent.heddle        # look first
+tar -tzf agent.heddle               # or with your own eyes
+heddle run agent.heddle --safe      # then run it confined
+```
+
+<Callout type="warn">
+Tools in a bundle are programs, and without `--safe` a tool is a subprocess with your
+whole environment, API keys included. For a bundle you did not build, `--safe` is not
+paranoia — it is the default posture toward executable mail. See
+[Sandboxing](/docs/sandboxing).
+</Callout>
+
+## Reference
+
+The full flag table lives in the [CLI reference](/docs/cli-reference#heddle-bundle).

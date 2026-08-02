@@ -13,6 +13,7 @@
     "plugins",
     "---Running heddle---",
     "cli-reference",
+    "bundles",
     "server",
     "sandboxing"
   ]

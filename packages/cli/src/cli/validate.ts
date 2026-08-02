@@ -8,12 +8,14 @@ import {
   loadPlugins,
   FileRegistry,
   composeRegistries,
+  isBundlePath,
   missingTools,
   PluginRegistry,
   ToolError,
   type CompiledGraph,
   type ParsedFlow,
 } from '@heddle/core';
+import { openBundle, type OpenedBundle } from './bundles.js';
 
 interface ValidateOptions {
   toolsDir?: string;
@@ -23,7 +25,7 @@ interface ValidateOptions {
 
 export const validateCommand = new Command('validate')
   .description('Validate an Agent Spec component (Flow, Agent, Swarm, etc.)')
-  .argument('<spec>', 'Path to spec JSON or YAML file')
+  .argument('<spec>', 'Path to spec JSON or YAML file, or a .heddle bundle')
   .option('--tools-dir <dir>', 'Directory containing tool executables')
   .option(
     '--plugin <module>',
@@ -36,6 +38,19 @@ export const validateCommand = new Command('validate')
     'Let a plugin that declares "discoverTools" be started so heddle can ask what tools it has. Off by default: reading a manifest runs nothing.',
   )
   .action(async (specPath: string, options: ValidateOptions) => {
+    // A received bundle is the case this exists for: validating it means
+    // validating what it carries, with the tools and plugins it carries.
+    // `given` is what the verdict names — the file the caller typed, not the
+    // temp directory it was opened into.
+    const given = specPath;
+    let bundle: OpenedBundle | undefined;
+    if (isBundlePath(specPath)) {
+      bundle = openBundle(specPath);
+      specPath = bundle.flowPath;
+      options.toolsDir ??= bundle.toolsDir;
+      options.plugin = [...bundle.plugins, ...(options.plugin ?? [])];
+    }
+
     const plugins = await loadPlugins(options.plugin, {
       discovery: options.discoverTools === true,
     });
@@ -50,7 +65,7 @@ export const validateCommand = new Command('validate')
         validateFlowFile(specPath, options, plugins);
       }
 
-      console.log(`Valid: ${specPath}`);
+      console.log(`Valid: ${given}`);
     } finally {
       // The one thing that starts a process on this path is discovery, and it
       // is the reason this exists: a spawned plugin's piped stdio keeps the
@@ -58,6 +73,7 @@ export const validateCommand = new Command('validate')
       // "Valid" and then never exited. `run.ts` has always disposed in a
       // `finally`; this path had nothing to dispose until now.
       plugins.dispose();
+      bundle?.dispose();
     }
   });
 
