@@ -38,10 +38,7 @@ export const installTabs = [
     id: "humans",
     label: "Humans",
     note: "Point it at a document. Nothing enters your project.",
-    commands: [
-      { label: "npx", cmd: "npx @heddle/cli run flow.json" },
-      { label: "docker", cmd: "docker run --rm salahpichen/heddle --help" },
-    ],
+    commands: [{ label: "npx", cmd: "npx @heddle/cli run flow.json" }],
   },
   {
     id: "agents",

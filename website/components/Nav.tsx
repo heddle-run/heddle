@@ -4,11 +4,7 @@ import Link from "next/link";
 import { useEffect, useState, type CSSProperties } from "react";
 import { Icon } from "@/ds-heddle";
 import { useTheme } from "@/lib/theme";
-import {
-  AGENT_SPEC_URL,
-  GITHUB_URL,
-  PLAYGROUND_URL,
-} from "@/lib/constants";
+import { GITHUB_URL, PLAYGROUND_URL } from "@/lib/constants";
 
 /* Sun/moon are site-specific (the vendored Icon set has no theme glyphs and
    takes no site additions), so they live here as inline lucide paths drawn
@@ -66,7 +62,6 @@ const iconControl: CSSProperties = {
    comparison is a view of it, not a page of its own. */
 const links = [
   { label: "Docs", href: "/docs" },
-  { label: "Spec", href: AGENT_SPEC_URL, external: true },
   { label: "Playground", href: PLAYGROUND_URL },
 ];
 
@@ -120,9 +115,6 @@ export default function Nav() {
               <a
                 key={link.label}
                 href={link.href}
-                {...(link.external
-                  ? { target: "_blank", rel: "noopener noreferrer" }
-                  : {})}
                 style={{ color: "var(--text-muted)", textDecoration: "none" }}
               >
                 {link.label}
