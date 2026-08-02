@@ -6,8 +6,8 @@ const MAX_SLUG_LENGTH = 40;
 const UNSAFE_PATH_CHARS = /[^A-Za-z0-9._-]+/g;
 const LEADING_OR_TRAILING_DASHES = /^-+|-+$/g;
 
-export function createWorkspace(label: string): string {
-  return mkdtempSync(join(tmpdir(), `heddle-ws-${slug(label)}-`));
+export function createWorkspace(label: string, prefix = 'heddle-ws'): string {
+  return mkdtempSync(join(tmpdir(), `${prefix}-${slug(label)}-`));
 }
 
 export function removeDir(path: string): void {

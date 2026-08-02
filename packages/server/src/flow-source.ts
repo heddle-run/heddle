@@ -2,7 +2,8 @@ import { realpathSync } from 'node:fs';
 import { resolve, sep } from 'node:path';
 import {
   loadFlow,
-  parseFlow,
+  messageOf,
+  parseFlowObject,
   parseFlowYaml,
   validateFlow,
   type ParsedFlow,
@@ -75,28 +76,28 @@ function flowFromPath(
   }
 
   const path = resolveFlowPath(config.flowsRoot, requested);
-  return asBadRequest(() => loadFlow(path, plugins));
+  return specErrorAsBadRequest(() => loadFlow(path, plugins));
 }
 
 function flowFromBody(flow: unknown, plugins?: PluginRegistry): ParsedFlow {
-  return asBadRequest(() => {
+  return specErrorAsBadRequest(() => {
     const parsed =
       typeof flow === 'string'
         ? parseFlowYaml(flow, plugins)
-        : parseFlow(JSON.stringify(flow), plugins);
+        : parseFlowObject(flow, plugins);
 
     validateFlow(parsed);
     return parsed;
   });
 }
 
-function asBadRequest(parse: () => ParsedFlow): ParsedFlow {
+function specErrorAsBadRequest(parse: () => ParsedFlow): ParsedFlow {
   try {
     return parse();
   } catch (err) {
     if (err instanceof HttpError) throw err;
 
-    const message = err instanceof Error ? err.message : String(err);
+    const message = messageOf(err);
     if (err instanceof TypeError) {
       throw new HttpError(400, unparseableFlowMessage(message), 'SpecError');
     }

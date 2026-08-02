@@ -2,7 +2,9 @@ import { generationParams, providerFor } from '../llm/provider.js';
 import type { ChatResponse, ModelRequest, Provider } from '../llm/types.js';
 import type { LLMConfig } from '../spec/types.js';
 import type { Dependencies } from '../node/types.js';
+import type { Executor, Registry } from '../tool/types.js';
 import { invokeTool } from '../tool/invoke.js';
+import { isObject, typeName } from '../internal/util.js';
 import { PluginError, RunError, ToolError } from '../errors.js';
 
 export type ToolRunner = (
@@ -17,22 +19,39 @@ interface ConfigHolder {
   [key: string]: unknown;
 }
 
+/**
+ * Look a tool up, run it, and hand back its output.
+ *
+ * One function because it is one contract, reached from three places — a
+ * plugin node's `runTool`, a middleware's, and an agent's own tool loop.
+ * `where` is who asked, for the error's sake; the executor is the caller's
+ * choice, because a scoped executor is a per-node fact this function has no
+ * business deciding.
+ */
+export async function runNamedTool(
+  where: string,
+  registry: Registry | undefined,
+  executor: Executor | undefined,
+  signal: AbortSignal | undefined,
+  name: string,
+  input: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  if (!registry) {
+    throw new RunError(`${where}: no tool registry configured`);
+  }
+
+  const tool = registry.lookup(name);
+  if (!tool) {
+    throw new ToolError(`${where}: tool "${name}" not found`);
+  }
+
+  const result = await invokeTool(signal, tool, input, executor);
+  return result.output;
+}
+
 export function toolRunner(where: string, deps: Dependencies): ToolRunner {
-  return async (name, input) => {
-    const { toolRegistry, toolExecutor } = deps;
-
-    if (!toolRegistry) {
-      throw new RunError(`${where}: no tool registry configured`);
-    }
-
-    const tool = toolRegistry.lookup(name);
-    if (!tool) {
-      throw new ToolError(`${where}: tool "${name}" not found`);
-    }
-
-    const result = await invokeTool(undefined, tool, input, toolExecutor);
-    return result.output;
-  };
+  return (name, input) =>
+    runNamedTool(where, deps.toolRegistry, deps.toolExecutor, undefined, name, input);
 }
 
 export class PluginModel {
@@ -69,7 +88,7 @@ export class PluginModel {
     if (raw === undefined) {
       throw new PluginError(missingConfigMessage(this.where));
     }
-    if (!isPlainObject(raw)) {
+    if (!isObject(raw)) {
       throw new PluginError(wrongConfigShapeMessage(this.where, raw));
     }
 
@@ -80,10 +99,6 @@ export class PluginModel {
 
     return config as LLMConfig;
   }
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function missingConfigMessage(where: string): string {
@@ -98,13 +113,7 @@ function missingConfigMessage(where: string): string {
 }
 
 function wrongConfigShapeMessage(where: string, raw: unknown): string {
-  const got =
-    raw === null
-      ? 'null'
-      : Array.isArray(raw)
-        ? 'an array'
-        : `a ${typeof raw}`;
-  return `${where}: "llm_config" is ${got}, not a config object.`;
+  return `${where}: "llm_config" is ${typeName(raw)}, not a config object.`;
 }
 
 function missingModelIdMessage(where: string): string {

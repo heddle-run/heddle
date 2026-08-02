@@ -1,6 +1,7 @@
 import { isBuiltinComponentType } from 'agentspec';
 import type { PluginRegistry } from './registry.js';
 import { PluginError } from '../errors.js';
+import { isObject as isPlainObject } from '../internal/util.js';
 
 const OPAQUE_KEYS = new Set([
   'metadata',
@@ -59,10 +60,6 @@ function componentTypeOf(
 ): string | undefined {
   const raw = component.component_type ?? component.componentType;
   return typeof raw === 'string' && raw.length > 0 ? raw : undefined;
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function middlewareInDocumentMessage(

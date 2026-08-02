@@ -8,6 +8,7 @@ import type { PluginHost } from './host.js';
 import { toolRunner } from './services.js';
 import { checkSchema } from './schema.js';
 import { PluginError, SessionConflictError } from '../errors.js';
+import { isObject as isPlainObject, typeOf } from '../internal/util.js';
 import type { SessionStore } from '../session/store.js';
 import type {
   Checkpoint,
@@ -635,11 +636,3 @@ function nameOf(
   return `plugin "${plugin}": ${componentType} "${componentName}"`;
 }
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function typeOf(value: unknown): string {
-  if (value === null) return 'null';
-  return Array.isArray(value) ? 'array' : typeof value;
-}

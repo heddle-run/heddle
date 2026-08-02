@@ -1,6 +1,5 @@
-import { mkdtempSync, mkdirSync, realpathSync } from 'node:fs';
+import { mkdirSync, realpathSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { tmpdir } from 'node:os';
 import type {
   Sandbox,
   SandboxCommand,
@@ -8,7 +7,7 @@ import type {
   SandboxSession,
 } from './types.js';
 import { baseEnv } from './types.js';
-import { removeDir } from '../workspace/index.js';
+import { createWorkspace, removeDir } from '../workspace/index.js';
 import type { Workspace, WorkspaceGrant } from '../workspace/index.js';
 
 const SYSTEM_READ_PATHS = [
@@ -56,7 +55,7 @@ class SeatbeltSession implements SandboxSession {
     const cwd = realPath(this.workspace.root);
     const tool = realPath(toolPath);
 
-    const scratch = realPath(mkdtempSync(join(tmpdir(), 'heddle-scratch-')));
+    const scratch = realPath(createWorkspace('scratch', 'heddle'));
     const home = join(scratch, 'home');
     mkdirSync(home);
 

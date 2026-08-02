@@ -25,6 +25,20 @@ export function parseFlowYaml(
   return toFlow(yamlDocument(data), registry);
 }
 
+/**
+ * `parseFlow` for a document that is already a parsed value.
+ *
+ * What a server holding a request body wants: the body arrived as JSON and was
+ * parsed once by the transport, so serializing it again just to parse it back
+ * is a round trip that proves nothing.
+ */
+export function parseFlowObject(
+  raw: unknown,
+  registry: PluginRegistry = NO_PLUGINS,
+): ParsedFlow {
+  return toFlow(asDocument(raw, 'JSON'), registry);
+}
+
 export function parseAgent(
   data: string | Buffer,
   registry: PluginRegistry = NO_PLUGINS,

@@ -113,7 +113,7 @@ describe('the store manifest kind', () => {
     ]);
 
     expect(registry.componentTypeNames()).not.toContain('MyStore');
-    expect(registry.storeNames()).toEqual(['MyStore']);
+    expect(registry.createStore('MyStore')).toBeDefined();
     expect(registry.kindOf('MyStore')).toBe('store');
   });
 

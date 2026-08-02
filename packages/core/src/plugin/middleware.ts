@@ -1,5 +1,5 @@
 import { snakeToCamel } from 'agentspec';
-import { PluginError } from '../errors.js';
+import { messageOf, PluginError } from '../errors.js';
 import type { Dependencies } from '../node/types.js';
 import type { EventHandler } from '../runner/events.js';
 import { pluginReporter } from './executor.js';
@@ -11,7 +11,7 @@ import {
 } from './protocol.js';
 import type { PluginRegistry, RegisteredMiddleware } from './registry.js';
 import { PluginModel, toolRunner, type ToolRunner } from './services.js';
-import { readSubscription, type Seam } from './seams.js';
+import { readSubscription, SEAM_NAMES, type Seam } from './seams.js';
 import type {
   MiddlewareContext,
   MiddlewareSubject,
@@ -69,10 +69,24 @@ interface Entry {
 }
 
 export class MiddlewareChain {
-  private constructor(private readonly entries: Entry[]) {}
+  // Consultation order per seam, worked out once. A chain is asked at every
+  // node, every tool call and every model call of a run, and re-deriving
+  // "reversed, then filtered" on each of those is the same answer every time.
+  private readonly beforeBySeam = new Map<Seam, Entry[]>();
+  private readonly afterBySeam = new Map<Seam, Entry[]>();
 
-  static empty(): MiddlewareChain {
-    return new MiddlewareChain([]);
+  private constructor(private readonly entries: Entry[]) {
+    const reversed = [...entries].reverse();
+    for (const seam of SEAM_NAMES) {
+      this.beforeBySeam.set(
+        seam,
+        reversed.filter((entry) => entry.before.has(seam)),
+      );
+      this.afterBySeam.set(
+        seam,
+        reversed.filter((entry) => entry.after.has(seam)),
+      );
+    }
   }
 
   static build(
@@ -98,7 +112,7 @@ export class MiddlewareChain {
   }
 
   has(seam: Seam): boolean {
-    return this.entries.some((entry) => entry.after.has(seam));
+    return this.inConsultOrder(seam).length > 0;
   }
 
   /**
@@ -110,7 +124,7 @@ export class MiddlewareChain {
    * affordable.
    */
   hasBefore(seam: Seam): boolean {
-    return this.entries.some((entry) => entry.before.has(seam));
+    return this.beforeOrder(seam).length > 0;
   }
 
   describe(): string[] {
@@ -259,7 +273,7 @@ export class MiddlewareChain {
   }
 
   private beforeOrder(seam: Seam): Entry[] {
-    return [...this.entries].reverse().filter((entry) => entry.before.has(seam));
+    return this.beforeBySeam.get(seam) ?? [];
   }
 
   private async askBefore(
@@ -307,7 +321,7 @@ export class MiddlewareChain {
       return readBeforeVerdict(seam, verdict, where);
     } catch (err) {
       if (err instanceof MiddlewareError) throw err;
-      const detail = err instanceof Error ? err.message : String(err);
+      const detail = messageOf(err);
       throw new MiddlewareError(
         `${where} failed while heddle was consulting it on ${seam}: ${detail}`,
         { cause: err instanceof Error ? err : undefined },
@@ -316,7 +330,7 @@ export class MiddlewareChain {
   }
 
   private inConsultOrder(seam: Seam): Entry[] {
-    return [...this.entries].reverse().filter((entry) => entry.after.has(seam));
+    return this.afterBySeam.get(seam) ?? [];
   }
 
   private async ask(
@@ -335,7 +349,7 @@ export class MiddlewareChain {
       );
       return readAfterVerdict(seam, verdict, where);
     } catch (err) {
-      const detail = err instanceof Error ? err.message : String(err);
+      const detail = messageOf(err);
       throw new MiddlewareError(
         `${where} failed while heddle was consulting it on ${seam}: ${detail}`,
         { cause: err },

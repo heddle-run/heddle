@@ -11,7 +11,7 @@ import { parseFlow } from '../../spec/parser.js';
 import { Runner } from '../../runner/runner.js';
 import { DEFAULT_RUNNER_OPTIONS } from '../../runner/options.js';
 import type { Event } from '../../runner/events.js';
-import type { PluginCapability } from '../protocol.js';
+import type { PluginMethod } from '../protocol.js';
 import type { SandboxSession } from '../../sandbox/types.js';
 import type { Workspace } from '../../workspace/index.js';
 
@@ -115,7 +115,7 @@ function manifest(
   };
 }
 
-const ALL: PluginCapability[] = ['runTool', 'emitEvent', 'log'];
+const ALL: PluginMethod[] = ['runTool', 'emitEvent', 'log'];
 
 function flowUsing(componentType: string): string {
   return JSON.stringify({

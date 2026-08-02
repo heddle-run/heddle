@@ -14,7 +14,7 @@ import type {
 import type { NodeExecutor, Dependencies } from './types.js';
 import type { EventHandler } from '../runner/events.js';
 import type { Executor, Registry } from '../tool/types.js';
-import { invokeTool } from '../tool/invoke.js';
+import { runNamedTool } from '../plugin/services.js';
 import type {
   ChainBefore,
   ChainVerdict,
@@ -27,7 +27,8 @@ import { TransformChain } from '../plugin/transform.js';
 import { historyMessages } from '../session/history.js';
 import { CHAT_HISTORY_KEY, withoutReserved } from '../session/reserved.js';
 import { RunSuspended, readResume } from '../session/suspend.js';
-import { LLMError, RunError, ToolError } from '../errors.js';
+import { isObject, sleep, typeName } from '../internal/util.js';
+import { LLMError, messageOf, RunError, ToolError } from '../errors.js';
 
 const MAX_TOOL_ROUNDS = 10;
 const MAX_REPORTED_ARGUMENT_LENGTH = 200;
@@ -71,7 +72,6 @@ export class AgentExecutor implements NodeExecutor {
   private readonly deps: Dependencies;
   private readonly agent: Agent;
   private readonly llmConfig: LLMConfig;
-  private readonly model: string;
   private readonly generation: ReturnType<typeof generationParams>;
   private readonly transforms: TransformChain;
   private provider?: Provider;
@@ -88,7 +88,6 @@ export class AgentExecutor implements NodeExecutor {
     this.deps = deps;
     this.agent = agent;
     this.llmConfig = agent.llmConfig;
-    this.model = agent.llmConfig.modelId;
     this.generation = generationParams(agent.llmConfig);
     this.transforms = TransformChain.build(
       agent.transforms,
@@ -322,7 +321,7 @@ export class AgentExecutor implements NodeExecutor {
       this.getProvider(),
       signal,
       {
-        model: this.model,
+        model: this.llmConfig.modelId,
         messages,
         tools: tools.length > 0 ? tools : undefined,
         ...this.generation,
@@ -618,29 +617,20 @@ export class AgentExecutor implements NodeExecutor {
     );
   }
 
-  private async executeTool(
+  private executeTool(
     signal: AbortSignal | undefined,
     toolName: string,
     args: Record<string, unknown>,
     scopedExecutor: Executor | undefined,
   ): Promise<Record<string, unknown>> {
-    const registry = this.deps.toolRegistry;
-    if (!registry) {
-      throw new ToolError(`"${toolName}": no tool registry configured`);
-    }
-
-    const tool = registry.lookup(toolName);
-    if (!tool) {
-      throw new ToolError(`"${toolName}" not found in registry`);
-    }
-
-    const result = await invokeTool(
-      signal,
-      tool,
-      args,
+    return runNamedTool(
+      `AgentNode "${this.node.name}"`,
+      this.deps.toolRegistry,
       scopedExecutor ?? this.deps.toolExecutor,
+      signal,
+      toolName,
+      args,
     );
-    return result.output;
   }
 
   private getProvider(): Provider {
@@ -761,7 +751,7 @@ export async function completeChat(
           `${verdict.delayMs > 0 ? `, in ${verdict.delayMs}ms` : ''}.`,
       );
       if (verdict.delayMs > 0) {
-        await new Promise((resolve) => setTimeout(resolve, verdict.delayMs));
+        await sleep(verdict.delayMs, signal);
       }
       continue;
     }
@@ -954,7 +944,7 @@ function parseToolArguments(call: ToolCall): {
     };
   }
 
-  if (!isPlainObject(value)) {
+  if (!isObject(value)) {
     return {
       args: {},
       error: new ToolError(wrongArgumentsShapeMessage(call.name, value)),
@@ -1040,16 +1030,12 @@ function parseJson(text: string): unknown {
   }
 }
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
 function abandonedStreamWarning(
   nodeName: string,
   emitted: number,
   err: unknown,
 ): string {
-  const cause = err instanceof Error ? err.message : String(err);
+  const cause = messageOf(err);
   return (
     `"${nodeName}": the model stream failed after ${emitted} token ` +
     `deltas had already been sent. Those deltas are not this node's ` +
@@ -1082,14 +1068,8 @@ function unparseableArgumentsMessage(toolName: string, raw: string): string {
 }
 
 function wrongArgumentsShapeMessage(toolName: string, value: unknown): string {
-  const got =
-    value === null
-      ? 'null'
-      : Array.isArray(value)
-        ? 'an array'
-        : `a ${typeof value}`;
   return (
-    `"${toolName}" was called with ${got}. ` +
+    `"${toolName}" was called with ${typeName(value)}. ` +
     `Send a JSON object of named arguments.`
   );
 }

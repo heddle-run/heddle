@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { PluginError } from '../errors.js';
+import { messageOf, PluginError } from '../errors.js';
 
 const FILE_PREFIX = '@';
 const FLAG = '--plugin-config';
@@ -59,7 +59,7 @@ function readConfigFile(componentType: string, path: string): string {
   } catch (err) {
     throw new PluginError(
       `${FLAG} ${componentType}=@${path}: the file is not readable ` +
-        `(${err instanceof Error ? err.message : String(err)})`,
+        `(${messageOf(err)})`,
     );
   }
 }
@@ -74,7 +74,7 @@ function parseConfigJson(
   } catch (err) {
     throw new PluginError(
       `${FLAG} ${componentType}: the value is not JSON ` +
-        `(${err instanceof Error ? err.message : String(err)})`,
+        `(${messageOf(err)})`,
     );
   }
 

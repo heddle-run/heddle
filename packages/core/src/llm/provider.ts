@@ -6,6 +6,7 @@ import type { PluginRegistry } from '../plugin/registry.js';
 import type { PluginComponent } from '../plugin/types.js';
 import { OpenAIProvider } from './openai.js';
 import { LLMError } from '../errors.js';
+import { isSet } from '../internal/util.js';
 import {
   assertEgressAllowed,
   redirectRefusingFetch,
@@ -203,9 +204,6 @@ function resolveEnvVar(value: string, allowEnvRefs: boolean): string {
   return resolved;
 }
 
-function isSet(value: unknown): boolean {
-  return value !== undefined && value !== null;
-}
 
 function supportedTypes(): string {
   return [...OPENAI_COMPATIBLE_TYPES].join(', ');

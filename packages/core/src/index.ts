@@ -1,5 +1,6 @@
 export {
   parseFlow,
+  parseFlowObject,
   parseFlowYaml,
   parseAgent,
   parseComponent,
@@ -88,6 +89,7 @@ export {
 export { FileSessionStore } from './session/file-store.js';
 export type { FileSessionStoreOptions } from './session/file-store.js';
 export {
+  answerOf,
   closeTurn,
   historyFromTurns,
   openTurn,
@@ -118,7 +120,7 @@ export type {
 export type { Dependencies, NodeExecutor } from './node/types.js';
 
 export { definePlugin } from './plugin/types.js';
-export { PluginRegistry } from './plugin/registry.js';
+export { PluginRegistry, SUBMITTABLE_KINDS } from './plugin/registry.js';
 export type { ComponentKind, RegisteredMiddleware } from './plugin/registry.js';
 export {
   loadPlugin,
@@ -134,7 +136,7 @@ export {
   MAX_RETRY_DELAY,
 } from './plugin/middleware.js';
 export type { ChainVerdict } from './plugin/middleware.js';
-export { SEAMS, SEAM_NAMES, IMPLEMENTED_SEAMS, isSeam } from './plugin/seams.js';
+export { SEAMS, SEAM_NAMES, isSeam } from './plugin/seams.js';
 export type {
   AfterAction,
   BeforeAction,
@@ -144,7 +146,11 @@ export type {
   SeamSubscription,
 } from './plugin/seams.js';
 
-export { loadRemotePlugin, readManifest } from './plugin/remote-loader.js';
+export {
+  loadRemotePlugin,
+  readManifest,
+  remotePlugin,
+} from './plugin/remote-loader.js';
 export type { RemotePlugin, RemotePluginOptions } from './plugin/remote-loader.js';
 export { PluginHost } from './plugin/host.js';
 export type {
@@ -159,12 +165,10 @@ export {
   hostRequest,
   isPartial,
   isLogLevel,
-  isPluginCapability,
   isPluginMethod,
   isRequest,
   LineDecoder,
   LOG_LEVELS,
-  PLUGIN_CAPABILITIES,
   PLUGIN_METHODS,
   PROTOCOL_VERSION,
   readAfterVerdict,
@@ -195,7 +199,6 @@ export type {
   InitParams,
   InitResult,
   LogParams,
-  PluginCapability,
   PluginMethod,
   PluginMethods,
   RpcMessage,
@@ -245,10 +248,12 @@ export type {
 export {
   builtinEncoder,
   BUILTIN_PROTOCOL,
+  encoderFor,
   EncoderStream,
   PROTOCOL_NAME,
   serializeEvent,
 } from './plugin/encoder.js';
+export type { ResolvedEncoder } from './plugin/encoder.js';
 
 export {
   composeRegistries,
@@ -286,10 +291,26 @@ export {
   parseMount,
   checkedDest,
   checkedMount,
+  workspaceTools,
   DEFAULT_MOUNT_MAX_BYTES,
   DEFAULT_MOUNT_MAX_ENTRIES,
   RESERVED_DIR as WORKSPACE_RESERVED_DIR,
 } from './workspace/index.js';
+
+// The run environment as both surfaces build it: the sandbox, the workspaces,
+// the registry a run resolves its tools against. One definition, so what a
+// flag means does not depend on which binary parsed it.
+export {
+  assertNoSandboxTuning,
+  assertToolsAvailable,
+  DEFAULT_SANDBOX_BACKEND,
+  positiveOption,
+  SANDBOX_BACKENDS,
+  sandboxFromOptions,
+  standardRegistry,
+  workspacesFromOptions,
+} from './runenv.js';
+export type { SandboxOptions, WorkspaceOptions } from './runenv.js';
 export type {
   CopyBudget,
   Mount,
@@ -330,6 +351,7 @@ export type {
 export {
   CompileError,
   LLMError,
+  messageOf,
   PluginError,
   RunError,
   SandboxError,

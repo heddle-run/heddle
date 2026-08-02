@@ -11,7 +11,7 @@ import {
   type PluginManifest,
 } from './manifest.js';
 import type { ToolDef } from '../tool/types.js';
-import type { PluginCapability } from './protocol.js';
+import type { PluginMethod } from './protocol.js';
 import {
   remoteComponentDef,
   remoteEncoderDef,
@@ -53,8 +53,8 @@ export interface RemotePluginOptions {
   /** Somewhere the plugin's process may write. See `PluginHostOptions`. */
   workspace?: Workspace;
   env?: Record<string, string>;
-  capabilities?: PluginCapability[];
-  refusedBecause?: Partial<Record<PluginCapability, string>>;
+  capabilities?: PluginMethod[];
+  refusedBecause?: Partial<Record<PluginMethod, string>>;
   root?: string;
   /** Whether this process will serve more than one run. See `PluginHostOptions`. */
   shared?: boolean;
@@ -80,7 +80,22 @@ export function loadRemotePlugin(
   entryPath: string | undefined,
   options: RemotePluginOptions = {},
 ): RemotePlugin {
-  const manifest = validateManifest(rawManifest);
+  return remotePlugin(validateManifest(rawManifest), entryPath, options);
+}
+
+/**
+ * {@link loadRemotePlugin} for a caller that already validated the manifest.
+ *
+ * The loader reads a manifest once and hands the result everywhere it is
+ * needed; the server validates a submitted one before deciding whether to
+ * refuse it. Both used to pay for that again here, which made one read look
+ * like three.
+ */
+export function remotePlugin(
+  manifest: PluginManifest,
+  entryPath: string | undefined,
+  options: RemotePluginOptions = {},
+): RemotePlugin {
   checkGrant(
     manifest,
     options.capabilities ?? [],
@@ -428,8 +443,8 @@ function resolveShippedFiles(
 
 function checkGrant(
   manifest: PluginManifest,
-  granted: PluginCapability[],
-  reasons: Partial<Record<PluginCapability, string>>,
+  granted: PluginMethod[],
+  reasons: Partial<Record<PluginMethod, string>>,
 ): void {
   const allowed = new Set(granted);
   const refused = manifest.capabilities.filter(
@@ -442,9 +457,9 @@ function checkGrant(
 
 function refusedGrantMessage(
   manifest: PluginManifest,
-  granted: PluginCapability[],
-  refused: PluginCapability[],
-  reasons: Partial<Record<PluginCapability, string>>,
+  granted: PluginMethod[],
+  refused: PluginMethod[],
+  reasons: Partial<Record<PluginMethod, string>>,
 ): string {
   const why = refused
     .map((capability) => reasons[capability])

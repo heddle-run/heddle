@@ -10,11 +10,12 @@ import { tmpdir } from 'node:os';
 import {
   checkedDest,
   checkedMount,
+  messageOf,
   validateManifest,
   withRuntime,
   WorkspaceError,
 } from '@heddle/core';
-import type { Mount } from '@heddle/core';
+import type { Mount, PluginManifest } from '@heddle/core';
 import type { ServerConfig } from './config.js';
 import { HttpError } from './errors.js';
 
@@ -26,7 +27,7 @@ export interface RequestTool {
 
 export interface RequestPlugin {
   name: string;
-  manifest: unknown;
+  manifest: PluginManifest;
   source: string;
 }
 
@@ -39,7 +40,8 @@ export interface RequestFile {
 
 export interface MaterializedPlugin {
   name: string;
-  manifest: unknown;
+  /** Already validated, so a refusal can read it without re-walking the raw. */
+  manifest: PluginManifest;
   path: string;
 }
 
@@ -253,9 +255,8 @@ function parsePlugins(value: unknown, config: ServerConfig): RequestPlugin[] {
     if (entry.manifest === undefined) {
       throw new HttpError(400, missingManifestMessage(name));
     }
-    checkManifest(entry.manifest);
 
-    return { name, manifest: entry.manifest, source };
+    return { name, manifest: checkManifest(entry.manifest), source };
   });
 }
 
@@ -372,15 +373,11 @@ function checkInterpreter(name: string, interpreter: unknown): string {
   return chosen;
 }
 
-function checkManifest(manifest: unknown): void {
+function checkManifest(manifest: unknown): PluginManifest {
   try {
-    validateManifest(manifest);
+    return validateManifest(manifest);
   } catch (err) {
-    throw new HttpError(
-      400,
-      err instanceof Error ? err.message : String(err),
-      'PluginError',
-    );
+    throw new HttpError(400, messageOf(err), 'PluginError');
   }
 }
 

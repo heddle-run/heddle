@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isObject as isPlainObject } from '../internal/util.js';
 import {
   isBuiltinComponentType,
   LlmConfigUnion,
@@ -82,6 +83,3 @@ function missingIdentityMessage(slot: string, componentType: string): string {
   );
 }
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}

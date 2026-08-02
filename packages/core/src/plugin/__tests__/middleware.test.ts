@@ -233,7 +233,10 @@ async function runWith(
 describe('the nodeError seam', () => {
   it('leaves the error alone when nothing is installed', async () => {
     const { graph, attempts } = failingGraph({ failFor: 1 });
-    const { error } = await runWith(graph, MiddlewareChain.empty());
+    const { error } = await runWith(
+      graph,
+      MiddlewareChain.build(undefined, {}),
+    );
 
     expect(error?.message).toMatch(/work failed on attempt 1/);
     expect(attempts()).toBe(1);
@@ -470,7 +473,7 @@ describe('a replaced node', () => {
   it('takes the unbranched edge rather than a branch it never chose', async () => {
     const { graph } = failingGraph({ failFor: 0, branch: 'hot' }, ['hot']);
 
-    const first = await runWith(graph, MiddlewareChain.empty());
+    const first = await runWith(graph, MiddlewareChain.build(undefined, {}));
     expect(first.state?.get('ended_at')).toBe('hot_end');
 
     const stale = failingGraph({ failFor: Infinity }, ['hot']);

@@ -8,13 +8,9 @@ import {
   collectToolNames,
   propertyTitle,
   EncoderStream,
-  FileRegistry,
   SubprocessExecutor,
   Runner,
   loadPlugins,
-  createSandbox,
-  composeRegistries,
-  missingTools,
   checkpointSink,
   closeTurn,
   isSuspended,
@@ -22,58 +18,39 @@ import {
   positionOf,
   resumeInputs,
   withoutReserved,
+  workspaceTools,
   resumeTurn,
   RunSuspended,
   PluginRegistry,
   MiddlewareChain,
   parsePluginConfig,
-  createWorkspaceFactory,
-  parseMount,
-  SandboxError,
+  assertToolsAvailable,
+  sandboxFromOptions,
+  standardRegistry,
+  workspacesFromOptions,
   DEFAULT_MOUNT_MAX_BYTES,
   DEFAULT_MOUNT_MAX_ENTRIES,
   DEFAULT_RUNNER_OPTIONS,
   State,
   type CompiledGraph,
   type Dependencies,
-  type Registry,
   type RunnerOptions,
   type Event,
   type ParsedFlow,
   type RunPosition,
-  type Sandbox,
-  type SandboxBackend,
+  type SandboxOptions,
   type TurnOutcome,
-  type WorkspaceFactory,
-  type WorkspaceTool,
+  type WorkspaceOptions,
 } from '@heddle/core';
 import { frameLine, resolveEncoder, type EncoderFactory } from './encoders.js';
 import { createProgressWriter, renderEvent } from './progress.js';
 import { selectSession, type SelectedSession, type SessionFlags } from './sessions.js';
 
-const SANDBOX_BACKENDS = new Set(['auto', 'bubblewrap', 'seatbelt']);
-const DEFAULT_SANDBOX_BACKEND = 'auto';
 const DEFAULT_INPUT_KEY = 'query';
 
-interface SafeOptions {
-  safe?: boolean;
-  sandbox?: string;
-  allowRead: string[];
-  allowWrite: string[];
-  allowEnv: string[];
-  denyNet?: boolean;
-}
-
-interface WorkspaceOptions {
-  mount: string[];
-  workspace?: string;
-  mountTools?: boolean;
-  mountMaxBytes?: string;
-  mountMaxEntries?: string;
-}
-
-interface RunOptions extends SafeOptions, WorkspaceOptions, SessionFlags {
+interface RunOptions extends SandboxOptions, WorkspaceOptions, SessionFlags {
   toolsDir?: string;
+  mountTools?: boolean;
   input?: string;
   interactive?: boolean;
   durable?: boolean;
@@ -231,8 +208,10 @@ async function runFlow(
   const flow = loadFlow(flowPath, plugins);
   // Before the sandbox, because a `--workspace` directory has to be on the
   // policy's write paths and the policy is fixed once the sandbox is made.
-  const workspaces = buildWorkspaces(options, plugins);
-  const sandbox = buildSandbox(
+  const workspaces = workspacesFromOptions(options, plugins, (message) =>
+    console.error(message),
+  );
+  const sandbox = sandboxFromOptions(
     options,
     options.toolsDir,
     pluginToolPaths(plugins),
@@ -243,7 +222,7 @@ async function runFlow(
     );
   }
 
-  const registry = buildRegistry(options, plugins);
+  const registry = standardRegistry({ plugins, toolsDir: options.toolsDir });
   assertToolsAvailable(registry, collectToolNames(flow));
 
   const runnerOpts = buildRunnerOpts(
@@ -588,11 +567,11 @@ async function startChatSession(
     ? { store: session.store, id: session.id, turns: await priorTurns(session) }
     : undefined;
 
-  if (session) {
+  if (opened) {
     console.error(
-      opened && opened.turns.length > 0
-        ? `Session: ${session.id} (${opened.turns.length} turns so far)`
-        : `Session: ${session.id}`,
+      opened.turns.length > 0
+        ? `Session: ${opened.id} (${opened.turns.length} turns so far)`
+        : `Session: ${opened.id}`,
     );
   }
 
@@ -609,23 +588,6 @@ async function startChatSession(
 async function priorTurns(session: SelectedSession) {
   const record = await session.store.read(session.id);
   return record?.turns ?? [];
-}
-
-function buildRegistry(
-  options: RunOptions,
-  plugins: PluginRegistry,
-): Registry {
-  return composeRegistries([
-    plugins.toolRegistry(),
-    FileRegistry.create(options.toolsDir ?? ''),
-  ]);
-}
-
-function assertToolsAvailable(registry: Registry, names: string[]): void {
-  const missing = missingTools(registry, names);
-  if (missing.length > 0) {
-    throw new Error(`missing executables for tools: ${missing.join(', ')}`);
-  }
 }
 
 // Chat and an encoder each own the event stream — chat's UI reads it, an
@@ -676,110 +638,6 @@ function detectInputKey(flow: ParsedFlow): string {
     if (title) return title;
   }
   return DEFAULT_INPUT_KEY;
-}
-
-/**
- * What every node's workspace starts with, and where it lives.
- *
- * Not gated on `--safe`, unlike the flags below it: a workspace exists on every
- * run, and where a run's files come from is not a question about confinement.
- * `--safe` decides only whether anything enforces the workspace's edges.
- */
-function buildWorkspaces(
-  options: RunOptions,
-  plugins: PluginRegistry,
-): WorkspaceFactory {
-  return createWorkspaceFactory({
-    // The operator's first, so a collision reads as "your --mount and this
-    // plugin want the same path" rather than the other way round.
-    mounts: [...options.mount.map(parseMount), ...plugins.workspaceMounts()],
-    root: options.workspace,
-    budget: {
-      maxBytes: positive('--mount-max-bytes', options.mountMaxBytes, DEFAULT_MOUNT_MAX_BYTES),
-      maxEntries: positive(
-        '--mount-max-entries',
-        options.mountMaxEntries,
-        DEFAULT_MOUNT_MAX_ENTRIES,
-      ),
-    },
-    onWarn: (message) => console.error(message),
-  });
-}
-
-/**
- * Every tool, as something a workspace can put in `bin`.
- *
- * A tool a plugin answers over its own channel has no program to link, and gets
- * a shim that says so — see `workspace/bin.ts`. The alternative was leaving it
- * out, and `command not found` is the wrong thing to tell a model about a tool
- * that exists.
- */
-function workspaceTools(registry: Registry): WorkspaceTool[] {
-  return registry.all().map((tool) => ({
-    name: tool.name,
-    target: tool.impl.kind === 'path' ? tool.impl.path : undefined,
-    servedBy: tool.impl.kind === 'plugin' ? tool.impl.plugin : undefined,
-  }));
-}
-
-function positive(flag: string, raw: string | undefined, fallback: number): number {
-  if (raw === undefined) return fallback;
-
-  const value = Number(raw);
-  if (!Number.isInteger(value) || value <= 0) {
-    throw new SandboxError(`${flag} must be a positive whole number, got "${raw}"`);
-  }
-  return value;
-}
-
-function buildSandbox(
-  options: RunOptions,
-  toolsDir: string | undefined,
-  pluginDirs: string[] = [],
-): Sandbox | undefined {
-  if (!options.safe) {
-    assertNoSandboxTuning(options);
-    return undefined;
-  }
-
-  const backend = options.sandbox ?? DEFAULT_SANDBOX_BACKEND;
-  if (!SANDBOX_BACKENDS.has(backend)) {
-    throw new SandboxError(
-      `unknown sandbox backend "${backend}" (expected ${[...SANDBOX_BACKENDS].join(', ')})`,
-    );
-  }
-
-  return createSandbox(backend as SandboxBackend, {
-    readPaths: [
-      ...(toolsDir ? [toolsDir] : []),
-      ...pluginDirs,
-      ...options.allowRead,
-    ],
-    // A named workspace directory grants itself write. It is where the run's
-    // tools are about to work, so making the operator also say --allow-write
-    // for it would be heddle asking permission for the thing it was just told
-    // to do.
-    writePaths: [
-      ...(options.workspace ? [options.workspace] : []),
-      ...options.allowWrite,
-    ],
-    network: !options.denyNet,
-    passEnv: options.allowEnv,
-  });
-}
-
-function assertNoSandboxTuning(options: SafeOptions): void {
-  const used = [
-    options.sandbox !== undefined && '--sandbox',
-    options.allowRead.length > 0 && '--allow-read',
-    options.allowWrite.length > 0 && '--allow-write',
-    options.allowEnv.length > 0 && '--allow-env',
-    options.denyNet && '--deny-net',
-  ].filter((flag): flag is string => typeof flag === 'string');
-
-  if (used.length > 0) {
-    throw new SandboxError(`${used.join(', ')} requires --safe`);
-  }
 }
 
 function pluginToolPaths(plugins: PluginRegistry): string[] {

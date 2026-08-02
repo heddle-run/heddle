@@ -1,4 +1,5 @@
 import { RunError } from '../errors.js';
+import { isObject } from '../internal/util.js';
 import type { State } from '../state/state.js';
 import { RESUME_KEY } from './reserved.js';
 import type { Suspension } from './types.js';
@@ -100,6 +101,3 @@ function asPayload(raw: unknown): ResumePayload {
   };
 }
 
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}

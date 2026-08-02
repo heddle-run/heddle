@@ -2,19 +2,16 @@
 import { dirname, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import {
-  createSandbox,
-  createWorkspaceFactory,
   loadPlugins,
-  parseMount,
   parsePluginConfig,
-  DEFAULT_MOUNT_MAX_BYTES,
-  DEFAULT_MOUNT_MAX_ENTRIES,
+  sandboxFromOptions,
+  workspacesFromOptions,
   FileSessionStore,
   type PluginRegistry,
   type Sandbox,
-  type SandboxBackend,
+  type SandboxOptions,
   type SessionStore,
-  type WorkspaceFactory,
+  type WorkspaceOptions,
 } from '@heddle/core';
 import { storeFromPlugins } from './plugins.js';
 import { startServer, type StartedServer } from './server.js';
@@ -135,9 +132,6 @@ callers choose and makes outbound requests to hosts they name. Restrict egress
 and terminate authentication in front of it. See DEPLOYMENT.md.
 `;
 
-const SANDBOX_BACKENDS = new Set(['auto', 'bubblewrap', 'seatbelt']);
-const DEFAULT_SANDBOX_BACKEND = 'auto';
-
 async function main(): Promise<void> {
   const { values } = parseArgs({
     options: {
@@ -185,7 +179,21 @@ async function main(): Promise<void> {
   const log = (message: string): void => {
     process.stderr.write(`${message}\n`);
   };
-  const sandbox = buildSandbox(values, toolsDir, values.plugin);
+  // The flags the CLI also takes, in the one shape core's helpers read — so
+  // the casting parseArgs forces happens here once rather than per field.
+  const runEnv: SandboxOptions & WorkspaceOptions = {
+    safe: values.safe,
+    sandbox: values.sandbox,
+    allowRead: values['allow-read'] ?? [],
+    allowWrite: values['allow-write'] ?? [],
+    allowEnv: values['allow-env'] ?? [],
+    denyNet: values['deny-net'],
+    workspace: values.workspace,
+    mount: values.mount ?? [],
+    mountMaxBytes: values['mount-max-bytes'],
+    mountMaxEntries: values['mount-max-entries'],
+  };
+  const sandbox = sandboxFromOptions(runEnv, toolsDir, pluginDirs(values.plugin));
   const pluginTimeout = toInt(values['plugin-timeout'], '--plugin-timeout');
 
   const plugins = await installPlugins(values.plugin, {
@@ -239,7 +247,7 @@ async function main(): Promise<void> {
       allowRequestCode: values['allow-request-code'],
       allowNet: values['allow-net'],
       workDir: values['work-dir'],
-      workspaces: buildWorkspaces(values, plugins),
+      workspaces: workspacesFromOptions(runEnv, plugins, log),
       mountTools: values['no-mount-tools'] !== true,
       defaultLlmKey: process.env.HEDDLE_LLM_DEFAULT_KEY || undefined,
       defaultLlmUrl: values['llm-default-url'],
@@ -352,93 +360,6 @@ function installShutdownHandlers(started: StartedServer): void {
   process.on('SIGTERM', () => shutdown('SIGTERM'));
 }
 
-function buildSandbox(
-  values: Record<string, unknown>,
-  toolsDir: string | undefined,
-  pluginSpecifiers: string[] | undefined,
-): Sandbox | undefined {
-  const allowRead = (values['allow-read'] as string[] | undefined) ?? [];
-  const allowWrite = (values['allow-write'] as string[] | undefined) ?? [];
-  const allowEnv = (values['allow-env'] as string[] | undefined) ?? [];
-  const backend = values.sandbox as string | undefined;
-  const denyNet = Boolean(values['deny-net']);
-
-  if (!values.safe) {
-    assertNoSandboxTuning({ backend, allowRead, allowWrite, allowEnv, denyNet });
-    return undefined;
-  }
-
-  const chosen = backend ?? DEFAULT_SANDBOX_BACKEND;
-  if (!SANDBOX_BACKENDS.has(chosen)) {
-    throw new Error(
-      `unknown sandbox backend "${chosen}" (expected ${[...SANDBOX_BACKENDS].join(', ')})`,
-    );
-  }
-
-  return createSandbox(chosen as SandboxBackend, {
-    readPaths: [
-      ...(toolsDir ? [toolsDir] : []),
-      ...pluginDirs(pluginSpecifiers),
-      ...allowRead,
-    ],
-    // A named workspace directory grants itself write: it is where the run's
-    // tools are about to work, so making the operator also say --allow-write
-    // for it would be heddle asking permission for what it was just told to do.
-    writePaths: [
-      ...(typeof values.workspace === 'string' ? [values.workspace] : []),
-      ...allowWrite,
-    ],
-    network: !denyNet,
-    passEnv: allowEnv,
-  });
-}
-
-/**
- * What every node's workspace starts with, and where it lives.
- *
- * Fixed at startup, like confinement, and for the same reason: a request may
- * not choose what is in the working directory of every node of every run.
- * Unlike the sandbox flags it is not gated on `--safe` — a workspace exists
- * whether or not anything is enforcing its edges.
- */
-function buildWorkspaces(
-  values: Record<string, unknown>,
-  plugins: PluginRegistry | undefined,
-): WorkspaceFactory {
-  return createWorkspaceFactory({
-    // The operator's first, so a collision reads as "your --mount and this
-    // plugin want the same path" rather than the other way round.
-    mounts: [
-      ...((values.mount as string[] | undefined) ?? []).map(parseMount),
-      ...(plugins?.workspaceMounts() ?? []),
-    ],
-    root: values.workspace as string | undefined,
-    budget: {
-      maxBytes: positive(
-        '--mount-max-bytes',
-        values['mount-max-bytes'],
-        DEFAULT_MOUNT_MAX_BYTES,
-      ),
-      maxEntries: positive(
-        '--mount-max-entries',
-        values['mount-max-entries'],
-        DEFAULT_MOUNT_MAX_ENTRIES,
-      ),
-    },
-    onWarn: (message) => process.stderr.write(`${message}\n`),
-  });
-}
-
-function positive(flag: string, raw: unknown, fallback: number): number {
-  if (raw === undefined) return fallback;
-
-  const value = Number(raw);
-  if (!Number.isInteger(value) || value <= 0) {
-    throw new Error(`${flag} must be a positive whole number, got "${String(raw)}"`);
-  }
-  return value;
-}
-
 /**
  * Each installed plugin's own directory.
  *
@@ -457,26 +378,6 @@ function pluginDirs(specifiers: string[] | undefined): string[] {
     dirs.add(dirname(resolve(process.cwd(), specifier)));
   }
   return [...dirs];
-}
-
-function assertNoSandboxTuning(tuning: {
-  backend: string | undefined;
-  allowRead: string[];
-  allowWrite: string[];
-  allowEnv: string[];
-  denyNet: boolean;
-}): void {
-  const used = [
-    tuning.backend !== undefined && '--sandbox',
-    tuning.allowRead.length > 0 && '--allow-read',
-    tuning.allowWrite.length > 0 && '--allow-write',
-    tuning.allowEnv.length > 0 && '--allow-env',
-    tuning.denyNet && '--deny-net',
-  ].filter((flag): flag is string => typeof flag === 'string');
-
-  if (used.length > 0) {
-    throw new Error(`${used.join(', ')} requires --safe`);
-  }
 }
 
 function toInt(value: string | undefined, flag: string): number | undefined {

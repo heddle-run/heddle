@@ -114,13 +114,13 @@ describe('choosing what renders a run', () => {
     const plugins = PluginRegistry.fromPlugins([encoderPlugin('ag-ui')]);
 
     expect(() => resolveEncoder('nope', plugins)).toThrow(
-      /This run renders: heddle, ag-ui\..*--plugin/s,
+      /Available: heddle, ag-ui\..*--plugin/s,
     );
   });
 
   it('offers only heddle when no plugin was loaded, so the list is never empty', () => {
     expect(() => resolveEncoder('ag-ui', PluginRegistry.empty())).toThrow(
-      /This run renders: heddle\./,
+      /Available: heddle\./,
     );
   });
 });

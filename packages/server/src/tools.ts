@@ -1,20 +1,24 @@
-import { composeRegistries, missingTools, type Registry } from '@heddle/core';
+import {
+  assertToolsAvailable as coreAssertToolsAvailable,
+  ToolError,
+  type Registry,
+} from '@heddle/core';
 import { HttpError } from './errors.js';
 
-export function mergeRegistries(...registries: Registry[]): Registry {
-  return composeRegistries(registries);
-}
-
+/**
+ * Core's check, relabelled: a flow naming a tool this server does not have is
+ * the caller's 400, not the 500 a `ToolError` maps to everywhere else.
+ */
 export function assertToolsAvailable(
   registry: Registry,
   names: string[],
 ): void {
-  const missing = missingTools(registry, names);
-  if (missing.length > 0) {
-    throw new HttpError(
-      400,
-      `missing executables for tools: ${missing.join(', ')}`,
-      'ToolError',
-    );
+  try {
+    coreAssertToolsAvailable(registry, names);
+  } catch (err) {
+    if (err instanceof ToolError) {
+      throw new HttpError(400, err.message, 'ToolError');
+    }
+    throw err;
   }
 }

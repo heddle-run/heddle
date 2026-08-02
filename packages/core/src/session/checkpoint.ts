@@ -24,19 +24,20 @@ export function checkpointSink(options: CheckpointOptions): CheckpointSink {
 
   return {
     async save(position: RunPosition): Promise<void> {
+      const checkpoint = checkpointFrom(position, runId, input);
       await store.writeCheckpoint(
         sessionId,
-        assertStorable(checkpointFrom(position, runId, input), sessionId),
+        checkpoint,
+        assertStorable(checkpoint, sessionId),
       );
     },
 
     async suspend(position, suspension): Promise<void> {
+      const checkpoint = checkpointFrom(position, runId, input, suspension);
       await store.writeCheckpoint(
         sessionId,
-        assertStorable(
-          checkpointFrom(position, runId, input, suspension),
-          sessionId,
-        ),
+        checkpoint,
+        assertStorable(checkpoint, sessionId),
       );
     },
 
@@ -82,11 +83,12 @@ export function positionOf(checkpoint: Checkpoint): RunPosition {
  * BigInt, a class that serializes to nothing. The store would take it and the
  * failure would surface on resume, as a checkpoint that will not parse, hours
  * later and nowhere near the node that caused it. Checked here, where the node
- * that just ran is still the obvious suspect.
+ * that just ran is still the obvious suspect — and the proof is the JSON
+ * itself, which is handed to the store so it is not paid for twice.
  */
-function assertStorable(checkpoint: Checkpoint, sessionId: string): Checkpoint {
+function assertStorable(checkpoint: Checkpoint, sessionId: string): string {
   try {
-    JSON.stringify(checkpoint);
+    return JSON.stringify(checkpoint);
   } catch (err) {
     throw new SessionError(
       `the run in session "${sessionId}" cannot be checkpointed at ` +
@@ -96,5 +98,4 @@ function assertStorable(checkpoint: Checkpoint, sessionId: string): Checkpoint {
       { cause: err },
     );
   }
-  return checkpoint;
 }
