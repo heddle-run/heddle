@@ -176,14 +176,15 @@ pages keep `lucide-react` through `ds/` — see its DEVIATIONS.md.)
    (from `specimenSpread.terminal`) overlapping it. `batteries-included` is one
    18-character word, so the hero clamp is `34px…54px` with
    `overflow-wrap: break-word` — check a 375px viewport before changing either.
-3. **Inventory** — 001. The full manifest as a numbered hairline list beside
-   the four `notInProject` zeros. **This section is what makes the lead claim
-   falsifiable**, so every line has to name a feature that exists in the README
-   — treat it the way `safeMode` is treated, and delete a line rather than let
-   it drift. It is a list, not a card grid, because the claim is breadth and a
-   reader should be able to count it. Two columns at desktop, one on mobile;
-   the design project's five-item sample was deliberately replaced with the
-   whole manifest.
+3. **Inventory** — 001. The full manifest as a numbered hairline list. **This
+   section is what makes the lead claim falsifiable**, so every line has to
+   name a feature that exists in the README — treat it the way `safeMode` is
+   treated, and delete a line rather than let it drift. It is a list, not a
+   card grid, because the claim is breadth and a reader should be able to
+   count it. Two columns at desktop, one on mobile; the design project's
+   five-item sample was deliberately replaced with the whole manifest. The
+   `notInProject` zeros no longer render here — the what-it-costs half of the
+   claim is carried by the hero lede, Position and the CTA line.
 4. **Position** — 002, on the always-dark navy band: the specification is the
    program, the refusal of the bigger-library trade, and the
    portability-off-heddle claim, beside a window showing the real
