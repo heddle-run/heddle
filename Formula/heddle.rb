@@ -1,9 +1,9 @@
 class Heddle < Formula
   desc "Lightweight CLI agentic workflow framework"
-  homepage "https://github.com/spichen/specrun"
+  homepage "https://github.com/heddle-run/heddle"
   # url and sha256 are rewritten on every tagged release by
   # mislav/bump-homebrew-formula-action (see .github/workflows/release.yml).
-  url "https://github.com/spichen/specrun/archive/refs/tags/v0.1.0-beta5.tar.gz"
+  url "https://github.com/heddle-run/heddle/archive/refs/tags/v0.1.0-beta5.tar.gz"
   sha256 "8cc5a048a49a9db375ae547b89fb4134f81e209e628b74c182b639ca6ce4c21f"
   license "MIT"
 
