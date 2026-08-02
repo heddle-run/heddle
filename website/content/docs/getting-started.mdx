@@ -141,7 +141,7 @@ heddle run my-agent/flow.json --tools-dir my-agent/tools --session my-first --in
 heddle run my-agent/flow.json --tools-dir my-agent/tools --session my-first --input '{"query": "and again?"}'
 ```
 
-Sessions live in `~/.heddle/sessions/`. `heddle sessions ls` lists them and `heddle sessions show <id>` prints a transcript.
+Sessions live in `~/.heddle/sessions/`. `heddle sessions ls` lists them and `heddle sessions show <id>` prints a transcript. [Sessions](/docs/sessions) covers the rest — what is on disk, runs that survive a dead process, and runs that stop to wait for a person.
 
 ## Interactive Chat Mode
 
@@ -182,3 +182,20 @@ and a tool a flow names that nothing provides. The exception is a graph heddle c
 so that a check which could not run is not mistaken for a fault. Read the output as well
 as the status.
 </Callout>
+
+## Where to go next
+
+<Cards>
+  <Card title="Flows" href="/docs/flows">
+    The document itself: nodes, edges, and how state moves between them.
+  </Card>
+  <Card title="Sessions" href="/docs/sessions">
+    Conversations that outlive the process, and human-in-the-loop runs.
+  </Card>
+  <Card title="Server" href="/docs/server">
+    The same flows over HTTP, streamed as they run.
+  </Card>
+  <Card title="Using the library" href="/docs/library">
+    Embed the engine in a program of your own with `@heddle/core`.
+  </Card>
+</Cards>

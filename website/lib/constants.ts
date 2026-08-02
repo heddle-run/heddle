@@ -21,10 +21,10 @@ export const COMPARE_URL = `${PLAYGROUND_ORIGIN ? `${PLAYGROUND_ORIGIN}/` : "/pl
    playground itself — so there, home has to be spelled out. */
 export const HOME_URL = PLAYGROUND_ORIGIN ? SITE_URL : "/";
 
-export const GITHUB_URL = "https://github.com/spichen/heddle";
+export const GITHUB_URL = "https://github.com/heddle-run/heddle";
 export const NPM_URL = "https://www.npmjs.com/package/@heddle/cli";
 export const AGENT_SPEC_URL = "https://oracle.github.io/agent-spec/";
-export const VERSION = "0.1.0-beta6";
+export const VERSION = "0.2.0-beta.1";
 
 /* Two audiences arrive wanting different first commands, and the difference is
    not cosmetic: a person wants to run a flow, an agent wants to be taught how to

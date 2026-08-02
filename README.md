@@ -22,7 +22,7 @@ This repository is a pnpm workspace:
 | Package | Description |
 |---|---|
 | [`@heddle/core`](packages/core) | The engine: spec parsing, graph compilation, node executors, runner, tools, LLM providers. No CLI dependencies — use it as a library. |
-| [`@heddle/cli`](packages/cli) | The `heddle` command: run, validate, init, and interactive chat. |
+| [`@heddle/cli`](packages/cli) | The `heddle` command: run, validate, init, sessions, and interactive chat. |
 | [`@heddle/server`](packages/server) | HTTP API over the same engine, with SSE streaming of execution events. **Unauthenticated — read its [README](packages/server/README.md) before binding it anywhere but localhost.** |
 
 `vendor/agentspec` holds the Oracle Agent Spec TypeScript SDK, vendored because
@@ -132,50 +132,32 @@ ownership, `--safe` inside a container, and running the server image.
 ## CLI Reference
 
 ```
-heddle [options] <command>
-
-Options:
-  --verbose                Enable verbose logging (may be placed before or
-                           after the subcommand)
+heddle [--verbose] <command>
 
 Commands:
   run <flow>               Run an Agent Spec flow (JSON or YAML)
-    --tools-dir <dir>      Directory containing tool executables
-    --input <json>         Input JSON object
-    --session [id]         Keep this run in a conversation on disk
-    --session-dir <dir>    Where sessions are kept
-    --durable              Checkpoint at every node boundary
-    --resume               Continue this session's unfinished run
-    --answer <json>        Answer a run that stopped for a human, with --resume
-    -i, --interactive      Open the terminal chat UI
-    --plugin <module>      Plugin providing custom component types (repeatable)
-    --mount <src[:dest][:ro|:rw]>
-                           Put a file or directory in every workspace
-                           (repeatable). "ro" is a copy the run cannot carry
-                           back; "rw" copies changed files out again
-    --workspace <dir>      Keep each node's workspace under this directory
-                           instead of a temporary one
-    --mount-max-bytes <n>  Largest a --mount may be (default 67108864)
-    --mount-max-entries <n> Most files a --mount may hold (default 4096)
-    --no-mount-tools       Keep the tools out of the workspace, so the only way
-                           to reach one is a call the model made
-    --safe                 Run tools inside an OS sandbox
-    --sandbox <backend>    auto (default), bubblewrap, or seatbelt
-    --allow-read <path>    Grant sandboxed tools read access (repeatable)
-    --allow-write <path>   Grant sandboxed tools write access (repeatable)
-    --allow-env <name>     Forward an env var into the sandbox (repeatable)
-    --deny-net             Block network access for sandboxed tools
-
-  validate <flow>          Validate a flow definition (JSON or YAML)
-    --tools-dir <dir>      Directory containing tool executables
-    --plugin <module>      Plugin providing custom component types (repeatable)
-
+  validate <flow>          Validate a flow definition without running it
   init <project-name>      Scaffold a new heddle project
-
-  sessions ls              List conversations, most recently used first
-  sessions show <id>       Print a transcript
-  sessions rm <id>         Delete a conversation
+  sessions                 Inspect kept conversations: ls, show <id>, rm <id>
 ```
+
+The `run` flags you will reach for first:
+
+| Flag | What it does |
+|---|---|
+| `--tools-dir <dir>` | Directory containing tool executables |
+| `--input <json>` | Input JSON object for the flow's start node |
+| `--session [id]` | Keep this run in a conversation on disk — see [Sessions](#sessions) |
+| `-i, --interactive` | Open the terminal chat UI — see [Interactive chat](#interactive-chat) |
+| `--plugin <module>` | Load custom component types (repeatable) — see [Plugins](#plugins) |
+| `--protocol <name>` | Render the run as JSON frames through an encoder instead of the human progress output |
+| `--safe` | Run tools inside an OS sandbox — see [Safe Mode](#safe-mode) |
+| `--mount <src[:dest][:ro\|:rw]>` | Put a file or directory in every workspace — see [The workspace](#the-workspace) |
+
+That is not all of them. `heddle run --help` prints the full list — sandbox
+grants, workspace budgets, durable runs, plugin configuration — and every flag
+is documented at
+[heddle.run/docs/cli-reference](https://heddle.run/docs/cli-reference).
 
 There is no `--version` flag yet; use `heddle --help` to check the install.
 
@@ -449,11 +431,12 @@ A plugin can also supply an **encoder**, which is not part of a flow at all: it
 renders the run's event stream into another wire format, and the *request* selects
 it rather than the spec or the operator. That is because two clients hitting one
 flow can legitimately want different renderings, and neither the flow's author nor
-whoever runs the server knows which. Encoders are reachable through
-`heddle-server` — `POST /v1/runs?stream=true&protocol=ag-ui` — and not yet from
-this CLI, which renders events with its own progress writer.
-See [examples/ag-ui](examples/ag-ui) for one that speaks
-[AG-UI](https://docs.ag-ui.com), the protocol CopilotKit uses.
+whoever runs the server knows which. Encoders are reachable from both halves of
+heddle: `--protocol <name>` on `heddle run` prints one JSON frame per line on
+stdout instead of the human progress output, and
+`POST /v1/runs?stream=true&protocol=<name>` selects the same rendering over
+HTTP. See [examples/ag-ui](examples/ag-ui) for one that speaks
+[AG-UI](https://docs.ag-ui.com), the protocol CopilotKit uses, run both ways.
 
 A plugin can also supply **middleware**, the one kind no document may name.
 It is installed with `--plugin` by whoever runs heddle, takes its settings from
@@ -485,25 +468,11 @@ These are fixed and not currently configurable from the CLI:
 | Max tool rounds (per agent) | 10 |
 | Tool execution timeout | 30 seconds |
 
-## Project Structure
+## Examples
 
-```
-src/
-  cli/           Command handlers (run, validate, init)
-  spec/          Agent Spec parser and validator
-  graph/         Graph compilation and validation
-  node/          Node executors (agent, llm, tool, branching)
-  runner/        Flow execution engine with event system
-  tool/          Tool registry (filesystem) and subprocess executor
-  llm/           LLM provider interface and OpenAI implementation
-  state/         Immutable state management
-  scaffold/      Project template generation
-examples/
-  research-assistant/   Example flow with web_search and calculator tools
-  guardrails/           Custom Processor transform used as a pre/post guardrail
-  bash-agent/           Shell agent with Python and Node in the sandbox, and a way to hand files back
-testdata/               Test flow definitions and tool scripts
-```
+[examples/](examples/README.md) holds twelve worked examples, each with a
+README, ordered from a first flow to plugins and middleware. Start with
+[examples/research-assistant](examples/research-assistant/README.md).
 
 ## LLM Configuration
 

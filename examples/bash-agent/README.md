@@ -14,13 +14,15 @@ only way anything the agent produces reaches you.
 
 ## Run it
 
-Run from the repository root against the built CLI (`pnpm build` first — the `pnpm dev`
-script runs with its own working directory, so the relative paths below would not
-resolve):
+Run from the repository root:
 
 ```bash
-OPENAI_API_KEY=sk-... node packages/cli/dist/heddle.js run examples/bash-agent/spec.yaml --tools-dir examples/bash-agent/tools --safe --input '{"task":"what python and node versions are available here?"}'
+OPENAI_API_KEY=sk-... heddle run examples/bash-agent/spec.yaml --tools-dir examples/bash-agent/tools --safe --input '{"task":"what python and node versions are available here?"}'
 ```
+
+(From a source checkout, `pnpm build` first and substitute
+`node packages/cli/dist/heddle.js` for `heddle` — the `pnpm dev` script runs
+with its own working directory, so the relative paths here would not resolve.)
 
 ```json
 {
@@ -33,7 +35,7 @@ OPENAI_API_KEY=sk-... node packages/cli/dist/heddle.js run examples/bash-agent/s
 `--session <id>` to keep the conversation across runs:
 
 ```bash
-OPENAI_API_KEY=sk-... node packages/cli/dist/heddle.js run examples/bash-agent/spec.yaml --tools-dir examples/bash-agent/tools --safe -i --session shell-1
+OPENAI_API_KEY=sk-... heddle run examples/bash-agent/spec.yaml --tools-dir examples/bash-agent/tools --safe -i --session shell-1
 ```
 
 > **Without `--safe` this agent is a remote shell on your machine.** Tools inherit
@@ -68,7 +70,7 @@ For nvm, that is:
 
 ```bash
 NODE_BIN="$(dirname "$(command -v node)")"
-HEDDLE_RUNTIME_PATH="$NODE_BIN" node packages/cli/dist/heddle.js run examples/bash-agent/spec.yaml --tools-dir examples/bash-agent/tools --safe --allow-read "$(dirname "$NODE_BIN")" --allow-env HEDDLE_RUNTIME_PATH --input '{"task":"run node -v and npm -v"}'
+HEDDLE_RUNTIME_PATH="$NODE_BIN" heddle run examples/bash-agent/spec.yaml --tools-dir examples/bash-agent/tools --safe --allow-read "$(dirname "$NODE_BIN")" --allow-env HEDDLE_RUNTIME_PATH --input '{"task":"run node -v and npm -v"}'
 ```
 
 `--allow-read` on the version root rather than on `bin` is deliberate: `npm` needs the
@@ -92,7 +94,7 @@ one file to a directory that outlives the run:
 
 ```bash
 mkdir -p heddle-out
-OPENAI_API_KEY=sk-... node packages/cli/dist/heddle.js run examples/bash-agent/spec.yaml --tools-dir examples/bash-agent/tools --safe --allow-write "$PWD/heddle-out" --input '{"task":"generate a csv of the first 20 primes and their squares, and give it to me"}'
+OPENAI_API_KEY=sk-... heddle run examples/bash-agent/spec.yaml --tools-dir examples/bash-agent/tools --safe --allow-write "$PWD/heddle-out" --input '{"task":"generate a csv of the first 20 primes and their squares, and give it to me"}'
 ```
 
 ```

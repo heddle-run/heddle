@@ -59,17 +59,21 @@ The final state is printed to stdout as JSON; progress and errors go to stderr.
 
 | | |
 |---|---|
-| `run <flow>` | Run a flow. `--tools-dir`, `--input`, `--chat`, `--plugin`, `--protocol`, `--safe` |
+| `run <flow>` | Run a flow. `--tools-dir`, `--input`, `--session`, `-i`, `--plugin`, `--protocol`, `--safe` |
 | `validate <spec>` | Parse and check a flow before running it |
 | `init <name>` | Scaffold a project |
+| `sessions` | Inspect kept conversations: `ls`, `show <id>`, `rm <id>` |
 
-`heddle --help` lists every flag. Three worth knowing about:
+`heddle --help` lists every flag. Four worth knowing about:
 
 - **`--safe`** runs each tool inside an OS sandbox — bubblewrap on Linux,
   Seatbelt on macOS. Without it, a tool is a subprocess with your whole
   environment, API keys included.
-- **`--chat`** opens a multi-turn session over the same flow, saved to
-  `~/.heddle/conversations/`.
+- **`--session [id]`** keeps the run in a conversation on disk, under
+  `~/.heddle/sessions/`, and gives the agent the turns before it. Each
+  invocation is one turn; `heddle sessions` lists and prints them.
+- **`-i, --interactive`** opens a terminal chat UI over the flow. On its own the
+  conversation lasts as long as the terminal does; add `--session` to keep it.
 - **`--plugin <module>`** loads custom component types: transforms, nodes,
   providers, encoders and middleware. Plugins are named on the command line and
   never inside a flow, so sharing a spec cannot cause code to run.
