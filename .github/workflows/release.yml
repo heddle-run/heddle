@@ -52,7 +52,7 @@ jobs:
       - run: pnpm build
 
       # Publish to npm. `pnpm -r publish` walks the workspace in topological
-      # order, so @heddle/core goes out before the packages that depend on
+      # order, so @heddle-run/core goes out before the packages that depend on
       # it. Private packages (the workspace root, vendor/agentspec) are
       # skipped automatically.
       - name: Publish to npm

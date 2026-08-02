@@ -70,7 +70,7 @@ submitted code, since here the encoder arrives with the request:
 heddle-server --allow-request-code --port 8080
 ```
 
-(`npm install -g @heddle/server` provides `heddle-server`; from a source
+(`npm install -g @heddle-run/server` provides `heddle-server`; from a source
 checkout it is `node packages/server/dist/heddle-server.js`.)
 
 Then submit the flow and the encoder together, and read the frames as they

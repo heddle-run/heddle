@@ -2,7 +2,7 @@ import {
   assertToolsAvailable as coreAssertToolsAvailable,
   ToolError,
   type Registry,
-} from '@heddle/core';
+} from '@heddle-run/core';
 import { HttpError } from './errors.js';
 
 /**

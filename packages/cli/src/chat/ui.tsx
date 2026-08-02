@@ -15,7 +15,7 @@ import {
   type Event,
   type SessionStore,
   type Turn,
-} from '@heddle/core';
+} from '@heddle-run/core';
 import { getToolIcon, getToolTitle, formatDuration } from './tool-display.js';
 
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];

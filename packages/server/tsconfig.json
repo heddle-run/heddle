@@ -2,11 +2,11 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "outDir": "dist",
-    // No `rootDir`: the `paths` mapping below pulls @heddle/core's sources
+    // No `rootDir`: the `paths` mapping below pulls @heddle-run/core's sources
     // into the program, which sit outside this package. Emit is tsup's job;
     // `typecheck` runs with --noEmit, so rootDir buys nothing here.
     "paths": {
-      "@heddle/core": ["../core/src/index.ts"]
+      "@heddle-run/core": ["../core/src/index.ts"]
     }
   },
   "include": ["src/**/*.ts"],

@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { compile, validate, PluginRegistry } from '@heddle/core';
+import { compile, validate, PluginRegistry } from '@heddle-run/core';
 import type { ServerConfig } from './config.js';
 import { resolveFlow, type FlowRequest } from './flow-source.js';
 import { readJsonBody, sendJson } from './http.js';

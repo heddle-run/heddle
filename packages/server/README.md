@@ -1,4 +1,4 @@
-# @heddle/server
+# @heddle-run/server
 
 HTTP API for the heddle execution engine. Same engine the CLI drives: flows
 are parsed, compiled into a graph, and run, with execution observable as a
@@ -25,7 +25,7 @@ If you need authentication, terminate it in front of this service.
 ## Install
 
 ```bash
-npm install -g @heddle/server
+npm install -g @heddle-run/server
 ```
 
 ## Run
@@ -460,7 +460,7 @@ run to find out.
 ## Library use
 
 ```ts
-import { startServer } from '@heddle/server';
+import { startServer } from '@heddle-run/server';
 
 const { port, close } = await startServer({
   host: '127.0.0.1',
@@ -475,4 +475,4 @@ manage the listener yourself. Importing this package has no side effects.
 
 Routing is hand-rolled on `node:http`. The surface is four routes, and since
 this package is an RCE surface, keeping its production dependency list at
-exactly one entry (`@heddle/core`) is worth more than router ergonomics.
+exactly one entry (`@heddle-run/core`) is worth more than router ergonomics.

@@ -55,13 +55,13 @@ COPY packages/core ./packages/core
 COPY packages/cli ./packages/cli
 
 RUN pnpm run build:vendor \
- && pnpm --filter @heddle/core build \
- && pnpm --filter @heddle/cli build
+ && pnpm --filter @heddle-run/core build \
+ && pnpm --filter @heddle-run/cli build
 
 # Strip out everything that is not needed to run: dev dependencies, the
 # TypeScript sources, and the workspace machinery around them. What is left is
 # the CLI's dist and the packages it resolves at runtime.
-RUN pnpm --filter @heddle/cli --prod deploy --legacy /runtime
+RUN pnpm --filter @heddle-run/cli --prod deploy --legacy /runtime
 
 # ---------------------------------------------------------------------------
 # Runtime

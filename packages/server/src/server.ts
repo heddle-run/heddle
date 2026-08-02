@@ -4,7 +4,7 @@ import {
   type Server,
   type ServerResponse,
 } from 'node:http';
-import { checkMiddlewareConfig } from '@heddle/core';
+import { checkMiddlewareConfig } from '@heddle-run/core';
 import {
   resolveConfig,
   isPubliclyBound,

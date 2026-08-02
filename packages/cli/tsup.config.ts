@@ -5,7 +5,7 @@ export default defineConfig({
   format: ['esm'],
   dts: true,
   clean: true,
-  external: ['@heddle/core'],
+  external: ['@heddle-run/core'],
   noExternal: ['agentspec'],
   banner: {
     js: `import { createRequire as __createRequire } from 'module'; const require = __createRequire(import.meta.url);`,

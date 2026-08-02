@@ -29,7 +29,7 @@
 # Pinned to the *build* platform rather than the target, so that a
 # linux/arm64 image does not mean a TypeScript build under emulation.
 # Everything this stage produces is JavaScript and the server's production
-# dependency tree — @heddle/core, and openai and yaml beneath it — has no
+# dependency tree — @heddle-run/core, and openai and yaml beneath it — has no
 # native code in it, so the artifact is the same either way. Adding a
 # production dependency with a compiled binary would invalidate that.
 #
@@ -57,12 +57,12 @@ COPY packages/core ./packages/core
 COPY packages/server ./packages/server
 
 RUN pnpm run build:vendor \
- && pnpm --filter @heddle/core build \
- && pnpm --filter @heddle/server build
+ && pnpm --filter @heddle-run/core build \
+ && pnpm --filter @heddle-run/server build
 
 # Strip out everything that is not needed to run: dev dependencies, sources,
 # and the CLI, which the server never loads.
-RUN pnpm --filter @heddle/server --prod deploy --legacy /runtime
+RUN pnpm --filter @heddle-run/server --prod deploy --legacy /runtime
 
 # ---------------------------------------------------------------------------
 # Runtime

@@ -48,7 +48,7 @@ path rather than `pnpm --filter agentspec build`: a nested `pnpm` inside an
 install lifecycle script deadlocks against the workspace lock the parent install
 holds.
 
-Consumers (`@heddle/core`, `@heddle/cli`) list `agentspec` as a **devDependency**
+Consumers (`@heddle-run/core`, `@heddle-run/cli`) list `agentspec` as a **devDependency**
 and bundle it into their own `dist/` via tsup's `noExternal`. It must never be a
 runtime dependency of a published package: it is not on npm, and the `agentspec`
 name there belongs to an unrelated project, so a published `dependencies` entry

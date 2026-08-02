@@ -10,7 +10,7 @@ import {
   SessionError,
   SpecError,
   ToolError,
-} from '@heddle/core';
+} from '@heddle-run/core';
 
 export class HttpError extends Error {
   constructor(

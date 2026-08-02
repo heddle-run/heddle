@@ -23,9 +23,9 @@ This repository is a pnpm workspace:
 
 | Package | Description |
 |---|---|
-| [`@heddle/core`](packages/core) | The engine: spec parsing, graph compilation, node executors, runner, tools, LLM providers. No CLI dependencies, so you can use it as a library. |
-| [`@heddle/cli`](packages/cli) | The `heddle` command: run, validate, init, sessions, and interactive chat. |
-| [`@heddle/server`](packages/server) | HTTP API over the same engine, with SSE streaming of execution events. **Unauthenticated. Read its [README](packages/server/README.md) before binding it anywhere but localhost.** |
+| [`@heddle-run/core`](packages/core) | The engine: spec parsing, graph compilation, node executors, runner, tools, LLM providers. No CLI dependencies, so you can use it as a library. |
+| [`@heddle-run/cli`](packages/cli) | The `heddle` command: run, validate, init, sessions, and interactive chat. |
+| [`@heddle-run/server`](packages/server) | HTTP API over the same engine, with SSE streaming of execution events. **Unauthenticated. Read its [README](packages/server/README.md) before binding it anywhere but localhost.** |
 
 `vendor/agentspec` holds the Oracle Agent Spec TypeScript SDK, vendored because
 it is not published to npm. See [vendor/agentspec/VENDOR.md](vendor/agentspec/VENDOR.md).
@@ -35,17 +35,17 @@ it is not published to npm. See [vendor/agentspec/VENDOR.md](vendor/agentspec/VE
 There is nothing to install. `npx` fetches the CLI and runs it:
 
 ```bash
-npx @heddle/cli run flow.json --tools-dir tools --input '{"query": "hello"}'
+npx @heddle-run/cli run flow.json --tools-dir tools --input '{"query": "hello"}'
 ```
 
-Every `heddle` in this README can be spelled `npx @heddle/cli`. Either way the
+Every `heddle` in this README can be spelled `npx @heddle-run/cli`. Either way the
 runtime stays outside your project: no dependency, no lockfile entry, nothing to
 migrate when heddle changes its mind.
 
 To keep it on the machine rather than fetching it each time:
 
 ```bash
-npm install -g @heddle/cli
+npm install -g @heddle-run/cli
 ```
 
 ## Quick start

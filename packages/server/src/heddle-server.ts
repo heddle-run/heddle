@@ -12,7 +12,7 @@ import {
   type SandboxOptions,
   type SessionStore,
   type WorkspaceOptions,
-} from '@heddle/core';
+} from '@heddle-run/core';
 import { storeFromPlugins } from './plugins.js';
 import { startServer, VERSION, type StartedServer } from './server.js';
 import {

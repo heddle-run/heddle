@@ -28,7 +28,7 @@ pnpm install && pnpm build
 The driver finds a CLI on its own, in this order: `$HEDDLE_BIN`, a build at
 `packages/cli/dist/heddle.js`, `node_modules/.bin/heddle`, then `heddle` on
 PATH. **Installed into another project** (`npx skills add heddle-run/heddle`), any
-installed CLI works — `npm install -g @heddle/cli`, `brew install
+installed CLI works — `npm install -g @heddle-run/cli`, `brew install
 spichen/tap/heddle`, or `HEDDLE_BIN="node /path/to/heddle/packages/cli/dist/heddle.js"`.
 `npm install yaml` there too if you want the lint on a YAML spec; without it the
 run still works and the spec-level checks are skipped with a note.
@@ -236,7 +236,7 @@ pnpm test
 ```
 
 ```bash
-pnpm --filter @heddle/core test
+pnpm --filter @heddle-run/core test
 ```
 
 On a clean tree that is 637 core, 27 cli and 152 server tests, all passing;

@@ -33,7 +33,7 @@ import {
   type SessionStore,
   type TurnOutcome,
   type WorkspaceFactory,
-} from '@heddle/core';
+} from '@heddle-run/core';
 import type { ServerConfig } from './config.js';
 import { HttpError, toErrorResponse } from './errors.js';
 import { resolveFlow, type FlowRequest } from './flow-source.js';

@@ -24,6 +24,6 @@ Start with [research-assistant](research-assistant/README.md).
 | [oracle-it-assistant](oracle-it-assistant/README.md) | Portability at flow scale: Oracle's multi-agent IT-support flow — orchestrator, branching, specialist agents. | Reference |
 
 Every command in these READMEs is written for an installed CLI (`heddle`, or
-`npx @heddle/cli`), run from the repository root. From a source checkout,
+`npx @heddle-run/cli`), run from the repository root. From a source checkout,
 build first (`pnpm install && pnpm build`) and substitute
 `node packages/cli/dist/heddle.js` for `heddle`.

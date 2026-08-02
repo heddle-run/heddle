@@ -13,8 +13,8 @@ to sit alongside it.
 - **Descriptor:** A batteries-included declarative agent runtime.
 - **Tagline:** Weave agents from spec. (retained as the loom voice — it runs the
   `Definition` epigraph and the CTA badge, but it is no longer what the hero says)
-- **Package:** `@heddle/cli` · **Binary:** `heddle` · **Tap:** `spichen/tap/heddle`
-- **Server:** `@heddle/server` · **Binary:** `heddle-server`
+- **Package:** `@heddle-run/cli` · **Binary:** `heddle` · **Tap:** `spichen/tap/heddle`
+- **Server:** `@heddle-run/server` · **Binary:** `heddle-server`
 - **Images:** `salahpichen/heddle` · `salahpichen/heddle-server` on Docker Hub,
   `ghcr.io/heddle-run/…` on GHCR. A Docker Hub namespace is an account name,
   and `heddle` there has belonged to someone else since 2019, so the Hub name

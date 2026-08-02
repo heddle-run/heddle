@@ -1,4 +1,4 @@
-import { isPluginEvent, type Event } from '@heddle/core';
+import { isPluginEvent, type Event } from '@heddle-run/core';
 import {
   getToolIcon,
   getToolTitle,

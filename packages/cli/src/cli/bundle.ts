@@ -19,7 +19,7 @@ import {
   type PackedBundle,
   type ParsedFlow,
   type PluginRegistry,
-} from '@heddle/core';
+} from '@heddle-run/core';
 
 interface BundleOptions {
   toolsDir?: string;

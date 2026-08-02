@@ -1,5 +1,5 @@
 {
-  "name": "@heddle/broker",
+  "name": "@heddle-run/broker",
   "version": "0.2.0-beta.1",
   "private": true,
   "description": "Cloudflare Worker fronting the heddle playground engine",

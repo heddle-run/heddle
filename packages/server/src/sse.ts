@@ -1,7 +1,7 @@
 import type { ServerResponse } from 'node:http';
-import type { WireFrame } from '@heddle/core';
+import type { WireFrame } from '@heddle-run/core';
 
-export { serializeEvent } from '@heddle/core';
+export { serializeEvent } from '@heddle-run/core';
 
 const DEFAULT_CONTENT_TYPE = 'text/event-stream; charset=utf-8';
 const NEWLINES = /[\r\n]+/g;

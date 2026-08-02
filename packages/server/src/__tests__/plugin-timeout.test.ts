@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { PluginContext, PluginNode } from '@heddle/core';
+import type { PluginContext, PluginNode } from '@heddle-run/core';
 import { resolveConfig, DEFAULT_PLUGIN_CALL_TIMEOUT } from '../config.js';
 import { materializeRequestCode, type MaterializedCode } from '../request-code.js';
 import { buildPlugins } from '../plugins.js';

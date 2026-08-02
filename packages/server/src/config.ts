@@ -7,7 +7,7 @@ import {
   type Sandbox,
   type SessionStore,
   type WorkspaceFactory,
-} from '@heddle/core';
+} from '@heddle-run/core';
 
 export interface ServerConfig {
   host: string;

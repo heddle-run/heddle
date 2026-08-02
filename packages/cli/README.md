@@ -1,4 +1,4 @@
-# @heddle/cli
+# @heddle-run/cli
 
 The `heddle` command: a runtime for agentic workflows written as
 [Open Agent Specification](https://oracle.github.io/agent-spec/) documents.
@@ -10,7 +10,7 @@ heddle is what you point at it.
 ## Run it without installing it
 
 ```bash
-npx @heddle/cli run flow.json --tools-dir tools --input '{"query": "hello"}'
+npx @heddle-run/cli run flow.json --tools-dir tools --input '{"query": "hello"}'
 ```
 
 That is the intended shape, not a shortcut: the runtime stays outside your
@@ -19,7 +19,7 @@ project, so nothing enters your dependency tree or your lockfile.
 To keep it on the machine instead:
 
 ```bash
-npm install -g @heddle/cli
+npm install -g @heddle-run/cli
 ```
 
 Then the command is `heddle`. Homebrew (`brew install spichen/tap/heddle`) and
@@ -31,7 +31,7 @@ Node.js 18 or newer.
 ## Start from a scaffold
 
 ```bash
-npx @heddle/cli init my-project
+npx @heddle-run/cli init my-project
 ```
 
 ```
@@ -48,7 +48,7 @@ export OPENAI_API_KEY=sk-...
 ```
 
 ```bash
-npx @heddle/cli run my-project/flow.json \
+npx @heddle-run/cli run my-project/flow.json \
   --tools-dir my-project/tools \
   --input '{"query": "hello"}'
 ```
@@ -92,8 +92,8 @@ Never credentials, which resolve as `$ENV_VAR` on the machine that runs.
 ## The rest
 
 Full documentation lives at [heddle.run/docs](https://heddle.run/docs). The
-engine is [`@heddle/core`](https://www.npmjs.com/package/@heddle/core), usable
-as a library, and [`@heddle/server`](https://www.npmjs.com/package/@heddle/server)
+engine is [`@heddle-run/core`](https://www.npmjs.com/package/@heddle-run/core), usable
+as a library, and [`@heddle-run/server`](https://www.npmjs.com/package/@heddle-run/server)
 serves the same flows over HTTP with SSE streaming.
 
 Source and issues: [heddle-run/heddle](https://github.com/heddle-run/heddle).

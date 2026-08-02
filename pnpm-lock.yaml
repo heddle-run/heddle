@@ -36,7 +36,7 @@ importers:
 
   packages/cli:
     dependencies:
-      '@heddle/core':
+      '@heddle-run/core':
         specifier: workspace:*
         version: link:../core
       commander:
@@ -107,7 +107,7 @@ importers:
 
   packages/server:
     dependencies:
-      '@heddle/core':
+      '@heddle-run/core':
         specifier: workspace:*
         version: link:../core
     devDependencies:

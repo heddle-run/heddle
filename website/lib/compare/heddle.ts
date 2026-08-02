@@ -811,7 +811,7 @@ export default {
 export const heddle: Reference = {
   id: "heddle",
   name: "heddle",
-  install: "npm install -g @heddle/cli",
+  install: "npm install -g @heddle-run/cli",
   packages: [],
   artifact: "a document",
   modelSwap: "Change model_id, or swap OpenAiConfig for another config type.",

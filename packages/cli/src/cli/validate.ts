@@ -13,7 +13,7 @@ import {
   PluginRegistry,
   type CompiledGraph,
   type ParsedFlow,
-} from '@heddle/core';
+} from '@heddle-run/core';
 import { openBundle, type OpenedBundle } from './bundles.js';
 
 interface ValidateOptions {

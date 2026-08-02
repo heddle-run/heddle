@@ -14,8 +14,8 @@ import {
   validateManifest,
   withRuntime,
   WorkspaceError,
-} from '@heddle/core';
-import type { Mount, PluginManifest } from '@heddle/core';
+} from '@heddle-run/core';
+import type { Mount, PluginManifest } from '@heddle-run/core';
 import type { ServerConfig } from './config.js';
 import { HttpError } from './errors.js';
 

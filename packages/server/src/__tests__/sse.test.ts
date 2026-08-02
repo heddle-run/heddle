@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { ServerResponse } from 'node:http';
-import type { Event } from '@heddle/core';
-import { State } from '@heddle/core';
+import type { Event } from '@heddle-run/core';
+import { State } from '@heddle-run/core';
 import { SseStream, serializeEvent } from '../sse.js';
 
 const FULL: Required<Event> = {

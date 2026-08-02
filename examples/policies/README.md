@@ -171,7 +171,7 @@ heddle-server \
   --plugin-config ApprovalGate='{"guard":{"shell":["rm -rf","sudo"]}}'
 ```
 
-(`npm install -g @heddle/server` provides `heddle-server`; from a source
+(`npm install -g @heddle-run/server` provides `heddle-server`; from a source
 checkout it is `node packages/server/dist/heddle-server.js`.)
 
 Everything is settled before the port opens: a manifest that will not parse, or a
