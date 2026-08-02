@@ -62,6 +62,7 @@ const iconControl: CSSProperties = {
    comparison is a view of it, not a page of its own. */
 const links = [
   { label: "Docs", href: "/docs" },
+  { label: "Library", href: "/library" },
   { label: "Playground", href: PLAYGROUND_URL },
 ];
 

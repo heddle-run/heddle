@@ -1,0 +1,31 @@
+order_id,order_date,region,channel,product,units,unit_price,discount_pct
+1001,2026-01-04,North,online,Loom Frame,2,480.00,0
+1002,2026-01-06,South,retail,Warp Beam,5,120.00,5
+1003,2026-01-09,North,online,Shuttle,40,12.50,0
+1004,2026-01-11,East,online,Loom Frame,1,480.00,10
+1005,2026-01-14,West,retail,Reed Comb,12,34.00,0
+1006,2026-01-18,South,online,Shuttle,25,12.50,0
+1007,2026-01-22,North,retail,Warp Beam,3,120.00,0
+1008,2026-01-27,East,online,Heddle Set,60,8.75,15
+1009,2026-02-02,West,online,Loom Frame,3,480.00,5
+1010,2026-02-05,North,online,Heddle Set,120,8.75,20
+1011,2026-02-09,South,retail,Reed Comb,8,34.00,0
+1012,2026-02-12,East,retail,Shuttle,15,12.50,0
+1013,2026-02-15,West,online,Warp Beam,7,120.00,10
+1014,2026-02-19,North,online,Loom Frame,4,480.00,0
+1015,2026-02-23,South,online,Heddle Set,90,8.75,15
+1016,2026-02-26,East,retail,Reed Comb,20,34.00,5
+1017,2026-03-01,West,retail,Shuttle,35,12.50,0
+1018,2026-03-04,North,online,Warp Beam,6,120.00,0
+1019,2026-03-08,South,online,Loom Frame,2,480.00,0
+1020,2026-03-11,East,online,Heddle Set,150,8.75,25
+1021,2026-03-15,West,online,Reed Comb,14,34.00,0
+1022,2026-03-18,North,retail,Shuttle,22,12.50,5
+1023,2026-03-21,South,retail,Warp Beam,4,120.00,0
+1024,2026-03-24,East,online,Loom Frame,5,480.00,10
+1025,2026-03-27,West,online,Heddle Set,75,8.75,15
+1026,2026-03-29,North,online,Reed Comb,18,34.00,0
+1027,2026-03-30,South,online,Shuttle,50,12.50,10
+1028,2026-03-31,East,retail,Warp Beam,9,120.00,5
+1029,2026-03-31,West,retail,Loom Frame,1,480.00,0
+1030,2026-03-31,North,online,Heddle Set,200,8.75,25

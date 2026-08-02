@@ -1,0 +1,122 @@
+# meeting-notes — a transcript in, a set of notes out.
+#
+#   start ──> notes (LlmNode) ──> end
+#
+# No tools and no network beyond the model call, which makes it the shortest
+# path from "heddle is installed" to "heddle did something useful".
+component_type: Flow
+agentspec_version: 26.2.0
+id: flow_meeting_notes
+name: meeting-notes
+description: >
+  Turns a raw meeting transcript into decisions, action items with owners, and
+  the questions nobody answered.
+metadata: {}
+inputs: []
+outputs: []
+
+start_node:
+  $component_ref: n_start
+nodes:
+  - $component_ref: n_start
+  - $component_ref: n_notes
+  - $component_ref: n_end
+
+control_flow_connections:
+  - component_type: ControlFlowEdge
+    id: e_start_notes
+    name: start_to_notes
+    metadata: {}
+    from_node: { $component_ref: n_start }
+    from_branch: null
+    to_node: { $component_ref: n_notes }
+  - component_type: ControlFlowEdge
+    id: e_notes_end
+    name: notes_to_end
+    metadata: {}
+    from_node: { $component_ref: n_notes }
+    from_branch: null
+    to_node: { $component_ref: n_end }
+
+data_flow_connections:
+  - component_type: DataFlowEdge
+    id: e_transcript
+    name: transcript_to_notes
+    metadata: {}
+    source_node: { $component_ref: n_start }
+    source_output: transcript
+    destination_node: { $component_ref: n_notes }
+    destination_input: transcript
+  # An LlmNode writes `generated_text` and nothing else, whatever its spec
+  # declares. The edge renames it on the way out, so the run's final state
+  # reads `notes` rather than the executor's own key.
+  - component_type: DataFlowEdge
+    id: e_notes
+    name: notes_to_end_input
+    metadata: {}
+    source_node: { $component_ref: n_notes }
+    source_output: generated_text
+    destination_node: { $component_ref: n_end }
+    destination_input: notes
+
+$referenced_components:
+  n_start:
+    component_type: StartNode
+    id: n_start
+    name: start
+    metadata: {}
+    inputs: []
+    outputs:
+      - { title: transcript, type: string }
+    branches: [next]
+
+  n_notes:
+    component_type: LlmNode
+    id: n_notes
+    name: notes
+    metadata: {}
+    inputs:
+      - { title: transcript, type: string }
+    outputs:
+      - { title: generated_text, type: string }
+    branches: [next]
+    llm_config:
+      component_type: OpenAiConfig
+      id: llm_openai
+      name: gpt
+      metadata: {}
+      model_id: gpt-4o-mini
+      api_key: $OPENAI_API_KEY
+    prompt_template: |
+      You are taking minutes. Read the transcript and write it up under exactly
+      these three headings, in this order:
+
+      ## Decisions
+      What was actually settled. One line each. If something was discussed but
+      not settled, it is not a decision — it is an open question.
+
+      ## Action items
+      One line each, in the form `owner — what — by when`. Use the name the
+      transcript uses. Write `owner: unassigned` when nobody took it, and
+      `by when: not stated` rather than inventing a date.
+
+      ## Open questions
+      What was raised and left hanging.
+
+      Quote no more than a short phrase from the transcript. Add nothing that is
+      not in it: an empty heading is a correct answer when the meeting produced
+      nothing under it.
+
+      Transcript:
+      {{transcript}}
+
+  n_end:
+    component_type: EndNode
+    id: n_end
+    name: end
+    metadata: {}
+    inputs:
+      - { title: notes, type: string }
+    outputs: []
+    branches: []
+    branch_name: next

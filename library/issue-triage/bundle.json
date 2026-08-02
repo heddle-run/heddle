@@ -1,0 +1,16 @@
+{
+  "name": "issue-triage",
+  "title": "Issue triage",
+  "summary": "Sorts an issue into bug, feature or question and drafts the reply that kind needs.",
+  "blurb": "A cheap classifier decides what kind of issue arrived, a BranchingNode routes on its answer, and three specialists draft the reply — each with a prompt written for one case instead of one prompt hedging across all three. No tools and no network beyond the model, so it is also the smallest complete example of branching in the library: four agents, three branches, three end nodes.",
+  "tags": ["triage", "branching", "support"],
+  "model": "gpt-4o-mini",
+  "flow": "spec.yaml",
+  "requires": {
+    "env": ["OPENAI_API_KEY"]
+  },
+  "input": {
+    "title": "heddle run hangs on a flow that validates fine",
+    "body": "I have a three-node flow that `heddle validate` says is valid. `heddle run` prints the first node and then sits there until the five minute timeout. It only started after I added a second tool to the agent. Nothing on stderr. Happy to send the spec if that helps."
+  }
+}

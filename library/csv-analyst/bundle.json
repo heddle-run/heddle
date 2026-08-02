@@ -1,0 +1,18 @@
+{
+  "name": "csv-analyst",
+  "title": "CSV analyst",
+  "summary": "Answers questions about a folder of CSVs by writing SQL against them.",
+  "blurb": "Every CSV mounted at data/ is loaded into an in-memory SQLite database, one table per file, and the agent writes a SELECT to answer your question — so joins across files work and the arithmetic is done by a database rather than by a language model. It ships with a sample dataset; mount your own alongside it and they compose, because a repeatable --mount adds to what the bundle carries instead of replacing it.",
+  "tags": ["data", "sql", "analysis"],
+  "model": "gpt-4o-mini",
+  "flow": "spec.yaml",
+  "toolsDir": "tools",
+  "mounts": ["data:data:ro"],
+  "requires": {
+    "env": ["OPENAI_API_KEY"],
+    "binaries": ["python3"]
+  },
+  "input": {
+    "question": "Which region had the highest revenue after discounts, and what was the gross margin on it?"
+  }
+}

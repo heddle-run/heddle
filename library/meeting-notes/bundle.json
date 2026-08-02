@@ -1,0 +1,15 @@
+{
+  "name": "meeting-notes",
+  "title": "Meeting notes",
+  "summary": "Turns a raw transcript into decisions, action items and open questions.",
+  "blurb": "One LlmNode and nothing else: no tools, no mounts, no files to point it at. Paste a transcript in and get minutes out, under three fixed headings. It is the shortest path from an installed heddle to a run that did something useful, and the flow is small enough to read in one screen — which makes it the one to copy when you want a prompt of your own on the same rails.",
+  "tags": ["writing", "no tools", "starter"],
+  "model": "gpt-4o-mini",
+  "flow": "spec.yaml",
+  "requires": {
+    "env": ["OPENAI_API_KEY"]
+  },
+  "input": {
+    "transcript": "Priya: the checkout latency work — are we shipping Thursday or not?\nMarco: not Thursday. The cache warm-up is still flaky under load.\nPriya: fine, next Tuesday then. Marco, can you own the warm-up fix?\nMarco: yes. I'll have it in review by Friday.\nDana: someone needs to tell support the date moved.\nPriya: agreed, we'll sort out who after this call.\nDana: also, do we still need the old batch path once this lands?\nMarco: not sure. Nobody has checked what still calls it."
+  }
+}

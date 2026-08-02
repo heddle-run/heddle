@@ -1,0 +1,177 @@
+# changelog-writer — a repository and a range in, release notes out.
+#
+#   start ──> changelog (Agent + git_tags + git_log) ──> end
+#
+# The agent is given no range when you do not supply one: it asks git for the
+# last tag first, which is the question a person writing release notes asks.
+component_type: Flow
+agentspec_version: 26.2.0
+id: flow_changelog_writer
+name: changelog-writer
+description: >
+  Reads the commits in a git range and writes the release notes for them,
+  grouped by what the change does to whoever installs it.
+metadata: {}
+inputs: []
+outputs: []
+
+start_node:
+  $component_ref: n_start
+nodes:
+  - $component_ref: n_start
+  - $component_ref: n_changelog
+  - $component_ref: n_end
+
+control_flow_connections:
+  - component_type: ControlFlowEdge
+    id: e_start_changelog
+    name: start_to_changelog
+    metadata: {}
+    from_node: { $component_ref: n_start }
+    from_branch: null
+    to_node: { $component_ref: n_changelog }
+  - component_type: ControlFlowEdge
+    id: e_changelog_end
+    name: changelog_to_end
+    metadata: {}
+    from_node: { $component_ref: n_changelog }
+    from_branch: null
+    to_node: { $component_ref: n_end }
+
+data_flow_connections:
+  - component_type: DataFlowEdge
+    id: e_repo
+    name: repo_to_changelog
+    metadata: {}
+    source_node: { $component_ref: n_start }
+    source_output: repo
+    destination_node: { $component_ref: n_changelog }
+    destination_input: repo
+  - component_type: DataFlowEdge
+    id: e_range
+    name: range_to_changelog
+    metadata: {}
+    source_node: { $component_ref: n_start }
+    source_output: range
+    destination_node: { $component_ref: n_changelog }
+    destination_input: range
+  - component_type: DataFlowEdge
+    id: e_result
+    name: changelog_to_end_input
+    metadata: {}
+    source_node: { $component_ref: n_changelog }
+    source_output: result
+    destination_node: { $component_ref: n_end }
+    destination_input: result
+
+$referenced_components:
+  n_start:
+    component_type: StartNode
+    id: n_start
+    name: start
+    metadata: {}
+    inputs: []
+    outputs:
+      - { title: repo, type: string }
+      - { title: range, type: string }
+    branches: [next]
+
+  n_changelog:
+    component_type: AgentNode
+    id: n_changelog
+    name: changelog
+    metadata: {}
+    inputs:
+      - { title: repo, type: string }
+      - { title: range, type: string }
+    outputs:
+      - { title: result, type: string }
+    branches: [next]
+    agent:
+      component_type: Agent
+      id: a_changelog
+      name: changelog-agent
+      description: Writes release notes from a repository's own commit history
+      metadata: {}
+      inputs:
+        - { title: repo, type: string }
+        - { title: range, type: string }
+      outputs:
+        - { title: result, type: string }
+      system_prompt: |
+        You write release notes from a git history.
+
+        Repository: {{repo}}
+        Range: {{range}}
+
+        1. If the range above is empty, unset, or says "since the last release",
+           call git_tags for the repository and use `<latest tag>..HEAD`. Say in
+           one line which range you settled on.
+        2. Call git_log for that range. Read the subjects and bodies.
+        3. Write the notes as Markdown under only the headings that have
+           something under them, in this order: Breaking changes, Added, Fixed,
+           Changed. One bullet per user-visible change, in the present tense,
+           describing the effect rather than the diff — "sessions survive a
+           restart", not "refactor session store". Put the short hash in
+           brackets at the end of each bullet.
+        4. Collapse several commits for one change into one bullet. Leave out
+           anything nobody installing this would notice: formatting, test-only
+           commits, lockfile bumps, merge noise.
+
+        If git_log returns an error, report it and stop. Do not write notes from
+        commits you were not shown, and do not invent a version number.
+      llm_config:
+        component_type: OpenAiConfig
+        id: llm_openai
+        name: gpt
+        metadata: {}
+        model_id: gpt-4o-mini
+        api_key: $OPENAI_API_KEY
+      tools:
+        - component_type: ServerTool
+          id: t_git_log
+          name: git_log
+          description: >
+            List the commits in a git revision range, newest first, with
+            subject, author, date and body. Returns an "error" key instead of
+            commits when the range or the repository is not valid.
+          metadata: {}
+          inputs:
+            - { title: repo, type: string }
+            - title: range
+              type: string
+              default: HEAD~20..HEAD
+            - title: limit
+              type: integer
+              default: 100
+          outputs:
+            - { title: count, type: integer }
+            - { title: commits, type: string }
+        - component_type: ServerTool
+          id: t_git_tags
+          name: git_tags
+          description: >
+            List the most recent tags in a repository, newest first, with the
+            date each was created. Use this to find what the last release was.
+          metadata: {}
+          inputs:
+            - { title: repo, type: string }
+            - title: limit
+              type: integer
+              default: 10
+          outputs:
+            - { title: count, type: integer }
+            - { title: tags, type: string }
+      toolboxes: []
+      transforms: []
+
+  n_end:
+    component_type: EndNode
+    id: n_end
+    name: end
+    metadata: {}
+    inputs:
+      - { title: result, type: string }
+    outputs: []
+    branches: []
+    branch_name: next

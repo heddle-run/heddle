@@ -5,6 +5,9 @@ on:
     branches: [main]
     paths:
       - "website/**"
+      # The library section is generated from library/ at build time, so a new
+      # entry is a website change even though nothing under website/ moved.
+      - "library/**"
   workflow_dispatch:
 
 jobs:
