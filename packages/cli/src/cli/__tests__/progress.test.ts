@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { Event } from '@heddle/core';
+import type { Event } from '@heddle-run/core';
 import { createProgressWriter, renderEvent } from '../progress.js';
 
 function record(verbose = false): {

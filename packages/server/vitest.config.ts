@@ -8,7 +8,7 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@heddle/core': fileURLToPath(
+      '@heddle-run/core': fileURLToPath(
         new URL('../core/src/index.ts', import.meta.url),
       ),
     },

@@ -2,7 +2,7 @@ import { afterAll, describe, it, expect, vi } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { PluginRegistry, type HeddlePlugin, type WireFrame } from '@heddle/core';
+import { PluginRegistry, type HeddlePlugin, type WireFrame } from '@heddle-run/core';
 import { frameLine, resolveEncoder } from '../encoders.js';
 import { runCommand } from '../run.js';
 

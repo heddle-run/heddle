@@ -9,7 +9,7 @@ import {
   validateFlow,
   type ParsedFlow,
   type PluginRegistry,
-} from '@heddle/core';
+} from '@heddle-run/core';
 import type { ServerConfig } from './config.js';
 import { HttpError } from './errors.js';
 

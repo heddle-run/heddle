@@ -10,7 +10,7 @@ import { sessionsCommand } from './sessions.js';
 // map — so the same specifier finds package.json from src under the test
 // runner and from the bundled dist a user installs.
 const { version } = createRequire(import.meta.url)(
-  '@heddle/cli/package.json',
+  '@heddle-run/cli/package.json',
 ) as { version: string };
 
 export const program = new Command('heddle')

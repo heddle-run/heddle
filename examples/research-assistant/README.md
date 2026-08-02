@@ -17,7 +17,7 @@ search API key. The only credential it needs is the model's.
 
 ## Run it
 
-With the CLI installed (or spell `heddle` as `npx @heddle/cli`):
+With the CLI installed (or spell `heddle` as `npx @heddle-run/cli`):
 
 ```bash
 export OPENAI_API_KEY=sk-...

@@ -43,7 +43,7 @@ import {
   type SandboxOptions,
   type TurnOutcome,
   type WorkspaceOptions,
-} from '@heddle/core';
+} from '@heddle-run/core';
 import { mergeBundleOptions, openBundle, type OpenedBundle } from './bundles.js';
 import { frameLine, resolveEncoder, type EncoderFactory } from './encoders.js';
 import { createProgressWriter, renderEvent } from './progress.js';

@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Server } from 'node:http';
-import { FileSessionStore } from '@heddle/core';
+import { FileSessionStore } from '@heddle-run/core';
 import { createServer } from '../server.js';
 
 function simpleFlow(): Record<string, unknown> {

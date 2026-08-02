@@ -1,15 +1,15 @@
-# @heddle/core
+# @heddle-run/core
 
 The engine behind [heddle](https://heddle.run): parsing and validating
 [Open Agent Specification](https://oracle.github.io/agent-spec/) documents,
 compiling them into a graph, and running it: node executors, the tool
 subprocess protocol, LLM providers, the plugin system.
 
-Most people want [`@heddle/cli`](https://www.npmjs.com/package/@heddle/cli)
+Most people want [`@heddle-run/cli`](https://www.npmjs.com/package/@heddle-run/cli)
 instead, which is this engine behind a command:
 
 ```bash
-npx @heddle/cli run flow.json --tools-dir tools --input '{"query": "hello"}'
+npx @heddle-run/cli run flow.json --tools-dir tools --input '{"query": "hello"}'
 ```
 
 Reach for the library when you are embedding a flow in a program of your own,
@@ -17,13 +17,13 @@ whether that is serving it, checking it in CI, or wrapping it in something that
 is not a CLI.
 
 ```bash
-npm install @heddle/core
+npm install @heddle-run/core
 ```
 
 ## Parse, compile, check
 
 ```js
-import { loadFlow, compile, validate, collectToolNames } from '@heddle/core';
+import { loadFlow, compile, validate, collectToolNames } from '@heddle-run/core';
 
 const flow = loadFlow('flow.json');
 validate(compile(flow, {}));
@@ -45,7 +45,7 @@ plugins)`, from `loadPlugins`.
 
 Full documentation lives at [heddle.run/docs](https://heddle.run/docs); the
 plugin interfaces, seams and event contract are covered there.
-[`@heddle/server`](https://www.npmjs.com/package/@heddle/server) is this engine
+[`@heddle-run/server`](https://www.npmjs.com/package/@heddle-run/server) is this engine
 behind an HTTP API with SSE streaming.
 
 Source and issues: [heddle-run/heddle](https://github.com/heddle-run/heddle).

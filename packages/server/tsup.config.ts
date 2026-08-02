@@ -5,5 +5,5 @@ export default defineConfig({
   format: ['esm'],
   dts: true,
   clean: true,
-  external: ['@heddle/core'],
+  external: ['@heddle-run/core'],
 });

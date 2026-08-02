@@ -44,10 +44,10 @@ COPY packages/core ./packages/core
 COPY packages/server ./packages/server
 
 RUN pnpm run build:vendor \
- && pnpm --filter @heddle/core build \
- && pnpm --filter @heddle/server build
+ && pnpm --filter @heddle-run/core build \
+ && pnpm --filter @heddle-run/server build
 
-RUN pnpm --filter @heddle/server --prod deploy --legacy /runtime
+RUN pnpm --filter @heddle-run/server --prod deploy --legacy /runtime
 
 # ---------------------------------------------------------------------------
 # Runtime

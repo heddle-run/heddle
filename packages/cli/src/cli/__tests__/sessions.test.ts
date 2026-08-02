@@ -6,7 +6,7 @@ import {
   CHAT_HISTORY_KEY,
   FileSessionStore,
   historyFromTurns,
-} from '@heddle/core';
+} from '@heddle-run/core';
 import { runCommand } from '../run.js';
 import { sessionsCommand } from '../sessions.js';
 

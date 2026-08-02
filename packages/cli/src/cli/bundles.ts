@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
-import { checkedMount, extractBundle, type Mount } from '@heddle/core';
+import { checkedMount, extractBundle, type Mount } from '@heddle-run/core';
 
 /**
  * A `.heddle` archive, extracted and translated back into run inputs.

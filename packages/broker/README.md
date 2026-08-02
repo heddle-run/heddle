@@ -1,9 +1,9 @@
-# @heddle/broker
+# @heddle-run/broker
 
 The Cloudflare Worker in front of the playground engine. It is the only public
 face of a service that executes code its callers wrote.
 
-`@heddle/server` is deliberate about having no authentication, and its README says
+`@heddle-run/server` is deliberate about having no authentication, and its README says
 so plainly. This is where that is meant to be terminated.
 
 ## Shape
@@ -38,7 +38,7 @@ one process does not.
 
 ## Why the container holds no model key
 
-`createProvider` in `@heddle/core` reads both the LLM base URL and its
+`createProvider` in `@heddle-run/core` reads both the LLM base URL and its
 credential from the **submitted spec**:
 
 ```yaml

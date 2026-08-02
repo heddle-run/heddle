@@ -4,7 +4,7 @@ import {
   PluginError,
   type PluginRegistry,
   type ResolvedEncoder,
-} from '@heddle/core';
+} from '@heddle-run/core';
 import { HttpError } from './errors.js';
 
 export type ChosenEncoder = ResolvedEncoder;

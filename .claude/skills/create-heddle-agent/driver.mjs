@@ -163,7 +163,7 @@ function heddleBin() {
     `no heddle CLI found. Looked for a build at ${built}, ` +
       `${local}, and "heddle" on PATH. Inside a heddle checkout run ` +
       `"pnpm install && pnpm build"; otherwise install the CLI ` +
-      `(npm install -g @heddle/cli, or brew install spichen/tap/heddle) or point ` +
+      `(npm install -g @heddle-run/cli, or brew install spichen/tap/heddle) or point ` +
       `HEDDLE_BIN at one.`,
   );
 }

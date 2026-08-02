@@ -3,7 +3,7 @@ import {
   BUILTIN_INPUT_FORMATS,
   BUILTIN_PROTOCOL,
   EVENT_CONTRACT_VERSION,
-} from '@heddle/core';
+} from '@heddle-run/core';
 import type { ServerConfig } from './config.js';
 import { sendJson } from './http.js';
 import type { ConcurrencyGate } from './limits.js';

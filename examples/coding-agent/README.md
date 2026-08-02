@@ -38,7 +38,7 @@ the main one:
 Neither is referenced from `spec.yaml`. The wiring is entirely inside
 `tools/delegate_task.sh`: the tool takes an `agent_name` and a `task`, resolves
 `agents/<agent_name>.yaml` relative to itself, and runs it as an independent
-flow with `npx --package=@heddle/cli heddle run`, passing the task as input and
+flow with `npx --package=@heddle-run/cli heddle run`, passing the task as input and
 handing the sub-flow's `result` back as its own tool output.
 
 So "sub-agent" is not a heddle feature; it is a tool that happens to invoke
@@ -48,7 +48,7 @@ returns.
 
 ## Run it
 
-With the CLI installed (or spell `heddle` as `npx @heddle/cli`):
+With the CLI installed (or spell `heddle` as `npx @heddle-run/cli`):
 
 ```bash
 export OPENAI_API_KEY=sk-...

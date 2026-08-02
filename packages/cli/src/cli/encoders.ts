@@ -4,7 +4,7 @@ import {
   type PluginEncoder,
   type PluginRegistry,
   type WireFrame,
-} from '@heddle/core';
+} from '@heddle-run/core';
 
 export type EncoderFactory = (runId: string) => PluginEncoder;
 

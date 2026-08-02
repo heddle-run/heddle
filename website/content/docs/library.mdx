@@ -1,9 +1,9 @@
 ---
 title: Using the library
-description: Embed the engine with @heddle/core. Load, compile, validate and run a flow from your own program.
+description: Embed the engine with @heddle-run/core. Load, compile, validate and run a flow from your own program.
 ---
 
-Everything the CLI and the server do runs on one engine, `@heddle/core`, and you can call
+Everything the CLI and the server do runs on one engine, `@heddle-run/core`, and you can call
 it directly. Three surfaces, one rule of thumb:
 
 - **The CLI** (`heddle run`) runs a flow on a machine, by hand or from a script.
@@ -11,7 +11,7 @@ it directly. Three surfaces, one rule of thumb:
 - **The server** (`heddle-server`) serves the same flows over HTTP, streamed. For serving
   flows to clients, use it rather than wrapping the library in your own HTTP layer: the
   hard parts (streaming, draining, submitted code) are already done.
-- **The library** (`@heddle/core`) embeds a flow in a program of your own: a
+- **The library** (`@heddle-run/core`) embeds a flow in a program of your own: a
   worker that picks jobs off a queue, a test harness, a CI check, a CLI that is not this
   one.
 
@@ -21,17 +21,17 @@ flow stays a plain Agent Spec document either way; what you are importing is the
 not abstractions the document needs.
 
 ```bash
-npm install @heddle/core
+npm install @heddle-run/core
 ```
 
-`@heddle/core` needs Node.js 18 or newer, and is ESM.
+`@heddle-run/core` needs Node.js 18 or newer, and is ESM.
 
 ## The minimal embed
 
 Four calls: `loadFlow` reads the document, `compile` turns it into an executable graph,
 `validate` refuses a graph that is not well-formed, and `Runner` walks it.
 
-Scaffold something to run (`npx @heddle/cli init my-agent` gives you a `flow.json` and a
+Scaffold something to run (`npx @heddle-run/cli init my-agent` gives you a `flow.json` and a
 `tools/` directory), or point at a project you already have. Then, in `run.mjs`:
 
 ```js
@@ -43,7 +43,7 @@ import {
   DEFAULT_RUNNER_OPTIONS,
   FileRegistry,
   SubprocessExecutor,
-} from "@heddle/core";
+} from "@heddle-run/core";
 
 const handleEvent = (event) => {
   if (event.type === "node_start") console.error(`→ ${event.nodeName}`);
@@ -143,7 +143,7 @@ heddle's own reserved keys in it (`_chat_history`, `_resume`); strip them with
 `withoutReserved(state.toData())` before storing or showing the result.
 
 Failures are thrown, not returned: a `RunError`, `LLMError`, `ToolError` or one of their
-siblings from `@heddle/core`. One of them is not a failure: `RunSuspended`, thrown when
+siblings from `@heddle-run/core`. One of them is not a failure: `RunSuspended`, thrown when
 middleware stops the run for a human. Check it with `isSuspended(err)` and treat it as
 the run waiting, the way the [CLI and server](/docs/sessions#stopping-for-a-human) do.
 
@@ -188,7 +188,7 @@ The same objects the CLI's flags build are yours to build directly:
 import {
   loadFlow, loadPlugins, compile, composeRegistries,
   FileRegistry, SubprocessExecutor, MiddlewareChain, parsePluginConfig,
-} from "@heddle/core";
+} from "@heddle-run/core";
 
 // what --plugin does: a .json path is a manifest, anything else an ES module
 const plugins = await loadPlugins(["./gate.json"]);

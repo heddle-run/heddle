@@ -8,7 +8,7 @@ import {
   type PluginManifest,
   type PluginMethod,
   type SessionStore,
-} from '@heddle/core';
+} from '@heddle-run/core';
 import type { ServerConfig } from './config.js';
 import { HttpError } from './errors.js';
 import type { MaterializedCode } from './request-code.js';

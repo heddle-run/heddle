@@ -1,5 +1,5 @@
 {
-  "name": "@heddle/server",
+  "name": "@heddle-run/server",
   "version": "0.2.0-beta.1",
   "description": "HTTP API for the heddle Agent Spec execution engine",
   "type": "module",
@@ -52,7 +52,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@heddle/core": "workspace:*"
+    "@heddle-run/core": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.13.0",

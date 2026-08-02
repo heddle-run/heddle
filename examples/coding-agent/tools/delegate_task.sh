@@ -30,7 +30,7 @@ fi
 
 INPUT_JSON=$(python3 -c "import json,sys; json.dump({'task': sys.argv[1]}, sys.stdout)" "$TASK")
 
-OUTPUT=$(npx --package=@heddle/cli heddle run "$AGENT_SPEC" --input "$INPUT_JSON" 2>&1) || { echo "Error: sub-agent execution failed"; exit 1; }
+OUTPUT=$(npx --package=@heddle-run/cli heddle run "$AGENT_SPEC" --input "$INPUT_JSON" 2>&1) || { echo "Error: sub-agent execution failed"; exit 1; }
 
 python3 -c "
 import json, sys

@@ -8,10 +8,10 @@ description: Install heddle and run your first agent workflow in under a minute.
 There is nothing to install. `npx` fetches the CLI and runs it:
 
 ```bash
-npx @heddle/cli --help
+npx @heddle-run/cli --help
 ```
 
-Every `heddle` on this page can be spelled `npx @heddle/cli`. That is not a
+Every `heddle` on this page can be spelled `npx @heddle-run/cli`. That is not a
 shortcut around a missing install step; it is the shape of the thing. heddle is
 a runtime you point at a document, so it belongs outside your project: no
 dependency, no lockfile entry, nothing that has to be migrated when heddle
@@ -21,7 +21,7 @@ To keep it on the machine rather than fetching it each time, install it globally
 via npm:
 
 ```bash
-npm install -g @heddle/cli
+npm install -g @heddle-run/cli
 ```
 
 Verify the installation:
@@ -155,6 +155,6 @@ the machine that runs, so credentials never travel. See [Bundles](/docs/bundles)
     The same flows over HTTP, streamed as they run.
   </Card>
   <Card title="Using the library" href="/docs/library">
-    Embed the engine in a program of your own with `@heddle/core`.
+    Embed the engine in a program of your own with `@heddle-run/core`.
   </Card>
 </Cards>

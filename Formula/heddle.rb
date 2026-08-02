@@ -18,10 +18,10 @@ class Heddle < Formula
     system "pnpm", "build"
 
     # `pnpm deploy` writes a self-contained tree for one workspace package,
-    # with @heddle/core and the production dependencies resolved into a local
+    # with @heddle-run/core and the production dependencies resolved into a local
     # node_modules. --legacy is required because this workspace does not set
     # inject-workspace-packages.
-    system "pnpm", "deploy", "--filter", "@heddle/cli", "--prod", "--legacy",
+    system "pnpm", "deploy", "--filter", "@heddle-run/cli", "--prod", "--legacy",
            buildpath/"deploy"
 
     libexec.install Dir[buildpath/"deploy/*"]

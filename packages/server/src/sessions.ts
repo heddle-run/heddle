@@ -5,7 +5,7 @@ import {
   transcriptOf,
   type SessionRecord,
   type SessionStore,
-} from '@heddle/core';
+} from '@heddle-run/core';
 import type { ServerConfig } from './config.js';
 import { HttpError } from './errors.js';
 import { readJsonBody, sendJson } from './http.js';

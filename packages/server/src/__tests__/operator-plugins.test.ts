@@ -21,7 +21,7 @@ import {
   loadPlugins,
   withRuntime,
   type PluginRegistry,
-} from '@heddle/core';
+} from '@heddle-run/core';
 import { startServer, type StartedServer } from '../server.js';
 
 /**

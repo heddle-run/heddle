@@ -5,7 +5,7 @@ import {
   newSessionId,
   transcriptOf,
   type SessionStore,
-} from '@heddle/core';
+} from '@heddle-run/core';
 
 /**
  * What `--session` was given, as commander hands it over.
