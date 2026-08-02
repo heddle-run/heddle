@@ -1,0 +1,11 @@
+/* DEVIATION: upstream styles `body` and global selectors; here everything is
+   scoped under `.hds` so these element styles reach only pages built on this
+   system — see ../DEVIATIONS.md. Declarations are upstream, verbatim. */
+.hds *,.hds *::before,.hds *::after{box-sizing:border-box}
+.hds{margin:0;background:var(--surface-page);color:var(--text-body);font-family:var(--font-body);font-size:var(--fs-body);line-height:var(--lh-body);letter-spacing:var(--ls-body);-webkit-font-smoothing:antialiased;text-wrap:pretty}
+.hds h1,.hds h2,.hds h3,.hds h4{color:var(--text-strong);font-weight:var(--fw-medium);letter-spacing:var(--ls-heading);line-height:var(--lh-heading);margin:0}
+.hds a{color:var(--text-link);text-decoration:none;text-underline-offset:3px;transition:var(--transition-control)}
+.hds a:hover{color:var(--text-link-hover);text-decoration:underline}
+.hds code,.hds pre,.hds kbd{font-family:var(--font-code);font-size:var(--fs-code)}
+.hds :focus-visible{outline:none;box-shadow:var(--ring-focus)}
+.hds ::selection{background:var(--blurple-200);color:var(--navy-900)}

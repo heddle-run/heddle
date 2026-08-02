@@ -1,0 +1,29 @@
+/* DEVIATION: token scope is `.hds` rather than `:root`, and the dark theme keys
+   on the site's `html.dark` (next-themes) rather than `data-theme="dark"` —
+   see ../DEVIATIONS.md. Values are upstream, verbatim. */
+.hds{
+/* navy — Stripe's dark blue */
+--navy-900:#0a2540;--navy-800:#103654;--navy-700:#164668;
+/* slate — cool grey text ramp */
+--slate-700:#425466;--slate-600:#4f5f76;--slate-500:#6b7c93;--slate-400:#8898aa;--slate-300:#aab7c4;--slate-200:#cfd7df;--slate-100:#dce3ea;--slate-50:#eef2f6;
+/* cloud — light surfaces */
+--cloud-0:#ffffff;--cloud-50:#f6f9fc;--cloud-100:#f0f4f9;--cloud-200:#e6ebf1;--cloud-300:#d5dde5;
+/* blurple — the primary accent */
+--blurple-700:#4b45b8;--blurple-600:#5851ea;--blurple-500:#635bff;--blurple-400:#7a73ff;--blurple-300:#9f9aff;--blurple-200:#c7c4ff;--blurple-100:#e4e2ff;--blurple-50:#f4f3ff;
+/* cyan — secondary accent */
+--cyan-700:#067ab8;--cyan-600:#0099d6;--cyan-500:#00d4ff;--cyan-400:#45deff;--cyan-300:#80e9ff;--cyan-200:#b3f2ff;--cyan-100:#d9f9ff;
+/* semantic hues */
+--green-500:#24b47e;--green-100:#d9f3e8;--red-500:#cd3d64;--red-100:#fbe7ed;--amber-500:#d97917;--amber-100:#fcefdc;--blue-500:#0073e6;--blue-100:#e0efff;
+
+/* aliases — surfaces */
+--surface-page:var(--cloud-50);--surface-raised:var(--cloud-0);--surface-sunken:var(--cloud-200);--surface-card:var(--cloud-0);--surface-inverse:var(--navy-900);--surface-code:var(--navy-900);--surface-code-alt:var(--navy-800);--surface-accent-soft:var(--blurple-50);
+/* aliases — text */
+--text-strong:var(--navy-900);--text-body:var(--slate-700);--text-muted:var(--slate-500);--text-subtle:var(--slate-400);--text-inverse:#ffffff;--text-inverse-muted:var(--slate-300);--text-accent:var(--blurple-500);--text-link:var(--blurple-500);--text-link-hover:var(--navy-900);
+/* aliases — lines */
+--border-hairline:var(--cloud-200);--border-default:var(--slate-200);--border-strong:var(--slate-300);--border-inverse:#1f4468;--border-accent:var(--blurple-400);
+/* aliases — interactive */
+--action-primary-bg:var(--blurple-500);--action-primary-bg-hover:var(--navy-900);--action-primary-fg:#ffffff;--action-accent-bg:var(--cyan-500);--action-accent-bg-hover:var(--cyan-400);--action-accent-fg:var(--navy-900);--focus-ring:var(--blurple-400);
+/* aliases — syntax (navy code surfaces) */
+--code-fg:#f6f9fc;--code-comment:var(--slate-500);--code-key:var(--cyan-300);--code-string:var(--blurple-200);--code-punct:var(--slate-400);--code-num:#ffcb57
+}
+:where(html.dark) .hds{--surface-page:#000000;--surface-raised:#0a0a0a;--surface-sunken:#000000;--surface-card:#0a0a0a;--surface-inverse:#ffffff;--surface-code:#0f0f0f;--surface-code-alt:#141414;--surface-accent-soft:#17163a;--text-strong:#ffffff;--text-body:#d4d4d4;--text-muted:#a1a1a1;--text-subtle:#8f8f8f;--text-inverse:#000000;--text-inverse-muted:#666666;--text-accent:var(--blurple-300);--text-link:var(--blurple-300);--text-link-hover:#ffffff;--border-hairline:#262626;--border-default:#333333;--border-strong:#444444;--border-inverse:#e6ebf1;--border-accent:var(--blurple-300);--action-primary-bg:#ffffff;--action-primary-bg-hover:#e6e6e6;--action-primary-fg:#000000;--focus-ring:var(--blurple-300)}

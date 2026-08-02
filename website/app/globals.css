@@ -694,3 +694,195 @@ body {
     display: none;
   }
 }
+
+/* ── Heddle-system landing layout (hds-*) ─────────────────────────────────
+   Media-query helpers for the pages built on ds-heddle/. Same rule as the
+   hd-* set above: these exist only for what inline styles cannot express.
+   Everything else on those pages uses the system's own tokens directly. */
+
+.hds-container {
+  max-width: var(--maxw-container);
+  margin: 0 auto;
+  padding-left: 24px;
+  padding-right: 24px;
+}
+
+.hds-nav-links {
+  display: none;
+}
+@media (min-width: 760px) {
+  .hds-nav-links {
+    display: flex;
+  }
+}
+
+.hds-hero-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 48px;
+  align-items: center;
+}
+@media (min-width: 980px) {
+  .hds-hero-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+    gap: 64px;
+  }
+}
+
+/* Below the two-column break the terminal cannot overlap the spec window from
+   the side, so it tucks under it instead. */
+.hds-hero-terminal {
+  position: relative;
+  margin-top: 16px;
+}
+@media (min-width: 980px) {
+  .hds-hero-windows {
+    padding-bottom: 120px;
+  }
+  .hds-hero-terminal {
+    position: absolute;
+    left: -36px;
+    bottom: 0;
+    width: 78%;
+    margin-top: 0;
+  }
+}
+
+.hds-inventory-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 40px;
+  align-items: start;
+}
+@media (min-width: 900px) {
+  .hds-inventory-grid {
+    grid-template-columns: minmax(0, 1.5fr) minmax(0, 0.8fr);
+    gap: 56px;
+  }
+}
+
+.hds-inventory-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+@media (min-width: 700px) {
+  .hds-inventory-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 44px;
+  }
+}
+
+.hds-stats {
+  display: grid;
+  gap: 28px;
+  padding-top: 18px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+@media (min-width: 900px) {
+  .hds-stats {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.hds-position-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 40px;
+  align-items: center;
+}
+@media (min-width: 900px) {
+  .hds-position-grid {
+    grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+    gap: 56px;
+  }
+}
+
+.hds-method-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  margin-top: 44px;
+  border-top: 1px solid var(--border-hairline);
+  text-align: left;
+}
+.hds-method-grid > div {
+  padding: 24px 0 0;
+}
+@media (min-width: 820px) {
+  .hds-method-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .hds-method-grid > div {
+    padding: 24px 22px 0;
+  }
+  .hds-method-grid > div:first-child {
+    padding-left: 0;
+  }
+  .hds-method-grid > div:last-child {
+    padding-right: 0;
+  }
+  .hds-method-grid > div + div {
+    border-left: 1px solid var(--border-hairline);
+  }
+}
+
+.hds-isolation-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  margin-top: 28px;
+}
+@media (min-width: 760px) {
+  .hds-isolation-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+  }
+}
+
+.hds-footer-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 32px;
+}
+@media (min-width: 820px) {
+  .hds-footer-grid {
+    grid-template-columns: minmax(0, 1.4fr) repeat(3, minmax(0, 1fr));
+  }
+}
+.hds-footer-brand {
+  grid-column: 1 / -1;
+}
+@media (min-width: 820px) {
+  .hds-footer-brand {
+    grid-column: auto;
+  }
+}
+
+.hds-faq summary {
+  list-style: none;
+}
+.hds-faq summary::-webkit-details-marker {
+  display: none;
+}
+.hds-faq details[open] summary svg {
+  transform: rotate(180deg);
+}
+.hds-faq summary svg {
+  transition: transform var(--dur-fast) var(--ease-standard);
+}
+
+/* InstallCommand is vendored; these two rules stretch it to the column and pin
+   its copy button to the right edge without touching the component. */
+.hds-install > div {
+  display: flex;
+  width: 100%;
+}
+.hds-install > div > button {
+  margin-left: auto;
+}
+
+/* Upstream defines --gradient-warp with literal white stops, so it does not
+   flip with the theme; the design template's dark hero is a black radial.
+   Overridden here rather than in the vendored tokens. */
+html.dark .hds {
+  --gradient-warp: radial-gradient(80% 60% at 50% 0%, #111111 0%, #000000 70%);
+}

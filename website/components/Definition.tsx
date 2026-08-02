@@ -1,84 +1,50 @@
-import { BoxedFrame, Icon } from "@/ds";
 import { definition } from "@/lib/constants";
 
+/* The dictionary epigraph, in the serif editorial voice. The entry is the one
+   from lib/constants.ts, verbatim — the metaphor is the pitch. */
 export default function Definition() {
   return (
-    <section className="hd-section">
-      <div className="hd-container">
-        <BoxedFrame pad="var(--space-12)" beam>
-          <figure
-            style={{
-              margin: 0,
-              maxWidth: 760,
-              marginInline: "auto",
-              textAlign: "center",
-            }}
-          >
-            <span
-              aria-hidden
-              style={{
-                display: "inline-flex",
-                color: "var(--brand-pink)",
-                opacity: 0.35,
-              }}
-            >
-              <Icon name="quote" size={40} />
-            </span>
-
-            <figcaption
-              style={{
-                marginTop: "var(--space-6)",
-                display: "flex",
-                flexWrap: "wrap",
-                alignItems: "baseline",
-                justifyContent: "center",
-                gap: "var(--space-3)",
-              }}
-            >
-              <span
-                style={{
-                  fontSize: "var(--fs-2xl)",
-                  fontWeight: "var(--fw-semibold)",
-                  letterSpacing: "var(--tracking-tight)",
-                  color: "var(--text-strong)",
-                }}
-              >
-                {definition.word}
-              </span>
-              <span
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: "var(--fs-xs)",
-                  color: "var(--text-faint)",
-                }}
-              >
-                {definition.pronunciation}
-              </span>
-              <span
-                style={{
-                  fontSize: "var(--fs-sm)",
-                  color: "var(--text-muted)",
-                }}
-              >
-                {definition.partOfSpeech}
-              </span>
-            </figcaption>
-
-            <blockquote
-              style={{
-                margin: "var(--space-6) 0 0",
-                fontSize: "clamp(20px,2.6vw,30px)",
-                fontWeight: "var(--fw-light)",
-                letterSpacing: "var(--tracking-tight)",
-                lineHeight: "var(--lh-snug)",
-                color: "var(--text-strong)",
-              }}
-            >
-              {definition.body}
-            </blockquote>
-          </figure>
-        </BoxedFrame>
+    <section
+      style={{
+        maxWidth: "var(--maxw-narrow)",
+        margin: "0 auto",
+        padding: "var(--section-y-sm) 24px",
+        textAlign: "center",
+      }}
+    >
+      <div
+        style={{
+          fontFamily: "var(--font-serif)",
+          fontSize: 34,
+          color: "var(--text-strong)",
+        }}
+      >
+        {definition.word}{" "}
+        <span style={{ color: "var(--text-subtle)", fontSize: 24 }}>
+          {definition.pronunciation}
+        </span>{" "}
+        <em style={{ fontSize: 24 }}>{definition.partOfSpeech}</em>
       </div>
+      <p
+        style={{
+          fontFamily: "var(--font-serif)",
+          fontSize: 21,
+          fontStyle: "italic",
+          color: "var(--text-body)",
+          lineHeight: 1.6,
+          margin: "12px 0 0",
+        }}
+      >
+        {definition.body}
+      </p>
+      <div
+        style={{
+          width: 120,
+          height: 2,
+          background: "var(--gradient-thread)",
+          margin: "26px auto 0",
+        }}
+      />
     </section>
   );
 }

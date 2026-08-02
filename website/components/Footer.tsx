@@ -1,6 +1,4 @@
 import Link from "next/link";
-import { BoxedFrame } from "@/ds";
-import Wordmark from "./Wordmark";
 import {
   AGENT_SPEC_URL,
   COMPARE_URL,
@@ -49,122 +47,120 @@ const columns = [
 ];
 
 const linkStyle = {
-  fontSize: "var(--fs-sm)",
+  fontSize: 13.5,
   color: "var(--text-muted)",
+  textDecoration: "none",
 } as const;
 
 export default function Footer() {
   return (
-    <footer
-      style={{
-        borderTop: "1px solid var(--border-hairline)",
-        background: "var(--bg-elevated)",
-        padding: "var(--space-16) 0 var(--space-8)",
-      }}
-    >
-      <div className="hd-container">
-        <BoxedFrame
-          corners="diagonal"
-          edges="none"
-          pad="var(--space-8)"
-          style={{ marginBottom: "var(--space-8)" }}
-        >
-          <div className="hd-footer-grid">
-            <div>
-              <Wordmark size="lg" />
-              <p
-                style={{
-                  margin: "var(--space-4) 0 0",
-                  maxWidth: "34ch",
-                  fontSize: "var(--fs-sm)",
-                  lineHeight: "var(--lh-relaxed)",
-                  color: "var(--text-muted)",
-                }}
-              >
-                A CLI runtime for the Open Agent Specification. Open source, MIT
-                licensed, and entirely local.
-              </p>
-              <p
-                className="hd-mono"
-                style={{
-                  margin: "var(--space-4) 0 0",
-                  color: "var(--text-faint)",
-                }}
-              >
-                v{VERSION}
-              </p>
-            </div>
-
-            {columns.map((column) => (
-              <nav key={column.title} aria-label={column.title}>
-                <h2 className="hd-eyebrow" style={{ display: "block" }}>
-                  {column.title}
-                </h2>
-                <ul
-                  style={{
-                    listStyle: "none",
-                    margin: "var(--space-4) 0 0",
-                    padding: 0,
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: "var(--space-2)",
-                  }}
-                >
-                  {column.links.map((link) => (
-                    <li key={link.label}>
-                      {link.href.startsWith("http") ? (
-                        <a
-                          href={link.href}
-                          /* Another origin, but still this project: the
-                             playground opens in place, GitHub and npm do
-                             not. */
-                          {...("external" in link && link.external
-                            ? { target: "_blank", rel: "noopener noreferrer" }
-                            : {})}
-                          className="ff-text-transition"
-                          style={linkStyle}
-                        >
-                          {link.label}
-                        </a>
-                      ) : (
-                        <Link
-                          href={link.href}
-                          className="ff-text-transition"
-                          style={linkStyle}
-                        >
-                          {link.label}
-                        </Link>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              </nav>
-            ))}
+    <footer style={{ borderTop: "1px solid var(--border-hairline)" }}>
+      <div
+        className="hds-container hds-footer-grid"
+        style={{ paddingTop: 48, paddingBottom: 48 }}
+      >
+        <div className="hds-footer-brand">
+          <div
+            style={{
+              fontWeight: "var(--fw-medium)",
+              fontSize: 16,
+              color: "var(--text-strong)",
+            }}
+          >
+            heddle
           </div>
-        </BoxedFrame>
+          <p
+            style={{
+              fontSize: 13,
+              color: "var(--text-muted)",
+              lineHeight: 1.62,
+              margin: "8px 0 0",
+              maxWidth: "32ch",
+            }}
+          >
+            A CLI runtime for the Open Agent Specification. Open source, MIT
+            licensed, and entirely local.
+          </p>
+        </div>
 
+        {columns.map((column) => (
+          <nav key={column.title} aria-label={column.title}>
+            <h2
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 11,
+                fontWeight: "var(--fw-regular)",
+                letterSpacing: "var(--ls-label)",
+                textTransform: "uppercase",
+                color: "var(--text-subtle)",
+                margin: 0,
+              }}
+            >
+              {column.title}
+            </h2>
+            <ul
+              style={{
+                listStyle: "none",
+                margin: "12px 0 0",
+                padding: 0,
+                display: "grid",
+                gap: 7,
+              }}
+            >
+              {column.links.map((link) => (
+                <li key={link.label}>
+                  {link.href.startsWith("http") ? (
+                    <a
+                      href={link.href}
+                      /* Another origin, but still this project: the playground
+                         opens in place, GitHub and npm do not. */
+                      {...("external" in link && link.external
+                        ? { target: "_blank", rel: "noopener noreferrer" }
+                        : {})}
+                      style={linkStyle}
+                    >
+                      {link.label}
+                    </a>
+                  ) : (
+                    <Link href={link.href} style={linkStyle}>
+                      {link.label}
+                    </Link>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </nav>
+        ))}
+      </div>
+
+      <div style={{ borderTop: "1px solid var(--border-hairline)" }}>
         <div
-          className="hd-footer-bottom"
+          className="hds-container"
           style={{
-            borderTop: "1px solid var(--border-hairline)",
-            paddingTop: "var(--space-8)",
-            fontSize: "var(--fs-xs)",
-            color: "var(--text-muted)",
+            paddingTop: 16,
+            paddingBottom: 16,
+            fontFamily: "var(--font-mono)",
+            fontSize: 11.5,
+            color: "var(--text-subtle)",
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 16,
+            flexWrap: "wrap",
           }}
         >
-          <p style={{ margin: 0 }}>MIT licensed</p>
-          <p style={{ margin: 0 }}>
+          <span>heddle.run</span>
+          <span>
             Built by{" "}
             <a
               href="https://github.com/spichen"
               target="_blank"
               rel="noopener noreferrer"
-              className="ff-text-transition"
-              style={{ color: "var(--text-strong)" }}
+              style={{ color: "var(--text-muted)" }}
             >
               spichen
             </a>
-          </p>
+          </span>
+          <span>v{VERSION}</span>
         </div>
       </div>
     </footer>

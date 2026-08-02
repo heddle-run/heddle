@@ -1,54 +1,82 @@
-import Link from "next/link";
-import { BoxedFrame, Button, Badge } from "@/ds";
-import InstallTabs from "./InstallTabs";
-import { GITHUB_URL } from "@/lib/constants";
+import { Button, Icon, InstallCommand } from "@/ds-heddle";
+import { installTabs, PLAYGROUND_URL } from "@/lib/constants";
 
+/* The close, on the always-dark band with the warp-thread texture. Same
+   surface reasoning as Position: --surface-code stays navy-dark in both
+   themes where --surface-inverse flips. */
 export default function CTA() {
   return (
-    <section id="start" className="hd-section" style={{ scrollMarginTop: 80 }}>
-      <div className="hd-container">
-        <BoxedFrame beam pad="var(--space-16)">
-          <div style={{ textAlign: "center" }}>
-            <Badge uppercase>Thread the loom</Badge>
-
-            <h2
-              style={{
-                margin: "var(--space-6) auto 0",
-                maxWidth: "16ch",
-                fontSize: "clamp(36px,5vw,72px)",
-                fontWeight: "var(--fw-medium)",
-                letterSpacing: "var(--tracking-tighter)",
-                lineHeight: "var(--lh-tight)",
-                color: "var(--text-strong)",
-              }}
-            >
-              Zero to agent in one command.
-            </h2>
-
-            <InstallTabs />
-
-            <div
-              style={{
-                marginTop: "var(--space-8)",
-                display: "flex",
-                flexWrap: "wrap",
-                justifyContent: "center",
-                gap: "var(--space-4)",
-              }}
-            >
-              <Link href="/docs">
-                <Button size="lg" iconAfter="arrow-right">
-                  Get started
-                </Button>
-              </Link>
-              <a href={GITHUB_URL} target="_blank" rel="noopener noreferrer">
-                <Button size="lg" variant="ghost" icon="github">
-                  Read the source
-                </Button>
-              </a>
-            </div>
-          </div>
-        </BoxedFrame>
+    <section
+      style={{
+        background: "var(--surface-code)",
+        backgroundImage: "var(--texture-warp)",
+        backgroundBlendMode: "overlay",
+        borderTop: "1px solid var(--border-hairline)",
+      }}
+    >
+      <div
+        className="hds-container"
+        style={{ paddingTop: 88, paddingBottom: 88, textAlign: "center" }}
+      >
+        <h2
+          style={{
+            fontSize: "var(--fs-display-3)",
+            fontWeight: "var(--fw-light)",
+            letterSpacing: "var(--ls-display)",
+            color: "var(--code-fg)",
+            margin: 0,
+          }}
+        >
+          Thread the loom.
+        </h2>
+        <p
+          style={{
+            color: "var(--slate-300)",
+            fontSize: 17,
+            margin: "14px 0 0",
+          }}
+        >
+          One binary. One document. No lockfile entry.
+        </p>
+        <div
+          style={{
+            display: "flex",
+            gap: 12,
+            justifyContent: "center",
+            marginTop: 26,
+            flexWrap: "wrap",
+          }}
+        >
+          <Button
+            as="a"
+            href="/docs/getting-started"
+            size="lg"
+            variant="accent"
+            iconRight={<Icon name="arrowRight" size={16} />}
+          >
+            Get started
+          </Button>
+          <Button
+            as="a"
+            href={PLAYGROUND_URL}
+            size="lg"
+            variant="ghost"
+            style={{
+              color: "var(--cloud-100)",
+              border: "1px solid var(--border-inverse)",
+            }}
+          >
+            Open the playground
+          </Button>
+        </div>
+        <div
+          style={{ marginTop: 24, display: "flex", justifyContent: "center" }}
+        >
+          <InstallCommand
+            command={installTabs[0].commands[0].cmd}
+            style={{ background: "var(--surface-code-alt)" }}
+          />
+        </div>
       </div>
     </section>
   );

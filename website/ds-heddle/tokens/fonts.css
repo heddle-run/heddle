@@ -1,0 +1,8 @@
+/* DEVIATION: upstream loads IBM Plex Sans / IBM Plex Mono / Instrument Serif
+   with an @import from Google Fonts. This site self-hosts them through
+   next/font/google (app/layout.tsx), which assigns --font-plex-sans,
+   --font-plex-mono and --font-instrument. Same families, same weights.
+   The upstream @import is kept below, commented out in place.
+   Scope is `.hds` rather than `:root` — see ../DEVIATIONS.md. */
+/* @import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:ital,wght@0,400;0,500;1,400&family=Instrument+Serif:ital@0;1&display=swap"); */
+.hds{--font-sans:var(--font-plex-sans),"IBM Plex Sans",ui-sans-serif,system-ui,sans-serif;--font-mono:var(--font-plex-mono),"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;--font-serif:var(--font-instrument),"Instrument Serif",Georgia,serif;--font-body:var(--font-sans);--font-display:var(--font-sans);--font-editorial:var(--font-serif);--font-code:var(--font-mono);--font-label:var(--font-mono)}

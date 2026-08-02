@@ -1,23 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import { Button, ThemeToggle, Icon } from "@/ds";
 import { useTheme } from "@/lib/theme";
-import { GITHUB_URL, PLAYGROUND_URL } from "@/lib/constants";
-import Wordmark from "./Wordmark";
+import {
+  AGENT_SPEC_URL,
+  GITHUB_URL,
+  PLAYGROUND_URL,
+  VERSION,
+} from "@/lib/constants";
 
-/* Destinations only. This row used to also carry anchors into the landing
-   page's own sections, named after their editorial labels — "Included",
-   "Method", "Isolation" — which read as insider vocabulary next to two real
-   navigations, and hid the whole row below 960px to fit. The numbered sections
-   do their own wayfinding on scroll, and the footer carries the full index.
-   The section ids stay put as deep-link targets.
-
-   One entry for the playground: the comparison is a view of it, not a page of
-   its own. Its address is another origin once the subdomain is configured, so
-   the anchor is chosen per link rather than assumed. */
+/* Destinations only — the numbered sections do their own wayfinding on scroll,
+   and the footer carries the full index. One entry for the playground: the
+   comparison is a view of it, not a page of its own. */
 const links = [
   { label: "Docs", href: "/docs" },
+  { label: "Spec", href: AGENT_SPEC_URL, external: true },
   { label: "Playground", href: PLAYGROUND_URL },
 ];
 
@@ -29,53 +26,67 @@ export default function Nav() {
       style={{
         position: "sticky",
         top: 0,
-        zIndex: 50,
-        width: "100%",
+        zIndex: 30,
+        background: "color-mix(in srgb, var(--surface-page) 85%, transparent)",
+        backdropFilter: "blur(12px)",
+        WebkitBackdropFilter: "blur(12px)",
         borderBottom: "1px solid var(--border-hairline)",
-        background: "var(--surface-chrome)",
-        backdropFilter: "blur(var(--blur-chrome))",
       }}
     >
       <div
-        className="hd-container"
-        style={{
-          height: "var(--nav-height)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: "var(--space-6)",
-        }}
+        className="hds-container"
+        style={{ height: 60, display: "flex", alignItems: "center", gap: 24 }}
       >
-        <Link href="/" aria-label="heddle — home">
-          <Wordmark />
+        <Link
+          href="/"
+          aria-label="heddle — home"
+          style={{
+            fontWeight: "var(--fw-medium)",
+            fontSize: 17,
+            letterSpacing: "-0.02em",
+            color: "var(--text-strong)",
+            textDecoration: "none",
+          }}
+        >
+          heddle
         </Link>
+
+        <span
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 11,
+            color: "var(--text-subtle)",
+            border: "1px solid var(--border-default)",
+            borderRadius: "var(--radius-pill)",
+            padding: "2px 8px",
+            whiteSpace: "nowrap",
+          }}
+        >
+          v{VERSION}
+        </span>
 
         <nav
           aria-label="Primary"
-          className="hd-nav-links"
-          style={{
-            alignItems: "center",
-            gap: "var(--space-8)",
-            fontSize: "var(--fs-sm)",
-            fontWeight: "var(--fw-medium)",
-          }}
+          className="hds-nav-links"
+          style={{ gap: 22, marginLeft: "auto", fontSize: 14 }}
         >
           {links.map((link) =>
             link.href.startsWith("http") ? (
               <a
-                key={link.href}
+                key={link.label}
                 href={link.href}
-                className="ff-text-transition"
-                style={{ color: "var(--text-body)" }}
+                {...(link.external
+                  ? { target: "_blank", rel: "noopener noreferrer" }
+                  : {})}
+                style={{ color: "var(--text-muted)", textDecoration: "none" }}
               >
                 {link.label}
               </a>
             ) : (
               <Link
-                key={link.href}
+                key={link.label}
                 href={link.href}
-                className="ff-text-transition"
-                style={{ color: "var(--text-body)" }}
+                style={{ color: "var(--text-muted)", textDecoration: "none" }}
               >
                 {link.label}
               </Link>
@@ -87,28 +98,43 @@ export default function Nav() {
           style={{
             display: "flex",
             alignItems: "center",
-            gap: "var(--space-4)",
+            gap: 12,
+            marginLeft: "auto",
           }}
+          className="hds-nav-actions"
         >
-          <ThemeToggle dark={dark} onToggle={toggle} />
+          <button
+            type="button"
+            onClick={toggle}
+            aria-label={dark ? "Switch to light theme" : "Switch to dark theme"}
+            style={{
+              height: 30,
+              padding: "0 12px",
+              cursor: "pointer",
+              fontFamily: "var(--font-mono)",
+              fontSize: 11.5,
+              letterSpacing: "0.06em",
+              borderRadius: "var(--radius-control)",
+              border: "1px solid var(--border-default)",
+              background: "transparent",
+              color: "var(--text-muted)",
+              transition: "var(--transition-control)",
+            }}
+          >
+            {dark ? "Light" : "Dark"}
+          </button>
           <a
             href={GITHUB_URL}
             target="_blank"
             rel="noopener noreferrer"
-            aria-label="heddle on GitHub"
-            className="hd-nav-secondary ff-text-transition"
-            style={{ color: "var(--text-body)", alignItems: "center" }}
+            style={{
+              fontSize: 14,
+              color: "var(--text-strong)",
+              textDecoration: "none",
+            }}
           >
-            <Icon name="github" size={18} />
+            GitHub
           </a>
-          {/* Not /docs — the link two elements to the left already goes there,
-              and a CTA that repeats its neighbour is a wasted slot. This is the
-              page a reader who has decided actually wants. */}
-          <Link href="/docs/getting-started">
-            <Button size="sm" beam iconAfter="arrow-right">
-              Get started
-            </Button>
-          </Link>
         </div>
       </div>
     </header>
