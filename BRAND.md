@@ -200,8 +200,9 @@ pages keep `lucide-react` through `ds/` — see its DEVIATIONS.md.)
 9. **CTA** — the navy band with the warp texture: "Thread the loom.", accent
    Get started, ghost playground link, the npx command.
 10. **Footer** — brand blurb plus the Project / Source / Standard columns, and
-    a mono bottom bar (heddle.run · "Built by agents, guided by humans" ·
-    version).
+    a mono bottom bar (heddle.run · "Woven by agents, heddled by humans" ·
+    version). The byline leans on the Definition block above it having
+    already taught the reader what a heddle does.
 
 The Loom drawing, the bento Features grid and the Spread section from the
 previous (FormFlow) landing page were retired with the redesign — the hero's
