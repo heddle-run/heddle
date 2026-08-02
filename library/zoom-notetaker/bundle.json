@@ -1,0 +1,17 @@
+{
+  "name": "zoom-notetaker",
+  "title": "Zoom notetaker",
+  "summary": "Joins a Zoom meeting from its link, waits out the call, and writes up the notes.",
+  "blurb": "Paste a Zoom link and get minutes back: one tool dispatches a Recall.ai notetaker bot into the call, a second waits for the meeting to end and brings home the transcript, and the same fixed-heading prompt as meeting-notes turns it into a summary, decisions, action items and open questions. The model never joins the meeting — two deterministic tool steps do, and the flow branches to a plain-spoken failure end when the bot could not get in or captions were off, rather than summarizing a meeting it never heard.",
+  "tags": ["meetings", "zoom", "bot", "notes"],
+  "model": "gpt-4o-mini",
+  "flow": "spec.yaml",
+  "toolsDir": "tools",
+  "requires": {
+    "env": ["OPENAI_API_KEY", "RECALL_API_KEY"],
+    "binaries": ["python3"]
+  },
+  "input": {
+    "meeting_url": "https://zoom.us/j/1234567890?pwd=replace-with-your-meeting"
+  }
+}

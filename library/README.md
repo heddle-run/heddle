@@ -13,6 +13,7 @@ Browse them at [heddle.run/library](https://heddle.run/library).
 | [docs-qa](docs-qa/README.md) | Answers questions from a folder of documents, citing the file and line. | A model key, `python3` |
 | [csv-analyst](csv-analyst/README.md) | Answers questions about a folder of CSVs by writing SQL against them. | A model key, `python3` |
 | [changelog-writer](changelog-writer/README.md) | Reads a range of git commits and writes the release notes for them. | A model key, `git`, `python3` |
+| [zoom-notetaker](zoom-notetaker/README.md) | Joins a Zoom meeting from its link, waits out the call, and writes up the notes. | A model key, a [Recall.ai](https://recall.ai) key, `python3` |
 
 Every one runs on `gpt-4o-mini` as written, and every one is a text file you can
 point at a different provider — see [LLM providers](https://heddle.run/docs/llm-providers).
