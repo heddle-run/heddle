@@ -149,7 +149,7 @@ export default function Footer() {
           }}
         >
           <span>heddle.run</span>
-          <span>Built by agents, guided by humans</span>
+          <span>Woven by agents, heddled by humans</span>
           <span>v{VERSION}</span>
         </div>
       </div>
