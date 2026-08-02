@@ -43,7 +43,7 @@ Everything is env vars; the spec never changes.
 | `STT_MODEL` | `whisper-1` | the model name sent to that endpoint |
 | `STT_API_KEY` | `$OPENAI_API_KEY` | bearer token for the endpoint |
 | `STT_LANGUAGE` | — | optional language hint, e.g. `en` |
-| `STT_COMMAND` | — | a local command that replaces the endpoint entirely; `{audio}` becomes a webm path, stdout is the transcript |
+| `STT_COMMAND` | — | a local command that replaces the endpoint entirely; it runs under `/bin/sh`, `{audio}` becomes a webm path, stdout is the transcript |
 | `STT_CHUNK_MINUTES` | `10` | minutes of audio per transcribed segment |
 
 Three configurations worth naming:
@@ -52,8 +52,10 @@ Three configurations worth naming:
 # Default: the OpenAI transcription API, on the key the notes already use.
 heddle run library/dist/zoom-notetaker.heddle --input '{"meeting_url":"…"}'
 
-# Fully local STT: whisper.cpp, audio never leaves the machine.
-STT_COMMAND='whisper-cli -m ~/models/ggml-base.en.bin -nt -np -f {audio}' \
+# Fully local STT: whisper.cpp, audio never leaves the machine. It runs under
+# /bin/sh, so the conversion and the timestamp stripping whisper.cpp needs
+# (see below) fit in the one variable.
+STT_COMMAND='w=$(mktemp -u).wav; ffmpeg -nostdin -loglevel error -i {audio} -ar 16000 -ac 1 "$w" && whisper-cli -m ~/models/ggml-base.en.bin -np -f "$w" | sed -E "s/^\[[0-9:.]+ --> [0-9:.]+\][[:space:]]*//"; s=$?; rm -f "$w"; exit $s' \
   heddle run library/dist/zoom-notetaker.heddle --input '{"meeting_url":"…"}'
 
 # A local OpenAI-compatible server (faster-whisper-server, speaches, …).
@@ -64,6 +66,43 @@ STT_URL=http://127.0.0.1:8000/v1/audio/transcriptions STT_MODEL=Systran/faster-w
 `ZOOM_TRANSCRIBER=captions` needs none of the above: it harvests the caption
 text Zoom already renders. The trade is that captions must be available in
 the meeting (a host setting), and caption quality is Zoom's, not yours.
+
+### Running whisper.cpp locally
+
+The short command line you would expect to write —
+`whisper-cli -m model.bin -nt -f {audio}` — is wrong in three ways, and none
+of them announce themselves:
+
+- **It cannot read the audio.** Segments arrive as webm/opus; whisper.cpp
+  reads wav, flac, mp3 and ogg. It also exits `0` on a file it could not
+  decode, so nothing raises: the segment comes back empty and that stretch of
+  the meeting is simply missing from the notes. Converting to 16 kHz mono WAV
+  with `ffmpeg` first is what the example above is doing.
+- **`-nt` drops speech.** `--no-timestamps` reads like an output-formatting
+  flag. In whisper.cpp 1.9.1 it changes the decode: whole clauses go missing,
+  deterministically and without a warning. Reproduced on `base.en`,
+  `medium.en` and `large-v3-turbo` against the same WAV, where the `-nt` run
+  lost the half of a sentence carrying a deadline that the plain run heard.
+  Let whisper print the timestamps and take them off with `sed`.
+- **Silence comes back as speech.** Handed a segment nobody spoke in, whisper
+  answers `You` or `Thank you.` A meeting is mostly silence from any one
+  microphone, so those pile up in the text the notes get written from.
+  `--suppress-nst` does not fix it; voice activity detection does.
+
+VAD is a separate 864 KB download. Point `-vm` at a file that is not there and
+`whisper-cli` aborts, so fetch it first:
+
+```bash
+curl -L -o ~/models/ggml-silero-v5.1.2.bin \
+  https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v5.1.2.bin
+```
+
+Then add `--vad -vm ~/models/ggml-silero-v5.1.2.bin` to the `whisper-cli` call.
+
+At that length the command wants to be a script rather than an environment
+variable — `STT_COMMAND="$HOME/stt.sh {audio}"`, with the conversion, the
+flags and the `sed` inside it. All heddle asks of it: a path in, the
+transcript on stdout, and a non-zero exit if it could not do the job.
 
 ## Before you run it
 

@@ -32,9 +32,15 @@
  *   STT_API_KEY             bearer token for it (default: OPENAI_API_KEY)
  *   STT_LANGUAGE            optional language hint, e.g. 'en'
  *   STT_COMMAND             a local command template that replaces the HTTP
- *                           endpoint entirely, e.g. 'whisper-cli -nt -f {audio}'.
- *                           {audio} becomes the path to a webm segment; the
- *                           transcript is whatever the command prints.
+ *                           endpoint entirely. {audio} becomes the path to a
+ *                           webm segment; the transcript is whatever the
+ *                           command prints. It runs under /bin/sh, so a
+ *                           pipeline is allowed — and whisper.cpp needs one:
+ *                           convert to 16 kHz mono WAV first (it does not read
+ *                           webm), and strip the timestamps with sed instead of
+ *                           passing -nt, which in 1.9.1 drops spans of speech
+ *                           rather than only the timestamps. The README carries
+ *                           the whole line.
  *   STT_CHUNK_MINUTES       minutes of audio per segment (default 10)
  *   CHROME_BIN              path to a Chromium/Chrome binary (otherwise
  *                           common names and install paths are searched)
