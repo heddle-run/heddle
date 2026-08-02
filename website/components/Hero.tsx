@@ -76,7 +76,7 @@ export default function Hero() {
               marginBottom: 20,
             }}
           >
-            Open Agent Specification · MIT
+            Declarative YAML · MIT
           </div>
 
           <h1
