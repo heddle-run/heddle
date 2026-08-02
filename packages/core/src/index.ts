@@ -41,7 +41,12 @@ export type { CompiledNode, DataSource } from './graph/types.js';
 
 export { Runner } from './runner/runner.js';
 export { DEFAULT_RUNNER_OPTIONS } from './runner/options.js';
-export type { RunnerOptions } from './runner/options.js';
+export type {
+  CheckpointSink,
+  RunnerOptions,
+  RunPosition,
+  SuspensionRecord,
+} from './runner/options.js';
 export type {
   BuiltinEventType,
   Event,
@@ -57,6 +62,58 @@ export {
 } from './runner/events.js';
 
 export { State } from './state/state.js';
+
+export {
+  CHAT_HISTORY_KEY,
+  RESERVED_STATE_KEYS,
+  RESUME_KEY,
+  isReservedStateKey,
+  withoutReserved,
+} from './session/reserved.js';
+export { historyMessages, readHistory } from './session/history.js';
+export type { HistoryMessage } from './session/history.js';
+export {
+  RunSuspended,
+  isSuspended,
+  readResume,
+  resumeInputs,
+} from './session/suspend.js';
+export type { ResumePayload } from './session/suspend.js';
+export {
+  assertSessionId,
+  isBusy,
+  newSessionId,
+  type SessionStore,
+} from './session/store.js';
+export { FileSessionStore } from './session/file-store.js';
+export type { FileSessionStoreOptions } from './session/file-store.js';
+export {
+  closeTurn,
+  historyFromTurns,
+  openTurn,
+  resumeTurn,
+  transcriptOf,
+} from './session/turn.js';
+export type {
+  OpenedTurn,
+  OpenTurnOptions,
+  ResumedTurn,
+  TurnOutcome,
+} from './session/turn.js';
+export {
+  checkpointFrom,
+  checkpointSink,
+  positionOf,
+} from './session/checkpoint.js';
+export type { CheckpointOptions } from './session/checkpoint.js';
+export type {
+  Checkpoint,
+  ListOptions,
+  SessionRecord,
+  SessionSummary,
+  Suspension,
+  Turn,
+} from './session/types.js';
 
 export type { Dependencies, NodeExecutor } from './node/types.js';
 
@@ -172,6 +229,7 @@ export type {
   PluginNodeDef,
   PluginNodeExecutor,
   PluginProviderDef,
+  PluginStoreDef,
   PluginReporter,
   PluginResult,
   PluginServices,
@@ -275,6 +333,8 @@ export {
   PluginError,
   RunError,
   SandboxError,
+  SessionConflictError,
+  SessionError,
   SpecError,
   ToolError,
   WorkspaceError,

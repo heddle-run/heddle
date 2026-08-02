@@ -98,11 +98,11 @@ they reach is somebody's screen.
 | Field | Applies to | Meaning |
 |---|---|---|
 | `componentType` | all | The string a spec writes. Must match `[A-Za-z_][A-Za-z0-9_]*`, unique within the manifest |
-| `kind` | all | `node` · `transform` · `component` · `provider` · `middleware` · `encoder`. Defaults to `node` |
+| `kind` | all | `node` · `transform` · `component` · `provider` · `middleware` · `store` · `encoder`. Defaults to `node` |
 | `inputs` | node | Inputs to advertise when the spec does not declare them |
 | `outputs` | node | Outputs to advertise when the spec does not declare them |
 | `branches` | node | Branch names this component can take. Static by necessity |
-| `schema` | any spec-named kind | JSON Schema the spec component is checked against |
+| `schema` | any spec-named kind, middleware, store | JSON Schema the component's configuration is checked against |
 | `phase` | transform | `pre` · `post` · `both` |
 | `stream` | provider | Whether this one can deliver an answer as it arrives. Off by default |
 | `seams` | middleware | Which seams this subscribes to. Required here, refused elsewhere |
@@ -211,7 +211,7 @@ the operator's, with `--mount`.
 The validator is deliberately strict, because it runs against data that may have arrived
 in an HTTP request and its failure is the first thing a plugin author sees.
 
-- A `kind` heddle does not recognise, listing the six that exist.
+- A `kind` heddle does not recognise, listing the seven that exist.
 - A capability heddle does not serve, listing the four that exist.
 - `seams` on anything but a middleware, and `protocol` or `contentType` on anything but an
   encoder — a field that silently did nothing would leave an author believing their

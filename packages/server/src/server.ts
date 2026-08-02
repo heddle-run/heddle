@@ -19,6 +19,11 @@ import { ConcurrencyGate } from './limits.js';
 import { Lifecycle } from './lifecycle.js';
 import { renderMetrics } from './metrics.js';
 import { handleRun } from './runs.js';
+import {
+  handleCreateSession,
+  handleDeleteSession,
+  handleReadSession,
+} from './sessions.js';
 import { handleValidate } from './validate.js';
 
 export const VERSION = '0.2.0-beta.1';
@@ -238,7 +243,52 @@ async function route(
     return;
   }
 
+  if (path === '/v1/sessions') {
+    requireMethod(method, 'POST');
+    await handleCreateSession(req, res, config, headers);
+    return;
+  }
+
+  const sessionId = sessionPath(path);
+  if (sessionId) {
+    if (method === 'GET') {
+      await handleReadSession(res, config, sessionId, headers);
+      return;
+    }
+    if (method === 'DELETE') {
+      await handleDeleteSession(res, config, sessionId, headers);
+      return;
+    }
+    throw new HttpError(
+      405,
+      `method ${method} not allowed; use GET or DELETE`,
+      'MethodNotAllowed',
+    );
+  }
+
   throw new HttpError(404, `no route for ${method} ${path}`, 'NotFound');
+}
+
+/**
+ * The id in `/v1/sessions/<id>`, decoded, or nothing if this is another route.
+ *
+ * Decoded here rather than passed through, because the id is checked against
+ * the store's own rule downstream — and a percent-encoded `..` that reached
+ * that check still encoded would pass a rule written about the characters it
+ * would eventually become.
+ */
+function sessionPath(path: string): string | undefined {
+  const prefix = '/v1/sessions/';
+  if (!path.startsWith(prefix)) return undefined;
+
+  const raw = path.slice(prefix.length);
+  if (raw.length === 0) return undefined;
+
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    throw new HttpError(400, 'session id is not valid percent-encoding');
+  }
 }
 
 function requestUrl(req: IncomingMessage): URL {
@@ -296,6 +346,7 @@ function announce(config: ServerConfig, port: number): void {
   );
   config.log(`  plugins: ${config.plugins?.describe() ?? 'none'}`);
   config.log(`  middleware: ${describeMiddleware(config)}`);
+  config.log(`  sessions: ${describeSessions(config)}`);
   config.log(
     `  request code: ${config.allowRequestCode ? 'accepted' : 'refused'}`,
   );
@@ -319,6 +370,24 @@ function describeMiddleware(config: ServerConfig): string {
   );
 
   return installed.length > 0 ? installed.join(', ') : 'none';
+}
+
+/**
+ * Whether conversations are kept, and the two things that follow if they are.
+ *
+ * Both are properties an operator would otherwise discover in production. A
+ * session id is a bearer capability on a server with no authentication, and a
+ * replica backed by the file store holds conversations no other replica can
+ * see — so the line says which store, not just that there is one.
+ */
+function describeSessions(config: ServerConfig): string {
+  if (!config.sessionStore) return 'off (a request naming one is refused)';
+
+  const name = config.sessionStoreName ?? 'unnamed';
+  return name === 'file'
+    ? `${name} — kept on this host only, so replicas do not share them; ` +
+        `a session id is a bearer capability`
+    : `${name} — a session id is a bearer capability`;
 }
 
 function publicBindWarning(host: string, port: number): string {

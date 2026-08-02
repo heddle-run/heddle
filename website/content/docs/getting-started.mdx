@@ -132,15 +132,26 @@ Add `--verbose` for per-node logging:
 heddle --verbose run my-agent/flow.json --tools-dir my-agent/tools --input '{"query": "hello"}'
 ```
 
-## Interactive Chat Mode
+## Conversations
 
-For debugging and exploration, use chat mode:
+`--session` keeps a run in a conversation and hands the agent the turns before it. Each command is one turn:
 
 ```bash
-heddle run my-agent/flow.json --tools-dir my-agent/tools --chat
+heddle run my-agent/flow.json --tools-dir my-agent/tools --session my-first --input '{"query": "hello"}'
+heddle run my-agent/flow.json --tools-dir my-agent/tools --session my-first --input '{"query": "and again?"}'
 ```
 
-This opens a multi-turn session that re-runs the flow for each message, passing the conversation so far to the agent. Transcripts are written to `~/.heddle/conversations/`. Type `/exit` to quit.
+Sessions live in `~/.heddle/sessions/`. `heddle sessions ls` lists them and `heddle sessions show <id>` prints a transcript.
+
+## Interactive Chat Mode
+
+For debugging and exploration, add `-i`:
+
+```bash
+heddle run my-agent/flow.json --tools-dir my-agent/tools -i
+```
+
+That conversation lasts as long as the terminal. Add `--session <id>` to keep it, and reopening with the same id starts on the conversation so far. Type `/exit` to quit.
 
 Your message is bound to the first output declared on the start node, falling back to `query` if the start node declares none.
 
@@ -148,10 +159,10 @@ From the image, this is the one command that wants a TTY, so it takes `-it` rath
 
 ```bash
 docker run --rm -it -e OPENAI_API_KEY -v "$PWD:/work" salahpichen/heddle \
-  run my-agent/flow.json --tools-dir my-agent/tools --chat
+  run my-agent/flow.json --tools-dir my-agent/tools -i
 ```
 
-Transcripts then live inside the container and leave with it. Mount a volume at `/home/node/.heddle` to keep them.
+Sessions then live inside the container and leave with it. Mount a volume at `/home/node/.heddle` to keep them.
 
 ## Validate a Spec
 

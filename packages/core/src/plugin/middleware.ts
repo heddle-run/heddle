@@ -46,7 +46,8 @@ export type ChainBefore =
   | { action: 'proceed' }
   | { action: 'modify'; input: Record<string, unknown> }
   | { action: 'replace'; value: Record<string, unknown>; by: string }
-  | { action: 'reject'; reason: string; by: string };
+  | { action: 'reject'; reason: string; by: string }
+  | { action: 'suspend'; ask: Record<string, unknown>; by: string };
 
 export interface ConsultInput {
   subject: MiddlewareSubject;
@@ -205,6 +206,8 @@ export class MiddlewareChain {
       attempt: 1,
       maxAttempts: 1,
     },
+    /** Set when this consultation is a `node` suspension being resumed. */
+    answered?: Record<string, unknown>,
   ): Promise<ChainBefore> {
     let current = input;
 
@@ -217,6 +220,7 @@ export class MiddlewareChain {
         signal,
         handler,
         attempts,
+        answered,
       );
 
       switch (verdict.action) {
@@ -235,6 +239,15 @@ export class MiddlewareChain {
           return {
             action: 'reject',
             reason: verdict.reason,
+            by: entry.componentType,
+          };
+        case 'suspend':
+          // Like a rejection, this ends the consultation: the middleware after
+          // this one would be deciding about work that is no longer going to
+          // happen on this pass. It gets asked again when the run resumes.
+          return {
+            action: 'suspend',
+            ask: verdict.ask,
             by: entry.componentType,
           };
       }
@@ -257,6 +270,7 @@ export class MiddlewareChain {
     signal: AbortSignal | undefined,
     handler: EventHandler | undefined,
     attempts: { attempt: number; maxAttempts: number },
+    answered: Record<string, unknown> | undefined,
   ): Promise<BeforeVerdict> {
     const where = whereOf(entry);
 
@@ -272,21 +286,21 @@ export class MiddlewareChain {
     }
 
     try {
-      const verdict = await entry.impl.before(
-        { subject, input },
-        this.contextFor(
-          entry,
-          seam,
-          {
-            subject,
-            outcome: { ok: true, value: undefined },
-            attempt: attempts.attempt,
-            maxAttempts: attempts.maxAttempts,
-          },
-          signal,
-          handler,
-        ),
+      const context = this.contextFor(
+        entry,
+        seam,
+        {
+          subject,
+          outcome: { ok: true, value: undefined },
+          attempt: attempts.attempt,
+          maxAttempts: attempts.maxAttempts,
+        },
+        signal,
+        handler,
       );
+      if (answered !== undefined) context.answered = answered;
+
+      const verdict = await entry.impl.before({ subject, input }, context);
       // Checked whichever side it came from. An in-process middleware is a plain
       // object whose return value TypeScript saw at compile time and nothing has
       // seen since — the same reason `ask` reads its `after` verdicts back.

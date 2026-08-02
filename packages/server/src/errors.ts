@@ -5,6 +5,8 @@ import {
   PluginError,
   RunError,
   SandboxError,
+  SessionConflictError,
+  SessionError,
   SpecError,
   ToolError,
 } from '@heddle/core';
@@ -43,6 +45,16 @@ export function toErrorResponse(err: unknown): {
 } {
   if (err instanceof HttpError) {
     return errorResponse(err.status, err.type, err.message);
+  }
+  // Before the two lists below, and its own branch rather than an entry in
+  // them: a conflict is the one failure here a caller can act on — re-read the
+  // conversation and decide whether the turn still makes sense — so it gets a
+  // status meaning "try again with fresh information" rather than 400 or 500.
+  if (err instanceof SessionConflictError) {
+    return errorResponse(409, err.name, err.message);
+  }
+  if (err instanceof SessionError) {
+    return errorResponse(400, err.name, err.message);
   }
   if (isOneOf(err, SERVER_FAULT_ERRORS)) {
     return errorResponse(500, err.name, err.message);

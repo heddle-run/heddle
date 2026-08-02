@@ -4,7 +4,18 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../../../../..');
-const DOC = join(ROOT, 'docs/plugin-system-design.md');
+
+/**
+ * Every design doc, held to the same rules.
+ *
+ * Was one path. A second doc landed citing the same churn-heavy files, and a
+ * rule enforced on one document and not the other is a rule that decays at the
+ * rate new documents are written.
+ */
+const DOCS = [
+  'docs/plugin-system-design.md',
+  'docs/session-persistence-design.md',
+].map((path) => join(ROOT, path));
 
 const SYMBOL_ANCHORED = [
   'plugin/types.ts',
@@ -21,15 +32,22 @@ interface Citation {
   path: string;
   last: number;
   text: string;
+  doc: string;
 }
 
 function citations(): Citation[] {
-  const doc = readFileSync(DOC, 'utf8');
-  return [...doc.matchAll(CITATION)].map((m) => ({
-    path: m[1],
-    last: Number(m[3] ?? m[2]),
-    text: m[0],
-  }));
+  return DOCS.flatMap((doc) =>
+    [...readFileSync(doc, 'utf8').matchAll(CITATION)].map((m) => ({
+      path: m[1],
+      last: Number(m[3] ?? m[2]),
+      text: m[0],
+      doc: doc.slice(ROOT.length + 1),
+    })),
+  );
+}
+
+function report(citation: Citation, problem: string): string {
+  return `${citation.doc}: ${citation.text} ${problem}`;
 }
 
 function isAnchored(path: string): string | undefined {
@@ -43,7 +61,7 @@ describe('the design doc citations', () => {
     const offenders = citations()
       .map((c) => ({ ...c, file: isAnchored(c.path) }))
       .filter((c) => c.file !== undefined)
-      .map((c) => `${c.text} -> cite \`${c.file}\`, <symbol> instead`);
+      .map((c) => report(c, `-> cite \`${c.file}\`, <symbol> instead`));
 
     expect(offenders).toEqual([]);
   });
@@ -52,7 +70,7 @@ describe('the design doc citations', () => {
     const missing = citations()
       .filter((c) => c.path.startsWith('packages/') || c.path.startsWith('vendor/'))
       .filter((c) => !existsSync(join(ROOT, c.path)))
-      .map((c) => c.text);
+      .map((c) => report(c, 'names no file'));
 
     expect(missing).toEqual([]);
   });
@@ -62,7 +80,7 @@ describe('the design doc citations', () => {
       .filter((c) => c.path.startsWith('packages/') || c.path.startsWith('vendor/'))
       .filter((c) => existsSync(join(ROOT, c.path)))
       .filter((c) => readFileSync(join(ROOT, c.path), 'utf8').split('\n').length < c.last)
-      .map((c) => c.text);
+      .map((c) => report(c, 'runs off the end'));
 
     expect(overruns).toEqual([]);
   });

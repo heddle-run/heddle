@@ -7,8 +7,10 @@ import type {
   PluginMiddlewareDef,
   PluginNodeDef,
   PluginProviderDef,
+  PluginStoreDef,
   PluginTransformDef,
 } from './types.js';
+import type { SessionStore } from '../session/store.js';
 import { BUILTIN_PROTOCOL, PROTOCOL_NAME } from './encoder.js';
 import { HeddleDeserializationPlugin } from './deserializer.js';
 import type { PluginHost } from './host.js';
@@ -22,7 +24,8 @@ export type ComponentKind =
   | 'component'
   | 'provider'
   | 'middleware'
-  | 'encoder';
+  | 'encoder'
+  | 'store';
 
 const SPEC_WRITABLE_KINDS: ReadonlySet<ComponentKind> = new Set<ComponentKind>([
   'node',
@@ -46,12 +49,18 @@ interface RegisteredEncoder {
   def: PluginEncoderDef;
 }
 
+interface RegisteredStore {
+  plugin: string;
+  def: PluginStoreDef;
+}
+
 export class PluginRegistry {
   private readonly defs = new Map<string, Registered>();
   private readonly sdkPlugins: ComponentDeserializationPlugin[] = [];
   private readonly pluginNames: string[] = [];
   private readonly middlewares: RegisteredMiddleware[] = [];
   private readonly encoders = new Map<string, RegisteredEncoder>();
+  private readonly stores = new Map<string, RegisteredStore>();
   private readonly toolDefs: ToolDef[] = [];
   private readonly toolOwners = new Map<string, string>();
   private readonly mounts: Mount[] = [];
@@ -74,6 +83,7 @@ export class PluginRegistry {
     this.registerSpecComponents(plugin);
     this.registerMiddleware(plugin);
     this.registerEncoders(plugin);
+    this.registerStores(plugin);
     this.registerTools(plugin);
     this.registerFiles(plugin);
 
@@ -167,6 +177,26 @@ export class PluginRegistry {
     return [...this.encoders.keys()].sort();
   }
 
+  storeNames(): string[] {
+    return [...this.stores.keys()].sort();
+  }
+
+  /**
+   * Build the store this component type provides, or nothing if none does.
+   *
+   * Called once, at startup, by whoever was told which store to use. It is a
+   * `create` rather than a lookup because a store holds a connection or a
+   * handle and the registry should not be the thing that opens one — a
+   * registry that built every store it knew about would connect to databases
+   * nobody selected.
+   */
+  createStore(
+    componentType: string,
+    config: Record<string, unknown> = {},
+  ): SessionStore | undefined {
+    return this.stores.get(componentType)?.def.createStore(config);
+  }
+
   toolRegistry(): Registry {
     const tools = new Map(this.toolDefs.map((tool) => [tool.name, tool]));
     return {
@@ -219,6 +249,34 @@ export class PluginRegistry {
       this.register('encoder', def, plugin.name);
       this.claimProtocol(def, plugin.name);
       this.encoders.set(def.protocol, { plugin: plugin.name, def });
+    }
+  }
+
+  /**
+   * At most one store, across every plugin loaded.
+   *
+   * Not because two could not be held, but because a process writes its
+   * conversations to one place and there is no flag that would mean "both".
+   * Two installed stores is a deployment that thinks it configured something it
+   * did not, so it is refused at load with both names rather than silently
+   * resolved by order.
+   */
+  private registerStores(plugin: HeddlePlugin): void {
+    for (const def of plugin.stores ?? []) {
+      const claimed = [...this.stores.values()][0];
+      if (claimed) {
+        throw new PluginError(
+          duplicateStoreMessage(
+            claimed.def.componentType,
+            claimed.plugin,
+            def.componentType,
+            plugin.name,
+          ),
+        );
+      }
+
+      this.register('store', def, plugin.name);
+      this.stores.set(def.componentType, { plugin: plugin.name, def });
     }
   }
 
@@ -374,6 +432,20 @@ function missingContentTypeMessage(
     `"contentType". It is the response's own content type, so heddle has ` +
     `nothing to send without it — "text/event-stream" for a protocol carried ` +
     `over SSE.`
+  );
+}
+
+function duplicateStoreMessage(
+  owned: string,
+  owner: string,
+  claimed: string,
+  claimant: string,
+): string {
+  return (
+    `plugins "${owner}" and "${claimant}" both provide a session store ` +
+    `("${owned}" and "${claimed}"). heddle writes its conversations to one ` +
+    `place, and --session-store names which — so two installed stores is a ` +
+    `deployment that configured something it did not. Load one of them.`
   );
 }
 

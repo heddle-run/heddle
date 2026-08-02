@@ -34,7 +34,12 @@ heddle run <flow> [options]
 |--------|-------------|
 | `--tools-dir <path>` | Directory containing tool executables |
 | `--input <json>` | Input data as a JSON object. Becomes the run's starting state |
-| `--chat` | Start an interactive chat session instead of a single run |
+| `--session [id]` | Keep this run in a conversation on disk, and give the agent the turns before it. With no id, one is created and its id printed |
+| `--session-dir <path>` | Where sessions are kept (default `$HEDDLE_SESSION_DIR`, then `~/.heddle/sessions`) |
+| `--durable` | Checkpoint at every node boundary, so a run that dies can be resumed. One store write per node, so it is asked for rather than implied |
+| `--resume` | Continue this session's unfinished run instead of starting a new turn |
+| `--answer <json>` | What to tell a run that stopped for a human, with `--resume` |
+| `-i`, `--interactive` | Open the terminal chat UI. Combine with `--session` to keep the conversation |
 | `--plugin <module>` | Load a plugin (repeatable). A `.json` path is a manifest and runs out of process; anything else is imported as an ES module |
 | `--discover-tools` | Let a plugin that declares `discoverTools` be started so heddle can ask what tools it has. Off by default: reading a manifest runs nothing, which is what keeps `validate` free |
 | `--plugin-config <Type>=<json>` | Configuration for a middleware component type (repeatable, once per type). `@path` reads the JSON from a file |
@@ -80,8 +85,11 @@ heddle run flow.yaml --tools-dir ./tools
 # With input data
 heddle run flow.json --tools-dir ./tools --input '{"query": "quantum computing"}'
 
-# Interactive chat mode
-heddle run flow.yaml --tools-dir ./tools --chat
+# One turn of a conversation kept on disk
+heddle run flow.yaml --tools-dir ./tools --session support-42 --input '{"query": "hello"}'
+
+# Interactive chat, kept in the same conversation
+heddle run flow.yaml --tools-dir ./tools --session support-42 -i
 
 # Verbose logging
 heddle --verbose run flow.yaml --tools-dir ./tools
@@ -151,20 +159,84 @@ A protocol nothing provides is an error listing what is available; the encoder f
 from `--plugin`, and a plugin may not claim the name `heddle`.
 
 <Callout type="warn">
-`--protocol` and `--chat` are refused together. Chat runs the flow once per message and paints
-the answers in a terminal UI, so there is no single stream of frames to render and no stdout
-left to write them to.
+`--protocol` and `--interactive` are refused together. The chat UI paints the answers in the
+terminal, so there is no single stream of frames to render and no stdout left to write them
+to. `--session` composes with `--protocol` — a persisted turn is one ordinary run.
 </Callout>
 
-### Chat Mode
+### Sessions
 
-`--chat` opens a multi-turn session that re-runs the whole flow for each message, passing the prior conversation to the agent. Transcripts are written to `~/.heddle/conversations/<session-id>.json` after every message.
+`--session` keeps a run in a conversation and gives the agent the turns before it. Each
+invocation is one turn:
+
+```bash
+heddle run flow.yaml --session support-42 --input '{"query":"where is my order?"}'
+heddle run flow.yaml --session support-42 --input '{"query":"and the second one?"}'
+```
+
+A session is a directory: `meta.json`, a `turns.jsonl` appended to once per turn, and a
+`checkpoint.json` present only while a run is unfinished. Ids are random unless you name one;
+on the CLI a name you chose is fine, because the store is your own home directory. (The server
+issues its own — see [Server](/docs/server).)
+
+Passing `_chat_history` yourself alongside `--session` is refused: the session *is* the
+conversation, and heddle would have to pick one of the two to throw away.
+
+### Durable runs
+
+`--durable` writes the run down at every node boundary. A process that dies mid-run leaves a
+checkpoint, and `--resume` picks it up at the node it had reached — nothing before that node
+runs again.
+
+```bash
+heddle run flow.yaml --session support-42 --durable --input '{"query":"…"}'
+# … the process dies …
+heddle run flow.yaml --session support-42 --resume
+```
+
+It costs one store write per node, which is why it is asked for rather than implied by
+`--session`.
+
+### Stopping for a human
+
+A [middleware](/docs/plugins/middleware) may **suspend** a run at a tool call or a node. The
+run stops, the question is written into the session, and the process can exit:
+
+```
+Stopped for a human: "ApprovalGate" is asking.
+{ "tool": "refund", "arguments": { "amount": 4200 }, "question": "Approve refund?" }
+```
+
+`--resume --answer '<json>'` continues it. The answer reaches the run as the result of the call
+that was waiting, and nothing that already ran runs again — not the model call for that round,
+not the tools already called in it. Calls the round never reached are made on the way back.
+
+A suspension needs a session to be written into; a run without one is refused rather than
+stopped with no way back.
+
+### Interactive chat
+
+`-i` opens the terminal chat UI. Alone, the conversation lasts as long as the terminal; with
+`--session` it is kept, and reopening with the same id starts on the conversation so far.
 
 Your message is bound to the first output declared on the flow's start node, falling back to `query` if it declares none. Type `/exit` or `/quit` to leave.
 
 <Callout type="warn">
 An in-flight run cannot be interrupted. `Ctrl+C` and `/exit` close the session, but a flow already executing keeps running until it finishes or hits the five-minute timeout.
 </Callout>
+
+## heddle sessions
+
+Inspect the conversations heddle has kept.
+
+```bash
+heddle sessions ls [--limit <n>]     # most recently used first
+heddle sessions show <id> [--json]   # the transcript, or the stored record
+heddle sessions rm <id>              # delete it and everything in it
+```
+
+All three take `--session-dir <path>`. A session with an unfinished run is listed as
+`unfinished`, and `show` says what it is waiting for.
 
 ## heddle validate
 

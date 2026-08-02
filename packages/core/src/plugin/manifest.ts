@@ -17,7 +17,8 @@ export type ManifestKind =
   | 'component'
   | 'provider'
   | 'middleware'
-  | 'encoder';
+  | 'encoder'
+  | 'store';
 
 export interface ManifestComponent {
   componentType: string;
@@ -105,6 +106,7 @@ const KINDS: ManifestKind[] = [
   'provider',
   'middleware',
   'encoder',
+  'store',
 ];
 
 const PHASES = ['pre', 'post', 'both'];

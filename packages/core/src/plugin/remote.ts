@@ -7,7 +7,13 @@ import type { ToolDef } from '../tool/types.js';
 import type { PluginHost } from './host.js';
 import { toolRunner } from './services.js';
 import { checkSchema } from './schema.js';
-import { PluginError } from '../errors.js';
+import { PluginError, SessionConflictError } from '../errors.js';
+import type { SessionStore } from '../session/store.js';
+import type {
+  Checkpoint,
+  SessionRecord,
+  SessionSummary,
+} from '../session/types.js';
 import type {
   PluginComponent,
   PluginComponentDef,
@@ -20,6 +26,7 @@ import type {
   PluginNodeExecutor,
   PluginProviderDef,
   PluginResult,
+  PluginStoreDef,
   PluginTransformDef,
   PluginTransformExecutor,
   TransformPhase,
@@ -31,10 +38,14 @@ import {
   readBeforeVerdict,
   readChatChunk,
   readChatResponse,
+  readStoredList,
+  readStoredRecord,
+  readStoredVersion,
   readToolResult,
   readWireFrames,
   type AfterVerdict,
   type BeforeVerdict,
+  type HostMethod,
 } from './protocol.js';
 import { serializeEvent } from './encoder.js';
 import type { Event } from '../runner/events.js';
@@ -188,6 +199,7 @@ export function remoteMiddlewareDef(
               component: wire,
               subject,
               input,
+              ...(ctx.answered ? { answered: ctx.answered } : {}),
             },
             {
               signal: ctx.signal,
@@ -324,6 +336,132 @@ export function remoteEncoderDef(
       };
     },
   };
+}
+
+/**
+ * A store that lives in another process.
+ *
+ * Every method is one round trip, and the store is consulted at least twice per
+ * turn — so the budget that matters here is `pluginCallTimeout`, not the run's.
+ * A `SessionConflictError` is reconstructed from the plugin's answer rather
+ * than from its error, because a conflict is a *result* a store reports and not
+ * a failure: the caller re-reads and decides, which it can only do if the error
+ * survived the process boundary as itself.
+ */
+export function remoteStoreDef(
+  manifest: PluginManifest,
+  entry: ManifestComponent,
+  host: () => PluginHost,
+): PluginStoreDef {
+  const componentType = entry.componentType;
+  const where = `store "${componentType}" (plugin "${manifest.name}")`;
+
+  return {
+    componentType,
+
+    createStore(config): SessionStore {
+      if (entry.schema) {
+        checkSchema(
+          config,
+          entry.schema,
+          `plugin "${manifest.name}": configuration for "${componentType}"`,
+        );
+      }
+      const settings = serializable(
+        config,
+        `${componentType} configuration`,
+      );
+
+      const call = (
+        method: HostMethod,
+        params: Record<string, unknown>,
+      ): Promise<unknown> =>
+        host().call(method, { componentType, config: settings, ...params });
+
+      return {
+        async create(id, init = {}) {
+          await call('sessionCreate', { id, flow: init.flow });
+        },
+
+        async read(id) {
+          return readStoredRecord<SessionRecord>(
+            await call('sessionRead', { id }),
+            `${where} reading "${id}"`,
+            'a session record',
+          );
+        },
+
+        async append(id, turn, expect) {
+          const raw = await call('sessionAppend', {
+            id,
+            turn: turn as unknown as Record<string, unknown>,
+            expect,
+          });
+          assertNoConflict(raw, id, expect, where);
+          return readStoredVersion(raw, `${where} appending to "${id}"`);
+        },
+
+        async readCheckpoint(id) {
+          return readStoredRecord<Checkpoint>(
+            await call('sessionCheckpointRead', { id }),
+            `${where} reading the checkpoint of "${id}"`,
+            'a checkpoint',
+          );
+        },
+
+        async writeCheckpoint(id, checkpoint) {
+          await call('sessionCheckpointWrite', {
+            id,
+            checkpoint: checkpoint as Record<string, unknown> | null,
+          });
+        },
+
+        async list(options = {}) {
+          return readStoredList<SessionSummary>(
+            await call('sessionList', {
+              limit: options.limit,
+              cursor: options.cursor,
+            }),
+            `${where} listing sessions`,
+          );
+        },
+
+        async delete(id) {
+          await call('sessionDelete', { id });
+        },
+      };
+    },
+  };
+}
+
+/**
+ * Turn a store's reported conflict back into the error the caller catches.
+ *
+ * A store in another process cannot throw across the boundary, so it answers
+ * `{ conflict: { version } }` instead. Without this the caller would see a
+ * malformed result rather than the one failure it is written to handle.
+ */
+function assertNoConflict(
+  raw: unknown,
+  id: string,
+  expect: number,
+  where: string,
+): void {
+  if (!isPlainObject(raw)) return;
+
+  const conflict = raw.conflict;
+  if (conflict === undefined) return;
+
+  const actual = isPlainObject(conflict) ? conflict.version : undefined;
+  if (typeof actual !== 'number') {
+    throw new PluginError(
+      `${where} reported a conflict on "${id}" with no numeric ` +
+        `"conflict.version". The caller re-reads at the version the store ` +
+        `actually holds, so a conflict without one cannot be acted on.`,
+    );
+  }
+
+  throw new SessionConflictError(id, expect, actual);
 }
 
 export function remoteComponentDef(

@@ -401,7 +401,7 @@ describe('a manifest declaring an encoder', () => {
         version: '1.0.0',
         components: [{ componentType: 'X', kind: 'encdoer' }],
       }),
-    ).toThrow(/expected node, transform, component, provider, middleware or encoder/);
+    ).toThrow(/expected node, transform, component, provider, middleware, encoder or store/);
   });
 
   it('refuses an encoder with no protocol, which nothing could select', () => {

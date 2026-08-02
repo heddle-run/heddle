@@ -29,10 +29,11 @@ OPENAI_API_KEY=sk-... node packages/cli/dist/heddle.js run examples/bash-agent/s
 }
 ```
 
-`--chat` opens a session instead, each message becoming the next `task`:
+`-i` opens the terminal chat UI instead, each message becoming the next `task`. Add
+`--session <id>` to keep the conversation across runs:
 
 ```bash
-OPENAI_API_KEY=sk-... node packages/cli/dist/heddle.js run examples/bash-agent/spec.yaml --tools-dir examples/bash-agent/tools --safe --chat
+OPENAI_API_KEY=sk-... node packages/cli/dist/heddle.js run examples/bash-agent/spec.yaml --tools-dir examples/bash-agent/tools --safe -i --session shell-1
 ```
 
 > **Without `--safe` this agent is a remote shell on your machine.** Tools inherit

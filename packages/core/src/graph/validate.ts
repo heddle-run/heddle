@@ -1,5 +1,7 @@
 import type { CompiledGraph, CompiledNode } from './types.js';
 import type { AnyNode, BranchingNode } from '../spec/types.js';
+import { propertyTitle, type Property } from '../spec/types.js';
+import { isReservedStateKey, RESERVED_STATE_KEYS } from '../session/reserved.js';
 import { CompileError } from '../errors.js';
 
 const UNBRANCHED = '';
@@ -34,6 +36,7 @@ export function validate(graph: CompiledGraph): void {
     ...unroutedMappings(graph),
     ...deadBranchEdges(graph),
     ...unproducibleInputs(graph),
+    ...reservedStateKeys(graph),
   ];
 
   if (problems.length > 0) {
@@ -182,6 +185,48 @@ function unproducibleInputs(graph: CompiledGraph): string[] {
  * that is not what it is checked against. Every other node type is taken at its
  * word.
  */
+/**
+ * Refuse a flow that declares a name heddle puts in the state itself.
+ *
+ * `_chat_history` is written into a run's input by whoever supplies the
+ * conversation, and read back out by every agent. A flow declaring an output by
+ * the same name does not fail — it wins, or loses, depending on merge order in
+ * `Runner.walk`, and the symptom is an agent that forgets the conversation on
+ * some runs. Caught here so it is a validation error naming the node, which is
+ * what `heddle validate` is for.
+ */
+function reservedStateKeys(graph: CompiledGraph): string[] {
+  const problems: string[] = [];
+
+  for (const node of graph.nodes.values()) {
+    for (const [field, title] of declaredNames(node)) {
+      if (!isReservedStateKey(title)) continue;
+      problems.push(
+        `node "${node.name}" declares ${field} "${title}", which heddle ` +
+          `reserves for itself (reserved: ${RESERVED_STATE_KEYS.join(', ')})`,
+      );
+    }
+  }
+
+  return problems;
+}
+
+function declaredNames(node: CompiledNode): Array<[string, string]> {
+  const spec = node.specNode as { inputs?: Property[]; outputs?: Property[] };
+
+  return [
+    ...titles('an input', spec.inputs),
+    ...titles('an output', spec.outputs),
+  ];
+}
+
+function titles(
+  field: string,
+  properties: Property[] | undefined,
+): Array<[string, string]> {
+  return (properties ?? []).map((property) => [field, propertyTitle(property)]);
+}
+
 function selectableBranches(node: CompiledNode): Set<string> | undefined {
   const mapping = mappingOf(node);
   if (mapping) {

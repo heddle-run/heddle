@@ -3,6 +3,7 @@ import {
   DEFAULT_RUNNER_OPTIONS,
   type PluginRegistry,
   type Sandbox,
+  type SessionStore,
   type WorkspaceFactory,
 } from '@heddle/core';
 
@@ -64,6 +65,20 @@ export interface ServerConfig {
   plugins?: PluginRegistry;
   /** Settings for installed middleware, by componentType. */
   pluginConfig: Record<string, Record<string, unknown>>;
+  /**
+   * Where conversations are kept, if the operator turned them on.
+   *
+   * Absent by default, and its absence is a refusal rather than a fallback: a
+   * request naming a session gets a 400 saying this server keeps none. Turning
+   * it on is a decision with two costs the operator should be making
+   * deliberately — this process starts writing conversations to disk, and it
+   * stops being stateless, so two replicas backed by the file store do not
+   * share sessions. The pluggable store is the answer to the second, and is why
+   * this is a `SessionStore` rather than a directory.
+   */
+  sessionStore?: SessionStore;
+  /** What `/v1/capabilities` calls the store above. */
+  sessionStoreName?: string;
   /**
    * How many times one arrival at a node may be attempted.
    *
@@ -133,6 +148,8 @@ export function resolveConfig(options: ServerOptions = {}): ServerConfig {
     mountTools: options.mountTools ?? true,
     plugins: options.plugins,
     pluginConfig: options.pluginConfig ?? {},
+    sessionStore: options.sessionStore,
+    sessionStoreName: options.sessionStoreName,
     maxNodeAttempts:
       options.maxNodeAttempts ?? DEFAULT_RUNNER_OPTIONS.maxNodeAttempts,
     defaultLlmKey: options.defaultLlmKey,

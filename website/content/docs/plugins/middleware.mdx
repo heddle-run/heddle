@@ -415,7 +415,7 @@ without the call that asked for it would be strictly less. Leaving it reserved w
 than deleting it, because a load-time refusal saying heddle does not consult it *yet*
 promises something that should never ship.
 
-One smaller gap worth knowing: `heddle run --chat` builds its own runner from the same
+One smaller gap worth knowing: `heddle run -i` builds its own runner from the same
 options, so the chain is installed and a retry works — but the chat interface reads four
 event types and has no `warning` arm, so the retry happens silently. `heddle run` renders
 it.
