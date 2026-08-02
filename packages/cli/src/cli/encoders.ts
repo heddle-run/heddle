@@ -1,6 +1,6 @@
 import {
-  builtinEncoder,
-  BUILTIN_PROTOCOL,
+  encoderFor,
+  PluginError,
   type PluginEncoder,
   type PluginRegistry,
   type WireFrame,
@@ -12,20 +12,18 @@ export function resolveEncoder(
   protocol: string,
   plugins: PluginRegistry,
 ): EncoderFactory {
-  if (protocol === BUILTIN_PROTOCOL) return () => builtinEncoder();
-
-  const def = plugins.encoderDef(protocol);
-  // `contentType` is deliberately dropped: it is the header a *server* sends,
-  // and nothing here is serving HTTP. Carrying it would be a field nothing reads.
-  if (def) return (runId) => def.createEncoder(runId);
-
-  const available = [BUILTIN_PROTOCOL, ...plugins.encoderProtocols()];
-  throw new Error(
-    `no encoder for protocol "${protocol}". This run renders: ` +
-      `${available.join(', ')}. An encoder comes from a plugin, and the only ` +
-      `plugins a run has are the ones --plugin loaded — so a protocol nothing ` +
-      `provides is a --plugin that is missing.`,
-  );
+  try {
+    // `contentType` is deliberately dropped: it is the header a *server* sends,
+    // and nothing here is serving HTTP. Carrying it would be a field nothing reads.
+    return encoderFor(protocol, plugins).create;
+  } catch (err) {
+    if (!(err instanceof PluginError)) throw err;
+    throw new Error(
+      `${err.message} An encoder comes from a plugin, and the only ` +
+        `plugins a run has are the ones --plugin loaded — so a protocol nothing ` +
+        `provides is a --plugin that is missing.`,
+    );
+  }
 }
 
 /**

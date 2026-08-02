@@ -1,4 +1,5 @@
 import { PluginError } from '../errors.js';
+import { isObject as isPlainObject, typeOf } from '../internal/util.js';
 
 type Schema = Record<string, unknown>;
 
@@ -143,17 +144,6 @@ function fail(path: string, message: string): never {
 function matchesType(value: unknown, expected: string): boolean {
   if (expected === 'number') return typeof value === 'number';
   return typeOf(value) === expected;
-}
-
-function typeOf(value: unknown): string {
-  if (value === null) return 'null';
-  if (Array.isArray(value)) return 'array';
-  if (Number.isInteger(value)) return 'integer';
-  return typeof value;
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function deepEqual(left: unknown, right: unknown): boolean {

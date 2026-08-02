@@ -21,29 +21,25 @@ export type AfterAction = 'pass' | 'replace' | 'retry' | 'fail';
 /**
  * What a seam admits, and where.
  *
- * Every field here is read: `hooks` by the subscription reader, `before` and
- * `after` by the verdict readers, `implemented` by both of those and by the
- * handshake. Two more fields lived here until they did not — `position` and
- * `when`, which said which call site a seam wrapped and whether it fired on
- * failures only. Both were true and neither was ever read, and the table a
- * reader would consult for that is prose in the docs rather than generated from
- * here. A field a program does not read is a comment with a type annotation, so
- * they are comments now.
+ * Every field here is read: `before` and `after` by the verdict readers, and
+ * the halves a seam has fall out of them — see {@link hooksOf}. Two more
+ * fields lived here until they did not — `position` and `when`, which said
+ * which call site a seam wrapped and whether it fired on failures only. Both
+ * were true and neither was ever read, and the table a reader would consult
+ * for that is prose in the docs rather than generated from here. A field a
+ * program does not read is a comment with a type annotation, so they are
+ * comments now.
  */
 export interface SeamDef {
-  hooks: Half[];
   before: BeforeAction[];
   after: AfterAction[];
-  implemented: boolean;
 }
 
 export const SEAMS: Record<Seam, SeamDef> = {
   /** Around a node, and only when it failed — nothing precedes an error. */
   nodeError: {
-    hooks: ['after'],
     before: [],
     after: ['pass', 'replace', 'retry', 'fail'],
-    implemented: true,
   },
   /**
    * Around a node whether it failed or not, and the widest seam there is.
@@ -51,10 +47,8 @@ export const SEAMS: Record<Seam, SeamDef> = {
    * retries — which is why nothing here admits one.
    */
   node: {
-    hooks: ['before', 'after'],
     before: ['proceed', 'modify', 'replace', 'reject', 'suspend'],
     after: ['pass', 'replace', 'fail'],
-    implemented: true,
   },
   /**
    * Around a request to the model. The only seam that admits a retry.
@@ -66,10 +60,8 @@ export const SEAMS: Record<Seam, SeamDef> = {
    * that owns whether this node runs at all.
    */
   modelCall: {
-    hooks: ['before', 'after'],
     before: ['proceed', 'modify', 'replace', 'reject'],
     after: ['pass', 'replace', 'retry', 'fail'],
-    implemented: true,
   },
   /**
    * Around a tool *the model asked for*. No retry: the request is already said.
@@ -87,25 +79,25 @@ export const SEAMS: Record<Seam, SeamDef> = {
    * suspension gates the model's request, not the machine.
    */
   toolCall: {
-    hooks: ['before', 'after'],
     before: ['proceed', 'modify', 'replace', 'reject', 'suspend'],
     after: ['pass', 'replace', 'fail'],
-    implemented: true,
   },
   /** Around one model call and the tool calls it asked for. A guard, nothing more. */
   agentRound: {
-    hooks: ['before', 'after'],
     before: ['proceed', 'reject'],
     after: ['pass', 'fail'],
-    implemented: true,
   },
 };
 
 export const SEAM_NAMES = Object.keys(SEAMS) as Seam[];
 
-export const IMPLEMENTED_SEAMS = SEAM_NAMES.filter(
-  (name) => SEAMS[name].implemented,
-);
+/** The halves a seam has: the ones that admit something. */
+function hooksOf(def: SeamDef): Half[] {
+  const hooks: Half[] = [];
+  if (def.before.length > 0) hooks.push('before');
+  if (def.after.length > 0) hooks.push('after');
+  return hooks;
+}
 
 export type SeamSubscription = Partial<Record<Seam, Half[]>>;
 
@@ -155,28 +147,22 @@ function readSeamName(where: string, name: string): Seam {
         `${SEAM_NAMES.join(', ')}.`,
     );
   }
-  if (!SEAMS[name].implemented) {
-    throw new PluginError(
-      `${where} subscribes to "${name}", which heddle does not consult yet. ` +
-        `Consulted today: ${IMPLEMENTED_SEAMS.join(', ')}.`,
-    );
-  }
   return name;
 }
 
 function readHalves(where: string, seam: Seam, halves: unknown): Half[] {
-  const def = SEAMS[seam];
+  const hooks = hooksOf(SEAMS[seam]);
 
   if (!Array.isArray(halves) || halves.length === 0 || !halves.every(isHalf)) {
     throw new PluginError(
       `${where}: seams.${seam} must be a non-empty array of "before" and/or ` +
-        `"after". This seam has: ${def.hooks.join(', ')}.`,
+        `"after". This seam has: ${hooks.join(', ')}.`,
     );
   }
 
   for (const half of halves) {
-    if (!def.hooks.includes(half)) {
-      throw new PluginError(unsupportedHalfMessage(where, seam, half, def));
+    if (!hooks.includes(half)) {
+      throw new PluginError(unsupportedHalfMessage(where, seam, half, hooks));
     }
   }
 
@@ -187,7 +173,7 @@ function missingSeamsMessage(where: string): string {
   return (
     `${where} is a middleware and must declare "seams": an object mapping a seam ` +
     `to the halves it hooks, such as { "nodeError": ["after"] }. Consulted ` +
-    `today: ${IMPLEMENTED_SEAMS.join(', ')}.`
+    `today: ${SEAM_NAMES.join(', ')}.`
   );
 }
 
@@ -195,11 +181,11 @@ function unsupportedHalfMessage(
   where: string,
   seam: Seam,
   half: Half,
-  def: SeamDef,
+  hooks: Half[],
 ): string {
   return (
     `${where} hooks the "${half}" half of "${seam}", which has no such half. ` +
-    `"${seam}" has: ${def.hooks.join(', ')}. Nothing precedes an error, so ` +
+    `"${seam}" has: ${hooks.join(', ')}. Nothing precedes an error, so ` +
     `nodeError is consulted only after one.`
   );
 }

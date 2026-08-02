@@ -1,4 +1,5 @@
 import { PluginError } from '../errors.js';
+import { isObject, isSet, typeName } from '../internal/util.js';
 import type {
   ChatChunk,
   ChatRequest,
@@ -63,8 +64,6 @@ export interface PluginMethods {
 
 export type PluginMethod = keyof PluginMethods;
 
-export type PluginCapability = PluginMethod;
-
 export interface RpcRequest {
   id: number | string;
   method: string;
@@ -86,7 +85,7 @@ export type RpcMessage = RpcRequest | RpcResponse | RpcPartial;
 
 export interface InitParams extends Record<string, unknown> {
   protocol: number;
-  capabilities: PluginCapability[];
+  capabilities: PluginMethod[];
   seams?: Record<string, AfterAction[]>;
   events: number;
 }
@@ -306,8 +305,6 @@ const SERVED: Record<PluginMethod, true> = {
 
 export const PLUGIN_METHODS = Object.keys(SERVED) as PluginMethod[];
 
-export const PLUGIN_CAPABILITIES: PluginCapability[] = PLUGIN_METHODS;
-
 const ROLES: Record<Role, true> = {
   system: true,
   user: true,
@@ -347,18 +344,8 @@ export function isPluginMethod(method: string): method is PluginMethod {
   return Object.hasOwn(SERVED, method);
 }
 
-export function isPluginCapability(value: string): value is PluginCapability {
-  return isPluginMethod(value);
-}
-
 export function isLogLevel(value: unknown): value is LogLevel {
   return typeof value === 'string' && Object.hasOwn(LEVELS, value);
-}
-
-export function isObject(message: unknown): message is Record<string, unknown> {
-  return (
-    typeof message === 'object' && message !== null && !Array.isArray(message)
-  );
 }
 
 export function isRequest(message: unknown): message is RpcRequest {
@@ -656,7 +643,7 @@ export function readChatRequest(
       );
     }
     edited.messages = raw.messages.map((message, i) =>
-      readEditedMessage(message, `${where}: message ${i + 1}`),
+      readMessage(message, `${where}: message ${i + 1}`),
     );
   }
 
@@ -682,15 +669,14 @@ export function readChatRequest(
 }
 
 /**
- * One message out of a middleware's edited request.
+ * One message, wherever it came from.
  *
- * Deliberately not `readMessage` below, which serves `callModel` and names it in
- * every error. The provenance differs and so should the attribution: a malformed
- * message here came from a middleware the operator installed, not from a plugin
- * composing a request, and an error blaming the wrong one sends somebody to the
- * wrong file.
+ * Serves both a middleware's edited request and a plugin's `callModel`, and the
+ * provenance lives in `where`: a malformed message is blamed on the middleware
+ * the operator installed or on the plugin composing a request, whichever
+ * actually wrote it, so nobody is sent to the wrong file.
  */
-function readEditedMessage(raw: unknown, where: string): Message {
+function readMessage(raw: unknown, where: string): Message {
   if (!isObject(raw)) {
     throw new PluginError(`${where} is ${typeName(raw)}, expected { role, content }`);
   }
@@ -701,11 +687,18 @@ function readEditedMessage(raw: unknown, where: string): Message {
     );
   }
   if (typeof raw.content !== 'string') {
-    throw new PluginError(`${where} has no "content" string.`);
+    throw new PluginError(
+      `${where} has no "content" string. A message with nothing to say is ` +
+        `still written as "".`,
+    );
   }
 
   const message: Message = { role: raw.role as Role, content: raw.content };
-  if (typeof raw.tool_call_id === 'string') message.tool_call_id = raw.tool_call_id;
+  if (message.role === 'tool') {
+    message.tool_call_id = readToolCallId(raw.tool_call_id, where);
+  } else if (typeof raw.tool_call_id === 'string') {
+    message.tool_call_id = raw.tool_call_id;
+  }
   const calls = readToolCalls(raw.tool_calls, where);
   if (calls) message.tool_calls = calls;
   return message;
@@ -723,7 +716,11 @@ export function readModelRequest(
     );
   }
 
-  const request: ModelRequest = { messages: raw.messages.map(readMessage) };
+  const request: ModelRequest = {
+    messages: raw.messages.map((message, index) =>
+      readMessage(message, `callModel: messages[${index}]`),
+    ),
+  };
 
   if (raw.tools !== undefined) {
     request.tools = readToolDefinitions(raw.tools);
@@ -897,71 +894,14 @@ function readFailReason(reason: unknown, where: string): string {
   return reason;
 }
 
-function readMessage(raw: unknown, index: number): Message {
-  if (!isObject(raw)) {
-    throw new PluginError(
-      `callModel: ${at(index)} is ${typeName(raw)}, not a message object`,
-    );
-  }
-
-  const role = readRole(raw.role, index);
-  const content = raw.content;
-  if (typeof content !== 'string') {
-    throw new PluginError(
-      `callModel: ${at(index)} has no "content" string. A message with nothing to ` +
-        `say is still written as "".`,
-    );
-  }
-
-  const message: Message = { role, content };
-
-  if (role === 'tool') {
-    message.tool_call_id = readToolCallId(raw.tool_call_id, index);
-  }
-  if (raw.tool_calls !== undefined) {
-    message.tool_calls = readMessageToolCalls(raw.tool_calls, index);
-  }
-
-  return message;
-}
-
-function readRole(role: unknown, index: number): Role {
-  if (typeof role !== 'string' || !Object.hasOwn(ROLES, role)) {
-    throw new PluginError(
-      `callModel: ${at(index)} has role ${JSON.stringify(role)}; expected one of ` +
-        `${Object.keys(ROLES).join(', ')}.`,
-    );
-  }
-  return role as Role;
-}
-
-function readToolCallId(toolCallId: unknown, index: number): string {
+function readToolCallId(toolCallId: unknown, where: string): string {
   if (typeof toolCallId !== 'string') {
     throw new PluginError(
-      `callModel: ${at(index)} is a tool message with no "tool_call_id". A tool ` +
+      `${where} is a tool message with no "tool_call_id". A tool ` +
         `result answers a specific call, and the model matches them by that id.`,
     );
   }
   return toolCallId;
-}
-
-function readMessageToolCalls(raw: unknown, index: number): ToolCall[] {
-  if (!Array.isArray(raw)) {
-    throw new PluginError(
-      `callModel: ${at(index)} has a "tool_calls" that is not an array`,
-    );
-  }
-
-  return raw.map((call, position) => {
-    if (!isToolCall(call)) {
-      throw new PluginError(
-        `callModel: ${at(index)}.tool_calls[${position}] needs a string "id", "name" and ` +
-          `"arguments". "arguments" is the JSON the model wrote, as text — not the ` +
-          `parsed object.`,
-      );
-    }
-    return { id: call.id, name: call.name, arguments: call.arguments };
-  });
 }
 
 function readToolDefinitions(raw: unknown): ToolDefinition[] {
@@ -1025,15 +965,3 @@ function isToolCall(
   );
 }
 
-function isSet(value: unknown): boolean {
-  return value !== undefined && value !== null;
-}
-
-function at(index: number): string {
-  return `messages[${index}]`;
-}
-
-function typeName(value: unknown): string {
-  if (value === null) return 'null';
-  return Array.isArray(value) ? 'an array' : `a ${typeof value}`;
-}

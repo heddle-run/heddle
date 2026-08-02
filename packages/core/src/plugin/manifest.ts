@@ -2,9 +2,9 @@ import { basename } from 'node:path';
 import { PluginError } from '../errors.js';
 import { PROTOCOL_NAME } from './encoder.js';
 import {
-  isPluginCapability,
-  PLUGIN_CAPABILITIES,
-  type PluginCapability,
+  isPluginMethod,
+  PLUGIN_METHODS,
+  type PluginMethod,
 } from './protocol.js';
 import { readSubscription, type SeamSubscription } from './seams.js';
 import type { PluginIO } from './types.js';
@@ -38,7 +38,7 @@ export interface PluginManifest {
   name: string;
   version: string;
   command?: string[];
-  capabilities: PluginCapability[];
+  capabilities: PluginMethod[];
   components: ManifestComponent[];
   tools: ManifestTool[];
   /**
@@ -135,7 +135,7 @@ export function validateManifest(raw: unknown): PluginManifest {
   // Before the check below, which consults it: a `discoverTools` of "yes" is a
   // bad boolean, and reporting it as "declares no components and no tools"
   // would send an author to the wrong field.
-  assertBoolean(manifest, 'discoverTools', name);
+  assertBoolean(manifest, 'discoverTools', `plugin "${name}"`);
   assertDeclaresSomething(manifest, name);
   assertCommandShape(manifest, name);
 
@@ -157,12 +157,12 @@ export function validateManifest(raw: unknown): PluginManifest {
 }
 
 function assertBoolean(
-  manifest: Record<string, unknown>,
+  holder: Record<string, unknown>,
   field: string,
-  name: string,
+  where: string,
 ): void {
-  if (manifest[field] !== undefined && typeof manifest[field] !== 'boolean') {
-    fail(`plugin "${name}" has a "${field}" that is not a boolean`);
+  if (holder[field] !== undefined && typeof holder[field] !== 'boolean') {
+    fail(`${where} has a "${field}" that is not a boolean`);
   }
 }
 
@@ -264,7 +264,11 @@ function readComponent(
   const phase = readPhase(component, plugin, componentType);
 
   onlyOn(component, 'stream', kind, 'provider', plugin, componentType);
-  assertBooleanField(component, 'stream', plugin, componentType);
+  assertBoolean(
+    component,
+    'stream',
+    `plugin "${plugin}": component "${componentType}"`,
+  );
 
   notOnComponents(component, 'files', plugin, componentType);
 
@@ -342,31 +346,17 @@ function readPhase(
   return phase as ManifestComponent['phase'];
 }
 
-function assertBooleanField(
-  component: Record<string, unknown>,
-  field: string,
-  plugin: string,
-  componentType: string,
-): void {
-  const value = component[field];
-  if (value !== undefined && typeof value !== 'boolean') {
-    fail(
-      `plugin "${plugin}": component "${componentType}" has a "${field}" that is not a boolean`,
-    );
-  }
-}
-
-function asCapabilities(plugin: string, value: unknown): PluginCapability[] {
+function asCapabilities(plugin: string, value: unknown): PluginMethod[] {
   if (value === undefined) return [];
   if (!Array.isArray(value)) {
     fail(`plugin "${plugin}": "capabilities" must be an array of strings`);
   }
 
   return value.map((entry) => {
-    if (typeof entry !== 'string' || !isPluginCapability(entry)) {
+    if (typeof entry !== 'string' || !isPluginMethod(entry)) {
       fail(
         `plugin "${plugin}" requests capability ${JSON.stringify(entry)}, ` +
-          `which heddle does not serve. It serves: ${PLUGIN_CAPABILITIES.join(', ')}.`,
+          `which heddle does not serve. It serves: ${PLUGIN_METHODS.join(', ')}.`,
       );
     }
     return entry;
@@ -746,7 +736,7 @@ function checkToolSchema(
     );
   }
 
-  const json = serializedSchema(plugin, tool, field, value);
+  const json = JSON.stringify(value);
   if (json.length > MAX_SCHEMA_BYTES) {
     fail(
       `plugin "${plugin}": tool "${tool}" has a "${field}" of ${json.length} bytes, over ` +
@@ -767,21 +757,6 @@ function checkToolSchema(
     fail(
       `plugin "${plugin}": tool "${tool}" has a "${field}" nested deeper than ` +
         `${MAX_SCHEMA_DEPTH} levels.`,
-    );
-  }
-}
-
-function serializedSchema(
-  plugin: string,
-  tool: string,
-  field: string,
-  value: unknown,
-): string {
-  try {
-    return JSON.stringify(value);
-  } catch (err) {
-    fail(
-      `plugin "${plugin}": tool "${tool}" has a "${field}" that is not JSON: ${String(err)}`,
     );
   }
 }

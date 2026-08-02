@@ -36,11 +36,14 @@ A plugin may not claim that name.
 
 ## Run it
 
-One command, no server:
+One command, no server, run from the repository root:
 
 ```bash
-node packages/cli/dist/heddle.js run examples/ag-ui/flow.json --plugin ./examples/ag-ui/encoder.json --protocol ag-ui --input '{"query":"hello"}'
+heddle run examples/ag-ui/flow.json --plugin ./examples/ag-ui/encoder.json --protocol ag-ui --input '{"query":"hello"}'
 ```
+
+(From a source checkout, `pnpm build` first and substitute
+`node packages/cli/dist/heddle.js` for `heddle`.)
 
 ```
 {"data":{"type":"RUN_STARTED","threadId":"5d4ed795-86dc-4b50-a1ea-a08e1cd2b3f8","runId":"5d4ed795-86dc-4b50-a1ea-a08e1cd2b3f8"}}
@@ -64,8 +67,11 @@ Same encoder, same frames, different framing. Start a server that accepts
 submitted code, since here the encoder arrives with the request:
 
 ```bash
-node packages/server/dist/heddle-server.js --allow-request-code --port 8080
+heddle-server --allow-request-code --port 8080
 ```
+
+(`npm install -g @heddle/server` provides `heddle-server`; from a source
+checkout it is `node packages/server/dist/heddle-server.js`.)
 
 Then submit the flow and the encoder together, and read the frames as they
 arrive. `jq` builds the body so the files below are the ones actually sent:

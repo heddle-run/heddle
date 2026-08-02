@@ -3,9 +3,14 @@ import { dirname, isAbsolute, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { HeddlePlugin } from './types.js';
 import { PluginRegistry } from './registry.js';
-import { discoverTools, loadRemotePlugin, readManifest } from './remote-loader.js';
+import {
+  discoverTools,
+  readManifest,
+  remotePlugin,
+  type RemotePlugin,
+} from './remote-loader.js';
 import type { PluginManifest } from './manifest.js';
-import { PLUGIN_CAPABILITIES, type PluginCapability } from './protocol.js';
+import { PLUGIN_METHODS } from './protocol.js';
 import type { Sandbox } from '../sandbox/types.js';
 import { createScratchWorkspace } from '../workspace/index.js';
 import { PluginError } from '../errors.js';
@@ -74,40 +79,65 @@ export async function loadPlugins(
   const registry = PluginRegistry.empty();
   const discovery = options.discovery ?? false;
 
-  try {
-    for (const specifier of specifiers ?? []) {
-      if (specifier.endsWith(MANIFEST_EXTENSION)) {
-        const path = resolve(process.cwd(), specifier);
-        const raw = readManifest(path);
-        assertDiscoveryAllowed(raw, specifier, discovery);
+  // Prepared concurrently — each installed plugin's discovery awaits its own
+  // subprocess RPC, and there is no reason for the second to wait on the first
+  // — and registered in the order they were asked for, so a collision is
+  // reported against the same plugin whichever one answered faster.
+  const prepared = await Promise.allSettled(
+    (specifiers ?? []).map((specifier) =>
+      preparePlugin(specifier, discovery, options),
+    ),
+  );
 
-        const remote = remotePluginFrom(specifier, options);
-        try {
-          if (discovery) await discoverTools(remote, raw, dirname(path));
-        } catch (err) {
-          // This one is not in the registry yet — `addRemote` is below — so
-          // nothing else has a reference to its process. Discovery is the first
-          // thing on this path that starts one, and every way it can fail (a
-          // bad tool name, an unknown componentType, the call timeout, a plugin
-          // that never answers) would otherwise leave that process running with
-          // no way left to stop it.
-          remote.host.dispose();
-          throw err;
-        }
-        registry.addRemote(remote);
-      } else {
-        registry.add(await loadPlugin(specifier));
-      }
+  try {
+    for (const result of prepared) {
+      if (result.status === 'rejected') throw result.reason;
+
+      if (result.value.remote) registry.addRemote(result.value.remote);
+      else registry.add(result.value.plugin);
     }
+    return registry;
   } catch (err) {
-    // And these are: everything loaded before the one that failed. The same
-    // disposition `buildPlugins` takes on the server — a partial registry is
-    // torn down rather than returned or abandoned.
+    // Torn down: everything loaded before the one that failed, and everything
+    // prepared after it. The same disposition `buildPlugins` takes on the
+    // server — a partial registry is not returned or abandoned. Disposing a
+    // host twice is safe, so the registered and the merely prepared can both
+    // be swept.
     registry.dispose();
+    for (const result of prepared) {
+      if (result.status === 'fulfilled') result.value.remote?.host.dispose();
+    }
     throw err;
   }
+}
 
-  return registry;
+async function preparePlugin(
+  specifier: string,
+  discovery: boolean,
+  options: LoadPluginsOptions,
+): Promise<{ plugin: HeddlePlugin; remote?: RemotePlugin }> {
+  if (!specifier.endsWith(MANIFEST_EXTENSION)) {
+    return { plugin: await loadPlugin(specifier) };
+  }
+
+  const path = resolve(process.cwd(), specifier);
+  const manifest = readManifest(path);
+  assertDiscoveryAllowed(manifest, specifier, discovery);
+
+  const remote = remotePluginFrom(path, manifest, options);
+  try {
+    if (discovery) await discoverTools(remote, manifest, dirname(path));
+  } catch (err) {
+    // This one is not in the registry yet — `addRemote` is the caller's — so
+    // nothing else has a reference to its process. Discovery is the first
+    // thing on this path that starts one, and every way it can fail (a
+    // bad tool name, an unknown componentType, the call timeout, a plugin
+    // that never answers) would otherwise leave that process running with
+    // no way left to stop it.
+    remote.host.dispose();
+    throw err;
+  }
+  return { plugin: remote.plugin, remote };
 }
 
 /**
@@ -167,17 +197,18 @@ function declaredComponentCount(plugin: HeddlePlugin): number {
   );
 }
 
-function remotePluginFrom(specifier: string, options: LoadPluginsOptions) {
-  const path = resolve(process.cwd(), specifier);
-  const manifest = readManifest(path);
-
+function remotePluginFrom(
+  path: string,
+  manifest: PluginManifest,
+  options: LoadPluginsOptions,
+): RemotePlugin {
   const log = options.log;
   const label = `plugin-${manifest.name}`;
   const workspace = createScratchWorkspace(label);
 
-  return loadRemotePlugin(manifest, entryFor(path), {
+  return remotePlugin(manifest, entryFor(path, manifest), {
     root: dirname(path),
-    capabilities: PLUGIN_CAPABILITIES,
+    capabilities: PLUGIN_METHODS,
     timeout: options.timeout,
     shared: options.shared,
     workspace,
@@ -203,8 +234,10 @@ function needsProcess(manifest: PluginManifest): boolean {
   return manifest.tools.some((tool) => tool.path === undefined);
 }
 
-function entryFor(manifestPath: string): string | undefined {
-  const manifest = readManifest(manifestPath);
+function entryFor(
+  manifestPath: string,
+  manifest: PluginManifest,
+): string | undefined {
   if (manifest.command && manifest.command.length > 0) {
     return resolve(dirname(manifestPath), manifest.command[0]);
   }

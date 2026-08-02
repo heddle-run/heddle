@@ -44,10 +44,6 @@ interface Entry {
 export class TransformChain {
   private constructor(private readonly entries: Entry[]) {}
 
-  static empty(): TransformChain {
-    return new TransformChain([]);
-  }
-
   static build(
     transforms: TransformSpec[] | undefined,
     deps: Dependencies,

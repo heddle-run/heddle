@@ -7,11 +7,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/spichen/specrun.git"
+    "url": "git+https://github.com/heddle-run/heddle.git"
   },
-  "homepage": "https://github.com/spichen/specrun",
+  "homepage": "https://github.com/heddle-run/heddle",
   "bugs": {
-    "url": "https://github.com/spichen/specrun/issues"
+    "url": "https://github.com/heddle-run/heddle/issues"
   },
   "engines": {
     "node": ">=18"

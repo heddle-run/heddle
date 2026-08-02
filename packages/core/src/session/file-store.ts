@@ -138,6 +138,7 @@ export class FileSessionStore implements SessionStore {
   async writeCheckpoint(
     id: string,
     checkpoint: Checkpoint | null,
+    serialized?: string,
   ): Promise<void> {
     assertSessionId(id);
 
@@ -150,7 +151,7 @@ export class FileSessionStore implements SessionStore {
     // A checkpoint can be the first thing written to a session: a durable run
     // reaches its second node long before it has a turn to append.
     if (!this.readMeta(id)) this.writeMeta(id, newMeta(id));
-    writeAtomic(path, JSON.stringify(checkpoint));
+    writeAtomic(path, serialized ?? JSON.stringify(checkpoint));
   }
 
   async list(options: ListOptions = {}): Promise<SessionSummary[]> {

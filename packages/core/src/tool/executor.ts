@@ -9,6 +9,7 @@ import type {
 } from '../workspace/index.js';
 import { createWorkspaceFactory, workspaceEnv } from '../workspace/index.js';
 import { ToolError } from '../errors.js';
+import { noop } from '../internal/util.js';
 
 const DEFAULT_TIMEOUT = 30_000;
 const UNSCOPED_SESSION_LABEL = 'tool';
@@ -163,7 +164,7 @@ export class SubprocessExecutor implements Executor {
         }
       });
 
-      proc.stdin.on('error', ignoreBrokenPipe);
+      proc.stdin.on('error', noop);
       proc.stdin.write(JSON.stringify(input));
       proc.stdin.end();
     });
@@ -217,10 +218,6 @@ function parseOutput(stdout: string): Record<string, unknown> {
 
 function joined(chunks: Buffer[]): string {
   return Buffer.concat(chunks).toString();
-}
-
-function ignoreBrokenPipe(): void {
-  return;
 }
 
 function once(action: () => void): () => void {

@@ -24,6 +24,8 @@ export interface OpenTurnOptions {
   flow?: string;
   /** Supplied by a resume, which is continuing a run that already had one. */
   runId?: string;
+  /** The record, when the caller already read it — spares the second read. */
+  record?: SessionRecord;
 }
 
 export interface OpenedTurn {
@@ -65,7 +67,7 @@ export async function openTurn(
     throw new SessionError(unfinishedMessage(id, Boolean(checkpoint.suspension)));
   }
 
-  const record = await store.read(id);
+  const record = options.record ?? (await store.read(id));
   const history = historyFromTurns(record?.turns ?? []);
 
   return {
@@ -186,7 +188,14 @@ export function transcriptOf(record: SessionRecord): HistoryMessage[] {
   return historyFromTurns(record.turns);
 }
 
-function answerOf(output: Record<string, unknown>): string {
+/**
+ * The answer a turn's output amounts to, as one string.
+ *
+ * The rendering rule for every surface that shows a conversation — the
+ * transcript above and the chat UI both use it, so what is on screen is what
+ * the next turn's history will quote.
+ */
+export function answerOf(output: Record<string, unknown>): string {
   return typeof output.result === 'string'
     ? output.result
     : JSON.stringify(output);

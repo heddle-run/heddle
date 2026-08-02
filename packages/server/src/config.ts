@@ -1,7 +1,9 @@
 import {
   createWorkspaceFactory,
   DEFAULT_RUNNER_OPTIONS,
+  FileRegistry,
   type PluginRegistry,
+  type Registry,
   type Sandbox,
   type SessionStore,
   type WorkspaceFactory,
@@ -11,6 +13,16 @@ export interface ServerConfig {
   host: string;
   port: number;
   toolsDir?: string;
+  /**
+   * `toolsDir`, scanned once and shared by every run.
+   *
+   * A function rather than a `Registry`, so a directory that is unreadable at
+   * startup fails the first request that needs it — exactly where the
+   * per-request scan used to fail — instead of keeping the server from
+   * starting. The scan is cached on first success; what the directory held
+   * then is what every run resolves against.
+   */
+  toolsRegistry: () => Registry;
   flowsRoot?: string;
   maxIterations: number;
   timeout: number;
@@ -132,6 +144,7 @@ export function resolveConfig(options: ServerOptions = {}): ServerConfig {
     host: options.host ?? DEFAULT_HOST,
     port: options.port ?? DEFAULT_PORT,
     toolsDir: options.toolsDir,
+    toolsRegistry: options.toolsRegistry ?? scannedOnce(options.toolsDir),
     flowsRoot: options.flowsRoot,
     maxIterations:
       options.maxIterations ?? DEFAULT_RUNNER_OPTIONS.maxIterations,
@@ -165,6 +178,11 @@ export function resolveConfig(options: ServerOptions = {}): ServerConfig {
       options.maxConcurrentRuns ?? DEFAULT_MAX_CONCURRENT_RUNS,
     drainTimeout: options.drainTimeout ?? DEFAULT_DRAIN_TIMEOUT,
   };
+}
+
+function scannedOnce(toolsDir: string | undefined): () => Registry {
+  let registry: Registry | undefined;
+  return () => (registry ??= FileRegistry.create(toolsDir ?? ''));
 }
 
 export function boolEnv(

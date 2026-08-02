@@ -20,7 +20,7 @@ import { describe, it, expect } from 'vitest';
 import { AgentExecutor } from '../../node/agent.js';
 import { MiddlewareChain } from '../middleware.js';
 import { PluginRegistry } from '../registry.js';
-import { IMPLEMENTED_SEAMS, SEAM_NAMES, isSeam } from '../seams.js';
+import { isSeam } from '../seams.js';
 import { State } from '../../state/state.js';
 import type { AgentNode } from '../../spec/types.js';
 import type { Event } from '../../runner/events.js';
@@ -400,10 +400,6 @@ describe('what the seam costs when nobody uses it', () => {
 });
 
 describe('the table this seam completed', () => {
-  it('has nothing left that is named but not consulted', () => {
-    expect(SEAM_NAMES).toEqual(IMPLEMENTED_SEAMS);
-  });
-
   it('no longer knows "toolResult" at all', () => {
     // Reserved until `toolCall` grew an `after` half, which sees the call, its
     // arguments, its id and the result. A seam shown the result without the

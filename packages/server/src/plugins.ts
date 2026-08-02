@@ -1,15 +1,19 @@
 import {
   createScratchWorkspace,
-  loadRemotePlugin,
+  messageOf,
+  remotePlugin,
   PluginRegistry,
-  type PluginCapability,
+  SUBMITTABLE_KINDS,
+  type ManifestComponent,
+  type PluginManifest,
+  type PluginMethod,
   type SessionStore,
 } from '@heddle/core';
 import type { ServerConfig } from './config.js';
 import { HttpError } from './errors.js';
 import type { MaterializedCode } from './request-code.js';
 
-const GRANTED: PluginCapability[] = ['runTool', 'emitEvent', 'log'];
+const GRANTED: PluginMethod[] = ['runTool', 'emitEvent', 'log'];
 
 /**
  * The store an installed plugin provides under this component type.
@@ -49,9 +53,8 @@ const NO_CALL_MODEL =
  * the operator are different people. A dynamic tool list is something you
  * install, not something you accept in a request body.
  */
-function refuseDiscovery(rawManifest: unknown): void {
-  const manifest = rawManifest as { discoverTools?: unknown; name?: unknown };
-  if (manifest?.discoverTools !== true) return;
+function refuseDiscovery(manifest: PluginManifest): void {
+  if (!manifest.discoverTools) return;
 
   throw new HttpError(
     400,
@@ -73,21 +76,27 @@ function refuseDiscovery(rawManifest: unknown): void {
  * are the request's own, which are refused if they claim a name the installed
  * layer already provides: a caller cannot redefine a component type the
  * operator's flows resolve by declaring it again.
+ *
+ * A request that brought none gets the installed layer itself, not a copy —
+ * which is why `handleRun` disposes only a registry it does not recognise.
  */
 export function buildPlugins(
   config: ServerConfig,
   code: MaterializedCode,
 ): PluginRegistry {
-  const registry = config.plugins?.extend() ?? PluginRegistry.empty();
-  if (code.plugins.length === 0) return registry;
+  if (code.plugins.length === 0) {
+    return config.plugins ?? PluginRegistry.empty();
+  }
 
+  const registry = config.plugins?.extend() ?? PluginRegistry.empty();
   const capabilities = grantedBy(config);
 
   try {
     for (const plugin of code.plugins) {
       refuseShadowing(plugin.manifest);
-      refuseMiddleware(plugin.manifest);
-      refuseStores(plugin.manifest);
+      refuseKind(plugin.manifest, 'middleware', middlewareRefusal);
+      refuseKind(plugin.manifest, 'store', storeRefusal);
+      refuseUnsubmittableKinds(plugin.manifest);
       refuseDiscovery(plugin.manifest);
       refuseWorkspaceFiles(plugin.manifest);
 
@@ -95,7 +104,7 @@ export function buildPlugins(
       const workspace = createScratchWorkspace(label);
 
       registry.addRemote(
-        loadRemotePlugin(plugin.manifest, plugin.path, {
+        remotePlugin(plugin.manifest, plugin.path, {
           timeout: Math.min(config.pluginCallTimeout, config.timeout),
           env: {},
           capabilities,
@@ -108,43 +117,80 @@ export function buildPlugins(
   } catch (err) {
     registry.dispose();
     if (err instanceof HttpError) throw err;
-    throw new HttpError(
-      400,
-      err instanceof Error ? err.message : String(err),
-      'PluginError',
-    );
+    throw new HttpError(400, messageOf(err), 'PluginError');
   }
 
   return registry;
 }
 
-function grantedBy(config: ServerConfig): PluginCapability[] {
+function grantedBy(config: ServerConfig): PluginMethod[] {
   return config.defaultLlmKey ? GRANTED : [...GRANTED, 'callModel'];
 }
 
-function refuseMiddleware(rawManifest: unknown): void {
-  const manifest = rawManifest as {
-    components?: Array<{ kind?: string; componentType?: string }>;
-  };
-  const middleware = (manifest?.components ?? []).filter(
-    (component) => component?.kind === 'middleware',
+/** The components of this kind, refused with the message the kind earns. */
+function refuseKind(
+  manifest: PluginManifest,
+  kind: ManifestComponent['kind'],
+  refusal: (names: string) => string,
+): void {
+  const declared = manifest.components.filter(
+    (component) => component.kind === kind,
   );
-  if (middleware.length === 0) return;
+  if (declared.length === 0) return;
 
-  const names = middleware
+  const names = declared
     .map((component) => `"${component.componentType}"`)
     .join(', ');
 
-  throw new HttpError(
-    400,
+  throw new HttpError(400, refusal(names), 'PluginError');
+}
+
+function middlewareRefusal(names: string): string {
+  return (
     `this plugin declares middleware (${names}), which cannot be submitted with a ` +
-      `request. Middleware runs on ` +
-      `every node of every flow, so it is installed by whoever runs this server ` +
-      `— with --plugin, at startup — rather than chosen per request. A component ` +
-      `your own flow selects is a node, a transform or a provider; a rendering ` +
-      `your own client selects is an encoder, which you may submit.`,
-    'PluginError',
+    `request. Middleware runs on ` +
+    `every node of every flow, so it is installed by whoever runs this server ` +
+    `— with --plugin, at startup — rather than chosen per request. A component ` +
+    `your own flow selects is a node, a transform or a provider; a rendering ` +
+    `your own client selects is an encoder, which you may submit.`
   );
+}
+
+/**
+ * The refusal a submitted session store gets.
+ *
+ * The same rule as middleware, for a sharper reason. A store holds every
+ * conversation this server has — one a caller supplied could read the lot, and
+ * could be the destination for everybody else's. It is selected by name at
+ * startup, so a submitted one would not even be reachable; refusing it says
+ * why rather than letting it load and do nothing.
+ */
+function storeRefusal(names: string): string {
+  return (
+    `this plugin declares a session store (${names}), which cannot be ` +
+    `submitted with a request. A store holds every conversation this server ` +
+    `has, so it is installed by whoever runs it — with --plugin and ` +
+    `--session-store, at startup — and never chosen per request.`
+  );
+}
+
+/**
+ * The backstop behind the named refusals above: anything not on the allowlist
+ * is refused, so a kind this protocol grows later arrives here already closed
+ * to requests rather than quietly open until somebody remembers this file.
+ */
+function refuseUnsubmittableKinds(manifest: PluginManifest): void {
+  for (const component of manifest.components) {
+    const kind = component.kind ?? 'node';
+    if (SUBMITTABLE_KINDS.has(kind)) continue;
+
+    throw new HttpError(
+      400,
+      `this plugin declares a ${kind} ("${component.componentType}"), which ` +
+        `cannot be submitted with a request.`,
+      'PluginError',
+    );
+  }
 }
 
 /**
@@ -163,9 +209,8 @@ function refuseMiddleware(rawManifest: unknown): void {
  * who wants files of their own has the request's own `files`, which are the
  * caller's own bytes on the caller's own budget.
  */
-function refuseWorkspaceFiles(rawManifest: unknown): void {
-  const files = (rawManifest as { files?: unknown })?.files;
-  if (!Array.isArray(files) || files.length === 0) return;
+function refuseWorkspaceFiles(manifest: PluginManifest): void {
+  if (manifest.files.length === 0) return;
 
   throw new HttpError(
     400,
@@ -177,52 +222,13 @@ function refuseWorkspaceFiles(rawManifest: unknown): void {
   );
 }
 
-/**
- * Refuse a submitted plugin that wants to be where conversations are kept.
- *
- * The same rule as middleware, for a sharper reason. A store holds every
- * conversation this server has — one a caller supplied could read the lot, and
- * could be the destination for everybody else's. It is selected by name at
- * startup, so a submitted one would not even be reachable; refusing it says
- * why rather than letting it load and do nothing.
- */
-function refuseStores(rawManifest: unknown): void {
-  const manifest = rawManifest as {
-    components?: Array<{ kind?: string; componentType?: string }>;
-  };
-  const stores = (manifest?.components ?? []).filter(
-    (component) => component?.kind === 'store',
-  );
-  if (stores.length === 0) return;
-
-  const names = stores
-    .map((component) => `"${component.componentType}"`)
-    .join(', ');
-
-  throw new HttpError(
-    400,
-    `this plugin declares a session store (${names}), which cannot be ` +
-      `submitted with a request. A store holds every conversation this server ` +
-      `has, so it is installed by whoever runs it — with --plugin and ` +
-      `--session-store, at startup — and never chosen per request.`,    'PluginError',
-  );
-}
-
-function refuseShadowing(rawManifest: unknown): void {
-  if (typeof rawManifest !== 'object' || rawManifest === null) return;
-
-  const tools = (rawManifest as { tools?: unknown }).tools;
-  if (!Array.isArray(tools)) return;
-
-  for (const tool of tools) {
-    if (typeof tool !== 'object' || tool === null) continue;
-
-    const entry = tool as { name?: unknown; shadows?: unknown };
-    if (entry.shadows !== true) continue;
+function refuseShadowing(manifest: PluginManifest): void {
+  for (const tool of manifest.tools) {
+    if (tool.shadows !== true) continue;
 
     throw new HttpError(
       400,
-      `tool "${String(entry.name)}" declares "shadows", which this server does not ` +
+      `tool "${tool.name}" declares "shadows", which this server does not ` +
         `accept from a submitted plugin. Shadowing lets a manifest take a tool name ` +
         `something else already provides, and a name bound that way can be reached ` +
         `by code the submitter did not write. Choose a name nothing else uses.`,

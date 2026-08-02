@@ -34,6 +34,25 @@ const SPEC_WRITABLE_KINDS: ReadonlySet<ComponentKind> = new Set<ComponentKind>([
   'provider',
 ]);
 
+/**
+ * The kinds a submitted plugin may carry, for a host that accepts one.
+ *
+ * The spec-writable kinds plus `encoder`, which a request selects for itself —
+ * a rendering belongs to the client asking for it. Everything else is the
+ * operator's: middleware runs on every node of every flow, and a store holds
+ * every conversation the server has. An allowlist rather than the refusals'
+ * complement, so a kind this file grows later is refused in a request until
+ * somebody decides it should not be.
+ */
+export const SUBMITTABLE_KINDS: ReadonlySet<ComponentKind> =
+  new Set<ComponentKind>([
+    'node',
+    'transform',
+    'component',
+    'provider',
+    'encoder',
+  ]);
+
 interface Registered {
   kind: ComponentKind;
   def: PluginComponentDef;
@@ -141,14 +160,6 @@ export class PluginRegistry {
     this.hosts = [];
   }
 
-  hasRemote(): boolean {
-    return this.hosts.length > 0;
-  }
-
-  isEmpty(): boolean {
-    return this.defs.size === 0;
-  }
-
   kindOf(componentType: string): ComponentKind | undefined {
     return this.defs.get(componentType)?.kind;
   }
@@ -175,10 +186,6 @@ export class PluginRegistry {
 
   encoderProtocols(): string[] {
     return [...this.encoders.keys()].sort();
-  }
-
-  storeNames(): string[] {
-    return [...this.stores.keys()].sort();
   }
 
   /**

@@ -52,7 +52,9 @@ export async function handleValidate(
       headers,
     );
   } finally {
-    plugins.dispose();
+    // Only a registry this request built: with no submitted plugins the
+    // installed one is used as it is, and its processes serve every request.
+    if (plugins !== config.plugins) plugins.dispose();
     code.dispose();
   }
 }

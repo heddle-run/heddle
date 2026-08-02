@@ -1,9 +1,5 @@
 import type { ServerResponse } from 'node:http';
-import {
-  BUILTIN_PROTOCOL,
-  EVENT_CONTRACT_VERSION,
-  FileRegistry,
-} from '@heddle/core';
+import { BUILTIN_PROTOCOL, EVENT_CONTRACT_VERSION } from '@heddle/core';
 import type { ServerConfig } from './config.js';
 import { sendJson } from './http.js';
 import type { ConcurrencyGate } from './limits.js';
@@ -81,7 +77,8 @@ function fromDirectory(config: ServerConfig): string[] {
   if (!config.toolsDir) return [];
 
   try {
-    return FileRegistry.create(config.toolsDir)
+    return config
+      .toolsRegistry()
       .all()
       .map((tool) => tool.name);
   } catch {

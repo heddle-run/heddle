@@ -1,4 +1,5 @@
 import { RunError } from '../errors.js';
+import { typeName } from '../internal/util.js';
 import type { Message } from '../llm/types.js';
 import { CHAT_HISTORY_KEY } from './reserved.js';
 
@@ -87,7 +88,3 @@ function readTurn(entry: unknown, index: number): HistoryMessage {
   return { role: role as HistoryMessage['role'], content };
 }
 
-function typeName(value: unknown): string {
-  if (value === null) return 'null';
-  return Array.isArray(value) ? 'an array' : `a ${typeof value}`;
-}

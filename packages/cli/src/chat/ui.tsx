@@ -4,9 +4,12 @@ import TextInput from 'ink-text-input';
 import {
   CHAT_HISTORY_KEY,
   Runner,
+  answerOf,
   closeTurn,
   historyFromTurns,
+  messageOf,
   openTurn,
+  withoutReserved,
   type CompiledGraph,
   type RunnerOptions,
   type Event,
@@ -108,7 +111,7 @@ function Chat({ graph, opts, session, flowPath, inputKey }: StartChatOptions) {
         // Not appended as an assistant turn: the model did not say this, and a
         // conversation that records heddle's own errors as answers feeds them
         // back to the model on the next message.
-        setFailure(err instanceof Error ? err.message : String(err));
+        setFailure(messageOf(err));
       } finally {
         setStreamed('');
         setRunning(false);
@@ -203,7 +206,7 @@ async function runRecorded(
     const state = await new Runner(graph, opts).run(undefined, opened.inputs);
     const output = state.toData();
     await closeTurn(session.store, session.id, opened, { output });
-    return answerOf(output);
+    return answerOf(withoutReserved(output));
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
     await closeTurn(session.store, session.id, opened, {
@@ -229,7 +232,7 @@ async function runEphemeral(
     ...(conversation.length > 0 ? { [CHAT_HISTORY_KEY]: conversation } : {}),
   });
 
-  return answerOf(state.toData());
+  return answerOf(withoutReserved(state.toData()));
 }
 
 function MessageLine({ entry }: { entry: MessageEntry }) {
@@ -336,12 +339,6 @@ function finishToolCall(entry: ChatEntry, event: Event): ChatEntry {
     duration: event.duration,
     error: event.error?.message,
   };
-}
-
-function answerOf(data: Record<string, unknown>): string {
-  return typeof data.result === 'string'
-    ? data.result
-    : JSON.stringify(data, null, 2);
 }
 
 function isToolCall(entry: ChatEntry): entry is ToolCallEntry {

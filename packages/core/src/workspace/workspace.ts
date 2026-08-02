@@ -1,6 +1,7 @@
 import { mkdirSync, realpathSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { removeDir } from './dir.js';
+import { messageOf } from '../errors.js';
 import { copyBack, type MountBaseline } from './copy.js';
 import { fillBin } from './bin.js';
 import type {
@@ -124,7 +125,7 @@ export class ScopeWorkspace implements Workspace {
     } catch (err) {
       this.warn(
         `could not copy "${mount.dest}" back to "${mount.source}": ` +
-          `${err instanceof Error ? err.message : String(err)}`,
+          `${messageOf(err)}`,
       );
     }
   }

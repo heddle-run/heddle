@@ -1,6 +1,7 @@
 import {
   CompileError,
   LLMError,
+  messageOf,
   MiddlewareError,
   PluginError,
   RunError,
@@ -63,7 +64,7 @@ export function toErrorResponse(err: unknown): {
     return errorResponse(400, err.name, err.message);
   }
 
-  const message = err instanceof Error ? err.message : String(err);
+  const message = messageOf(err);
   const name = err instanceof Error ? err.name : 'Error';
   return errorResponse(500, name, message);
 }

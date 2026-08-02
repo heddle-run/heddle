@@ -3,6 +3,7 @@ import {
   assertSessionId,
   newSessionId,
   transcriptOf,
+  type SessionRecord,
   type SessionStore,
 } from '@heddle/core';
 import type { ServerConfig } from './config.js';
@@ -46,7 +47,7 @@ export function requireStore(config: ServerConfig): SessionStore {
 export async function resolveSession(
   config: ServerConfig,
   raw: unknown,
-): Promise<{ store: SessionStore; id: string }> {
+): Promise<{ store: SessionStore; id: string; record: SessionRecord }> {
   if (typeof raw !== 'string' || raw.length === 0) {
     throw new HttpError(400, '"session" must be a session id string');
   }
@@ -54,10 +55,12 @@ export async function resolveSession(
   const store = requireStore(config);
   const id = validId(raw);
 
-  if ((await store.read(id)) === undefined) {
+  // Kept and handed onward, so opening the turn does not read it again.
+  const record = await store.read(id);
+  if (record === undefined) {
     throw new HttpError(404, unknownSessionMessage(id), 'NoSuchSession');
   }
-  return { store, id };
+  return { store, id, record };
 }
 
 export async function handleCreateSession(

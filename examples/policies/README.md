@@ -32,7 +32,8 @@ plugin submitted to `heddle-server` that declares middleware is refused with a
 
 ## Run them
 
-Build first, and run from the repository root.
+Run from the repository root. (From a source checkout, `pnpm build` first and
+substitute `node packages/cli/dist/heddle.js` for `heddle`.)
 
 ### `nodeError` — a node that failed
 
@@ -41,7 +42,7 @@ it with a growing backoff, and substitutes a stated value once the attempts are
 spent:
 
 ```bash
-node packages/cli/dist/heddle.js run examples/policies/flow.json --tools-dir ./examples/policies/tools --plugin ./examples/policies/policies.json --plugin-config RetryPolicy='{"backoffMs":50,"substitute":{"answer":"unavailable, ask again later"}}' --input '{"query":"anything"}'
+heddle run examples/policies/flow.json --tools-dir ./examples/policies/tools --plugin ./examples/policies/policies.json --plugin-config RetryPolicy='{"backoffMs":50,"substitute":{"answer":"unavailable, ask again later"}}' --input '{"query":"anything"}'
 ```
 
 ```
@@ -71,7 +72,7 @@ the policy substitutes immediately without retrying.
 `shell` with `rm -rf /var/data`:
 
 ```bash
-node packages/cli/dist/heddle.js run examples/policies/gated-flow.json --tools-dir ./examples/policies/tools --plugin ./examples/policies/policies.json --plugin-config ApprovalGate='{"guard":{"shell":["rm -rf","sudo"]}}' --input '{"task":"clean up the data directory"}'
+heddle run examples/policies/gated-flow.json --tools-dir ./examples/policies/tools --plugin ./examples/policies/policies.json --plugin-config ApprovalGate='{"guard":{"shell":["rm -rf","sudo"]}}' --input '{"task":"clean up the data directory"}'
 ```
 
 ```
@@ -99,7 +100,7 @@ the operator lists a node type under `dryRun`, answers for that type instead of
 letting it run — a flow's shape walked without its side effects:
 
 ```bash
-node packages/cli/dist/heddle.js run examples/policies/flow.json --tools-dir ./examples/policies/tools --plugin ./examples/policies/policies.json --plugin-config NodeAudit='{"dryRun":["ToolNode"],"stub":{"answer":"not really run"}}' --input '{"query":"anything"}'
+heddle run examples/policies/flow.json --tools-dir ./examples/policies/tools --plugin ./examples/policies/policies.json --plugin-config NodeAudit='{"dryRun":["ToolNode"],"stub":{"answer":"not really run"}}' --input '{"query":"anything"}'
 ```
 
 ```
@@ -134,7 +135,7 @@ the one nested inside it.
 calls, so a limit of one refuses the second:
 
 ```bash
-node packages/cli/dist/heddle.js run examples/policies/gated-flow.json --tools-dir ./examples/policies/tools --plugin ./examples/policies/policies.json --plugin-config RateLimit='{"callsPerMinute":1}' --plugin-config RetryPolicy='{"retryOn":["in the last minute"],"backoffMs":10,"substitute":{"result":"busy, try again shortly"}}' --input '{"task":"anything"}'
+heddle run examples/policies/gated-flow.json --tools-dir ./examples/policies/tools --plugin ./examples/policies/policies.json --plugin-config RateLimit='{"callsPerMinute":1}' --plugin-config RetryPolicy='{"retryOn":["in the last minute"],"backoffMs":10,"substitute":{"result":"busy, try again shortly"}}' --input '{"task":"anything"}'
 ```
 
 ```
@@ -164,11 +165,14 @@ touching a plugin or a flow.
 The same two flags:
 
 ```bash
-node packages/server/dist/heddle-server.js \
+heddle-server \
   --tools-dir ./examples/policies/tools \
   --plugin ./examples/policies/policies.json \
   --plugin-config ApprovalGate='{"guard":{"shell":["rm -rf","sudo"]}}'
 ```
+
+(`npm install -g @heddle/server` provides `heddle-server`; from a source
+checkout it is `node packages/server/dist/heddle-server.js`.)
 
 Everything is settled before the port opens: a manifest that will not parse, or a
 `--plugin-config` that fails the schema in it, is a server that does not start.

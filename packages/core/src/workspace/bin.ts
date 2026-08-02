@@ -1,8 +1,28 @@
 import { chmodSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import type { Registry } from '../tool/types.js';
 import type { WorkspaceTool } from './types.js';
 
 const OWNER_READ_EXECUTE = 0o500;
+
+/**
+ * Every tool, as something a workspace can put in `bin`.
+ *
+ * A tool a plugin answers over its own channel has no program to link, and gets
+ * a shim that says so — see {@link fillBin}. The alternative was leaving it
+ * out, and `command not found` is the wrong thing to tell a model about a tool
+ * that exists.
+ */
+export function workspaceTools(registry: Registry): WorkspaceTool[] {
+  return registry.all().map((tool) => {
+    switch (tool.impl.kind) {
+      case 'path':
+        return { name: tool.name, target: tool.impl.path };
+      case 'plugin':
+        return { name: tool.name, servedBy: tool.impl.plugin };
+    }
+  });
+}
 
 /**
  * Fill a workspace's `bin`, and report what it now points into.

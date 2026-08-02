@@ -7,7 +7,7 @@ import type {
   ToolCall,
   ToolCallDelta,
 } from './types.js';
-import { LLMError } from '../errors.js';
+import { LLMError, messageOf } from '../errors.js';
 
 interface GenerationParams {
   temperature?: number;
@@ -237,6 +237,6 @@ function buildTools(
 function asLLMError(err: unknown): LLMError {
   if (err instanceof LLMError) return err;
 
-  const detail = err instanceof Error ? err.message : String(err);
+  const detail = messageOf(err);
   return new LLMError(`OpenAI API error: ${detail}`, { cause: err });
 }

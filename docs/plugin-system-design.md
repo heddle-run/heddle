@@ -1,5 +1,7 @@
 # Plugin System: Design and Extension Roadmap
 
+> Internal design notes — not user documentation; see https://heddle.run/docs.
+
 All paths are relative to the repository root. Every claim below was read out of the file it cites.
 Line numbers are against the tree at the time of writing and rot with every commit; the files that
 churn most — `plugin/types.ts`, `plugin/executor.ts`, `plugin/host.ts`, `plugin/protocol.ts`,

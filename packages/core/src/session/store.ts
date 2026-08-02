@@ -41,8 +41,19 @@ export interface SessionStore {
   read(id: string): Promise<SessionRecord | undefined>;
   append(id: string, turn: Turn, expect: number): Promise<number>;
   readCheckpoint(id: string): Promise<Checkpoint | undefined>;
-  /** `null` clears it, which is what a run that finished does. */
-  writeCheckpoint(id: string, checkpoint: Checkpoint | null): Promise<void>;
+  /**
+   * `null` clears it, which is what a run that finished does.
+   *
+   * `serialized` is the checkpoint as JSON, when the caller has already paid
+   * for the stringify — the sink proves a checkpoint survives JSON before
+   * offering it, and a store that writes text can take that instead of
+   * serializing the same object twice. A store is free to ignore it.
+   */
+  writeCheckpoint(
+    id: string,
+    checkpoint: Checkpoint | null,
+    serialized?: string,
+  ): Promise<void>;
   list(options?: ListOptions): Promise<SessionSummary[]>;
   delete(id: string): Promise<void>;
 }

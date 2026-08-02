@@ -10,7 +10,6 @@ These are declared on `heddle` itself and may appear before or after the subcomm
 | Option | Description |
 |--------|-------------|
 | `--verbose` | Log every node as it starts and completes, plus tool arguments and results |
-| `--trace` | Accepted and inert. Registered on the program and shown in `--help`, but nothing reads it |
 
 There is currently no `--version` flag. Use `heddle --help` to confirm the CLI is installed.
 
@@ -166,8 +165,9 @@ to. `--session` composes with `--protocol` — a persisted turn is one ordinary 
 
 ### Sessions
 
-`--session` keeps a run in a conversation and gives the agent the turns before it. Each
-invocation is one turn:
+Covered in full in [Sessions](/docs/sessions); the flags in brief. `--session` keeps a
+run in a conversation and gives the agent the turns before it. Each invocation is one
+turn:
 
 ```bash
 heddle run flow.yaml --session support-42 --input '{"query":"where is my order?"}'

@@ -6,12 +6,11 @@ import {
   loadComponent,
   collectToolNames,
   loadPlugins,
-  FileRegistry,
-  composeRegistries,
+  messageOf,
+  assertToolsAvailable,
+  standardRegistry,
   isBundlePath,
-  missingTools,
   PluginRegistry,
-  ToolError,
   type CompiledGraph,
   type ParsedFlow,
 } from '@heddle/core';
@@ -110,8 +109,7 @@ function reportGraphValidation(
   try {
     graph = compile(flow, { plugins });
   } catch (err) {
-    const reason = err instanceof Error ? err.message : String(err);
-    console.log(`  Graph validation skipped: ${reason}`);
+    console.log(`  Graph validation skipped: ${messageOf(err)}`);
     return;
   }
 
@@ -130,17 +128,8 @@ function reportToolValidation(
     return;
   }
 
-  const registry = composeRegistries([
-    plugins.toolRegistry(),
-    FileRegistry.create(options.toolsDir ?? ''),
-  ]);
-
-  const missing = missingTools(registry, toolNames);
-  if (missing.length > 0) {
-    throw new ToolError(
-      `missing executables for tools: ${missing.join(', ')}`,
-    );
-  }
+  const registry = standardRegistry({ plugins, toolsDir: options.toolsDir });
+  assertToolsAvailable(registry, toolNames);
 
   console.log(`  Tool validation passed (${toolNames.length} tools found)`);
 }

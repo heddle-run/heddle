@@ -1,46 +1,29 @@
 import {
-  builtinEncoder,
+  encoderFor,
   BUILTIN_PROTOCOL,
-  type PluginEncoder,
+  PluginError,
   type PluginRegistry,
+  type ResolvedEncoder,
 } from '@heddle/core';
 import { HttpError } from './errors.js';
 
-export interface ChosenEncoder {
-  protocol: string;
-  contentType: string;
-  create(runId: string): PluginEncoder;
-}
-
-const BUILTIN: ChosenEncoder = {
-  protocol: BUILTIN_PROTOCOL,
-  contentType: 'text/event-stream; charset=utf-8',
-  create: () => builtinEncoder(),
-};
+export type ChosenEncoder = ResolvedEncoder;
 
 export function resolveEncoder(
   protocol: string | null,
   plugins: PluginRegistry,
 ): ChosenEncoder {
-  if (protocol === null || protocol === BUILTIN_PROTOCOL) return BUILTIN;
-
-  const def = plugins.encoderDef(protocol);
-  if (def) {
-    return {
-      protocol,
-      contentType: def.contentType,
-      create: (runId) => def.createEncoder(runId),
-    };
+  try {
+    return encoderFor(protocol ?? BUILTIN_PROTOCOL, plugins);
+  } catch (err) {
+    if (!(err instanceof PluginError)) throw err;
+    throw new HttpError(
+      400,
+      `${err.message} An encoder comes from a plugin — one this ` +
+        `server has installed, or one submitted with the request — so a protocol ` +
+        `nothing provides is a plugin that is neither.`,
+    );
   }
-
-  const available = [BUILTIN_PROTOCOL, ...plugins.encoderProtocols()];
-  throw new HttpError(
-    400,
-    `no encoder for protocol "${protocol}". This server renders: ` +
-      `${available.join(', ')}. An encoder comes from a plugin — one this ` +
-      `server has installed, or one submitted with the request — so a protocol ` +
-      `nothing provides is a plugin that is neither.`,
-  );
 }
 
 export function requireStreamFor(

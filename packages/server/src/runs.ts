@@ -12,6 +12,8 @@ import {
   resumeInputs,
   resumeTurn,
   withoutReserved,
+  workspaceTools,
+  standardRegistry,
   EncoderStream,
   FileRegistry,
   MiddlewareChain,
@@ -31,7 +33,6 @@ import {
   type SessionStore,
   type TurnOutcome,
   type WorkspaceFactory,
-  type WorkspaceTool,
 } from '@heddle/core';
 import type { ServerConfig } from './config.js';
 import { HttpError, toErrorResponse } from './errors.js';
@@ -50,7 +51,7 @@ import {
 import { resolveEncoder, requireStreamFor } from './encoders.js';
 import { resolveSession } from './sessions.js';
 import { SseStream } from './sse.js';
-import { assertToolsAvailable, mergeRegistries } from './tools.js';
+import { assertToolsAvailable } from './tools.js';
 
 interface RunRequest extends FlowRequest, RequestCode {
   inputs?: Record<string, unknown>;
@@ -134,8 +135,12 @@ export async function handleRun(
     // The same shape, for the same reason: the server's factory is built once
     // at startup and this layers the request's own files onto a copy of it. A
     // collision with something the operator mounted is refused here rather than
-    // shadowing it, which is why it can be the caller's 400.
-    workspaces = asBadRequest(() => config.workspaces.extend(code.mounts));
+    // shadowing it, which is why it can be the caller's 400. With nothing to
+    // layer, the operator's factory is used as it is — the dispose guard below
+    // already knows not to touch it.
+    if (code.mounts.length > 0) {
+      workspaces = asBadRequest(() => config.workspaces.extend(code.mounts));
+    }
 
     // Before anything is compiled, so a session that is busy or unknown is
     // refused without the request having spent a graph on it — and so the
@@ -158,7 +163,10 @@ export async function handleRun(
     else await runBuffered(res, plan);
   } finally {
     abort.finish();
-    plugins.dispose();
+    // The same guard the workspaces get: with no submitted plugins the run
+    // borrowed the operator's registry, whose processes every other run is
+    // still using.
+    if (plugins !== config.plugins) plugins.dispose();
     // Removes the template assembled from this request's files and leaves the
     // operator's, which every other run is still using. The guard is for the
     // path where `extend` never ran: disposing the server's own factory here
@@ -179,7 +187,7 @@ async function openSession(
     return undefined;
   }
 
-  const { store, id } = await resolveSession(config, body.session);
+  const { store, id, record } = await resolveSession(config, body.session);
 
   if (body.resume === true) {
     const resumed = await resumeTurn(store, id);
@@ -193,7 +201,10 @@ async function openSession(
     return { store, id, opened: resumed, from: positionOf(resumed.checkpoint) };
   }
 
-  const opened = await openTurn(store, id, inputs, { flow: flowLabel(body) });
+  const opened = await openTurn(store, id, inputs, {
+    flow: flowLabel(body),
+    record,
+  });
   return { store, id, opened };
 }
 
@@ -509,33 +520,16 @@ function buildDependencies(
   return { deps, middleware };
 }
 
-/**
- * Every tool, as something a workspace can put in `bin`.
- *
- * A tool a plugin answers over its own channel has no program to link and gets
- * a shim that says so, rather than being left out: `command not found` is the
- * wrong thing to tell a model about a tool that exists.
- */
-function workspaceTools(registry: Registry): WorkspaceTool[] {
-  return registry.all().map((tool) => ({
-    name: tool.name,
-    target: tool.impl.kind === 'path' ? tool.impl.path : undefined,
-    servedBy: tool.impl.kind === 'plugin' ? tool.impl.plugin : undefined,
-  }));
-}
-
 function buildRegistry(
   config: ServerConfig,
   code: MaterializedCode,
   plugins: PluginRegistry,
 ): Registry {
-  const registries: Registry[] = [
-    plugins.toolRegistry(),
-    FileRegistry.create(config.toolsDir ?? ''),
-  ];
-  if (code.toolsDir) registries.push(FileRegistry.create(code.toolsDir));
-
-  return mergeRegistries(...registries);
+  return standardRegistry({
+    plugins,
+    toolsDir: config.toolsRegistry(),
+    extra: code.toolsDir ? [FileRegistry.create(code.toolsDir)] : undefined,
+  });
 }
 
 function runnerOptions(

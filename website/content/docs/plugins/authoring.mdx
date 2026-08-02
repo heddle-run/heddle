@@ -9,13 +9,11 @@ way, so this page pairs them.
 
 ## In process
 
-Default-export a plugin object. `definePlugin` is an identity helper — it exists so an
-editor can type-check what you wrote.
+Default-export a plain object. No import — a plugin depends on heddle's shapes, not its
+code, which is how every shipped example is written.
 
 ```js
-import { definePlugin } from "@heddle/core";
-
-export default definePlugin({
+export default {
   name: "my-plugin",
   version: "1.0.0",
   nodes: [],
@@ -24,8 +22,13 @@ export default definePlugin({
   middleware: [],
   encoders: [],
   tools: [],
-});
+};
 ```
+
+For TypeScript, or an editor that will use it, `@heddle/core` exports `definePlugin` — an
+identity function that only adds types, so `export default definePlugin({...})` is the
+same object with its shape checked. Take it or leave it; nothing at run time knows the
+difference.
 
 `name` and `version` are written into a spec as `component_plugin_name` and
 `component_plugin_version` when one is serialised, so they are not decorative.

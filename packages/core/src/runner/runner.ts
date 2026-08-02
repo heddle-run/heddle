@@ -3,6 +3,7 @@ import { State } from '../state/state.js';
 import type { Event } from './events.js';
 import type { RunnerOptions, RunPosition } from './options.js';
 import { RunSuspended, isSuspended, readResume } from '../session/suspend.js';
+import { sleep } from '../internal/util.js';
 import { RunError } from '../errors.js';
 import {
   MiddlewareError,
@@ -376,7 +377,7 @@ export class Runner {
     // call's result, so that gate is never consulted a second time.
     const resumed = readResume(input, node.name);
 
-    return this.guarded(node, undefined, () =>
+    return this.guarded(undefined, () =>
       chain.consultBefore(
         'node',
         { nodeName: node.name, nodeType: node.type },
@@ -399,7 +400,6 @@ export class Runner {
     if (!chain?.has('node')) return stand(settled);
 
     const verdict = await this.guarded(
-      node,
       settled.ok ? undefined : settled.error,
       () =>
         chain.consult(
@@ -461,7 +461,6 @@ export class Runner {
    * sends a reader looking in the wrong place.
    */
   private async guarded<T>(
-    node: CompiledNode,
     failure: Error | undefined,
     consult: () => Promise<T>,
   ): Promise<T> {
@@ -484,7 +483,7 @@ export class Runner {
     const chain = this.opts.middleware;
     if (!chain?.has('nodeError')) return { action: 'pass' };
 
-    return this.guarded(node, error, () =>
+    return this.guarded(error, () =>
       chain.consult(
         'nodeError',
         {
@@ -601,24 +600,6 @@ function stand(settled: Settled): NodeAttempt {
         by: settled.by,
         cause: settled.cause,
       };
-}
-
-function sleep(ms: number, signal: AbortSignal): Promise<void> {
-  return new Promise((resolve) => {
-    if (signal.aborted) {
-      resolve();
-      return;
-    }
-
-    const done = (): void => {
-      clearTimeout(timer);
-      signal.removeEventListener('abort', done);
-      resolve();
-    };
-
-    const timer = setTimeout(done, ms);
-    signal.addEventListener('abort', done, { once: true });
-  });
 }
 
 function retryWarning(

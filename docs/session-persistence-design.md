@@ -1,5 +1,7 @@
 # Session Persistence: Design and Roadmap
 
+> Internal design notes — not user documentation; see https://heddle.run/docs.
+
 Status: **landed**, S0 through S5. §2 is archaeology — it describes heddle before any of this, and
 is kept because it is the justification. §8 records what each phase actually did, including the three
 places the implementation disagreed with the plan.

@@ -19,7 +19,7 @@ import { join } from 'node:path';
 import { loadRemotePlugin } from '../remote-loader.js';
 import { PluginRegistry } from '../registry.js';
 import { withRuntime } from '../runtime-source.js';
-import { PLUGIN_CAPABILITIES, PROTOCOL_VERSION } from '../protocol.js';
+import { PLUGIN_METHODS, PROTOCOL_VERSION } from '../protocol.js';
 import type { PluginHost } from '../host.js';
 
 let scratch: string;
@@ -56,7 +56,7 @@ function pinger(name: string): ReturnType<typeof loadRemotePlugin> {
       tools: [{ name, componentType: 'Ping' }],
     },
     entry,
-    { shared: true, capabilities: PLUGIN_CAPABILITIES },
+    { shared: true, capabilities: PLUGIN_METHODS },
   );
 }
 
@@ -202,7 +202,7 @@ function prober(name: string, shared: boolean): PluginHost {
       components: [{ componentType: 'Prober', kind: 'node' }],
     },
     unattributed(name),
-    { shared, capabilities: PLUGIN_CAPABILITIES },
+    { shared, capabilities: PLUGIN_METHODS },
   );
 
   open.push(host);
@@ -272,7 +272,7 @@ function suicidal(name: string, shared: boolean): PluginHost {
       components: [{ componentType: 'Prober', kind: 'node' }],
     },
     entry,
-    { shared, capabilities: PLUGIN_CAPABILITIES },
+    { shared, capabilities: PLUGIN_METHODS },
   );
 
   open.push(host);

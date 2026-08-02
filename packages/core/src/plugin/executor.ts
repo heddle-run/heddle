@@ -3,7 +3,6 @@ import type { Dependencies, NodeExecutor } from '../node/types.js';
 import type { EventHandler } from '../runner/events.js';
 import { pluginEventType } from '../runner/events.js';
 import type { Executor, ExecutorScope } from '../tool/types.js';
-import { invokeTool } from '../tool/invoke.js';
 import { createScratchWorkspace } from '../workspace/index.js';
 import type { Workspace } from '../workspace/index.js';
 import type {
@@ -13,8 +12,8 @@ import type {
   PluginReporter,
   PluginResult,
 } from './types.js';
-import { PluginModel } from './services.js';
-import { PluginError, RunError, ToolError } from '../errors.js';
+import { PluginModel, runNamedTool } from './services.js';
+import { messageOf, PluginError } from '../errors.js';
 
 const NO_BRANCH = '';
 
@@ -136,29 +135,20 @@ export class PluginNodeAdapter implements NodeExecutor {
     return branch;
   }
 
-  private async runTool(
+  private runTool(
     signal: AbortSignal | undefined,
     name: string,
     input: Record<string, unknown>,
     scopedExecutor?: Executor,
   ): Promise<Record<string, unknown>> {
-    const registry = this.deps.toolRegistry;
-    if (!registry) {
-      throw new RunError(`${this.describe()}: no tool registry configured`);
-    }
-
-    const tool = registry.lookup(name);
-    if (!tool) {
-      throw new ToolError(`${this.describe()}: tool "${name}" not found`);
-    }
-
-    const result = await invokeTool(
-      signal,
-      tool,
-      input,
+    return runNamedTool(
+      this.describe(),
+      this.deps.toolRegistry,
       scopedExecutor ?? this.deps.toolExecutor,
+      signal,
+      name,
+      input,
     );
-    return result.output;
   }
 
   /**
@@ -203,7 +193,7 @@ function assertSerializable(type: string, data: unknown): void {
 }
 
 function unserializableEventMessage(type: string, err: unknown): string {
-  const detail = err instanceof Error ? err.message : String(err);
+  const detail = messageOf(err);
   return (
     `"${type}" was emitted with data that is not JSON: ${detail}. ` +
     `An event's data is written straight into the client's stream, so it has ` +

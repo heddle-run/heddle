@@ -9,6 +9,7 @@ export type {
 export { createScratchWorkspace, createWorkspaceFactory } from './factory.js';
 export type { WorkspaceFactoryOptions } from './factory.js';
 export { RESERVED_DIR, ScopeWorkspace } from './workspace.js';
+export { workspaceTools } from './bin.js';
 export {
   assertNoCollisions,
   checkedDest,

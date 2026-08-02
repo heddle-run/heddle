@@ -1,3 +1,8 @@
+/** What went wrong, whatever was thrown — the message, or the value as text. */
+export function messageOf(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 export class CompileError extends Error {
   constructor(message: string, options?: ErrorOptions) {
     super(message, options);

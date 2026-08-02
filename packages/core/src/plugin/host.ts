@@ -1,12 +1,12 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import type { SandboxSession } from '../sandbox/types.js';
 import type { Workspace } from '../workspace/index.js';
-import { PluginError } from '../errors.js';
+import { messageOf, PluginError } from '../errors.js';
+import { isObject, noop } from '../internal/util.js';
 import {
   encode,
   hostRequest,
   isLogLevel,
-  isObject,
   isPartial,
   isPluginMethod,
   isRequest,
@@ -20,7 +20,7 @@ import {
   type HostMethod,
   type HostMethods,
   type LogParams,
-  type PluginCapability,
+  type PluginMethod,
   type RpcMessage,
   type RpcPartial,
   type RpcRequest,
@@ -57,7 +57,7 @@ export interface PluginHostOptions {
    */
   workspace?: Workspace;
   env?: Record<string, string>;
-  capabilities?: PluginCapability[];
+  capabilities?: PluginMethod[];
   seams?: Record<string, AfterAction[]>;
   runTool?: ToolRunner;
   /**
@@ -114,7 +114,7 @@ interface Pending {
 export class PluginHost {
   private readonly pending = new Map<number, Pending>();
   private readonly decoder = new LineDecoder();
-  private readonly granted: ReadonlySet<PluginCapability>;
+  private readonly granted: ReadonlySet<PluginMethod>;
   private proc?: ChildProcess;
   private nextId = 1;
   private stderr = '';
@@ -335,7 +335,7 @@ export class PluginHost {
       this.readyToRestart();
     });
 
-    proc.stdin?.on('error', ignoreBrokenPipe);
+    proc.stdin?.on('error', noop);
 
     this.greet();
   }
@@ -539,9 +539,9 @@ export class PluginHost {
       case 'callModel':
         await this.serveCallModel(request, respond);
         return;
+      default:
+        request.method satisfies never;
     }
-
-    respond(refuse(unserved(request.method)));
   }
 
   private async serveRunTool(
@@ -808,21 +808,9 @@ function failure(err: unknown): Omit<RpcResponse, 'id'> {
   return {
     error: {
       name: err instanceof Error ? err.name : 'Error',
-      message: err instanceof Error ? err.message : String(err),
+      message: messageOf(err),
     },
   };
-}
-
-function unserved(method: never): string {
-  return `heddle declares "${String(method)}" but does not serve it`;
-}
-
-function noop(): void {
-  return;
-}
-
-function ignoreBrokenPipe(): void {
-  return;
 }
 
 function protocolMismatchMessage(name: string, spoken: number): string {

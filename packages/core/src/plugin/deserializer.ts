@@ -13,6 +13,7 @@ import type {
   PluginNodeDef,
 } from './types.js';
 import { PluginError } from '../errors.js';
+import { isObject } from '../internal/util.js';
 
 type SerializedDict = Parameters<
   ComponentDeserializationPlugin['deserialize']
@@ -198,6 +199,3 @@ function isNodeDef(def: PluginComponentDef): def is PluginNodeDef {
   return typeof (def as PluginNodeDef).createExecutor === 'function';
 }
 
-function isObject(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object';
-}
