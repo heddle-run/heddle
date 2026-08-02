@@ -14,6 +14,7 @@ const columns = [
     links: [
       { label: "Documentation", href: "/docs" },
       { label: "Getting started", href: "/docs/getting-started" },
+      { label: "Library", href: "/library" },
       { label: "CLI reference", href: "/docs/cli-reference" },
       { label: "Playground", href: PLAYGROUND_URL },
       /* The comparison is a view of the playground now; this is the link

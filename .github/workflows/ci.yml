@@ -25,3 +25,10 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
+
+      # Pack every library/ entry. `heddle bundle` refuses to write an archive
+      # whose spec does not parse, whose graph does not hold, or that names a
+      # tool nothing carries — so this is what stops heddle.run/library listing
+      # a bundle nobody can run. Needs the build above for the CLI.
+      - name: Pack the library
+        run: node library/build.mjs

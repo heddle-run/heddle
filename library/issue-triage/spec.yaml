@@ -1,0 +1,477 @@
+# issue-triage — one issue in, a labelled draft reply out of the right branch.
+#
+#                                        ┌─ bug ─────> end_bug
+#   start ──> classify ──> route (branch)┼─ feature ─> end_feature
+#                                        └─ question ─> end_question
+#
+# The shape to copy when "it depends what kind of thing this is" is the first
+# decision: one cheap classifier writes a key, a BranchingNode routes on it, and
+# each branch gets a prompt written for that case instead of one prompt hedging
+# across all three.
+component_type: Flow
+agentspec_version: 26.2.0
+id: flow_issue_triage
+name: issue-triage
+description: >
+  Classifies an incoming issue as a bug, a feature request or a question, then
+  drafts the reply and the labels that kind of issue needs.
+metadata: {}
+inputs: []
+outputs: []
+
+start_node:
+  $component_ref: n_start
+nodes:
+  - $component_ref: n_start
+  - $component_ref: n_classify
+  - $component_ref: n_route
+  - $component_ref: n_bug
+  - $component_ref: n_feature
+  - $component_ref: n_question
+  - $component_ref: n_end_bug
+  - $component_ref: n_end_feature
+  - $component_ref: n_end_question
+
+control_flow_connections:
+  - component_type: ControlFlowEdge
+    id: e_start_classify
+    name: start_to_classify
+    metadata: {}
+    from_node: { $component_ref: n_start }
+    from_branch: null
+    to_node: { $component_ref: n_classify }
+  - component_type: ControlFlowEdge
+    id: e_classify_route
+    name: classify_to_route
+    metadata: {}
+    from_node: { $component_ref: n_classify }
+    from_branch: null
+    to_node: { $component_ref: n_route }
+  # Out of a BranchingNode, `from_branch` names which branch the edge is. A
+  # branch the mapping names with no edge leaving on it validates clean and
+  # dies at run time, so these three are the mapping's other half.
+  - component_type: ControlFlowEdge
+    id: e_route_bug
+    name: route_to_bug
+    metadata: {}
+    from_node: { $component_ref: n_route }
+    from_branch: bug_branch
+    to_node: { $component_ref: n_bug }
+  - component_type: ControlFlowEdge
+    id: e_route_feature
+    name: route_to_feature
+    metadata: {}
+    from_node: { $component_ref: n_route }
+    from_branch: feature_branch
+    to_node: { $component_ref: n_feature }
+  - component_type: ControlFlowEdge
+    id: e_route_question
+    name: route_to_question
+    metadata: {}
+    from_node: { $component_ref: n_route }
+    from_branch: question_branch
+    to_node: { $component_ref: n_question }
+  - component_type: ControlFlowEdge
+    id: e_bug_end
+    name: bug_to_end
+    metadata: {}
+    from_node: { $component_ref: n_bug }
+    from_branch: null
+    to_node: { $component_ref: n_end_bug }
+  - component_type: ControlFlowEdge
+    id: e_feature_end
+    name: feature_to_end
+    metadata: {}
+    from_node: { $component_ref: n_feature }
+    from_branch: null
+    to_node: { $component_ref: n_end_feature }
+  - component_type: ControlFlowEdge
+    id: e_question_end
+    name: question_to_end
+    metadata: {}
+    from_node: { $component_ref: n_question }
+    from_branch: null
+    to_node: { $component_ref: n_end_question }
+
+# heddle carries state forward, so the specialists would see `title` and `body`
+# without these. They are written out anyway: the carry is this runtime's
+# behaviour, and the document is meant to run on any conforming one.
+data_flow_connections:
+  - component_type: DataFlowEdge
+    id: e_title_classify
+    name: title_to_classify
+    metadata: {}
+    source_node: { $component_ref: n_start }
+    source_output: title
+    destination_node: { $component_ref: n_classify }
+    destination_input: title
+  - component_type: DataFlowEdge
+    id: e_body_classify
+    name: body_to_classify
+    metadata: {}
+    source_node: { $component_ref: n_start }
+    source_output: body
+    destination_node: { $component_ref: n_classify }
+    destination_input: body
+  # The classifier answers with JSON, so `kind` is a key in the state it writes.
+  # This edge is what turns that key into the branch decision.
+  - component_type: DataFlowEdge
+    id: e_kind_route
+    name: kind_to_route
+    metadata: {}
+    source_node: { $component_ref: n_classify }
+    source_output: kind
+    destination_node: { $component_ref: n_route }
+    destination_input: branching_mapping_key
+  - component_type: DataFlowEdge
+    id: e_title_bug
+    name: title_to_bug
+    metadata: {}
+    source_node: { $component_ref: n_start }
+    source_output: title
+    destination_node: { $component_ref: n_bug }
+    destination_input: title
+  - component_type: DataFlowEdge
+    id: e_body_bug
+    name: body_to_bug
+    metadata: {}
+    source_node: { $component_ref: n_start }
+    source_output: body
+    destination_node: { $component_ref: n_bug }
+    destination_input: body
+  - component_type: DataFlowEdge
+    id: e_title_feature
+    name: title_to_feature
+    metadata: {}
+    source_node: { $component_ref: n_start }
+    source_output: title
+    destination_node: { $component_ref: n_feature }
+    destination_input: title
+  - component_type: DataFlowEdge
+    id: e_body_feature
+    name: body_to_feature
+    metadata: {}
+    source_node: { $component_ref: n_start }
+    source_output: body
+    destination_node: { $component_ref: n_feature }
+    destination_input: body
+  - component_type: DataFlowEdge
+    id: e_title_question
+    name: title_to_question
+    metadata: {}
+    source_node: { $component_ref: n_start }
+    source_output: title
+    destination_node: { $component_ref: n_question }
+    destination_input: title
+  - component_type: DataFlowEdge
+    id: e_body_question
+    name: body_to_question
+    metadata: {}
+    source_node: { $component_ref: n_start }
+    source_output: body
+    destination_node: { $component_ref: n_question }
+    destination_input: body
+  - component_type: DataFlowEdge
+    id: e_bug_result
+    name: bug_to_end_input
+    metadata: {}
+    source_node: { $component_ref: n_bug }
+    source_output: result
+    destination_node: { $component_ref: n_end_bug }
+    destination_input: result
+  - component_type: DataFlowEdge
+    id: e_feature_result
+    name: feature_to_end_input
+    metadata: {}
+    source_node: { $component_ref: n_feature }
+    source_output: result
+    destination_node: { $component_ref: n_end_feature }
+    destination_input: result
+  - component_type: DataFlowEdge
+    id: e_question_result
+    name: question_to_end_input
+    metadata: {}
+    source_node: { $component_ref: n_question }
+    source_output: result
+    destination_node: { $component_ref: n_end_question }
+    destination_input: result
+
+$referenced_components:
+  n_start:
+    component_type: StartNode
+    id: n_start
+    name: start
+    metadata: {}
+    inputs: []
+    outputs:
+      - { title: title, type: string }
+      - { title: body, type: string }
+    branches: [next]
+
+  n_classify:
+    component_type: AgentNode
+    id: n_classify
+    name: classify
+    metadata: {}
+    inputs:
+      - { title: title, type: string }
+      - { title: body, type: string }
+    outputs:
+      - { title: result, type: string }
+      - { title: kind, type: string }
+    branches: [next]
+    agent:
+      component_type: Agent
+      id: a_classify
+      name: issue-classifier
+      description: Sorts an issue into bug, feature or question
+      metadata: {}
+      inputs:
+        - { title: title, type: string }
+        - { title: body, type: string }
+      outputs:
+        - { title: kind, type: string }
+      system_prompt: |
+        Sort this issue into exactly one of three kinds.
+
+        - bug — something already shipped does not do what it says.
+        - feature — a request for behaviour that does not exist yet.
+        - question — the writer wants to understand something, and nothing needs
+          to change for them to be satisfied.
+
+        A report that turns out to be a misunderstanding is still a bug until
+        someone checks. When it is genuinely between two, pick the one that
+        gets the writer a useful reply soonest.
+
+        Answer with a JSON object and nothing else, no code fence:
+        {"kind": "bug" | "feature" | "question", "why": "one short sentence"}
+
+        Title: {{title}}
+
+        Body:
+        {{body}}
+      llm_config:
+        component_type: OpenAiConfig
+        id: llm_classify
+        name: gpt
+        metadata: {}
+        model_id: gpt-4o-mini
+        api_key: $OPENAI_API_KEY
+      tools: []
+      toolboxes: []
+      transforms: []
+
+  n_route:
+    component_type: BranchingNode
+    id: n_route
+    name: route
+    metadata: {}
+    inputs:
+      - { title: branching_mapping_key, type: string }
+    outputs: []
+    branches: [bug_branch, feature_branch, question_branch]
+    # An unmapped key falls to DEFAULT_BRANCH. It points at the question branch
+    # because a classifier that returned something unexpected has not
+    # established that anything is broken, and the question reply is the one
+    # that does no harm when the classification was wrong.
+    mapping:
+      bug: bug_branch
+      feature: feature_branch
+      question: question_branch
+      DEFAULT_BRANCH: question_branch
+
+  n_bug:
+    component_type: AgentNode
+    id: n_bug
+    name: bug
+    metadata: {}
+    inputs:
+      - { title: title, type: string }
+      - { title: body, type: string }
+    outputs:
+      - { title: result, type: string }
+    branches: [next]
+    agent:
+      component_type: Agent
+      id: a_bug
+      name: bug-triager
+      description: Drafts the reply a bug report needs
+      metadata: {}
+      inputs:
+        - { title: title, type: string }
+        - { title: body, type: string }
+      outputs:
+        - { title: result, type: string }
+      system_prompt: |
+        This issue is a bug report. Draft the maintainer's first reply.
+
+        Write, in this order:
+
+        1. **Labels** — a short list, from: bug, needs-repro, needs-version,
+           regression, crash, docs. Only the ones that apply.
+        2. **Missing** — which of these the report does not give: exact steps to
+           reproduce, what happened, what was expected, version, platform. Say
+           "nothing missing" when it is all there.
+        3. **Reply** — a few sentences to the reporter. Thank them once, ask
+           only for what is in Missing, and ask for it specifically ("which
+           version does `--version` print?" rather than "more details").
+
+        Do not guess at a cause, promise a fix, or suggest a workaround you
+        cannot see evidence for in the report.
+
+        Title: {{title}}
+
+        Body:
+        {{body}}
+      llm_config:
+        component_type: OpenAiConfig
+        id: llm_bug
+        name: gpt
+        metadata: {}
+        model_id: gpt-4o-mini
+        api_key: $OPENAI_API_KEY
+      tools: []
+      toolboxes: []
+      transforms: []
+
+  n_feature:
+    component_type: AgentNode
+    id: n_feature
+    name: feature
+    metadata: {}
+    inputs:
+      - { title: title, type: string }
+      - { title: body, type: string }
+    outputs:
+      - { title: result, type: string }
+    branches: [next]
+    agent:
+      component_type: Agent
+      id: a_feature
+      name: feature-triager
+      description: Drafts the reply a feature request needs
+      metadata: {}
+      inputs:
+        - { title: title, type: string }
+        - { title: body, type: string }
+      outputs:
+        - { title: result, type: string }
+      system_prompt: |
+        This issue is a feature request. Draft the maintainer's first reply.
+
+        Write, in this order:
+
+        1. **Labels** — from: enhancement, needs-use-case, breaking-change,
+           good-first-issue. Only the ones that apply.
+        2. **The underlying need** — one sentence on what the writer is
+           actually trying to do, separated from the solution they proposed.
+           These are usually not the same thing, and the need outlives the
+           proposal.
+        3. **Reply** — a few sentences. Restate the need so they can correct
+           you, say what the project can do today that is closest to it, and ask
+           the one question that would decide whether this is worth building.
+
+        Commit to nothing. Do not say a thing will be added, scheduled, or
+        released.
+
+        Title: {{title}}
+
+        Body:
+        {{body}}
+      llm_config:
+        component_type: OpenAiConfig
+        id: llm_feature
+        name: gpt
+        metadata: {}
+        model_id: gpt-4o-mini
+        api_key: $OPENAI_API_KEY
+      tools: []
+      toolboxes: []
+      transforms: []
+
+  n_question:
+    component_type: AgentNode
+    id: n_question
+    name: question
+    metadata: {}
+    inputs:
+      - { title: title, type: string }
+      - { title: body, type: string }
+    outputs:
+      - { title: result, type: string }
+    branches: [next]
+    agent:
+      component_type: Agent
+      id: a_question
+      name: question-triager
+      description: Drafts the reply a question needs
+      metadata: {}
+      inputs:
+        - { title: title, type: string }
+        - { title: body, type: string }
+      outputs:
+        - { title: result, type: string }
+      system_prompt: |
+        This issue is a question. Draft the maintainer's first reply.
+
+        Write, in this order:
+
+        1. **Labels** — from: question, docs, support. Only the ones that apply.
+        2. **Answerable** — yes, or what you would need to know to answer.
+        3. **Reply** — a few sentences answering it as far as the issue itself
+           allows. Where the answer depends on something the writer did not say,
+           give the answer for each case rather than asking and waiting.
+        4. **Docs gap** — one line, only if this question suggests something the
+           documentation should have said. Otherwise write "none".
+
+        You do not have the project's documentation in front of you. Where an
+        answer would depend on it, say which page you would point them at rather
+        than inventing what it says.
+
+        Title: {{title}}
+
+        Body:
+        {{body}}
+      llm_config:
+        component_type: OpenAiConfig
+        id: llm_question
+        name: gpt
+        metadata: {}
+        model_id: gpt-4o-mini
+        api_key: $OPENAI_API_KEY
+      tools: []
+      toolboxes: []
+      transforms: []
+
+  n_end_bug:
+    component_type: EndNode
+    id: n_end_bug
+    name: end_bug
+    metadata: {}
+    inputs:
+      - { title: result, type: string }
+    outputs: []
+    branches: []
+    branch_name: bug_branch
+
+  n_end_feature:
+    component_type: EndNode
+    id: n_end_feature
+    name: end_feature
+    metadata: {}
+    inputs:
+      - { title: result, type: string }
+    outputs: []
+    branches: []
+    branch_name: feature_branch
+
+  n_end_question:
+    component_type: EndNode
+    id: n_end_question
+    name: end_question
+    metadata: {}
+    inputs:
+      - { title: result, type: string }
+    outputs: []
+    branches: []
+    branch_name: question_branch

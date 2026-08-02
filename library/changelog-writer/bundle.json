@@ -1,0 +1,18 @@
+{
+  "name": "changelog-writer",
+  "title": "Changelog writer",
+  "summary": "Reads a range of git commits and writes the release notes for them.",
+  "blurb": "Give it a repository and it asks git what the last tag was, reads every commit since, and writes the notes grouped by what the change does to whoever installs it — breaking, added, fixed, changed. It reads the repository you name rather than the directory it starts in, so it works on any checkout on the machine without being copied into it.",
+  "tags": ["git", "writing", "release"],
+  "model": "gpt-4o-mini",
+  "flow": "spec.yaml",
+  "toolsDir": "tools",
+  "requires": {
+    "env": ["OPENAI_API_KEY"],
+    "binaries": ["git", "python3"]
+  },
+  "input": {
+    "repo": ".",
+    "range": "since the last release"
+  }
+}

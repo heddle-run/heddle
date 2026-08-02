@@ -521,6 +521,28 @@ These are fixed and not currently configurable from the CLI:
 README, ordered from a first flow to plugins and middleware. Start with
 [examples/research-assistant](examples/research-assistant/README.md).
 
+## Library
+
+[library/](library/README.md) is the other half of that: not examples of a
+feature, but agents worth running. Each entry packs into one `.heddle` file that
+runs anywhere heddle is installed.
+
+| Entry | What it does |
+|---|---|
+| [meeting-notes](library/meeting-notes/README.md) | Turns a raw transcript into decisions, action items and open questions. |
+| [issue-triage](library/issue-triage/README.md) | Sorts an issue into bug, feature or question and drafts the reply that kind needs. |
+| [docs-qa](library/docs-qa/README.md) | Answers questions from a folder of documents, citing the file and line. |
+| [csv-analyst](library/csv-analyst/README.md) | Answers questions about a folder of CSVs by writing SQL against them. |
+| [changelog-writer](library/changelog-writer/README.md) | Reads a range of git commits and writes the release notes for them. |
+
+```bash
+node library/build.mjs docs-qa       # pack it
+heddle run library/dist/docs-qa.heddle
+```
+
+Browsable at [heddle.run/library](https://heddle.run/library), and CI packs every
+entry, so a listing there is a bundle that builds.
+
 ## LLM configuration
 
 LLM providers are configured in the `llm_config` field of an `Agent` or an `LlmNode`.
