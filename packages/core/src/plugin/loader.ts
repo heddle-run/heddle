@@ -31,7 +31,8 @@ export async function loadPlugin(specifier: string): Promise<HeddlePlugin> {
   }
   if (declaredComponentCount(plugin) === 0) {
     throw new PluginError(
-      `plugin "${specifier}" declares no nodes, transforms, components or tools`,
+      `plugin "${specifier}" declares no nodes, transforms, components, ` +
+        `formats or tools`,
     );
   }
 
@@ -193,7 +194,8 @@ function declaredComponentCount(plugin: HeddlePlugin): number {
     (plugin.transforms?.length ?? 0) +
     (plugin.components?.length ?? 0) +
     (plugin.middleware?.length ?? 0) +
-    (plugin.tools?.length ?? 0)
+    (plugin.tools?.length ?? 0) +
+    (plugin.formats?.length ?? 0)
   );
 }
 

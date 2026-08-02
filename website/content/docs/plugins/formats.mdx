@@ -1,0 +1,60 @@
+---
+title: Input formats
+description: Read a spec in from another wire format — the input mirror of an encoder.
+---
+
+An input format is the input mirror of an [encoder](/docs/plugins/encoders). Where an
+encoder renders the run's event stream into another wire format on the way out, an input
+format reads the spec document in from another wire format before anything runs. JSON and
+YAML are not baked into heddle — they are the two builtin formats in the same registry a
+plugin writes into.
+
+A format is one function: raw text in, an Agent Spec document out — the `component_type` /
+`$component_ref` vocabulary [flows](/docs/flows) are written in. Everything past that
+point — validation, compilation, execution — never learns which format the bytes arrived
+in. That is also the escape hatch for a format whose native schema is not Agent Spec at
+all: its `parse` translates to that vocabulary, and heddle needs nothing else.
+
+Three things select one, all naming the same registry:
+
+- **A file extension.** `.json` and `.yaml`/`.yml` are claimed by the builtins; a plugin's
+  format claims its own. An unclaimed extension is read as JSON, as it always was.
+- **A name on the CLI.** `--format <name>` on `heddle run` and `heddle validate` overrides
+  the extension.
+- **A field in the request.** `"format"` beside a string `"flow"` or a `"flowPath"` in
+  `POST /v1/runs` and `/v1/validate`. `GET /v1/capabilities` lists what a server accepts
+  under `formats`.
+
+## Writing one
+
+A format is declared by an in-process plugin — an ES module passed to `--plugin`:
+
+```js
+import { parse as parseToml } from "./toml.js";
+
+export default {
+  name: "toml-format",
+  version: "1.0.0",
+  formats: [
+    {
+      name: "toml",
+      extensions: [".toml"],
+      parse: (text) => parseToml(text), // → an Agent Spec document
+    },
+  ],
+};
+```
+
+```bash
+heddle run flow.toml --plugin ./toml-format.mjs
+heddle run flow.txt --plugin ./toml-format.mjs --format toml
+```
+
+In-process only, deliberately: `parse` sits on the loading path, before any plugin
+process could usefully exist, so a [manifest](/docs/plugins/manifest)-declared subprocess
+plugin has no way to provide one.
+
+Names and extensions are claims, checked at load. `json` and `yaml` and their extensions
+are reserved — what a `.yaml` file means may not depend on which plugins are loaded — and
+two plugins claiming the same name or extension are refused with both names rather than
+resolved by load order.

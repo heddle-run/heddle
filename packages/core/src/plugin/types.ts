@@ -11,6 +11,7 @@ import type { Event, LogLevel } from '../runner/events.js';
 import type { SessionStore } from '../session/store.js';
 import type { AfterVerdict, BeforeVerdict } from './protocol.js';
 import type { Seam, SeamSubscription } from './seams.js';
+import type { InputFormatDef } from '../spec/input-format.js';
 
 export interface PluginIO {
   title: string;
@@ -211,6 +212,15 @@ export interface HeddlePlugin {
   middleware?: PluginMiddlewareDef[];
   stores?: PluginStoreDef[];
   tools?: ToolDef[];
+  /**
+   * Input wire formats this plugin can read a spec from — the mirror of
+   * `encoders`, which render a run's output. Each turns raw text into an
+   * Agent Spec document; see {@link InputFormatDef}.
+   *
+   * In-process plugins only: `parse` is a synchronous function on the loading
+   * path, which a manifest-declared subprocess has no way to provide.
+   */
+  formats?: InputFormatDef[];
   /**
    * Files this plugin puts in the workspace of every node that runs.
    *

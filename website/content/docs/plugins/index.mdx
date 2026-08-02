@@ -41,6 +41,11 @@ Tools are not a kind. A tool is already a first-class thing with its own namespa
 a spec writes into, so a plugin contributing tools needs no component type at all. See
 [Tools](/docs/tools).
 
+Neither are [input formats](/docs/plugins/formats), the mirror of an encoder: where an
+encoder renders the run's output into another wire format, an input format reads the spec
+document in from one — chosen by the file's extension, `--format`, or the request's
+`"format"` field, before any component of any kind is resolved.
+
 Neither are [`files`](/docs/plugins/manifest#files), the other thing a plugin ships:
 whatever it declares there is copied into every node's [workspace](/docs/tools#the-workspace).
 Nothing chooses them, there is no verb behind them, and heddle reads them off the manifest

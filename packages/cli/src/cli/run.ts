@@ -65,6 +65,7 @@ interface RunOptions extends SandboxOptions, WorkspaceOptions, SessionFlags {
   maxNodeAttempts?: string;
   stream?: boolean;
   protocol?: string;
+  format?: string;
 }
 
 export const runCommand = new Command('run')
@@ -76,6 +77,12 @@ export const runCommand = new Command('run')
   )
   .option('--tools-dir <dir>', 'Directory containing tool executables')
   .option('--input <json>', 'Input JSON object')
+  .option(
+    '--format <name>',
+    'Read the flow through this input format instead of resolving it from ' +
+      'the file extension. "json" and "yaml" are builtin; any other name ' +
+      'comes from a plugin',
+  )
   .option(
     '--session [id]',
     'Keep this run in a conversation on disk, and give the agent the ones ' +
@@ -231,7 +238,7 @@ async function runFlow(
   const session = selectSession(options);
   assertSessionFlags(options, session);
 
-  const flow = loadFlow(flowPath, plugins);
+  const flow = loadFlow(flowPath, plugins, { format: options.format });
   // Before the sandbox, because a `--workspace` directory has to be on the
   // policy's write paths and the policy is fixed once the sandbox is made.
   const workspaces = workspacesFromOptions(

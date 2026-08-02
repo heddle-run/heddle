@@ -153,6 +153,7 @@ The `run` flags you will reach for first:
 | `--session [id]` | Keep this run in a conversation on disk — see [Sessions](#sessions) |
 | `-i, --interactive` | Open the terminal chat UI — see [Interactive chat](#interactive-chat) |
 | `--plugin <module>` | Load custom component types (repeatable) — see [Plugins](#plugins) |
+| `--format <name>` | Read the flow through a named input format instead of resolving it from the file extension — see [Input formats](#input-formats) |
 | `--protocol <name>` | Render the run as JSON frames through an encoder instead of the human progress output |
 | `--safe` | Run tools inside an OS sandbox — see [Safe Mode](#safe-mode) |
 | `--mount <src[:dest][:ro\|:rw]>` | Put a file or directory in every workspace — see [The workspace](#the-workspace) |
@@ -245,6 +246,46 @@ so it is refused with a pointer at the manifest format.
 ### Flow Definition
 
 Flows are JSON or YAML files following the [Open Agent Specification](https://oracle.github.io/agent-spec/) format. A flow consists of **nodes** connected by **control flow** (execution order) and **data flow** (data passing) edges. Nodes and edges use `$component_ref` references — see `testdata/` for examples.
+
+### Input formats
+
+JSON and YAML are not baked in — they are the two builtin **input formats**,
+and a plugin can add more. An input format is the input mirror of an encoder:
+where an encoder renders the run's event stream into another wire format on the
+way out, an input format reads a spec document in from another wire format. It
+turns raw text into an Agent Spec document (the `component_type` /
+`$component_ref` vocabulary above), and everything past that point — validation,
+compilation, execution — never knows which format the bytes arrived in. A format
+whose native schema is not Agent Spec translates to it in its `parse`.
+
+A format is selected three ways, all naming the same registry:
+
+- by **file extension** — `.json`, `.yaml`/`.yml`, or an extension a plugin's
+  format claims. Anything unclaimed is read as JSON, as it always was.
+- by **name** — `--format <name>` on `heddle run` and `heddle validate`.
+- by **request** — a `"format"` field beside a string `"flow"` or a
+  `"flowPath"` in `POST /v1/runs` and `/v1/validate`. `GET /v1/capabilities`
+  lists what a server accepts under `formats`.
+
+A plugin declares one in-process, beside its other components:
+
+```js
+export default {
+  name: 'toml-format',
+  version: '1.0.0',
+  formats: [
+    {
+      name: 'toml',
+      extensions: ['.toml'],
+      parse: (text) => parseToml(text), // → an Agent Spec document
+    },
+  ],
+};
+```
+
+The builtin names and extensions are reserved, and two plugins claiming the
+same name or extension are refused at load — what a spec file means may not
+depend on plugin load order.
 
 ### Node Types
 
@@ -472,6 +513,10 @@ stdout instead of the human progress output, and
 `POST /v1/runs?stream=true&protocol=<name>` selects the same rendering over
 HTTP. See [examples/ag-ui](examples/ag-ui) for one that speaks
 [AG-UI](https://docs.ag-ui.com), the protocol CopilotKit uses, run both ways.
+
+The mirror on the input side is an **input format**, which reads a spec
+document in from another wire format before any of this begins — see
+[Input formats](#input-formats).
 
 A plugin can also supply **middleware**, the one kind no document may name.
 It is installed with `--plugin` by whoever runs heddle, takes its settings from

@@ -20,12 +20,19 @@ interface ValidateOptions {
   toolsDir?: string;
   plugin?: string[];
   discoverTools?: boolean;
+  format?: string;
 }
 
 export const validateCommand = new Command('validate')
   .description('Validate an Agent Spec component (Flow, Agent, Swarm, etc.)')
   .argument('<spec>', 'Path to spec JSON or YAML file, or a .heddle bundle')
   .option('--tools-dir <dir>', 'Directory containing tool executables')
+  .option(
+    '--format <name>',
+    'Read the spec through this input format instead of resolving it from ' +
+      'the file extension. "json" and "yaml" are builtin; any other name ' +
+      'comes from a plugin',
+  )
   .option(
     '--plugin <module>',
     'Plugin module providing custom component types (repeatable)',
@@ -54,7 +61,9 @@ export const validateCommand = new Command('validate')
       discovery: options.discoverTools === true,
     });
     try {
-      const component = loadComponent(specPath, plugins) as unknown as {
+      const component = loadComponent(specPath, plugins, {
+        format: options.format,
+      }) as unknown as {
         componentType: string;
         name: string;
       };
@@ -81,7 +90,7 @@ function validateFlowFile(
   options: ValidateOptions,
   plugins: PluginRegistry,
 ): void {
-  const flow = loadFlow(specPath, plugins);
+  const flow = loadFlow(specPath, plugins, { format: options.format });
 
   reportGraphValidation(flow, plugins);
 

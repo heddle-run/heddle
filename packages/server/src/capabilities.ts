@@ -1,5 +1,9 @@
 import type { ServerResponse } from 'node:http';
-import { BUILTIN_PROTOCOL, EVENT_CONTRACT_VERSION } from '@heddle/core';
+import {
+  BUILTIN_INPUT_FORMATS,
+  BUILTIN_PROTOCOL,
+  EVENT_CONTRACT_VERSION,
+} from '@heddle/core';
 import type { ServerConfig } from './config.js';
 import { sendJson } from './http.js';
 import type { ConcurrencyGate } from './limits.js';
@@ -21,6 +25,11 @@ export function handleCapabilities(
       sandbox: config.sandbox?.name ?? null,
       tools: serverToolNames(config),
       protocols: [BUILTIN_PROTOCOL, ...(config.plugins?.encoderProtocols() ?? [])],
+      // The input mirror of `protocols`: what a request's "format" may name.
+      formats: [
+        ...BUILTIN_INPUT_FORMATS.map((format) => format.name),
+        ...(config.plugins?.inputFormatNames() ?? []),
+      ],
       // What is installed and will run whether or not a caller asked for it.
       // A caller cannot select middleware, but it can reject their tool call or
       // end their run, and the name they would see in that error is this one.

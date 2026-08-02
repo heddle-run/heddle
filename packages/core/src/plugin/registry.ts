@@ -16,6 +16,11 @@ import { HeddleDeserializationPlugin } from './deserializer.js';
 import type { PluginHost } from './host.js';
 import type { Registry, ToolDef } from '../tool/types.js';
 import { assertNoCollisions, type Mount } from '../workspace/index.js';
+import {
+  BUILTIN_INPUT_FORMATS,
+  INPUT_FORMAT_NAME,
+  type InputFormatDef,
+} from '../spec/input-format.js';
 import { PluginError } from '../errors.js';
 
 export type ComponentKind =
@@ -73,6 +78,11 @@ interface RegisteredStore {
   def: PluginStoreDef;
 }
 
+interface RegisteredInputFormat {
+  plugin: string;
+  def: InputFormatDef;
+}
+
 export class PluginRegistry {
   private readonly defs = new Map<string, Registered>();
   private readonly sdkPlugins: ComponentDeserializationPlugin[] = [];
@@ -80,6 +90,8 @@ export class PluginRegistry {
   private readonly middlewares: RegisteredMiddleware[] = [];
   private readonly encoders = new Map<string, RegisteredEncoder>();
   private readonly stores = new Map<string, RegisteredStore>();
+  private readonly formats = new Map<string, RegisteredInputFormat>();
+  private readonly formatExtensions = new Map<string, string>();
   private readonly toolDefs: ToolDef[] = [];
   private readonly toolOwners = new Map<string, string>();
   private readonly mounts: Mount[] = [];
@@ -102,6 +114,7 @@ export class PluginRegistry {
     this.registerSpecComponents(plugin);
     this.registerMiddleware(plugin);
     this.registerEncoders(plugin);
+    this.registerInputFormats(plugin);
     this.registerStores(plugin);
     this.registerTools(plugin);
     this.registerFiles(plugin);
@@ -141,6 +154,10 @@ export class PluginRegistry {
     for (const [name, owner] of this.toolOwners) copy.toolOwners.set(name, owner);
     for (const [protocol, entry] of this.encoders) {
       copy.encoders.set(protocol, entry);
+    }
+    for (const [name, entry] of this.formats) copy.formats.set(name, entry);
+    for (const [extension, name] of this.formatExtensions) {
+      copy.formatExtensions.set(extension, name);
     }
     copy.sdkPlugins.push(...this.sdkPlugins);
     copy.pluginNames.push(...this.pluginNames);
@@ -186,6 +203,19 @@ export class PluginRegistry {
 
   encoderProtocols(): string[] {
     return [...this.encoders.keys()].sort();
+  }
+
+  inputFormatDef(name: string): InputFormatDef | undefined {
+    return this.formats.get(name)?.def;
+  }
+
+  inputFormatForExtension(extension: string): InputFormatDef | undefined {
+    const name = this.formatExtensions.get(extension.toLowerCase());
+    return name === undefined ? undefined : this.formats.get(name)?.def;
+  }
+
+  inputFormatNames(): string[] {
+    return [...this.formats.keys()].sort();
   }
 
   /**
@@ -256,6 +286,16 @@ export class PluginRegistry {
       this.register('encoder', def, plugin.name);
       this.claimProtocol(def, plugin.name);
       this.encoders.set(def.protocol, { plugin: plugin.name, def });
+    }
+  }
+
+  private registerInputFormats(plugin: HeddlePlugin): void {
+    for (const def of plugin.formats ?? []) {
+      this.claimInputFormat(def, plugin.name);
+      this.formats.set(def.name, { plugin: plugin.name, def });
+      for (const extension of def.extensions) {
+        this.formatExtensions.set(extension.toLowerCase(), def.name);
+      }
     }
   }
 
@@ -378,6 +418,67 @@ export class PluginRegistry {
     }
   }
 
+  /**
+   * `claimProtocol`'s shape, applied to the input side.
+   *
+   * A format name is what `--format` writes and an extension is what a path
+   * resolves through, so both live in one namespace each: a builtin name or
+   * extension may not be taken (json and yaml must mean the same thing on
+   * every install), and two plugins claiming the same one is refused with
+   * both names rather than resolved by load order.
+   */
+  private claimInputFormat(def: InputFormatDef, pluginName: string): void {
+    if (typeof def.name !== 'string' || !INPUT_FORMAT_NAME.test(def.name)) {
+      throw new PluginError(malformedFormatMessage(pluginName, def.name));
+    }
+    if (BUILTIN_INPUT_FORMATS.some((builtin) => builtin.name === def.name)) {
+      throw new PluginError(reservedFormatMessage(pluginName, def.name));
+    }
+    const claimed = this.formats.get(def.name);
+    if (claimed !== undefined) {
+      throw new PluginError(
+        duplicateFormatMessage(def.name, claimed.plugin, pluginName),
+      );
+    }
+
+    for (const extension of def.extensions ?? []) {
+      this.claimFormatExtension(def, extension, pluginName);
+    }
+  }
+
+  private claimFormatExtension(
+    def: InputFormatDef,
+    extension: string,
+    pluginName: string,
+  ): void {
+    if (typeof extension !== 'string' || !/^\.[^./\\]+$/.test(extension)) {
+      throw new PluginError(
+        malformedExtensionMessage(pluginName, def.name, extension),
+      );
+    }
+
+    const lower = extension.toLowerCase();
+    const builtin = BUILTIN_INPUT_FORMATS.find((format) =>
+      format.extensions.includes(lower),
+    );
+    if (builtin) {
+      throw new PluginError(
+        reservedExtensionMessage(pluginName, def.name, lower, builtin.name),
+      );
+    }
+
+    const owner = this.formatExtensions.get(lower);
+    if (owner !== undefined) {
+      throw new PluginError(
+        duplicateExtensionMessage(
+          lower,
+          this.formats.get(owner)?.plugin ?? owner,
+          pluginName,
+        ),
+      );
+    }
+  }
+
   private defOfKind<T extends PluginComponentDef>(
     componentType: string,
     kind: ComponentKind,
@@ -439,6 +540,75 @@ function missingContentTypeMessage(
     `"contentType". It is the response's own content type, so heddle has ` +
     `nothing to send without it — "text/event-stream" for a protocol carried ` +
     `over SSE.`
+  );
+}
+
+function malformedFormatMessage(pluginName: string, name: unknown): string {
+  return (
+    `plugin "${pluginName}" declares an input format whose name is ` +
+    `${JSON.stringify(name)}. A format name is what "--format" writes, so it ` +
+    `has to match ${INPUT_FORMAT_NAME.source} — lower-case letters, digits ` +
+    `and hyphens. Try "toml".`
+  );
+}
+
+function reservedFormatMessage(pluginName: string, name: string): string {
+  return (
+    `plugin "${pluginName}" declares the input format "${name}", which is ` +
+    `builtin. "json" and "yaml" have to mean the same thing on every heddle, ` +
+    `so a plugin may not answer for them — choose a name for your own format ` +
+    `instead.`
+  );
+}
+
+function duplicateFormatMessage(
+  name: string,
+  owner: string,
+  claimant: string,
+): string {
+  return (
+    `plugins "${owner}" and "${claimant}" both provide the input format ` +
+    `"${name}". A format name is what "--format" selects, so heddle will not ` +
+    `guess which parser was meant. Load one of them, or rename the format.`
+  );
+}
+
+function malformedExtensionMessage(
+  pluginName: string,
+  format: string,
+  extension: unknown,
+): string {
+  return (
+    `plugin "${pluginName}" declares the input format "${format}" with the ` +
+    `extension ${JSON.stringify(extension)}. An extension is matched against ` +
+    `the end of a path, dot included — ".toml", not "toml".`
+  );
+}
+
+function reservedExtensionMessage(
+  pluginName: string,
+  format: string,
+  extension: string,
+  builtin: string,
+): string {
+  return (
+    `plugin "${pluginName}" declares the input format "${format}" claiming ` +
+    `"${extension}", which belongs to the builtin "${builtin}" format. What a ` +
+    `${extension} file means may not depend on which plugins are loaded — ` +
+    `use an extension of your own.`
+  );
+}
+
+function duplicateExtensionMessage(
+  extension: string,
+  owner: string,
+  claimant: string,
+): string {
+  return (
+    `plugins "${owner}" and "${claimant}" both claim the extension ` +
+    `"${extension}" for an input format. A path resolves through one parser, ` +
+    `so heddle will not guess which one was meant. Load one of them, or ` +
+    `drop the extension from one manifest.`
   );
 }
 

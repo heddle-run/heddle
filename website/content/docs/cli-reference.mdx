@@ -33,6 +33,7 @@ heddle run <flow> [options]
 |--------|-------------|
 | `--tools-dir <path>` | Directory containing tool executables |
 | `--input <json>` | Input data as a JSON object. Becomes the run's starting state |
+| `--format <name>` | Read the flow through a named [input format](/docs/plugins/formats) instead of resolving it from the file extension. `json` and `yaml` are builtin; any other name comes from a plugin |
 | `--session [id]` | Keep this run in a conversation on disk, and give the agent the turns before it. With no id, one is created and its id printed |
 | `--session-dir <path>` | Where sessions are kept (default `$HEDDLE_SESSION_DIR`, then `~/.heddle/sessions`) |
 | `--durable` | Checkpoint at every node boundary, so a run that dies can be resumed. One store write per node, so it is asked for rather than implied |
@@ -316,6 +317,7 @@ heddle validate <spec> [options]
 | Option | Description |
 |--------|-------------|
 | `--tools-dir <path>` | Directory containing tool executables (validates tool references) |
+| `--format <name>` | Read the spec through a named [input format](/docs/plugins/formats) instead of resolving it from the file extension |
 | `--plugin <module>` | Load a plugin (repeatable), so a flow naming its component types can be parsed |
 | `--discover-tools` | Allow a plugin declaring `discoverTools` to be started. Without it, such a plugin is refused at load rather than loaded without its tools |
 

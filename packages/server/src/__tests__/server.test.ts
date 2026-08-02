@@ -168,6 +168,35 @@ describe('POST /v1/validate', () => {
     expect(await res.json()).toMatchObject({ valid: true, flow: 'yaml-flow' });
   });
 
+  it('accepts a string flow with an explicit "format"', async () => {
+    const res = await post('/v1/validate', {
+      flow: JSON.stringify(simpleFlow()),
+      format: 'json',
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ valid: true, flow: 'test-flow' });
+  });
+
+  it('rejects an unknown "format" name', async () => {
+    const res = await post('/v1/validate', {
+      flow: JSON.stringify(simpleFlow()),
+      format: 'toml',
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: { message: string } };
+    expect(body.error.message).toContain('unknown input format "toml"');
+  });
+
+  it('rejects "format" beside an inline flow object', async () => {
+    const res = await post('/v1/validate', {
+      flow: simpleFlow(),
+      format: 'yaml',
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: { message: string } };
+    expect(body.error.message).toContain('already parsed');
+  });
+
   it('validates a flow with an agent node without any API key', async () => {
     const previous = process.env.OPENAI_API_KEY;
     delete process.env.OPENAI_API_KEY;
