@@ -352,6 +352,15 @@ export {
   providerFor,
 } from './llm/provider.js';
 export type { ProviderOptions } from './llm/provider.js';
+// Which environment variables a flow's credentials name. Exported for the
+// front end that would rather ask for a missing one than let the run reach its
+// first model call and fail there.
+export {
+  ENV_REF_PREFIX,
+  collectEnvRefs,
+  envRefKey,
+  isEnvRef,
+} from './llm/env-refs.js';
 // The egress policy, which decides where a spec heddle did not write may send
 // heddle's own requests. Exported because an embedder accepting submitted specs
 // needs the same rule the server applies.

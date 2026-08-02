@@ -45,6 +45,7 @@ heddle run <flow> [options]
 | `--plugin-config <Type>=<json>` | Configuration for a middleware component type (repeatable, once per type). `@path` reads the JSON from a file |
 | `--max-node-attempts <n>` | How many times one arrival at a node may be attempted when middleware retries. Whole number ≥ 1, default 3 |
 | `--no-stream` | Ask the model for one buffered response instead of a token stream |
+| `--no-ask-env` | Never ask for an environment variable the spec names and this shell does not have. Without it, a terminal is asked before the run starts |
 | `--protocol <name>` | Render the run through an installed [encoder](/docs/plugins/encoders), one JSON frame per line on stdout, instead of the human progress output |
 | `--mount <src[:dest][:ro\|:rw]>` | Put a file or directory in every node's [workspace](/docs/tools#the-workspace) (repeatable). `ro`, the default, is a copy the run cannot carry back; `rw` copies changed files out again when a node finishes |
 | `--workspace <dir>` | Keep each node's workspace under this directory instead of a temporary one, so what the run produced is still there afterwards |
@@ -62,6 +63,13 @@ heddle run <flow> [options]
 endpoint that cannot serve SSE or that bills streamed calls differently. Note that an
 agent carrying a `post` transform does not stream regardless, since a token that has
 reached a client cannot be recalled once the transform rejects the answer.
+
+A spec writing `api_key: $OPENAI_API_KEY` reads that variable at its first model call. On
+a terminal, `run` asks for the ones this shell does not have before the run starts rather
+than failing several nodes in — hidden as you type, kept in this process only, and skipped
+with enter. Nothing is asked without a terminal on stdin and stderr, so scripts and CI are
+unaffected; `--no-ask-env` declines the question on a terminal as well. See
+[API keys](/docs/llm-providers#api-keys).
 
 <Callout type="warn">
 `--sandbox`, `--allow-read`, `--allow-write`, `--allow-env` and `--deny-net` are each a

@@ -7,6 +7,7 @@ import type { PluginComponent } from '../plugin/types.js';
 import { OpenAIProvider } from './openai.js';
 import { LLMError } from '../errors.js';
 import { isSet } from '../internal/util.js';
+import { envRefKey, isEnvRef } from './env-refs.js';
 import {
   assertEgressAllowed,
   redirectRefusingFetch,
@@ -19,8 +20,6 @@ const OPENAI_COMPATIBLE_TYPES = new Set([
   'VllmConfig',
   'OllamaConfig',
 ]);
-
-const ENV_REF_PREFIX = '$';
 
 type Generation = Pick<ChatRequest, 'temperature' | 'maxTokens' | 'topP'>;
 
@@ -188,13 +187,13 @@ function applyDefaultCredential(
 }
 
 function resolveEnvVar(value: string, allowEnvRefs: boolean): string {
-  if (!value.startsWith(ENV_REF_PREFIX)) return value;
+  if (!isEnvRef(value)) return value;
 
   if (!allowEnvRefs) {
     throw new LLMError(refusedEnvRefMessage(value));
   }
 
-  const key = value.slice(ENV_REF_PREFIX.length);
+  const key = envRefKey(value);
   const resolved = process.env[key];
   if (!resolved) {
     throw new LLMError(

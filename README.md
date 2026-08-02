@@ -556,7 +556,11 @@ Every config needs a `name` and a `model_id`. Supported types:
 | `OllamaConfig` | required | Ollama local endpoint |
 
 An `api_key` value beginning with `$` is resolved from the environment, so `api_key: $MY_KEY`
-reads `MY_KEY` and fails with a clear error when it is unset.
+reads `MY_KEY` and fails with a clear error when it is unset. On a terminal, `heddle run`
+asks for the variables a spec names and the shell does not have before the run starts,
+rather than failing at the first model call; the answer is hidden as you type and lives in
+that process only. Scripts and CI are never asked, and `--no-ask-env` declines the question
+on a terminal too.
 
 > **Note:** an API key must be resolvable for every provider, including local ones. A config
 > with no `api_key` fails at startup unless `OPENAI_API_KEY` is set, even for Ollama and vLLM,
