@@ -67,6 +67,23 @@ export class WorkspaceError extends Error {
   }
 }
 
+/**
+ * Something is wrong with a `.heddle` archive, on either side of it.
+ *
+ * One class for packing and unpacking, because the two are one contract: what
+ * `heddle bundle` refuses to write is what `heddle run` would have refused to
+ * read. Distinct from `WorkspaceError` because a bundle is a file in transit,
+ * not a workspace being assembled — and the unpack side treats its input as
+ * hostile, which no workspace message should imply about the operator's own
+ * mounts.
+ */
+export class BundleError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = 'BundleError';
+  }
+}
+
 export class SessionError extends Error {
   constructor(message: string, options?: ErrorOptions) {
     super(message, options);

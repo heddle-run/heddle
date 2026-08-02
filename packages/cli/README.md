@@ -59,8 +59,9 @@ The final state is printed to stdout as JSON; progress and errors go to stderr.
 
 | | |
 |---|---|
-| `run <flow>` | Run a flow. `--tools-dir`, `--input`, `--session`, `-i`, `--plugin`, `--protocol`, `--safe` |
-| `validate <spec>` | Parse and check a flow before running it |
+| `run <flow>` | Run a flow, or a `.heddle` bundle. `--tools-dir`, `--input`, `--session`, `-i`, `--plugin`, `--protocol`, `--safe` |
+| `bundle <flow>` | Pack a flow and everything it runs with into one shareable `.heddle` archive |
+| `validate <spec>` | Parse and check a flow — or a `.heddle` bundle — before running it |
 | `init <name>` | Scaffold a project |
 | `sessions` | Inspect kept conversations: `ls`, `show <id>`, `rm <id>` |
 
@@ -77,6 +78,16 @@ The final state is printed to stdout as JSON; progress and errors go to stderr.
 - **`--plugin <module>`** loads custom component types: transforms, nodes,
   providers, encoders and middleware. Plugins are named on the command line and
   never inside a flow, so sharing a spec cannot cause code to run.
+
+To hand a working agent to someone as one file:
+
+```bash
+heddle bundle flow.json --tools-dir tools -o agent.heddle
+heddle run agent.heddle
+```
+
+The bundle carries the spec, the tools, any manifest plugins and mounted files —
+never credentials, which resolve as `$ENV_VAR` on the machine that runs.
 
 ## The rest
 

@@ -8,6 +8,7 @@ import {
   parseMount,
   DEFAULT_MOUNT_MAX_BYTES,
   DEFAULT_MOUNT_MAX_ENTRIES,
+  type Mount,
   type WorkspaceFactory,
 } from './workspace/index.js';
 import type { PluginRegistry } from './plugin/registry.js';
@@ -107,12 +108,16 @@ export function workspacesFromOptions(
   options: WorkspaceOptions,
   plugins: PluginRegistry | undefined,
   onWarn: (message: string) => void,
+  extraMounts: Mount[] = [],
 ): WorkspaceFactory {
   return createWorkspaceFactory({
     // The operator's first, so a collision reads as "your --mount and this
-    // plugin want the same path" rather than the other way round.
+    // plugin want the same path" rather than the other way round — and a
+    // bundle's before the plugins', because its origin names the file the
+    // operator was handed rather than code nobody typed.
     mounts: [
       ...options.mount.map(parseMount),
+      ...extraMounts,
       ...(plugins?.workspaceMounts() ?? []),
     ],
     root: options.workspace,

@@ -25,7 +25,7 @@ heddle run <flow> [options]
 
 | Argument | Description |
 |----------|-------------|
-| `flow` | Path to the flow file (JSON or YAML, detected by extension) |
+| `flow` | Path to the flow file (JSON or YAML, detected by extension), or a `.heddle` bundle made by [`heddle bundle`](#heddle-bundle) |
 
 ### Options
 
@@ -225,6 +225,65 @@ Your message is bound to the first output declared on the flow's start node, fal
 An in-flight run cannot be interrupted. `Ctrl+C` and `/exit` close the session, but a flow already executing keeps running until it finishes or hits the five-minute timeout.
 </Callout>
 
+## heddle bundle
+
+Pack a flow and everything it runs with into one shareable `.heddle` archive. This is the
+flag reference; [Bundles](/docs/bundles) covers the format, what deliberately does not
+travel, and how to treat a bundle you received.
+
+```bash
+heddle bundle <flow> [options]
+```
+
+```bash
+heddle bundle spec.yaml --tools-dir tools --plugin plugin.json \
+  --mount skills --input '{"query":"hello"}' -o agent.heddle
+```
+
+Whoever receives the file needs nothing else:
+
+```bash
+heddle run agent.heddle
+```
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `--tools-dir <dir>` | Directory of tool executables to ship. Read back exactly as `heddle run --tools-dir` would: flat, executables only, name = filename minus extension |
+| `--plugin <manifest>` | Plugin to ship, as a `.json` manifest (repeatable). The plugin's **whole directory** travels — its confinement rule (everything it references resolves inside its directory) is what makes it shippable |
+| `--discover-tools` | Let a plugin that declares `discoverTools` be started, so the bundle can be checked against its tools |
+| `--plugin-config <Type>=<json>` | Component settings recorded in the bundle (repeatable). A `@file` value is read now, so only its contents travel |
+| `--mount <src[:dest][:ro\|:rw]>` | File or directory to ship, landing in every workspace where a `--mount` would put it (repeatable) |
+| `--input <json>` | Default input recorded in the bundle; `heddle run --input` overrides it |
+| `-o`, `--output <file>` | Where to write the bundle. Default: `<flow name>.heddle`, named for the flow rather than the file, since flow files are usually all called `flow.json` |
+
+### What a bundle is
+
+A `.heddle` is a gzipped tar with a `heddle.json` manifest at its root — `tar -tzf
+agent.heddle` shows exactly what you were handed, no heddle required. The bundle is
+checked before it is written: the spec must parse, the graph must hold, and every tool
+the flow names must be carried by `--tools-dir` or a `--plugin`, so a bundle that packs
+is a bundle that runs.
+
+At run time the bundle proposes and the command line disposes: `--input` overrides the
+recorded default, a `--plugin-config` for the same component type wins, and extra
+`--mount` or `--plugin` flags compose with the bundle's. `heddle validate agent.heddle`
+inspects one without running it.
+
+What a bundle deliberately does **not** carry:
+
+- **Credentials.** A spec references a key as `$ENV_VAR`; it resolves on the machine
+  that runs, never the one that packed.
+- **Sandbox policy and session state.** `--safe` and `--session` are the operator's
+  decisions about their own machine — a file that arrived in the mail does not make them.
+- **Discovery grants.** A bundled plugin declaring `discoverTools` still needs
+  `--discover-tools` from whoever runs it.
+
+An in-process plugin (an importable module rather than a `.json` manifest) is refused:
+what it imports lives on the author's machine, so a bundle cannot carry its closure.
+Give the plugin a manifest and bundle that.
+
 ## heddle sessions
 
 Inspect the conversations heddle has kept.
@@ -250,7 +309,7 @@ heddle validate <spec> [options]
 
 | Argument | Description |
 |----------|-------------|
-| `spec` | Path to the spec file (JSON or YAML) |
+| `spec` | Path to the spec file (JSON or YAML), or a `.heddle` bundle — validated with the tools and plugins it carries |
 
 ### Options
 

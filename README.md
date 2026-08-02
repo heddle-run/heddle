@@ -135,8 +135,11 @@ ownership, `--safe` inside a container, and running the server image.
 heddle [--verbose] <command>
 
 Commands:
-  run <flow>               Run an Agent Spec flow (JSON or YAML)
-  validate <flow>          Validate a flow definition without running it
+  run <flow>               Run an Agent Spec flow (JSON or YAML), or a
+                           .heddle bundle
+  validate <flow>          Validate a flow or bundle without running it
+  bundle <flow>            Pack a flow and everything it runs with into one
+                           shareable .heddle archive
   init <project-name>      Scaffold a new heddle project
   sessions                 Inspect kept conversations: ls, show <id>, rm <id>
 ```
@@ -204,6 +207,38 @@ to `query` when none is declared.
 > graph it could not compile at all, reported as `Graph validation skipped` with the reason
 > and exit 0 — the skip is there so a check that could not run is not mistaken for a fault.
 > Read the output as well as the status.
+
+### Bundles
+
+`heddle bundle` packs a flow and everything it runs with — tools, plugins, mounted
+files, component settings, a default input — into one `.heddle` archive that runs
+anywhere heddle is installed:
+
+```bash
+heddle bundle spec.yaml --tools-dir tools --plugin plugin.json \
+  --mount skills --input '{"query":"hello"}' -o agent.heddle
+```
+
+Whoever receives it needs nothing else:
+
+```bash
+heddle run agent.heddle
+```
+
+The bundle is checked before it is written — the spec must parse, the graph must
+hold, and every tool the flow names must be carried — so a bundle that packs is a
+bundle that runs. Flags still win at run time: `--input` overrides the recorded
+default, and extra `--mount` or `--plugin` flags compose with what the bundle
+carries. `heddle validate agent.heddle` inspects one without running it.
+
+A `.heddle` is a plain gzipped tar with a `heddle.json` manifest at its root, so
+`tar -tzf agent.heddle` shows exactly what you were handed. No new dependency was
+acquired to make that so. What a bundle deliberately does **not** carry: API keys
+(a spec references them as `$ENV_VAR`, resolved on the machine that runs),
+sandbox policy, and session state — those belong to whoever runs it, not to
+whoever built it. An in-process plugin (an importable module rather than a
+`.json` manifest) cannot be bundled: its imports live on the author's machine,
+so it is refused with a pointer at the manifest format.
 
 ## How It Works
 
