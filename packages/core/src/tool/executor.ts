@@ -37,6 +37,18 @@ export interface SubprocessExecutorOptions {
   tools?: WorkspaceTool[];
 }
 
+/**
+ * Runs a tool the way heddle defines one: a subprocess handed the input as
+ * JSON on stdin, answering with JSON on stdout, working inside a workspace.
+ *
+ * The default executor everywhere — the CLI and the server both build one —
+ * and the place a run's confinement choices land: give it a `sandbox` and
+ * every tool runs wrapped, give it none and tools inherit heddle's own
+ * environment. A non-zero exit or non-JSON stdout is a `ToolError`, stderr is
+ * carried alongside the output rather than treated as failure, and every call
+ * has a timeout (30s unless configured). `beginScope` is how an agent gets one
+ * workspace across its whole tool loop instead of a throwaway per call.
+ */
 export class SubprocessExecutor implements Executor {
   private readonly timeout: number;
   private readonly sandbox?: Sandbox;

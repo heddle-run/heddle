@@ -14,7 +14,7 @@ import {
   type WorkspaceOptions,
 } from '@heddle/core';
 import { storeFromPlugins } from './plugins.js';
-import { startServer, type StartedServer } from './server.js';
+import { startServer, VERSION, type StartedServer } from './server.js';
 import {
   DEFAULT_HOST,
   DEFAULT_PORT,
@@ -101,6 +101,7 @@ Options:
   --allow-write <path>   Grant sandboxed tools write access to a path (repeatable)
   --allow-env <name>     Forward an environment variable into the sandbox (repeatable)
   --deny-net             Block network access for sandboxed tools
+  --version              Print the server version and exit
   -h, --help             Show this message
 
 Environment:
@@ -166,12 +167,18 @@ async function main(): Promise<void> {
       'allow-write': { type: 'string', multiple: true },
       'allow-env': { type: 'string', multiple: true },
       'deny-net': { type: 'boolean' },
+      version: { type: 'boolean' },
       help: { type: 'boolean', short: 'h' },
     },
   });
 
   if (values.help) {
     process.stdout.write(USAGE);
+    return;
+  }
+
+  if (values.version) {
+    process.stdout.write(`${VERSION}\n`);
     return;
   }
 

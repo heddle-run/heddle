@@ -1,5 +1,5 @@
 import { mkdirSync, realpathSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join, relative, resolve } from 'node:path';
 import type {
   Sandbox,
   SandboxCommand,
@@ -160,13 +160,18 @@ function sbplString(value: string): string {
 }
 
 function realPath(path: string): string {
-  let current = resolve(path);
+  const resolved = resolve(path);
+  let current = resolved;
   for (;;) {
     try {
-      return realpathSync(current);
+      const real = realpathSync(current);
+      // The part that does not exist is put back on the resolved ancestor: a
+      // rule must never widen to the nearest directory that happens to exist —
+      // a mistyped --allow-write would otherwise grant its parent, or "/".
+      return current === resolved ? real : join(real, relative(current, resolved));
     } catch {
       const parent = resolve(current, '..');
-      if (parent === current) return resolve(path);
+      if (parent === current) return resolved;
       current = parent;
     }
   }

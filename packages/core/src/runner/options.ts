@@ -83,6 +83,11 @@ export interface RunnerOptions {
 
 const FIVE_MINUTES_IN_MS = 300_000;
 
+/**
+ * What a `Runner` fills in for anything the caller left unset. Exported so a
+ * surface that reports its defaults — a `--help` text, a config resolver — can
+ * name the same numbers the runner will actually use.
+ */
 export const DEFAULT_RUNNER_OPTIONS: Readonly<RunnerOptions> = {
   maxIterations: 50,
   timeout: FIVE_MINUTES_IN_MS,

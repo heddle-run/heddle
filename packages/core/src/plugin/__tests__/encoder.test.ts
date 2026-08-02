@@ -418,45 +418,33 @@ describe('a manifest declaring an encoder', () => {
     );
   });
 
-  it('refuses a protocol on a kind that is not an encoder', () => {
+  // Each of these fields belongs to exactly one kind; on any other it would be
+  // a silent no-op, which is why it is refused rather than ignored. `stream`
+  // once checked its value and never its kind, so `stream: true` on a node
+  // loaded clean and was read by nothing.
+  it.each([
+    ['protocol', 'node', { componentType: 'X', kind: 'node', protocol: 'ag-ui' }],
+    ['stream', 'node', { componentType: 'X', kind: 'node', stream: true }],
+    [
+      'phase',
+      'encoder',
+      {
+        componentType: 'X',
+        kind: 'encoder',
+        protocol: 'x',
+        contentType: 'text/plain',
+        phase: 'post',
+      },
+    ],
+    [
+      'contentType',
+      'transform',
+      { componentType: 'X', kind: 'transform', contentType: 'text/plain' },
+    ],
+  ])('refuses "%s" on a kind that does not own it', (field, kind, component) => {
     expect(() =>
-      validateManifest({
-        name: 'p',
-        version: '1.0.0',
-        components: [{ componentType: 'X', kind: 'node', protocol: 'ag-ui' }],
-      }),
-    ).toThrow(/declares "protocol" but its kind is "node"/);
-  });
-
-  it('refuses "stream" on a kind that is not a provider', () => {
-    // `stream` checked its value and never its kind, so `stream: true` on a node
-    // loaded clean and was read by nothing — the same silent no-op `seams` and
-    // `protocol` are refused for, reached by the one route nobody covered.
-    expect(() =>
-      validateManifest({
-        name: 'p',
-        version: '1.0.0',
-        components: [{ componentType: 'X', kind: 'node', stream: true }],
-      }),
-    ).toThrow(/declares "stream" but its kind is "node"/);
-  });
-
-  it('refuses "phase" on a kind that is not a transform', () => {
-    expect(() =>
-      validateManifest({
-        name: 'p',
-        version: '1.0.0',
-        components: [
-          {
-            componentType: 'X',
-            kind: 'encoder',
-            protocol: 'x',
-            contentType: 'text/plain',
-            phase: 'post',
-          },
-        ],
-      }),
-    ).toThrow(/declares "phase" but its kind is "encoder"/);
+      validateManifest({ name: 'p', version: '1.0.0', components: [component] }),
+    ).toThrow(new RegExp(`declares "${field}" but its kind is "${kind}"`));
   });
 
   it('accepts its own output as input, which the CLI path depends on', () => {
@@ -495,15 +483,6 @@ describe('a manifest declaring an encoder', () => {
     ).not.toThrow();
   });
 
-  it('refuses a contentType on a kind that is not an encoder', () => {
-    expect(() =>
-      validateManifest({
-        name: 'p',
-        version: '1.0.0',
-        components: [{ componentType: 'X', kind: 'transform', contentType: 'text/plain' }],
-      }),
-    ).toThrow(/declares "contentType" but its kind is "transform"/);
-  });
 });
 
 describe('reading the frames an encoder returned', () => {

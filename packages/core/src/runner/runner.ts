@@ -1,7 +1,11 @@
 import type { CompiledGraph, CompiledNode } from '../graph/types.js';
 import { State } from '../state/state.js';
 import type { Event } from './events.js';
-import type { RunnerOptions, RunPosition } from './options.js';
+import {
+  DEFAULT_RUNNER_OPTIONS,
+  type RunnerOptions,
+  type RunPosition,
+} from './options.js';
 import { RunSuspended, isSuspended, readResume } from '../session/suspend.js';
 import { sleep } from '../internal/util.js';
 import { RunError } from '../errors.js';
@@ -29,11 +33,27 @@ type Settled =
   | { ok: true; output: State; by?: string; cause?: Error }
   | { ok: false; error: Error };
 
+/**
+ * Executes a compiled graph: one node at a time, from the start node to an
+ * `EndNode`, carrying a {@link State} that each node's output is merged into.
+ *
+ * The runner owns the walk and nothing else — what a node *does* belongs to
+ * its executor, and where a run's transcript lives belongs to whoever supplied
+ * `checkpoints`. Options left unset take {@link DEFAULT_RUNNER_OPTIONS}, and
+ * they are copied at construction: mutating the object you passed after
+ * `new Runner(...)` changes nothing, so configure a run before building its
+ * runner. A `Runner` holds no per-run state of its own and can run the same
+ * graph repeatedly.
+ */
 export class Runner {
+  private readonly opts: RunnerOptions;
+
   constructor(
     private readonly graph: CompiledGraph,
-    private readonly opts: RunnerOptions,
-  ) {}
+    opts: Partial<RunnerOptions> = {},
+  ) {
+    this.opts = { ...DEFAULT_RUNNER_OPTIONS, ...opts };
+  }
 
   /**
    * Walk the graph, from the start or from where a previous run stopped.

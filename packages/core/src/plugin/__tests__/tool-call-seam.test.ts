@@ -13,15 +13,9 @@
  * Most of what follows is that invariant approached from different sides.
  */
 import { describe, it, expect } from 'vitest';
-import { AgentExecutor } from '../../node/agent.js';
-import { MiddlewareChain } from '../middleware.js';
-import { PluginRegistry } from '../registry.js';
-import { State } from '../../state/state.js';
-import type { AgentNode } from '../../spec/types.js';
-import type { Event } from '../../runner/events.js';
 import type { Message, Provider } from '../../llm/types.js';
-import type { Dependencies } from '../../node/types.js';
 import type { BeforeVerdict, PluginMiddlewareDef } from '../../index.js';
+import { agentWith, chainOf } from './helpers/seams.js';
 
 /** A provider that asks for one tool call, then answers with what it got back. */
 function askingProvider(toolName = 'shell'): {
@@ -62,51 +56,6 @@ function gate(verdict: BeforeVerdict): PluginMiddlewareDef {
     }),
   };
 }
-
-function agentWith(
-  chain: MiddlewareChain | undefined,
-  provider: Provider,
-  toolImpl: () => Record<string, unknown> = () => ({ ok: true }),
-): { execute: () => Promise<State>; events: Event[] } {
-  const events: Event[] = [];
-  const deps: Dependencies = {
-    eventHandler: (e) => events.push(e),
-    middleware: chain,
-    createProvider: () => provider,
-    toolRegistry: {
-      lookup: (name) =>
-        name === 'shell'
-          ? {
-              name: 'shell',
-              description: '',
-              origin: 'test',
-              impl: { kind: 'plugin', plugin: 'test', call: async () => ({ output: toolImpl(), stderr: '' }) },
-            }
-          : undefined,
-      all: () => [],
-    },
-  };
-
-  const node = {
-    name: 'assistant',
-    componentType: 'AgentNode',
-    agent: {
-      name: 'assistant',
-      systemPrompt: 'do the thing',
-      llmConfig: { componentType: 'OpenAiConfig', modelId: 'gpt-4o', name: 'llm' },
-      tools: [{ name: 'shell', description: 'run a command' }],
-      transforms: [],
-    },
-  } as unknown as AgentNode;
-
-  const executor = new AgentExecutor(node, deps);
-  return { execute: () => executor.execute(undefined, new State({})), events };
-}
-
-const chainOf = (def: PluginMiddlewareDef): MiddlewareChain =>
-  MiddlewareChain.build(PluginRegistry.fromPlugins([
-    { name: 'p', version: '1.0.0', middleware: [def] },
-  ]), {});
 
 /** The tool messages an agent produced, in order. */
 const toolReplies = (seen: Message[]): Message[] =>
@@ -265,37 +214,28 @@ describe('a chain of gates', () => {
     // lets a redactor rewrite the arguments and an approval gate then see what
     // would actually run rather than what the model first asked for.
     const seenBySecond: Record<string, unknown>[] = [];
-    const chain = MiddlewareChain.build(
-      PluginRegistry.fromPlugins([
-        {
-          name: 'p',
-          version: '1.0.0',
-          middleware: [
-            // Declared first, so consulted *last* — the chain walks in reverse
-            // load order, as the operator's last --plugin wins first.
-            {
-              componentType: 'Gate',
-              seams: { toolCall: ['before'] },
-              createMiddleware: () => ({
-                before: ({ input }) => {
-                  seenBySecond.push(input);
-                  return { action: 'proceed' };
-                },
-                after: () => ({ action: 'pass' }),
-              }),
-            },
-            {
-              componentType: 'Redactor',
-              seams: { toolCall: ['before'] },
-              createMiddleware: () => ({
-                before: () => ({ action: 'modify', input: { cmd: 'ls' } }),
-                after: () => ({ action: 'pass' }),
-              }),
-            },
-          ],
-        },
-      ]),
-      {},
+    const chain = chainOf(
+      // Declared first, so consulted *last* — the chain walks in reverse
+      // load order, as the operator's last --plugin wins first.
+      {
+        componentType: 'Gate',
+        seams: { toolCall: ['before'] },
+        createMiddleware: () => ({
+          before: ({ input }) => {
+            seenBySecond.push(input);
+            return { action: 'proceed' };
+          },
+          after: () => ({ action: 'pass' }),
+        }),
+      },
+      {
+        componentType: 'Redactor',
+        seams: { toolCall: ['before'] },
+        createMiddleware: () => ({
+          before: () => ({ action: 'modify', input: { cmd: 'ls' } }),
+          after: () => ({ action: 'pass' }),
+        }),
+      },
     );
 
     const agent = agentWith(chain, askingProvider().provider);
@@ -306,35 +246,26 @@ describe('a chain of gates', () => {
 
   it('stops at the first refusal', async () => {
     let asked = 0;
-    const chain = MiddlewareChain.build(
-      PluginRegistry.fromPlugins([
-        {
-          name: 'p',
-          version: '1.0.0',
-          middleware: [
-            {
-              componentType: 'Never',
-              seams: { toolCall: ['before'] },
-              createMiddleware: () => ({
-                before: () => {
-                  asked++;
-                  return { action: 'proceed' };
-                },
-                after: () => ({ action: 'pass' }),
-              }),
-            },
-            {
-              componentType: 'Gate',
-              seams: { toolCall: ['before'] },
-              createMiddleware: () => ({
-                before: () => ({ action: 'reject', reason: 'no' }),
-                after: () => ({ action: 'pass' }),
-              }),
-            },
-          ],
-        },
-      ]),
-      {},
+    const chain = chainOf(
+      {
+        componentType: 'Never',
+        seams: { toolCall: ['before'] },
+        createMiddleware: () => ({
+          before: () => {
+            asked++;
+            return { action: 'proceed' };
+          },
+          after: () => ({ action: 'pass' }),
+        }),
+      },
+      {
+        componentType: 'Gate',
+        seams: { toolCall: ['before'] },
+        createMiddleware: () => ({
+          before: () => ({ action: 'reject', reason: 'no' }),
+          after: () => ({ action: 'pass' }),
+        }),
+      },
     );
 
     const agent = agentWith(chain, askingProvider().provider);

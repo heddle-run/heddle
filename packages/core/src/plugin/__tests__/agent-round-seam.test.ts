@@ -17,20 +17,10 @@
  * can do, and a round that ended in an answer is not about to become one.
  */
 import { describe, it, expect } from 'vitest';
-import { AgentExecutor } from '../../node/agent.js';
-import { MiddlewareChain } from '../middleware.js';
-import { PluginRegistry } from '../registry.js';
 import { isSeam } from '../seams.js';
-import { State } from '../../state/state.js';
-import type { AgentNode } from '../../spec/types.js';
-import type { Event } from '../../runner/events.js';
 import type { Provider } from '../../llm/types.js';
-import type { Dependencies } from '../../node/types.js';
-import type {
-  AfterVerdict,
-  BeforeVerdict,
-  PluginMiddlewareDef,
-} from '../../index.js';
+import type { AfterVerdict, BeforeVerdict } from '../../index.js';
+import { agentWith, chainOf, policy } from './helpers/seams.js';
 
 /**
  * A provider that asks for one tool call a round, as many times as told, and
@@ -63,66 +53,6 @@ function loopingProvider(toolRounds: number): {
       },
     },
   };
-}
-
-function policy(
-  seams: PluginMiddlewareDef['seams'],
-  impl: Record<string, unknown>,
-): PluginMiddlewareDef {
-  return {
-    componentType: 'Policy',
-    seams,
-    createMiddleware: () => impl as never,
-  };
-}
-
-const chainOf = (def: PluginMiddlewareDef): MiddlewareChain =>
-  MiddlewareChain.build(
-    PluginRegistry.fromPlugins([{ name: 'p', version: '1.0.0', middleware: [def] }]),
-    {},
-  );
-
-function agentWith(
-  chain: MiddlewareChain | undefined,
-  provider: Provider,
-): { execute: () => Promise<State>; events: Event[] } {
-  const events: Event[] = [];
-  const deps: Dependencies = {
-    eventHandler: (e) => events.push(e),
-    middleware: chain,
-    createProvider: () => provider,
-    toolRegistry: {
-      lookup: (name) =>
-        name === 'shell'
-          ? {
-              name: 'shell',
-              description: '',
-              origin: 'test',
-              impl: {
-                kind: 'plugin',
-                plugin: 'test',
-                call: async () => ({ output: { ok: true }, stderr: '' }),
-              },
-            }
-          : undefined,
-      all: () => [],
-    },
-  };
-
-  const node = {
-    name: 'assistant',
-    componentType: 'AgentNode',
-    agent: {
-      name: 'assistant',
-      systemPrompt: 'do the thing',
-      llmConfig: { componentType: 'OpenAiConfig', modelId: 'gpt-4o', name: 'llm' },
-      tools: [{ name: 'shell', description: 'run a command' }],
-      transforms: [],
-    },
-  } as unknown as AgentNode;
-
-  const executor = new AgentExecutor(node, deps);
-  return { execute: () => executor.execute(undefined, new State({})), events };
 }
 
 describe('before a round', () => {

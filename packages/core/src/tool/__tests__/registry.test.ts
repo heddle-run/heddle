@@ -1,15 +1,18 @@
-import { describe, it, expect } from 'vitest';
-import { writeFileSync, mkdirSync } from 'node:fs';
+import { describe, it, expect, afterAll } from 'vitest';
+import { writeFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { FileRegistry } from '../registry.js';
 
+const made: string[] = [];
+
+afterAll(() => {
+  for (const dir of made) rmSync(dir, { recursive: true, force: true });
+});
+
 function makeTempDir(): string {
-  const dir = join(
-    tmpdir(),
-    `heddle-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-  );
-  mkdirSync(dir, { recursive: true });
+  const dir = mkdtempSync(join(tmpdir(), 'heddle-registry-test-'));
+  made.push(dir);
   return dir;
 }
 
