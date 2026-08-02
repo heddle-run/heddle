@@ -76,6 +76,6 @@ jobs:
           formula-name: heddle
           homebrew-tap: spichen/homebrew-tap
           tag-name: ${{ github.ref_name }}
-          download-url: https://github.com/spichen/specrun/archive/refs/tags/${{ github.ref_name }}.tar.gz
+          download-url: https://github.com/heddle-run/heddle/archive/refs/tags/${{ github.ref_name }}.tar.gz
         env:
           COMMITTER_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
