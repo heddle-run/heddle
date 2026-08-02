@@ -1,0 +1,17 @@
+{
+  "name": "zoom-notetaker",
+  "title": "Zoom notetaker",
+  "summary": "Joins a Zoom meeting in a headless browser, records it, and writes up the notes.",
+  "blurb": "Paste a Zoom link and get minutes back — with no meeting-bot service in the loop. One tool drives a local headless Chromium into the call through Zoom's web client, records the meeting's audio in the page, and transcribes it with a speech-to-text model you configure entirely by env vars: any OpenAI-compatible transcription endpoint (the OpenAI API by default, a local faster-whisper server if you point STT_URL at one) or a local command like whisper-cli via STT_COMMAND. A captions mode reads Zoom's own live captions instead, needing no STT at all. The same fixed-heading prompt as meeting-notes turns the transcript into a summary, decisions, action items and open questions — and the flow branches to a plain-spoken failure end when the browser could not get in, nothing made a sound, or the transcriber failed, rather than summarizing a meeting it never heard.",
+  "tags": ["meetings", "zoom", "browser", "stt", "notes"],
+  "model": "gpt-4o-mini",
+  "flow": "spec.yaml",
+  "toolsDir": "tools",
+  "requires": {
+    "env": ["OPENAI_API_KEY"],
+    "binaries": ["node", "chromium"]
+  },
+  "input": {
+    "meeting_url": "https://zoom.us/j/1234567890?pwd=replace-with-your-meeting"
+  }
+}
