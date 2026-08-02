@@ -1,21 +1,21 @@
 ---
 title: Using the library
-description: Embed the engine with @heddle/core — load, compile, validate and run a flow from your own program.
+description: Embed the engine with @heddle/core. Load, compile, validate and run a flow from your own program.
 ---
 
 Everything the CLI and the server do runs on one engine, `@heddle/core`, and you can call
 it directly. Three surfaces, one rule of thumb:
 
-- **The CLI** (`heddle run`) — running a flow on a machine, by hand or from a script.
+- **The CLI** (`heddle run`) runs a flow on a machine, by hand or from a script.
   Start here; it is the shape most work wants.
-- **The server** (`heddle-server`) — the same flows over HTTP, streamed. For serving
+- **The server** (`heddle-server`) serves the same flows over HTTP, streamed. For serving
   flows to clients, use it rather than wrapping the library in your own HTTP layer: the
   hard parts (streaming, draining, submitted code) are already done.
-- **The library** (`@heddle/core`) — embedding a flow in a program of your own: a
+- **The library** (`@heddle/core`) embeds a flow in a program of your own: a
   worker that picks jobs off a queue, a test harness, a CI check, a CLI that is not this
   one.
 
-Using the library is the one case where your project *does* depend on heddle — the
+Using the library is the one case where your project *does* depend on heddle, and the
 inversion the [introduction](/docs) describes is the document's, not the embedder's. The
 flow stays a plain Agent Spec document either way; what you are importing is the runtime,
 not abstractions the document needs.
@@ -31,8 +31,8 @@ npm install @heddle/core
 Four calls: `loadFlow` reads the document, `compile` turns it into an executable graph,
 `validate` refuses a graph that is not well-formed, and `Runner` walks it.
 
-Scaffold something to run — `npx @heddle/cli init my-agent` gives you a `flow.json` and a
-`tools/` directory — or point at a project you already have. Then, in `run.mjs`:
+Scaffold something to run (`npx @heddle/cli init my-agent` gives you a `flow.json` and a
+`tools/` directory), or point at a project you already have. Then, in `run.mjs`:
 
 ```js
 import {
@@ -81,18 +81,18 @@ Walking through it:
 
 - **`loadFlow(path)`** reads JSON or YAML (detected by extension) and resolves every
   `$component_ref`. A flow naming a plugin's component types needs the plugins at parse
-  time: `loadFlow(path, plugins)` — see [plugins](#plugins-middleware-and-tools-from-plugins)
+  time: `loadFlow(path, plugins)`; see [plugins](#plugins-middleware-and-tools-from-plugins)
   below.
 - **`compile(flow, deps)`** builds the graph, constructing an executor per node from the
-  `Dependencies` you pass. Providers are constructed on first use, so compiling — and
-  therefore validating — never reaches a credential.
+  `Dependencies` you pass. Providers are constructed on first use, so compiling, and
+  therefore validating, never reaches a credential.
 - **`validate(graph)`** throws on a graph that is not well-formed: unreachable nodes, a
   branch with no edge, a data edge reading an output nothing declares. This is the second
   of the two validation passes `heddle validate` runs; the schema pass happens inside
   `loadFlow`.
 - **`runner.run(signal, inputs, from?)`** walks the graph and resolves to the final
   [`State`](#state). `signal` is an optional `AbortSignal` for cancelling the run from
-  outside — the run's own timeout applies either way. `inputs` is what `--input` is on
+  outside; the run's own timeout applies either way. `inputs` is what `--input` is on
   the CLI: a plain object that becomes the run's starting state. `from` resumes a
   checkpointed run and is normally left out; see [Sessions](/docs/sessions).
 
@@ -108,16 +108,16 @@ optional; `compile(flow, {})` is legal and enough for a flow that calls no tools
 
 | Field | What it is |
 |---|---|
-| `toolRegistry` | Where tool names resolve. `FileRegistry.create(dir)` discovers executables in a directory the way `--tools-dir` does — the filename minus its extension is the tool's name. Compose several with `composeRegistries([...])` |
+| `toolRegistry` | Where tool names resolve. `FileRegistry.create(dir)` discovers executables in a directory the way `--tools-dir` does, so the filename minus its extension is the tool's name. Compose several with `composeRegistries([...])` |
 | `toolExecutor` | What runs a resolved tool. `new SubprocessExecutor()` is the stdin/stdout JSON protocol from [Tools](/docs/tools), with a 30-second default timeout; options add a sandbox, a workspace factory, and the tools to place in each workspace's `bin` |
 | `eventHandler` | Receives the events raised inside a node's execution. See [the event stream](#the-event-stream) |
 | `plugins` | A `PluginRegistry` from `loadPlugins`, providing custom component types |
-| `middleware` | A `MiddlewareChain`, for the seams inside a node (`toolCall`). Pass the same chain here and on `RunnerOptions` — they reach different call sites |
-| `stream` | `false` asks providers for one buffered response instead of a token stream — the library's `--no-stream` |
+| `middleware` | A `MiddlewareChain`, for the seams inside a node (`toolCall`). Pass the same chain here and on `RunnerOptions`, since they reach different call sites |
+| `stream` | `false` asks providers for one buffered response instead of a token stream; the library's `--no-stream` |
 | `allowEnvRefs` | Whether `$VAR` in a spec's `llm_config` is resolved from the process environment. Defaults to true; a host running *submitted* specs sets it false |
-| `defaultLlmKey`, `defaultLlmUrl` | Fallback credential and base URL for a spec whose `llm_config` carries neither — what the server's default-credential flags feed |
+| `defaultLlmKey`, `defaultLlmUrl` | Fallback credential and base URL for a spec whose `llm_config` carries neither, which is what the server's default-credential flags feed |
 | `createProvider` | Replace how providers are constructed entirely. For tests and hosts; a custom model backend is better written as a [provider plugin](/docs/plugins/authoring#a-provider) |
-| `egress` | An `EgressPolicy` restricting where specs you did not write may send model requests. Set it if you accept submitted specs; leave it out for your own — it would refuse a local Ollama for nothing |
+| `egress` | An `EgressPolicy` restricting where specs you did not write may send model requests. Set it if you accept submitted specs; leave it out for your own, where it would refuse a local Ollama for nothing |
 
 ## RunnerOptions
 
@@ -130,26 +130,26 @@ override:
 | `timeout` | `300000` | Whole-run budget in milliseconds (five minutes) |
 | `verbose` | `false` | Log every node as it starts and completes |
 | `maxNodeAttempts` | `3` | How many times one arrival at a node may be attempted when middleware retries |
-| `eventHandler` | — | Receives the walk's events |
-| `middleware` | — | The `MiddlewareChain` consulted at the `node` and `nodeError` seams |
-| `checkpoints` | — | A `CheckpointSink` — somewhere to write the run's position, required for suspension and resuming. `checkpointSink(...)` builds one over a `SessionStore`; see [Sessions](/docs/sessions) |
-| `durable` | — | Write the position after every node, not only on suspension |
+| `eventHandler` | none | Receives the walk's events |
+| `middleware` | none | The `MiddlewareChain` consulted at the `node` and `nodeError` seams |
+| `checkpoints` | none | A `CheckpointSink`, somewhere to write the run's position, required for suspension and resuming. `checkpointSink(...)` builds one over a `SessionStore`; see [Sessions](/docs/sessions) |
+| `durable` | none | Write the position after every node, not only on suspension |
 
 ## State
 
 `Runner.run` resolves to a `State`, the run's final key–value state. `state.toData()`
-returns it as a plain object — what the CLI prints. A run that went through a session has
+returns it as a plain object, which is what the CLI prints. A run that went through a session has
 heddle's own reserved keys in it (`_chat_history`, `_resume`); strip them with
 `withoutReserved(state.toData())` before storing or showing the result.
 
 Failures are thrown, not returned: a `RunError`, `LLMError`, `ToolError` or one of their
-siblings from `@heddle/core`. One of them is not a failure — `RunSuspended`, thrown when
+siblings from `@heddle/core`. One of them is not a failure: `RunSuspended`, thrown when
 middleware stops the run for a human. Check it with `isSuspended(err)` and treat it as
 the run waiting, the way the [CLI and server](/docs/sessions#stopping-for-a-human) do.
 
 ## The event stream
 
-Both event handlers receive `Event` objects: a `type` plus the fields that type carries —
+Both event handlers receive `Event` objects: a `type` plus the fields that type carries,
 `nodeName`, `state`, `delta`, `toolName`, `error`, and so on. The built-in types:
 
 | Type | When |
@@ -165,12 +165,12 @@ Both event handlers receive `Event` objects: a `type` plus the fields that type 
 | `warning` | Something recoverable worth knowing |
 | `flow_complete` | The walk finished, with the final `state` |
 
-Plugins add their own, published as `plugin:<componentType>:<name>` — `isPluginEvent(type)`
+Plugins add their own, published as `plugin:<componentType>:<name>`, and `isPluginEvent(type)`
 tells the two apart. Handlers are synchronous and should return quickly; a slow handler
 stalls the run.
 
 <Callout>
-Concatenating `token_delta`s does not reconstruct the output — an agent that calls tools
+Concatenating `token_delta`s does not reconstruct the output. An agent that calls tools
 streams every round it makes, including rounds whose text is discarded. The output is in
 `flow_complete`. Same rule as the [server's stream](/docs/server#the-event-stream), which
 is these events over SSE.
@@ -207,11 +207,11 @@ const graph = compile(flow, deps);
 ```
 
 Build the chain *after* the rest of `deps` exists (it is built from them), assign it to
-both `deps.middleware` and `RunnerOptions.middleware`, and only then `compile` — the
+both `deps.middleware` and `RunnerOptions.middleware`, and only then `compile`, since the
 executors read it when they are made. Call `plugins.dispose()` when you are done, so
 out-of-process plugins are stopped.
 
-Writing a plugin — as opposed to loading one — is the same either way; `HeddlePlugin` and
+Writing a plugin, as opposed to loading one, is the same either way; `HeddlePlugin` and
 `definePlugin` are covered in [Authoring a plugin](/docs/plugins/authoring).
 
 ## Sessions from the library
@@ -220,5 +220,5 @@ Everything [Sessions](/docs/sessions) describes is exported: `FileSessionStore`,
 `SessionStore` interface, `openTurn`/`closeTurn` around a run, `resumeTurn` and
 `checkpointSink` for durable runs and suspension. They are how the CLI and server do it,
 and the pattern to follow is theirs: open a turn, run with a `checkpointSink` in
-`RunnerOptions.checkpoints`, close the turn with the outcome — and on `RunSuspended`,
+`RunnerOptions.checkpoints`, close the turn with the outcome, and on `RunSuspended`,
 close nothing; the checkpoint holds the question.

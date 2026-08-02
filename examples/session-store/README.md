@@ -4,7 +4,7 @@ Where heddle keeps conversations, replaced. The built-in store writes a director
 `~/.heddle/sessions`; this one writes rows, which is the shape a store backed by anything shared has.
 
 > **Needs Node 22.5 or newer.** It imports `node:sqlite`, which arrived then. heddle itself supports
-> Node 18, so this example is deliberately not a floor for the runtime — a store for an older Node
+> Node 18, so this example is deliberately not a floor for the runtime. A store for an older Node
 > uses a driver from npm, and nothing else about it changes. The store *contract* is tested against
 > every Node this repo supports, using a fixture that needs nothing at all
 > (`packages/core/src/plugin/__tests__/fixtures/memory-store.mjs`).
@@ -17,14 +17,14 @@ heddle-server \
 ```
 
 `--plugin` installs it, `--session-store` selects it by component type, and `--plugin-config` is how
-it is configured — the same three flags any installed component uses. Leave `path` out and it runs in
+it is configured, using the same three flags any installed component uses. Leave `path` out and it runs in
 memory, which is useful for a demo and useless for anything else.
 
 ## Why you would
 
 The file store is per-machine. Two replicas behind a load balancer hold two different sets of
 conversations under the same ids, so a caller's second message reaches the pod that has never heard
-of them. **That is the reason this extension point exists** — not performance, and not durability.
+of them. **That is the reason this extension point exists**, not performance and not durability.
 One process on one host is served perfectly well by files.
 
 ## What a store has to get right
@@ -40,7 +40,7 @@ boundary, so it answers `{ conflict: { version } }` and heddle rebuilds a `Sessi
 its side. Throwing instead reaches the caller as a plugin that broke, rather than as the one outcome
 it knows how to retry.
 
-**`null` is an answer.** `read` on an unknown id returns `null` — "no such session" — which is what
+**`null` is an answer.** `read` on an unknown id returns `null`, meaning "no such session", which is what
 every first turn gets. Returning nothing at all is a store that failed to answer, and heddle treats
 the two differently on purpose: the second one is a bug that would otherwise look like a conversation
 quietly starting over.
@@ -57,7 +57,7 @@ quietly starting over.
 | `sessionList` | `list` | `{ sessions: [...] }` |
 | `sessionDelete` | `delete` | `{}` |
 
-Every one carries `config` — the `--plugin-config` for this component — so a store can open its
+Every one carries `config`, the `--plugin-config` for this component, so a store can open its
 connection lazily on whichever call arrives first. One that is configured and never used should do
 nothing at all.
 
@@ -66,4 +66,4 @@ nothing at all.
 A store is on the hot path of every turn: at least a `readCheckpoint`, a `read` and an `append` per
 message, each one a round trip into this process and each one bounded by `--plugin-timeout` while
 holding a concurrency slot. The process is started once and serves every run, which is what makes a
-connection pool here worth having — and what makes per-run state in a store a bug.
+connection pool here worth having, and what makes per-run state in a store a bug.

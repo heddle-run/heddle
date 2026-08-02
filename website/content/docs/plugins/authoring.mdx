@@ -9,8 +9,8 @@ way, so this page pairs them.
 
 ## In process
 
-Default-export a plain object. No import — a plugin depends on heddle's shapes, not its
-code, which is how every shipped example is written.
+Default-export a plain object. Nothing to import: a plugin depends on heddle's shapes,
+not its code, which is how every shipped example is written.
 
 ```js
 export default {
@@ -25,7 +25,7 @@ export default {
 };
 ```
 
-For TypeScript, or an editor that will use it, `@heddle/core` exports `definePlugin` — an
+For TypeScript, or an editor that will use it, `@heddle/core` exports `definePlugin`, an
 identity function that only adds types, so `export default definePlugin({...})` is the
 same object with its shape checked. Take it or leave it; nothing at run time knows the
 difference.
@@ -39,7 +39,7 @@ Write a program that speaks the protocol. `serve` is provided for you whenever h
 chose the interpreter: a plugin submitted to a server gets the runtime prepended to its
 source, and a `.mjs` or `.js` entry point on disk gets the same runtime on the command
 line, as a `data:` URL that needs no file and so no sandbox grant. A program with the
-execute bit is run directly and speaks the protocol itself — that is the path for a
+execute bit is run directly and speaks the protocol itself, which is the path for a
 plugin in another language.
 
 ```js
@@ -96,7 +96,7 @@ read it lets its process survive to serve the next call.
 
 `getWorkspace()` deserves a note. A plugin can always make its own temp directory; what
 it cannot do is find the one its tools can see. A node's tool calls run in that node's
-[workspace](/docs/tools#the-workspace) — every run, sandbox or not — so a path from
+[workspace](/docs/tools#the-workspace), on every run, sandbox or not, so a path from
 `mkdtemp` is somewhere neither the tools nor anything else will look. This returns the
 directory both sides share.
 
@@ -143,7 +143,7 @@ process, declare them in the manifest as `branches`.
 
 ## A transform
 
-A transform hangs off `Agent.transforms` and sees the agent's messages — `pre` on their
+A transform hangs off `Agent.transforms` and sees the agent's messages: `pre` on their
 way to the model, `post` on the answer's way back. It returns `pass`, `modify` or
 `reject`.
 
@@ -162,7 +162,7 @@ serve({
 
 `reject` is what makes a transform usable as a guardrail. In the `pre` phase heddle skips
 the model call entirely, so a blocked prompt costs nothing, and the agent returns
-`transform_status: "rejected"` — which a builtin `BranchingNode` can route on.
+`transform_status: "rejected"`, which a builtin `BranchingNode` can route on.
 
 ## A provider
 
@@ -188,7 +188,7 @@ serve({
 ```
 
 `ctx.component` is the `llm_config` the spec wrote, which is where a key or a url the
-flow brought will be. **heddle does not resolve `$VAR` for you** — it will not read its
+flow brought will be. **heddle does not resolve `$VAR` for you.** It will not read its
 own environment on your behalf, least of all when `--safe` has confined you precisely so
 you cannot read it either. Take a credential from your own component's fields, or from
 the environment the operator granted your process.
@@ -209,7 +209,7 @@ chat: async (request, ctx) => {
 
 Three rules, and they are the protocol's rather than this helper's. Each partial is one
 chunk, and chunks accumulate. **What you return is the last chunk**, not a summary of the
-ones you sent — returning `{}` is fine, and returning the whole answer again appends it
+ones you sent. Returning `{}` is fine, and returning the whole answer again appends it
 twice. And your timeout is a silence budget that only restarts when you send something,
 so a provider that declares streaming and then buffers internally is killed exactly like
 one that hung.
@@ -217,7 +217,7 @@ one that hung.
 ## A tool
 
 A tool the plugin implements itself goes in `serve`'s second argument, not the component
-map — a tool name is a different namespace from a component type.
+map, because a tool name is a different namespace from a component type.
 
 ```js
 serve(handlers, {
@@ -227,8 +227,8 @@ serve(handlers, {
 });
 ```
 
-Declare it in the manifest under `tools`, naming either a `path` — an executable shipped
-beside the plugin — or the `componentType` that implements it.
+Declare it in the manifest under `tools`, naming either a `path` (an executable shipped
+beside the plugin) or the `componentType` that implements it.
 
 ## Lifecycle
 
@@ -239,8 +239,8 @@ serve(handlers, { shutdown: async () => pool.end() });
 ```
 
 It runs when heddle asks the plugin to stop, before the process exits. It has about a
-second — heddle kills what has not exited by then — so this is where a connection closes,
-not where a backlog drains.
+second, and heddle kills what has not exited by then, so this is where a connection
+closes rather than where a backlog drains.
 
 ## Reporting
 
@@ -248,8 +248,8 @@ not where a backlog drains.
 stderr, which out of process is capped and read only when the process *fails*: a plugin
 that works has no other way to be heard.
 
-The difference between them is who the payload is for. `log` is heddle's shape — a level
-and a string — so every client can render it without knowing the plugin exists.
+The difference between them is who the payload is for. `log` is heddle's shape, a level
+and a string, so every client can render it without knowing the plugin exists.
 `emitEvent`'s `data` is the plugin's own shape, so only a client written against that
 plugin can read it. That is why `log` cannot carry data: the moment it could, it would be
 `emitEvent` under a worse name.

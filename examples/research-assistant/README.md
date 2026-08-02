@@ -1,18 +1,18 @@
 # research-assistant: the first flow to run
 
 The smallest complete agent flow: `start → researcher → end`. The researcher is
-an `AgentNode` — an agent with a system prompt, an OpenAI model, and two tools
+an `AgentNode`: an agent with a system prompt, an OpenAI model, and two tools
 it can call in a loop until it has an answer.
 
 | File | What it is |
 |------|------------|
 | `flow.json` | The flow: three nodes, two control edges, two data edges |
-| `tools/web_search.py` | A stub search tool — returns canned results, calls no real API |
+| `tools/web_search.py` | A stub search tool; returns canned results, calls no real API |
 | `tools/calculator.sh` | Evaluates an arithmetic expression with Python |
 
 The tools are deliberately trivial. `web_search` fabricates its results, so the
-example demonstrates the *mechanics* — how a model asks for a tool, how the
-answer comes back, how the result reaches the end node — without needing a
+example demonstrates the *mechanics*, meaning how a model asks for a tool, how
+the answer comes back and how the result reaches the end node, without needing a
 search API key. The only credential it needs is the model's.
 
 ## Run it
@@ -38,7 +38,7 @@ node packages/cli/dist/heddle.js run examples/research-assistant/flow.json \
 
 ## What you will see
 
-Progress goes to stderr — one line per node, plus each tool call the model
+Progress goes to stderr, one line per node, plus each tool call the model
 makes. The final state is printed to stdout as JSON:
 
 ```json
@@ -58,17 +58,17 @@ document, and the shape repeats in every larger example:
 
 - **`$referenced_components`** holds each node's definition once; the `nodes`
   and edge lists point into it by id.
-- **The `StartNode`** declares one output, `query` — which is why
+- **The `StartNode`** declares one output, `query`, which is why
   `--input '{"query": ...}'` is the shape the run accepts.
 - **`control_flow_connections`** say what runs after what;
   **`data_flow_connections`** say which output lands in which input. The two
   are separate on purpose: `query` flows from start to researcher, `result`
   from researcher to end.
-- **The agent's tools** are declared inline as `ServerTool` components — name,
+- **The agent's tools** are declared inline as `ServerTool` components: name,
   inputs, outputs. At runtime each is matched by name to an executable in
   `--tools-dir`: `web_search` to `web_search.py`, `calculator` to
   `calculator.sh`. The extension is stripped; the name is the contract.
 
 Each tool is a standalone executable that reads a JSON object on stdin and
-writes one to stdout — that is the whole tool protocol, and
+writes one to stdout. That is the whole tool protocol, and
 `tools/web_search.py` shows it in ten lines.

@@ -1,6 +1,6 @@
 ---
 title: Middleware
-description: Retry, fallback and error policy — installed by whoever runs heddle, named in no document.
+description: Retry, fallback and error policy, installed by whoever runs heddle and named in no document.
 ---
 
 A middleware intercepts a call site rather than occupying a slot in a spec. It is the one
@@ -17,8 +17,8 @@ heddle run flow.json \
   --plugin-config RetryPolicy='{"maxAttempts":3}'
 ```
 
-Four worked policies — a retry, an approval gate, a per-node audit and a rate limit,
-one seam each — ship in
+Four worked policies, one seam each (a retry, an approval gate, a per-node audit and a
+rate limit), ship in
 [`examples/policies`](https://github.com/heddle-run/heddle/tree/main/examples/policies),
 with flows that run them without a credential.
 
@@ -53,13 +53,13 @@ is not re-entering a clean state.
 ## Gating a tool call
 
 `toolCall` is the seam an approval gate hangs off, and it is the first with a `before`
-half — the first place a middleware decides what happens rather than reacting to what did.
+half, the first place a middleware decides what happens rather than reacting to what did.
 
 <Callout type="warn">
 The seam sees the calls the **model** made. It does not see a tool another tool ran: every
 tool is on `$PATH` inside the [workspace](/docs/tools#the-workspace), so a shell tool can
 exec a peer, and that call reaches no seam and emits no event. A gate over a flow whose
-agent has a shell is advice rather than enforcement — `--no-mount-tools` makes it
+agent has a shell is advice rather than enforcement. `--no-mount-tools` makes it
 enforcement again, and the kernel-level controls (`--allow-write`, `--deny-net`, which
 tools you install) never stopped being enforcement. See
 [Sandboxing](/docs/sandboxing#what-a-tool-can-reach).
@@ -91,13 +91,13 @@ serve({
 <Callout type="warn">
 **A refused call is still answered.** A provider refuses a request whose assistant message
 asked for a tool call that no tool message answers, so a rejection is a *reply* saying the
-call was refused — never a skipped turn. That is what lets the model react to a refusal,
+call was refused, never a skipped turn. That is what lets the model react to a refusal,
 and it is why `reject` carries a reason rather than being a way to abandon a turn.
 </Callout>
 
 `modify` does not end the walk. A verdict that replaces, rejects or fails settles what
 happens; a modification only changes what the next middleware is deciding about, so the
-chain carries on with the new arguments. That is what lets a redactor and a gate compose —
+chain carries on with the new arguments. That is what lets a redactor and a gate compose:
 the redactor rewrites the arguments and the gate then sees what would actually run rather
 than what the model first asked for.
 
@@ -107,8 +107,7 @@ on every tool call of every round rather than only on a failure.
 
 ### After the call
 
-The same seam has an `after` half, consulted whether the tool returned or threw — which is
-what `always` means in the table above. A middleware that truncates a large result and one
+The same seam has an `after` half, consulted whether the tool returned or threw. A middleware that truncates a large result and one
 that turns a failure into a canned answer are the same hook seen from two sides.
 
 ```js
@@ -126,16 +125,12 @@ serve({
 });
 ```
 
-`pass` lets the outcome stand, `replace` substitutes a result the tool did not produce —
-reported as a `warning` naming the middleware — and `fail` ends the run. `retry` is not
+`pass` lets the outcome stand, `replace` substitutes a result the tool did not produce and
+is reported as a `warning` naming the middleware, and `fail` ends the run. `retry` is not
 admitted, for the reason above.
 
 A middleware may subscribe to either half or both, and each is asked only if it declared
 it.
-
-Note what `toolCall` does *not* admit: `retry`. By the time a tool call fails, the
-assistant message that requested it is already in the conversation, so re-issuing the
-call is not re-entering a clean state.
 
 ## Writing one
 
@@ -176,26 +171,25 @@ serve({
 });
 ```
 
-`ctx.component` is the operator's configuration — `{}` when they supplied none, never
+`ctx.component` is the operator's configuration: `{}` when they supplied none, never
 undefined, because a middleware is host-configured and this is the only channel its
 settings arrive on.
 
 `ctx.admits` carries the verdicts this seam will honour, sent with the handshake. A
 middleware that wants to work at more than one seam can read it and fall back rather than
-send a verdict it will be refused for — which, under the fatal policy, would cost the
-run.
+send a verdict it will be refused for, which under the fatal policy would cost the run.
 
 **A middleware is given the thing it is deciding about, and nothing wider.** At
 `nodeError` and `toolCall` that is metadata: `subject` names which node or tool, `outcome`
-says how it went. At `agentRound` it is narrower still — a round number, and the names of
+says how it went. At `agentRound` it is narrower still: a round number, and the names of
 the tools that round ran. At `modelCall` it is the request, conversation included, because
 a policy that may `modify` what is sent has to see what is being sent. At `node` it is
-that node's input state and its output — for the same reason, and it is the widest view
+that node's input state and its output, for the same reason, and it is the widest view
 any seam offers.
 
 That is worth being deliberate about on a server, where a middleware is named nowhere in
 the caller's document. An installed `node` policy sees every caller's data flowing through
-every flow. It is the operator's own code, trusted the way `--tools-dir` is trusted — but
+every flow. It is the operator's own code, trusted the way `--tools-dir` is trusted, but
 a policy that only needs to know *that* a node ran should subscribe to `after` and read
 `subject`, not log `outcome.value`.
 
@@ -211,8 +205,8 @@ names and the caller therefore chose.
 | `replace` | A supplied value becomes the node's output and the run continues |
 | `fail` | The run ends with a stated reason |
 
-The chain is consulted in the order the operator loaded the plugins — the sequence of
-`--plugin` flags — and the first non-`pass` verdict wins. That makes the chain's behaviour
+The chain is consulted in the order the operator loaded the plugins, the sequence of
+`--plugin` flags, and the first non-`pass` verdict wins. That makes the chain's behaviour
 something an operator can change without touching a plugin or a flow.
 
 A retry spends an iteration, so `--max-iterations` remains the real bound on how many
@@ -231,7 +225,7 @@ is labelled reports that the run cannot continue past it.
 
 ## Around a model call
 
-`modelCall` wraps every request heddle sends — an agent's rounds and an `LlmNode`'s single
+`modelCall` wraps every request heddle sends, an agent's rounds and an `LlmNode`'s single
 call alike. It is the only seam that admits `retry`, and the reason is what has already
 been said: a failed *tool* call leaves an assistant message asking for it in the
 conversation, so re-issuing is not re-entering a clean state, while a failed *model* call
@@ -251,14 +245,14 @@ serve({
 });
 ```
 
-`before` sees the request and may `proceed`, `modify` it, `replace` it with an answer —
-a cache hit, where nothing is sent at all — or `reject` it, which fails the node with the
+`before` sees the request and may `proceed`, `modify` it, `replace` it with an answer (a
+cache hit, where nothing is sent at all), or `reject` it, which fails the node with the
 stated reason.
 
 <Callout>
 `modify` is the one verdict that hands heddle something it then **sends somewhere**, so it
 is checked hardest: every field is type-checked, and anything you do not supply keeps the
-value you were shown. A returned object is an edit, not a replacement — `{ ...input,
+value you were shown. A returned object is an edit, not a replacement, so `{ ...input,
 temperature: 0 }` does what it looks like.
 </Callout>
 
@@ -273,14 +267,14 @@ component type. The value may be `@path` to read it from a file instead of the c
 line.
 
 The manifest's `schema` is applied to it before anything is built, and the check runs even
-when the operator supplied nothing — that is the case that matters, since a middleware
+when the operator supplied nothing. That is the case that matters, since a middleware
 declaring a required field and receiving `{}` is exactly the one that would otherwise read
 `undefined` on the first node that failed.
 
 ## On a server
 
 `heddle-server` takes the same two flags, and they are the only way to install middleware
-on it — a plugin submitted with a request is refused with a 400 if it declares any,
+on it. A plugin submitted with a request is refused with a 400 if it declares any,
 whether or not `--allow-request-code` is on.
 
 ```bash
@@ -298,7 +292,7 @@ by it.
 The difference from the CLI is lifetime. One process per plugin serves the **whole
 server**, not one run: that is what makes an MCP session or a connection pool worth
 holding, and it is why an installed plugin must not keep per-run state in a module
-variable — concurrent runs share the process and nothing separates them. The chain itself
+variable, since concurrent runs share the process and nothing separates them. The chain itself
 is still built per run, because a middleware holds that run's dependencies; only the
 processes behind it are shared.
 
@@ -310,8 +304,8 @@ a plugin speaking the protocol by hand has to.
 
 ## Around every node
 
-`node` is the widest seam. It wraps *an execution* of a node — any node, of any type, in
-any flow — rather than a failure or a call, which is what makes a cache, a dry run or an
+`node` is the widest seam. It wraps *an execution* of a node, any node of any type in any
+flow, rather than a failure or a call, which is what makes a cache, a dry run or an
 audit possible at all.
 
 ```js
@@ -333,8 +327,8 @@ serve({
 ```
 
 `before` may `proceed`, `modify` the node's input state, `replace` its output without
-running it, or `reject` it and end the run. `after` sees what the execution came to —
-`{ ok: true, value }` or `{ ok: false, error }` — and may `pass`, `replace` or `fail`.
+running it, or `reject` it and end the run. `after` sees what the execution came to,
+`{ ok: true, value }` or `{ ok: false, error }`, and may `pass`, `replace` or `fail`.
 
 **`node` and `nodeError` sit at the same position, and the nesting is what keeps them
 apart.** `nodeError` is *inside* `node`, because it is the seam that owns retries:
@@ -342,13 +336,13 @@ apart.** `nodeError` is *inside* `node`, because it is the seam that owns retrie
 - A retry abandons this execution for another, so `after` is not consulted for it and the
   next attempt starts again at `before`, with `ctx.attempt` moved on.
 - A settled execution reaches `after` exactly once, whether it produced a result or
-  failed — which is why an auditor subscribing only to `node` sees every node once.
+  failed, which is why an auditor subscribing only to `node` sees every node once.
 - `node`'s `after` admits no `retry`. The seam that does is the one nested inside it.
 
 <Callout type="warn">
 This runs on every node of every flow, so a slow `before` is a slow engine and a broken
 policy breaks runs it has nothing to do with. The call site checks the subscription before
-it consults, so a chain nobody has subscribed to costs nothing — but a policy that *is*
+it consults, so a chain nobody has subscribed to costs nothing, but a policy that *is*
 installed here is on the hot path in a way none of the other seams are.
 </Callout>
 
@@ -364,7 +358,7 @@ has: it may stop a round or let it happen, and nothing else.
 
 The narrowness is the design. The two seams inside a round already own what is sent
 (`modelCall`) and what runs (`toolCall`), so the one thing neither of them can say is that
-there should not be another round — which is the thing an agent looping on tools costs
+there should not be another round, which is the thing an agent looping on tools costs
 money for. heddle's own ceiling is ten rounds and an operator cannot move it; this is
 where a lower one hangs.
 
@@ -416,6 +410,6 @@ than deleting it, because a load-time refusal saying heddle does not consult it 
 promises something that should never ship.
 
 One smaller gap worth knowing: `heddle run -i` builds its own runner from the same
-options, so the chain is installed and a retry works — but the chat interface reads four
+options, so the chain is installed and a retry works, but the chat interface reads four
 event types and has no `warning` arm, so the retry happens silently. `heddle run` renders
 it.

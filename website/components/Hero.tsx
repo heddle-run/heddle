@@ -103,7 +103,7 @@ export default function Hero() {
             }}
           >
             Declare the agent once, in YAML. The loop, the sandbox, the retries
-            and the server live in the runtime — not in your codebase.
+            and the server live in the runtime, not in your codebase.
           </p>
 
           <div

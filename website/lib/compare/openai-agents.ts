@@ -267,7 +267,7 @@ export const openaiAgents: Framework = {
   note:
     "The smallest surface of the three: one package, few concepts, and " +
     "tracing to a hosted dashboard included. It is also the most opinionated " +
-    "about where the model comes from — everything else arrives through a " +
+    "about where the model comes from: everything else arrives through a " +
     "LiteLLM adapter.",
 
   impls: {
@@ -294,8 +294,8 @@ export const openaiAgents: Framework = {
       run: "python routing.py",
       note:
         "For a branch no model takes part in, the SDK's documented answer is " +
-        "plain Python around the agent runs — its orchestrating-via-code " +
-        "pattern — with a trace wrapped round the whole thing.",
+        "plain Python around the agent runs, its orchestrating-via-code " +
+        "pattern, with a trace wrapped round the whole thing.",
     },
 
     agent: {
@@ -319,9 +319,9 @@ export const openaiAgents: Framework = {
       files: [{ name: "skills.py", language: "python", source: SKILLS }],
       run: "python skills.py",
       note:
-        "Skills are not a framework concept here, and do not need to be — " +
-        "two tools over a directory and a prompt that insists they be " +
-        "called is the entire pattern.",
+        "Same story: skills are not a framework concept, and do not need " +
+        "to be. Two tools over a directory and a prompt that insists they " +
+        "be called is all it takes.",
     },
 
     "tool-and-plugin": {
@@ -338,7 +338,7 @@ export const openaiAgents: Framework = {
     "ag-ui": {
       unsupported:
         "No AG-UI integration is published for this SDK. Its own answer to " +
-        "watching a run is tracing — spans posted to OpenAI's dashboard, " +
+        "watching a run is tracing: spans posted to OpenAI's dashboard, " +
         "for the developer rather than a client, and not a protocol a UI " +
         "can be built against.",
     },

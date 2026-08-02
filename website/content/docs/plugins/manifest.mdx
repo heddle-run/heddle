@@ -4,8 +4,8 @@ description: Every field an out-of-process plugin may declare, and what each is 
 ---
 
 The manifest is the declarative half of an out-of-process plugin. It answers everything
-the parser and compiler need — what component types exist, what their inputs and outputs
-are, which branches they can take — so only execution crosses the process boundary.
+the parser and compiler need: what component types exist, what their inputs and outputs
+are, which branches they can take. Only execution crosses the process boundary.
 
 Two things follow, and both are worth more than the flexibility given up:
 
@@ -43,19 +43,19 @@ Two things follow, and both are worth more than the flexibility given up:
 <Callout>
 \* A manifest must declare components, tools, **or** `discoverTools`. A tools-only plugin
 is a real shape and the point of the kind, and an MCP proxy often declares none of the
-three statically — its tool list belongs to the server it fronts, so `discoverTools: true`
-alone is enough.
+three statically, because its tool list belongs to the server it fronts, so
+`discoverTools: true` alone is enough.
 </Callout>
 
 ### discoverTools
 
-Everything else here is data, so heddle learns what a plugin provides without running it —
+Everything else here is data, so heddle learns what a plugin provides without running it,
 which is what keeps `heddle validate` free and lets a spec be inspected without executing
 its author's code. An MCP proxy cannot honour that, because a list committed to this file
 is a copy of somebody else's registry as it stood when a build step last ran.
 
 Declaring it says: start me, ask me once, take the answer. It is therefore **refused unless
-the operator opted in** with `--discover-tools` — a manifest asking to be started is not
+the operator opted in** with `--discover-tools`. A manifest asking to be started is not
 consent, and reading a manifest runs nothing.
 
 ```json
@@ -68,7 +68,7 @@ serve({}, {
 });
 ```
 
-Discovery happens once, at load, before the registry is built — so `Registry.lookup` stays
+Discovery happens once, at load, before the registry is built, so `Registry.lookup` stays
 synchronous. A discovered tool is checked by exactly the rules a declared one meets, and a
 name colliding with one the manifest already declared is refused as the duplicate it is.
 
@@ -77,14 +77,14 @@ provides, on the endpoint callers reach for because it runs nothing.
 
 When `command` is absent heddle supplies a default: a program carrying the execute bit is
 invoked by path, and a `.mjs` or `.js` entry point is run under the host's node. Invoking
-by path is the preferred form, because a sandbox binds the *program* it is given — launch
+by path is the preferred form, because a sandbox binds the *program* it is given. Launch
 a plugin as `node plugin.mjs` and the script is an argument rather than the program, so
 the confined node cannot find it.
 
 ### capabilities
 
 A manifest asks; the host decides. A capability named here that the host does not grant
-fails the load, naming the capability — the operator's policy is not something a plugin
+fails the load, naming the capability. The operator's policy is not something a plugin
 discovers by probing at run time. A plugin that asks for nothing gets nothing.
 
 `"runTool"` · `"callModel"` · `"emitEvent"` · `"log"`
@@ -115,15 +115,16 @@ they reach is somebody's screen.
 applied during parsing without starting the plugin.
 
 `branches` is static because heddle's graph validator checks reachability before anything
-executes — a branch that only exists at run time is reported as unreachable.
+executes, and a branch that only exists at run time is reported as unreachable.
 
 `stream` is declared rather than negotiated because `completeChat` decides whether to
 stream by looking for a streaming method, synchronously, before the process is
 necessarily running. Off by default is the safe direction: a provider that says nothing
 is only ever sent `stream: false` and never has to handle a mode it did not implement.
 
-`protocol` must match `[a-z0-9][a-z0-9-]*` — it is a token a client puts in a query
-string, not an identifier — and may not be `heddle`, which is heddle's own wire format.
+`protocol` must match `[a-z0-9][a-z0-9-]*`, since it is a token a client puts in a query
+string rather than an identifier, and may not be `heddle`, which is heddle's own wire
+format.
 
 ## tools[]
 
@@ -142,20 +143,20 @@ different answers to "how does this run", and a tool carrying both would leave t
 precedence to whoever wrote the dispatch. A `componentType` is checked against the
 components this same manifest declares.
 
-A `path` is resolved and checked at load — it must exist, be a file, carry the execute
+A `path` is resolved and checked at load: it must exist, be a file, carry the execute
 bit, and resolve *inside* the plugin's own directory. Containment is checked with
 `realpath`, so a symlink pointing out of the directory is caught rather than followed. A
 plugin needing a system binary ships a two-line wrapper.
 
 `shadows` is off by default, and the default is the point. A collision is a load error
-unless somebody says otherwise in writing — and a server refuses to let a submitted
+unless somebody says otherwise in writing, and a server refuses to let a submitted
 plugin be that somebody, because a name a caller never wrote can capture calls made by
 code they did not write either.
 
 <Callout type="warn">
 An `inputSchema` reaches the model's own tool block verbatim, and is serialised into
 every request of every round. heddle caps it at 64 KB and 16 levels of nesting, and
-refuses one whose declared `type` is anything but `object` — a tool takes named
+refuses one whose declared `type` is anything but `object`. A tool takes named
 arguments, so its schema has to describe them.
 </Callout>
 
@@ -185,13 +186,13 @@ The same word for the same rule, because a second word would make one rule look 
 Three things worth stating plainly:
 
 - **This is data, not a verb.** heddle learns what a plugin puts in a workspace by reading
-  the manifest — it starts nothing, so `heddle validate` stays free and a spec can be
+  the manifest. It starts nothing, so `heddle validate` stays free and a spec can be
   inspected without running its author's code. `files` is not a seventh
   [kind](/docs/plugins); nothing chooses it, the way nothing chooses `tools`.
 - **Always read-only.** A plugin ships files; it does not get a writable channel onto the
   operator's disk. `--mount …:rw` exists and belongs to whoever runs heddle.
 - **Top level, never on a component.** Every component of a plugin runs against the same
-  workspace, so on a component this would be read by nothing — and a manifest that writes
+  workspace, so on a component this would be read by nothing, and a manifest that writes
   it there is refused rather than ignored.
 
 A plugin that declares `files` and nothing else is refused too, and the error says why:
@@ -201,7 +202,7 @@ without loading anybody's code.
 <Callout type="warn">
 A **submitted** plugin may not declare `files`. A plugin's files are read from the
 directory it was installed in, and a plugin that arrived in a request is a module with no
-directory — so there is nothing for them to resolve against. Files belonging to one run go
+directory, so there is nothing for them to resolve against. Files belonging to one run go
 in [that run's own request](/docs/server#submitted-code); files belonging to every run are
 the operator's, with `--mount`.
 </Callout>
@@ -214,7 +215,7 @@ in an HTTP request and its failure is the first thing a plugin author sees.
 - A `kind` heddle does not recognise, listing the seven that exist.
 - A capability heddle does not serve, listing the four that exist.
 - `seams` on anything but a middleware, and `protocol` or `contentType` on anything but an
-  encoder — a field that silently did nothing would leave an author believing their
+  encoder. A field that silently did nothing would leave an author believing their
   component was reachable.
 - An encoder with no `protocol`, or none heddle could route, or one claiming `heddle`.
 - A component type declared twice, or one that is not a valid identifier.

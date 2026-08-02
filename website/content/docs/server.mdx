@@ -4,7 +4,7 @@ description: The same document over HTTP, with the run streamed back as it happe
 ---
 
 `heddle-server` runs the flows `heddle run` runs, over HTTP. There is no separate
-deployment format and no rewrite — the same document, pointed at by a different program.
+deployment format and no rewrite: the same document, pointed at by a different program.
 
 ```bash
 heddle-server --port 4319 --tools-dir ./tools --flows-root ./flows
@@ -25,8 +25,8 @@ surface that executes what it is sent.
 | `GET /v1/sessions/:id` | The transcript, and whether a run in it is unfinished |
 | `DELETE /v1/sessions/:id` | Delete a conversation and everything in it |
 | `GET /v1/capabilities` | What this server permits, so a client can adapt |
-| `GET /healthz` | Liveness — true while the event loop answers |
-| `GET /readyz` | Readiness — 503 the moment draining begins |
+| `GET /healthz` | Liveness; true while the event loop answers |
+| `GET /readyz` | Readiness; 503 the moment draining begins |
 | `GET /metrics` | Prometheus text exposition |
 
 <Callout type="warn">
@@ -41,7 +41,7 @@ Provide exactly one flow selector:
 | Field | Meaning |
 |---|---|
 | `flow` (object) | An Agent Spec flow as JSON |
-| `flow` (string) | Flow source text — YAML or JSON |
+| `flow` (string) | Flow source text, YAML or JSON |
 | `flowPath` | Path relative to `--flows-root` |
 
 Plus `inputs`, a JSON object handed to the flow as its starting state.
@@ -57,7 +57,7 @@ curl -sX POST 'localhost:4319/v1/runs' \
 ```
 
 **Compilation happens before the stream opens.** A malformed flow comes back as a real
-`400`, not a `200` followed by an error frame — once SSE headers are out the status is
+`400`, not a `200` followed by an error frame. Once SSE headers are out the status is
 fixed at 200.
 
 It is a POST rather than a GET because `EventSource` only issues GETs and a flow document
@@ -98,7 +98,7 @@ is in `flow_complete`.
 
 ### Another wire format
 
-`?protocol=<name>` renders the run in a format a plugin supplies — AG-UI, for instance.
+`?protocol=<name>` renders the run in a format a plugin supplies, AG-UI for instance.
 A protocol nothing renders is a `400` listing what this server can. See
 [Encoders](/docs/plugins/encoders).
 
@@ -134,7 +134,7 @@ conversation by that name. Ids are random for a reason:
 
 <Callout type="warn">
 A session id is a **bearer capability**. This server has no authentication, so whoever holds one
-can read and continue that conversation. Unguessability is not authorization — terminate auth in
+can read and continue that conversation. Unguessability is not authorization, so terminate auth in
 front of this if conversations are worth protecting.
 </Callout>
 
@@ -153,7 +153,7 @@ unfinished one:
 ```
 
 A [middleware](/docs/plugins/middleware) may also **suspend** a run to wait on a person. The run
-answers `202`, not an error — nothing failed:
+answers `202` rather than an error, because nothing failed:
 
 ```json
 {
@@ -175,13 +175,13 @@ Streamed runs get a `suspended` event before the stream closes. Continue it with
 ```
 
 The answer reaches the run as the result of the call that was waiting. Nothing that already ran
-runs again — see [Sessions](/docs/sessions#stopping-for-a-human) and
+runs again. See [Sessions](/docs/sessions#stopping-for-a-human) and
 [the approval-gate example](https://github.com/heddle-run/heddle/tree/main/examples/approval-gate).
 
 ## Installed plugins
 
 `--plugin` installs a plugin for the life of the process. It provides components every run
-can name, and — unlike a plugin sent with a request — it may provide **middleware**.
+can name, and unlike a plugin sent with a request, it may provide **middleware**.
 
 ```bash
 heddle-server \
@@ -220,7 +220,7 @@ Installed plugins hold whatever capabilities their manifest declares, including
 the way `--tools-dir` is trusted. A submitted plugin is not, and is granted less.
 
 `--discover-tools` lets an installed plugin declaring `discoverTools` be started so heddle
-can ask what tools it has — an MCP proxy, typically. It is never available to a submitted
+can ask what tools it has, an MCP proxy typically. It is never available to a submitted
 plugin, whichever way the flag is set: reading a manifest runs nothing, which is what
 makes `/v1/validate` free, and discovery spends exactly that.
 
@@ -236,7 +236,7 @@ tool scripts, plugins, and files for the workspace:
 | `files` | `{ path, content }` |
 
 `files` is the one that is not code. Each entry is copied into every node's workspace
-before the run starts, read-only, at `path` relative to the workspace root — so a
+before the run starts, read-only, at `path` relative to the workspace root, so a
 submitted tool can read content the request carried instead of content the operator
 installed. `path` is checked the way a `--mount` destination is: relative, no climbing,
 nothing under `.heddle`. A path that collides with something the operator mounted is
@@ -246,10 +246,10 @@ name a file on the server, which is not the caller's to read.
 The three share one byte budget, because to the caller they are one thing: bytes this
 request asked the server to hold. `files` is additionally capped by count, since each one
 is copied per node rather than per run. Both limits, and the caps on `tools` and
-`plugins`, are in `/v1/capabilities` under `limits` — a client can read them rather than
+`plugins`, are in `/v1/capabilities` under `limits`, so a client can read them rather than
 discover them by being refused.
 
-Every submitted plugin is loaded **out of process** — the only path a *request* has. An
+Every submitted plugin is loaded **out of process**, the only path a *request* has. An
 in-process plugin would be imported into the server, and a caller who can do that has the
 server's environment, filesystem and memory. Each gets its own process, an empty
 environment, and is killed when the run ends. (`--plugin` accepts a JavaScript module as
@@ -262,7 +262,7 @@ would see a tool find an empty directory.
 
 What a submitted plugin may do is narrower than what heddle can serve. `runTool`,
 `emitEvent` and `log` are granted. `callModel` is withheld entirely when the server
-supplies a default credential — a plugin can make a thousand model calls inside one node
+supplies a default credential: a plugin can make a thousand model calls inside one node
 while the flow shows one, and that is survivable when the credential is the caller's own
 and not when it is the operator's. A submitted **middleware** is refused: it would run on
 every node of every flow, including other callers'. A submitted **encoder** is permitted,
@@ -280,7 +280,7 @@ to hosts they name. Restrict egress and put something in front of it. See
 leaves the load balancer's rotation with its open streams intact. Runs in flight are given
 until `--drain-timeout` to reach their own end before anything is closed.
 
-Closing connections up front — which is the obvious implementation — terminates every live
+Closing connections up front, which is the obvious implementation, terminates every live
 stream on the spot, so every rolling deploy drops runs mid-flight.
 
 ## Flags

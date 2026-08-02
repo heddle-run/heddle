@@ -188,7 +188,7 @@ $referenced_components:
     number: "02",
     title: "Wire",
     description:
-      "Tools are ordinary executables. JSON in on stdin, JSON out on stdout. Bash, Python, Go — no SDK, no bindings.",
+      "Tools are ordinary executables. JSON in on stdin, JSON out on stdout. Bash, Python, Go. No SDK, no bindings.",
     code: `#!/usr/bin/env python3
 import sys, json
 
@@ -205,7 +205,7 @@ json.dump({
     number: "03",
     title: "Run",
     description:
-      "Parse, validate, compile, execute — with the whole graph checked before a single token is spent. One command locally, or the same spec behind heddle-server over HTTP.",
+      "One command locally, or the same document behind heddle-server over HTTP. Either way the whole graph is checked before a single token is spent.",
     code: `$ heddle run flow.yaml \\
     --tools-dir ./tools \\
     --input '{"query": "shed"}'
@@ -236,14 +236,14 @@ export const features = [
     hue: "var(--hue-purple)",
     title: "Checked before it costs anything",
     description:
-      "Parse, validate, compile, validate again — the whole graph is proved reachable and well-formed before the first request leaves your machine. A malformed flow fails in milliseconds, not halfway through a paid run.",
+      "Parse, validate, compile, validate again. Every node has to be reachable and every edge has to be well-formed before the first request leaves your machine. A malformed flow fails in milliseconds instead of halfway through a paid run.",
   },
   {
     icon: "shield",
     hue: "var(--hue-blue)",
     title: "A boundary the kernel enforces",
     description:
-      "Every agent gets a workspace: one directory its tools share, so they can hand each other files. --safe makes its edges a kernel boundary — no $HOME, nothing writable outside it, and only the environment variables you name. Ask for a backend the machine cannot provide and the run fails rather than quietly continuing unconfined.",
+      "Every agent gets a workspace: one directory its tools share, so they can hand each other files. --safe turns its edges into a kernel boundary. No $HOME, nothing writable outside it, and only the environment variables you name. Ask for a backend the machine cannot provide and the run fails outright; it will not quietly carry on unconfined.",
   },
   {
     icon: "network",
@@ -257,7 +257,7 @@ export const features = [
     hue: "var(--hue-amber)",
     title: "Portable off heddle",
     description:
-      "The document is an Open Agent Specification flow — a format published by Oracle, not invented here. A flow written for heddle runs on any other conforming runtime, which makes leaving cheap and staying a choice.",
+      "The document is an Open Agent Specification flow. Oracle publishes that format; this project did not invent it. So a flow written for heddle runs on any other conforming runtime, which makes leaving cheap and staying a choice.",
   },
   {
     icon: "blocks",
@@ -290,7 +290,7 @@ export const safeMode = {
       hue: "var(--hue-blue)",
       title: "The spec is data, not code",
       description:
-        "A flow is parsed, never evaluated. Where a spec arrives from a caller rather than from you, a $VAR reference into the host environment is refused rather than resolved — running your own spec locally, it still resolves.",
+        "A flow is parsed, never evaluated. When a caller supplies the spec, a $VAR reference into the host environment is refused; heddle will not read its own environment on a stranger's behalf. Running your own spec locally, it still resolves.",
     },
     {
       icon: "circle-check-big",
@@ -367,42 +367,42 @@ export const faqItems = [
   {
     question: "What is heddle?",
     answer:
-      "A batteries-included declarative agent runtime. You declare a multi-step flow in YAML or JSON using the Open Agent Specification, and heddle parses it, validates it, compiles it into an executable graph, and runs it — from the CLI on your machine, or behind an HTTP server. The tool-calling loop, the sandbox, the guardrails, the retry policies and the event stream come with it.",
+      "A batteries-included declarative agent runtime. You declare a multi-step flow in YAML or JSON using the Open Agent Specification, and heddle parses it, validates it, compiles it into an executable graph and runs it, either from the CLI on your machine or behind an HTTP server. The tool-calling loop, the sandbox, the guardrails, the retry policies and the event stream come with it.",
   },
   {
     question: "What does batteries-included actually mean here?",
     answer:
-      "That the equipment an agent needs in production is already in the runtime rather than left to you: a tool-calling loop, pre-flight graph validation, an OS-level sandbox, a per-agent workspace, an HTTP server with event streaming, guardrail transforms, retry and approval policies, branching, sessions that outlive the process, durable runs you can resume, a way to stop for a human, wire-protocol encoders and project scaffolding. The manifest on this page lists them, and each one is a feature you can check against the README rather than a claim about quality.",
+      "That the equipment an agent needs in production is already in the runtime instead of being left to you: a tool-calling loop, pre-flight graph validation, an OS-level sandbox, a per-agent workspace, an HTTP server with event streaming, guardrail transforms, retry and approval policies, branching, sessions that outlive the process, durable runs you can resume, a way to stop for a human, wire-protocol encoders and project scaffolding. The manifest on this page lists them, and every one is a feature you can check against the README. None of it is a claim about quality.",
   },
   {
     question: "How is this different from other agent frameworks?",
     answer:
-      "Frameworks like LangGraph, CrewAI and Mastra are libraries: you install them, import them, and assemble the graph in Python or TypeScript, so your agent is code that depends on their abstractions. When one of them says batteries-included, the batteries arrive as dependencies. heddle inverts that. The flow is a document you write, and heddle is a runtime you point at it. Nothing enters your dependency tree, no class needs subclassing, and because the document conforms to a published specification rather than to this project, the same flow runs on any other compliant runtime.",
+      "Frameworks like LangGraph, CrewAI and Mastra are libraries: you install them, import them, and assemble the graph in Python or TypeScript, so your agent is code that depends on their abstractions. When one of them says batteries-included, the batteries arrive as dependencies. heddle inverts that. The flow is a document you write, and heddle is a runtime you point at it. Nothing enters your dependency tree, no class needs subclassing, and because the document conforms to a published specification heddle does not own, the same flow runs on any other compliant runtime.",
   },
   {
     question: "How is this different from other declarative agent runtimes?",
     answer:
-      "Declarative agents in YAML are no longer unusual — Docker Agent, Microsoft's declarative workflows and Google's ADK all offer a version of it, and that is a good thing for everyone writing agents. Two things separate heddle. The format is the Open Agent Specification, published by Oracle rather than defined by this project, so a flow is portable to any conforming runtime instead of to one vendor's product. And the sandbox is a kernel boundary on your own machine — bubblewrap or seatbelt — rather than a container or a hosted execution service, with a documented refusal to degrade into an unconfined run.",
+      "Declarative agents in YAML are no longer unusual. Docker Agent, Microsoft's declarative workflows and Google's ADK all offer a version of it, and that is good for everyone writing agents. Two things separate heddle. The format is the Open Agent Specification. Oracle publishes it and heddle only implements it, so a flow is portable to any conforming runtime instead of to one vendor's product. And the sandbox is a kernel boundary on your own machine, bubblewrap or seatbelt, rather than a container or a hosted execution service, with a documented refusal to degrade into an unconfined run.",
   },
   {
     question: "Can an agent hold a conversation, or wait for a person?",
     answer:
-      "Both, and they are the same mechanism. --session keeps a run in a conversation on disk and hands the agent the turns before it; the same session works over HTTP, so a chat on your laptop and one behind the server are the same thing. On top of that, --durable writes the run down at each step so it can be resumed if the process dies, and a policy can suspend a run to wait on a person — the run stops, the question is stored, and answering it continues from where it stopped without re-running the model call or the tools that already ran. Sessions live on disk by default; a plugin can put them in a database instead, which is what more than one replica needs.",
+      "Both, and they are the same mechanism. --session keeps a run in a conversation on disk and hands the agent the turns before it; the same session works over HTTP, so a chat on your laptop and one behind the server are the same thing. On top of that, --durable writes the run down at each step so it can be resumed if the process dies, and a policy can suspend a run to wait on a person: the run stops, the question is stored, and answering it continues from where it stopped without re-running the model call or the tools that already ran. Sessions live on disk by default; a plugin can put them in a database instead, which is what more than one replica needs.",
   },
   {
     question: "Can I run it as a service?",
     answer:
-      "Yes. heddle-server exposes the same engine over HTTP and streams execution events as the run happens — it is what the playground on this site talks to. It binds to 127.0.0.1 by default and ships no authentication of its own, so put an authenticating proxy in front of it before exposing it to anything you do not control.",
+      "Yes. heddle-server exposes the same engine over HTTP and streams execution events as the run happens. It is what the playground on this site talks to. It binds to 127.0.0.1 by default and ships no authentication of its own, so put an authenticating proxy in front of it before exposing it to anything you do not control.",
   },
   {
     question: "What stops a tool from doing whatever it likes?",
     answer:
-      "Run with --safe. Tool scripts are then executed inside a kernel-level sandbox — bubblewrap on Linux, seatbelt on macOS — with no $HOME, no writes outside the run workspace, and an environment cut down to the variables you name with --allow-env. Plugins are confined differently, by construction: they run in their own process and never see the runtime's memory or environment. If you ask for a sandbox backend the machine cannot provide, the run fails rather than quietly continuing unconfined.",
+      "Run with --safe. Tool scripts are then executed inside a kernel-level sandbox, bubblewrap on Linux and seatbelt on macOS, with no $HOME, no writes outside the run workspace, and an environment cut down to the variables you name with --allow-env. Plugins are confined differently, by construction: they run in their own process and never see the runtime's memory or environment. If you ask for a sandbox backend the machine cannot provide, the run fails rather than quietly continuing unconfined.",
   },
   {
     question: "What is the Open Agent Specification?",
     answer:
-      "A portable, standardised format for defining agent workflows, published by Oracle. heddle implements it, which means the flows you write here are not locked to this runtime — they run on any compliant one.",
+      "A portable, standardised format for defining agent workflows, published by Oracle. heddle implements it, which means the flows you write here are not locked to this runtime. They run on any compliant one.",
   },
   {
     question: "Which LLM providers are supported?",
@@ -412,12 +412,12 @@ export const faqItems = [
   {
     question: "Where do tools write, and how do they pass files to each other?",
     answer:
-      "Each agent execution gets a workspace: one directory its tools share, and the working directory each of them starts in. Write a CSV in one call and run a script over it in the next; a different agent in the same flow sees an empty one, and it is removed when the agent finishes. Tools are also reachable by name from inside it, so a tool can run a peer. To put your own files there before the run starts, use --mount — read-only by default, or :rw to have what the run changed copied back out. --workspace keeps each workspace on disk afterwards instead of discarding it.",
+      "Each agent execution gets a workspace: one directory its tools share, and the working directory each of them starts in. Write a CSV in one call and run a script over it in the next; a different agent in the same flow sees an empty one, and it is removed when the agent finishes. Tools are also reachable by name from inside it, so a tool can run a peer. To put your own files there before the run starts, use --mount. It is read-only by default; add :rw to have whatever the run changed copied back out. --workspace keeps each workspace on disk afterwards instead of discarding it.",
   },
   {
     question: "How do I write a tool?",
     answer:
-      "Write an executable that reads a JSON object from stdin and writes a JSON object to stdout. Bash, Python, Go, Node — anything. Mark it executable, drop it in your tools directory, and reference it by name from the spec.",
+      "Write an executable that reads a JSON object from stdin and writes a JSON object to stdout. Bash, Python, Go, Node, anything that runs. Mark it executable, drop it in your tools directory, and reference it by name from the spec.",
   },
   {
     question: "Is heddle free?",
@@ -427,6 +427,6 @@ export const faqItems = [
   {
     question: "Does it work offline?",
     answer:
-      "heddle itself runs entirely on your machine — no backend, no gateway, no account. If your flow calls a hosted model you will need a connection for those requests; point it at Ollama or vLLM and the whole thing runs offline.",
+      "heddle itself runs entirely on your machine: no backend, no gateway, no account. If your flow calls a hosted model you will need a connection for those requests; point it at Ollama or vLLM and the whole thing runs offline.",
   },
 ];

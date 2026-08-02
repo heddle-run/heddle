@@ -16,8 +16,8 @@ docker pull salahpichen/heddle            # Docker Hub
 docker pull ghcr.io/heddle-run/heddle     # GHCR
 ```
 
-Reach for GHCR when Docker Hub's anonymous pull limit is in your way — CI that
-pulls on every job is the usual case — or when you want the project's own name
+Reach for GHCR when Docker Hub's anonymous pull limit is in your way, which is
+usually CI that pulls on every job, or when you want the project's own name
 in front of the image rather than a maintainer's. A Docker Hub namespace is an
 account name, and `heddle` there has belonged to an unrelated account since
 2019.
@@ -25,7 +25,7 @@ account name, and `heddle` there has belonged to an unrelated account since
 Tags follow releases: `0.2.0` for a version, `0.2` for its line, `latest` for
 the newest release. Prereleases publish their own version and nothing else, so
 `latest` never becomes one. Every commit on `main` publishes `edge` and a
-`sha-` tag alongside it — useful for reproducing a report, not for depending
+`sha-` tag alongside it, useful for reproducing a report but not for depending
 on.
 
 ## Run a flow
@@ -46,7 +46,7 @@ list of everyone on the machine.
 The final state goes to stdout as JSON and progress to stderr, exactly as it
 does outside a container, so `| jq` works.
 
-Nothing needs mounting to try one first — the examples are in the image:
+Nothing needs mounting to try one first, since the examples are in the image:
 
 ```bash
 docker run --rm -e OPENAI_API_KEY salahpichen/heddle run \
@@ -94,7 +94,7 @@ leave with it. To keep them, give that directory a volume:
 
 The container runs as the image's `node` user, uid 1000. On Linux that is
 usually the first login account, so files written into a bind mount come out
-owned by you. When it is not — a different uid, or a shared checkout — say so:
+owned by you. When it is not, on a different uid or a shared checkout, say so:
 
 ```bash
 docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/work" salahpichen/heddle init my-project
@@ -115,10 +115,10 @@ An `--env-file` works too, and keeps keys out of your shell history.
 
 A local model is the case worth knowing about: inside the container,
 `localhost` is the container. An `OllamaConfig` or `VllmConfig` pointing at
-`http://localhost:11434` will find nothing. Either name the host explicitly —
-`http://host.docker.internal:11434`, which needs
-`--add-host host.docker.internal:host-gateway` on Linux — or run with
-`--network host` and leave the URL alone.
+`http://localhost:11434` will find nothing. Either name the host explicitly as
+`http://host.docker.internal:11434`, which on Linux needs
+`--add-host host.docker.internal:host-gateway`, or run with `--network host`
+and leave the URL alone.
 
 Remember that a local server still needs a key that resolves, even though it
 ignores the value. `-e OPENAI_API_KEY=unused` is enough.
@@ -126,7 +126,7 @@ ignores the value. `-e OPENAI_API_KEY=unused` is enough.
 ## Tools
 
 Tools are executables, so what matters is whether the image can run yours. It
-has `bash`, `python3` and — being a Node image — `node`, which covers the
+has `bash`, `python3` and, being a Node image, `node`, which covers the
 shapes in `examples/` and most of what people write. A tool in some other
 language either has to be a self-contained binary you mount alongside it, or
 needs an image of its own built `FROM salahpichen/heddle`:
@@ -147,7 +147,7 @@ mount and whatever else you passed in, rather than your whole account.
 
 ## Safe mode
 
-`--safe` works in the image — `bubblewrap` is installed — but it needs a host
+`--safe` works in the image, since `bubblewrap` is installed, but it needs a host
 that permits unprivileged user namespaces, and not every host does.
 bubblewrap has to create one and mount `/proc` inside it; Docker's default
 seccomp and AppArmor profiles allow that, while a hardened runtime or a
@@ -160,7 +160,7 @@ something weaker without saying so.
 If it is refused and you cannot change the host, drop `--safe`. Inside a
 container it was defence in depth on top of a boundary you already have; run
 without it and the container is what confines the tool, as it was going to be
-anyway. Do not reach for `--privileged` to get it back — that trades the
+anyway. Do not reach for `--privileged` to get it back; that trades the
 boundary for the defence in depth.
 
 ## The server image
@@ -214,7 +214,7 @@ docker build -f packages/server/Dockerfile -t salahpichen/heddle-server .
 Each builds its own stage on the native platform and copies the result into the
 target's runtime stage, so a cross-platform build does not mean a TypeScript
 build under emulation. That holds only while every production dependency is
-pure JavaScript — it is today, and adding one with a compiled binary would end
+pure JavaScript. It is today, and adding one with a compiled binary would end
 it.
 
 ## Publishing
@@ -236,10 +236,10 @@ visibility to public under Package settings.
 | | |
 |---|---|
 | `DOCKERHUB_USERNAME` | a Docker Hub account with push access to the namespace |
-| `DOCKERHUB_TOKEN` | an access token for it, with Read & Write scope — not the account password |
+| `DOCKERHUB_TOKEN` | an access token for it, with Read & Write scope, not the account password |
 | `DOCKERHUB_NAMESPACE` | variable, not secret; the account to publish under. Defaults to `salahpichen`. |
 
-When they are absent the run does not fail — it publishes to GHCR and leaves a
+When they are absent the run does not fail. It publishes to GHCR and leaves a
 notice saying Docker Hub was skipped, which is the state this repository is in
 until someone sets them. Nothing needs creating on Docker Hub first: a push to
 a repository that does not exist creates it, public unless your account's
@@ -250,5 +250,5 @@ A Docker Hub namespace is an account name, not something separate you create:
 whatever `DOCKERHUB_USERNAME` names is the namespace, and an organisation is
 only an account you have paid for. Moving these images to a project-owned name
 later is therefore a matter of registering that account, changing
-`DOCKERHUB_NAMESPACE`, and leaving the old tags where they are — the digests
+`DOCKERHUB_NAMESPACE`, and leaving the old tags where they are. The digests
 are identical, and GHCR carries the project name in the meantime.

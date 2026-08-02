@@ -1,13 +1,13 @@
 ---
 title: Encoders
-description: Render a run in another wire format, chosen by whoever asked for the run — AG-UI ships as a worked example.
+description: Render a run in another wire format, chosen by whoever asked for the run. AG-UI ships as a worked example.
 ---
 
 An encoder is the one kind that is not part of a flow at all. Every other kind answers
 "what runs inside a flow"; this one answers "what the run looks like on the way out". It
 is a sink on the event stream: one runner event in, zero or more wire frames out.
 
-**Whoever asked for the run chooses it.** Not the spec, and not the operator — two clients
+**Whoever asked for the run chooses it.** Not the spec, and not the operator: two clients
 hitting the same flow can legitimately want different renderings of it, and neither the
 flow's author nor whoever runs the server knows which.
 
@@ -38,7 +38,7 @@ heddle run examples/ag-ui/flow.json --plugin ./examples/ag-ui/encoder.json \
 The two differ only in framing, which belongs to the transport rather than the encoder: SSE
 carries a frame's name on an `event:` line because it is an HTTP response body, and the CLI
 writes the frame itself so a nameless frame stays nameless. `encode` returns the same frames
-either way, so an encoder can be written and checked without starting a server at all — see
+either way, so an encoder can be written and checked without starting a server at all. See
 [the CLI reference](/docs/cli-reference#rendering-the-run-in-another-protocol) for what the
 CLI does with the final state.
 
@@ -78,12 +78,12 @@ serve({
 what you read is what a browser watching `?protocol=heddle` reads. Returning `[]` is the
 ordinary answer for an event your format does not render.
 
-A frame is `{ event, data }` for a named frame, or `{ data }` alone for a nameless one —
+A frame is `{ event, data }` for a named frame, or `{ data }` alone for a nameless one,
 which is what a protocol carrying its own type inside the payload wants. Both shapes exist
 because the two protocols heddle already renders disagree about it, and both survive every
 transport: SSE writes the name on an `event:` line, and the CLI writes the frame itself.
 
-`finish` is called exactly once, on every path — a run that finished, one that failed, and
+`finish` is called exactly once, on every path: a run that finished, one that failed, and
 one whose caller hung up. It is where a terminal frame belongs. A client that never
 receives one waits forever, and "the connection closed" is not something a protocol with a
 terminal event should have to infer.
@@ -116,8 +116,8 @@ server ends the stream with an error frame; the CLI prints your message to stder
 
 `EVENT_CONTRACT_VERSION` says which shape of event you are reading. It is sent to every
 plugin at `init` as `events` and reported on `/v1/capabilities`. Adding a field does not
-move it; changing or removing one does. A mismatch is not a refusal — an encoder reading a
-later contract still renders every field it recognises.
+move it; changing or removing one does. A mismatch is not a refusal, and an encoder reading
+a later contract still renders every field it recognises.
 
 ## Where the models disagree
 
@@ -127,7 +127,7 @@ encoder is commented at each one; they are worth reading before writing your own
 
 **Message boundaries are yours.** heddle emits no event when a model's answer begins,
 because it cannot honestly claim one is starting before knowing whether the node will
-stream at all — an agent carrying a `post` transform streams nothing, and one calling
+stream at all. An agent carrying a `post` transform streams nothing, and one calling
 tools streams rounds whose text is discarded. What heddle does say is which node each
 `token_delta` belongs to, and a node's deltas are contiguous. So open a message on the
 first delta for a node and close it when that node finishes.
@@ -137,7 +137,7 @@ first delta for a node and close it when that node finishes.
 would reuse an id.
 
 **`node_error` is not a terminal event.** Since middleware landed a node error is not
-fatal — a retry may follow, and the same node can fail and then succeed. Rendering it as
+fatal: a retry may follow, and the same node can fail and then succeed. Rendering it as
 your protocol's run-failed event would tell every client the run was over while it carried
 on.
 
@@ -147,7 +147,7 @@ accumulate the state yourself or each node will wipe the client's copy.
 
 **A failed tool has no result.** heddle emits `tool_result` carrying an `error` and no
 `toolResult`. If the target protocol's result frame has no error field, the message goes
-in the content — or it is lost, and reads as a tool that successfully returned nothing.
+in the content, or it is lost and reads as a tool that successfully returned nothing.
 
 <Callout>
 The complete worked example is in
@@ -159,7 +159,7 @@ the same over HTTP.
 ## A note on cost
 
 An out-of-process encoder costs one round trip per event, and the event heddle emits most
-is `token_delta` — one per fragment of every model answer. Nothing in the engine waits on
+is `token_delta`, one per fragment of every model answer. Nothing in the engine waits on
 those round trips, so the cost is latency on the frame stream and CPU on the host process
 rather than a slower flow, bounded by the run's own budget. An in-process encoder costs a
 function call.

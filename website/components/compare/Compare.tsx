@@ -437,9 +437,9 @@ export function CompareLedger({
         </span>
         <span>
           Every column is the shortest version that framework&apos;s own
-          documentation would write, checked against its current release — and
-          where one has no equivalent it says so rather than inventing a
-          version nobody would write. Think a column is unfair?{" "}
+          documentation would write, checked against its current release. Where
+          one has no equivalent it says so rather than inventing a version
+          nobody would write. Think a column is unfair?{" "}
           <a
             href={`${GITHUB_URL}/issues/new`}
             target="_blank"

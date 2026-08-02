@@ -1,6 +1,6 @@
 # @heddle/server
 
-HTTP API for the heddle execution engine. Same engine the CLI drives — flows
+HTTP API for the heddle execution engine. Same engine the CLI drives: flows
 are parsed, compiled into a graph, and run, with execution observable as a
 stream of events.
 
@@ -8,7 +8,7 @@ stream of events.
 
 **This service executes arbitrary local executables on behalf of its callers.**
 Any client that can reach it can run every executable in the configured tools
-directory, with the server process's full environment — including its API keys.
+directory, with the server process's full environment, API keys included.
 It is a remote-code-execution surface by design, in the same way a shell is.
 
 There is no authentication, no authorization, and no rate limiting. Nothing in
@@ -16,7 +16,7 @@ this package checks *who* is calling.
 
 What protects you is the bind address. The server listens on `127.0.0.1` by
 default, so only processes on the same host can reach it. **Do not change that
-unless you have put something in front of it** — an authenticating reverse
+unless you have put something in front of it**, whether an authenticating reverse
 proxy, an SSH tunnel, or a network you fully control. Passing `--host` makes the
 server print a warning at startup for exactly this reason.
 
@@ -53,9 +53,9 @@ heddle-server --tools-dir ./tools
 | `--drain-timeout <ms>` | `30000` | On SIGTERM, how long in-flight runs get to finish. |
 | `--cors-origin <origin>` | none | Browser origin allowed to call this server. Repeatable. |
 | `--allow-request-code` | off | Accept tool scripts and plugin modules in the request. |
-| `--allow-net <host>` | none | Let a submitted spec's `llm_config.url` reach a private host it would otherwise be refused — loopback, link-local and RFC1918 addresses are denied under `--allow-request-code`. Repeatable. |
+| `--allow-net <host>` | none | Let a submitted spec's `llm_config.url` reach a private host it would otherwise be refused; loopback, link-local and RFC1918 addresses are denied under `--allow-request-code`. Repeatable. |
 | `--work-dir <dir>` | `$TMPDIR` | Where per-run directories are created. |
-| `--mount <src[:dest][:ro\|:rw]>` | none | Put a file or directory in every node's workspace, for every run. `ro` is a copy the run cannot carry back; `rw` copies changed files out again when a node finishes. Repeatable, and operator-only — a request cannot name a mount. |
+| `--mount <src[:dest][:ro\|:rw]>` | none | Put a file or directory in every node's workspace, for every run. `ro` is a copy the run cannot carry back; `rw` copies changed files out again when a node finishes. Repeatable, and operator-only: a request cannot name a mount. |
 | `--workspace <dir>` | `$TMPDIR` | Keep each node's workspace under this directory instead of a temporary one. Every run of every request writes here. |
 | `--mount-max-bytes <n>` | `67108864` | Largest a `--mount` may be. It is copied once per node. |
 | `--mount-max-entries <n>` | `4096` | Most files and directories a `--mount` may hold. |
@@ -85,7 +85,7 @@ ignored, so a caller is never misled about what the server will execute.
 ### `--plugin`
 
 Installs a plugin for the life of the process. It provides components every run
-can name, and — unlike a plugin sent with a request — it may provide
+can name, and unlike a plugin sent with a request, it may provide
 **middleware**.
 
 That asymmetry is the whole point. A node, a transform, a provider or an encoder
@@ -101,12 +101,12 @@ heddle-server \
   --plugin-config SpendLimit=@/etc/heddle/spend-limit.json
 ```
 
-Five seams are available to it: `nodeError` (a node failed — retry, substitute
-a result, or end the run), `node` (before and after every node — cache it, dry
-run it, audit it), `toolCall` (before and after a tool the model asked for —
-rewrite the arguments, refuse the call, answer it without running it),
-`modelCall` (before and after a request to the model — edit it, serve it from a
-cache, or retry a 429), and `agentRound` (before and after an agent's round —
+Five seams are available to it: `nodeError` (a node failed, so retry, substitute
+a result, or end the run), `node` (before and after every node, to cache it, dry
+run it or audit it), `toolCall` (before and after a tool the model asked for, to
+rewrite the arguments, refuse the call, or answer it without running it),
+`modelCall` (before and after a request to the model, to edit it, serve it from a
+cache, or retry a 429), and `agentRound` (before and after an agent's round, to
 cap how many rounds it may spend). See the [plugin
 docs](https://heddle.run/docs/plugins/middleware).
 
@@ -123,9 +123,9 @@ What installing buys, and what it costs:
   first call, which is what keeps `/v1/validate` free. `--discover-tools` is the
   one flag that spends that at startup.
 - **A plugin that dies is restarted, once somebody calls it again.** One
-  process serves every run, so leaving it dead would turn one run's crash — or
-  one client hanging up mid-call, which SIGKILLs a plugin that ignores its
-  abort signal — into every later run's. The calls in flight when it died still
+  process serves every run, so leaving it dead would turn one run's crash into
+  every later run's. The same goes for a client hanging up mid-call, which
+  SIGKILLs a plugin that ignores its abort signal. The calls in flight when it died still
   fail; the next one gets a fresh process.
 - **A shared plugin must say which call it is acting for.** `runTool` from an
   installed plugin has to name the call it was made inside; there is no
@@ -136,7 +136,7 @@ What installing buys, and what it costs:
   shadowing it.
 
 Installed plugins hold whatever capabilities their manifest declares, including
-`callModel` — they are the operator's own code, loaded from the operator's own
+`callModel`. They are the operator's own code, loaded from the operator's own
 filesystem, so they are trusted the way `--tools-dir` is trusted. A submitted
 plugin is not, and is granted less.
 
@@ -152,26 +152,26 @@ removed when the run ends.
 
 Both kinds run outside this process:
 
-- **Tool scripts** become subprocesses. `--safe` confines them — no `$HOME`, no
+- **Tool scripts** become subprocesses. `--safe` confines them: no `$HOME`, no
   writes outside the run workspace, only the environment `--allow-env` names.
 - **Plugins** are `{ name, manifest, source }`. The manifest declares the
   component types as data, so parsing a flow that uses one executes nothing;
   the source runs in its own process holding **none** of the server's
   environment, and is killed when the run ends.
 
-A plugin written against the in-process API — a module default-exporting a
-plugin object — is refused here, because loading one would run the caller's
+A plugin written against the in-process API, a module default-exporting a
+plugin object, is refused here, because loading one would run the caller's
 code inside the server.
 
 `--plugin-timeout` bounds a single call into a plugin process, not the run. A
 run is entitled to make many, so "did this one call stop responding" is not a
-question the run's budget can answer — and while a call is outstanding it is
+question the run's budget can answer, and while a call is outstanding it is
 holding a concurrency slot. A plugin that overruns is killed, because a process
 that may still be mid-reply cannot be trusted to keep the channel unambiguous.
 Raise it for a plugin that legitimately blocks; it cannot exceed `--timeout`.
 
 A plugin granted `runTool` reaches every tool in the run's registry, which
-includes `--tools-dir` — not only the tools the same caller submitted. It can
+includes `--tools-dir`, not only the tools the same caller submitted. It can
 name any of them, with input of its own choosing, without the flow mentioning
 it. That is no wider than what a caller already has (a submitted flow can name
 the same tool from a `ToolNode`), but it is worth stating plainly: with
@@ -191,8 +191,8 @@ limiting, and it makes outbound requests to hosts its callers name. See
 ### CORS
 
 `--cors-origin` is what lets a browser page on another origin read responses.
-It constrains browsers and nothing else — curl ignores it — so it widens who can
-use the server from a web page and is not what keeps anyone out. Origins are
+It constrains browsers and nothing else, since curl ignores it, so it widens who
+can use the server from a web page and is not what keeps anyone out. Origins are
 matched exactly; pass it once per origin, or `*` to allow any.
 
 Without `--flows-root`, the server accepts inline flows only, and rejects every
@@ -203,7 +203,7 @@ all refused with a 404 that does not reveal whether the target exists.
 ### Shutdown
 
 A run is a long-lived HTTP response, so exiting promptly on SIGTERM cuts it off
-mid-flight. Under an orchestrator that is not an edge case — it is every rolling
+mid-flight. Under an orchestrator that is not an edge case; it is every rolling
 deploy and every scale-in. So the first SIGTERM or SIGINT starts a *drain*:
 
 1. `/readyz` answers 503 and new runs are refused with 503, while the listener
@@ -220,7 +220,7 @@ longer than `--drain-timeout` so the drain is not itself cut short.
 
 ### `GET /healthz`
 
-Liveness. Stays `200` while draining — a draining process is healthy, and
+Liveness. Stays `200` while draining, because a draining process is healthy and
 restarting it would kill the streams the drain exists to protect.
 
 ```json
@@ -251,7 +251,7 @@ process_cpu_seconds_total 41.7
 ```
 
 `heddle_active_runs` is one per open streaming session, and is the *leading*
-signal for autoscaling — it rises the moment a session opens, ahead of the CPU
+signal for autoscaling: it rises the moment a session opens, ahead of the CPU
 and memory that session goes on to use.
 
 Unauthenticated, like the rest of the surface. Keep it on an internal listener
@@ -341,9 +341,9 @@ event: flow_complete
 data: {"type":"flow_complete","state":{"result":"..."}}
 ```
 
-Frames map one-to-one onto the engine's existing runner events — `flow_start`,
+Frames map one-to-one onto the engine's existing runner events: `flow_start`,
 `node_start`, `node_complete`, `node_error`, `tool_call`, `tool_result`,
-`flow_complete` — with the event type as the SSE event name. The only changes
+`flow_complete`, with the event type as the SSE event name. The only changes
 are the ones JSON forces: `State` becomes a plain object, and `Error` becomes
 `{name, message}`.
 
@@ -354,7 +354,7 @@ channel, not a second event model.
 Two notes on the shape:
 
 - **It is a POST, not a GET.** `EventSource` only issues GETs, but a flow spec
-  does not belong in a query string — it is large, and it would end up in
+  does not belong in a query string, since it is large and would end up in
   access logs. Consume it with `fetch` and a `ReadableStream`.
 - **Compilation happens before the stream opens.** A malformed flow comes back
   as a real `400`, not as a `200` followed by an error frame. Once SSE headers
@@ -373,7 +373,7 @@ rendering among however many are loaded. `protocol` selects another.
 
 A protocol nothing renders is a `400` listing what this server can render.
 `GET /v1/capabilities` reports the same list in `protocols`, plus
-`eventContract` — the version of the event shape an encoder is handed.
+`eventContract`, the version of the event shape an encoder is handed.
 
 Two rules worth knowing:
 
@@ -402,7 +402,7 @@ Both endpoints take the same flow selector. Provide exactly one of:
 | Field | Type | Meaning |
 |---|---|---|
 | `flow` | object | An Agent Spec flow as JSON. |
-| `flow` | string | Flow source text. YAML or JSON — YAML 1.2 is a superset of JSON. |
+| `flow` | string | Flow source text, YAML or JSON. YAML 1.2 is a superset of JSON. |
 | `flowPath` | string | Path relative to `--flows-root`. Rejected if no root is configured. |
 
 `POST /v1/runs` additionally accepts `inputs`, a JSON object passed to the
@@ -413,9 +413,9 @@ With `--allow-request-code`, both endpoints additionally accept:
 | Field | Type | Meaning |
 |---|---|---|
 | `tools` | array | `{ name, source, interpreter? }`. `interpreter` is one of `sh`, `bash`, `python3`, `node`, and generates a shebang when `source` has none. |
-| `plugins` | array | `{ name, manifest, source }`. `manifest` declares what the plugin provides, as data, so parsing a flow that uses it executes nothing; `source` is ESM calling `serve()`, and only ever runs in its own process. A bare module default-exporting a plugin object — the in-process shape — is refused, because importing it would run the caller's code inside the server. |
+| `plugins` | array | `{ name, manifest, source }`. `manifest` declares what the plugin provides, as data, so parsing a flow that uses it executes nothing; `source` is ESM calling `serve()`, and only ever runs in its own process. A bare module default-exporting a plugin object, the in-process shape, is refused, because importing it would run the caller's code inside the server. |
 
-Names must match `[A-Za-z0-9_-]{1,64}` — they become filenames, and nothing that
+Names must match `[A-Za-z0-9_-]{1,64}`, because they become filenames, and nothing that
 navigates a path is allowed through. Without the flag, a request carrying either
 field is rejected with a 400 rather than having it ignored: a caller whose
 plugin was silently dropped would see an unknown-component-type failure with no

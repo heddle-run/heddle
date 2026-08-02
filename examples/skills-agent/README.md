@@ -1,6 +1,6 @@
 # An agent with skills
 
-A **skill** is a short written procedure for a kind of job — how a CSV gets totalled here,
+A **skill** is a short written procedure for a kind of job: how a CSV gets totalled here,
 what an incident note has to say. The agent is not told any of them. It is told they exist,
 and how to go and look.
 
@@ -16,8 +16,8 @@ heddle run examples/skills-agent/spec.yaml \
 
 ## The shape
 
-Two tools and a prompt. Skills are not a heddle concept, and that is the point — nothing
-here is a feature, it is an arrangement of things that already existed.
+Two tools and a prompt. Skills are not a heddle concept, and that is the point. Nothing
+here is a feature; it is an arrangement of things that already existed.
 
 - `list_skills` returns every skill's name and its first line: **when it applies**, in one
   sentence. That is what the model carries all the time.
@@ -44,14 +44,14 @@ uses.
 
 `files` puts `skills/` in the [workspace](https://heddle.run/docs/tools#the-workspace) of
 every node before the run starts, read-only. The two tools are programs the plugin ships, so
-this plugin has **no entry point and starts no process** — it is two programs and a
+this plugin has **no entry point and starts no process**. It is two programs and a
 directory, and heddle reads all of that off the manifest.
 
 **A plugin is not required.** Put `bin/list_skills.py` and `bin/read_skill.py` in your own
 tools directory beside the other three, drop `--plugin`, and pass
 `--mount ./skills` instead: the skills land in the same place, the tools resolve the same
 way, and nothing about the flow or the prompt changes. `--mount` and `files` write into one
-namespace and collide against each other — one is the operator's, the other the plugin's.
+namespace and collide against each other; one is the operator's, the other the plugin's.
 
 The split here is only so both forms can be shown without two copies of the same two
 scripts, and so `--tools-dir` and the plugin do not both claim `list_skills`.
@@ -82,5 +82,5 @@ tools/bash.py          a command in the workspace; peers are on PATH
 skills/*.md            first line is the description, the rest is the procedure
 ```
 
-Adding a skill is adding a file. Nothing else changes — not the prompt, not the tools, not
+Adding a skill is adding a file. Nothing else changes: not the prompt, not the tools, not
 the flow.

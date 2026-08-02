@@ -146,7 +146,7 @@ export default function Build({ pg }: { pg: Playground }) {
               limit={pg.limits?.maxRequestPlugins ?? 5}
               emptySource={PLUGIN_STUB}
               emptyManifest={PLUGIN_MANIFEST_STUB}
-              note="A plugin adds component types the engine does not ship. The manifest declares them as data; the source runs in its own process, so it never sees the engine's memory or environment. Call serve({ ComponentType: { execute } }) — it is supplied for you."
+              note="A plugin adds component types the engine does not ship. The manifest declares them as data; the source runs in its own process, so it never sees the engine's memory or environment. Call serve({ ComponentType: { execute } }); it is supplied for you."
             />
           )}
 
@@ -171,7 +171,7 @@ export default function Build({ pg }: { pg: Playground }) {
               }
               limit={pg.limits?.maxRequestFiles ?? 20}
               emptySource={FILE_STUB}
-              note="A file is put in every node's workspace before the run starts, at the path you give it, and is read-only there. It is content the run reads — a skill, a template, a fixture — rather than something the engine runs."
+              note="A file is put in every node's workspace before the run starts, at the path you give it, and is read-only there. It is content the run reads, such as a skill, a template or a fixture, rather than something the engine runs."
             />
           )}
         </div>
@@ -378,8 +378,8 @@ export function BuildStatusBar({
         </span>
         Tools and plugins you submit run in their own sandboxed processes and
         are deleted when the run ends. Nothing is stored. An API key in your
-        flow does travel to the engine to reach the model — use a key you are
-        willing to spend, and revoke it when you are done.
+        flow does travel to the engine to reach the model, so use a key you are
+        willing to spend and revoke it when you are done.
       </p>
 
       <dl
