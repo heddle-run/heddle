@@ -1,4 +1,4 @@
 {
   "title": "Plugins",
-  "pages": ["index", "authoring", "manifest", "middleware", "encoders"]
+  "pages": ["index", "authoring", "manifest", "middleware", "encoders", "formats"]
 }

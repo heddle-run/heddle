@@ -1,14 +1,30 @@
 export {
   parseFlow,
   parseFlowObject,
+  parseFlowWith,
   parseFlowYaml,
   parseAgent,
   parseComponent,
   parseComponentJson,
+  parseComponentWith,
   parseComponentYaml,
 } from './spec/parser.js';
 
 export { loadFlow, loadComponent } from './spec/load.js';
+export type { LoadOptions } from './spec/load.js';
+
+// The input side of the wire: how a spec document reaches heddle as text.
+// Everything downstream of `InputFormatDef.parse` is format-blind, so a new
+// format — a plugin's or an embedder's — adapts at this seam and nothing else.
+export {
+  BUILTIN_INPUT_FORMATS,
+  INPUT_FORMAT_NAME,
+  JSON_INPUT_FORMAT,
+  YAML_INPUT_FORMAT,
+  inputFormatByName,
+  inputFormatForPath,
+} from './spec/input-format.js';
+export type { InputFormatDef } from './spec/input-format.js';
 
 export { validateFlow, validateAgent } from './spec/validate.js';
 

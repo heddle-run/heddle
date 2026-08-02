@@ -1,10 +1,11 @@
 import { realpathSync } from 'node:fs';
 import { resolve, sep } from 'node:path';
 import {
+  inputFormatByName,
   loadFlow,
   messageOf,
   parseFlowObject,
-  parseFlowYaml,
+  parseFlowWith,
   validateFlow,
   type ParsedFlow,
   type PluginRegistry,
@@ -15,6 +16,13 @@ import { HttpError } from './errors.js';
 export interface FlowRequest {
   flow?: unknown;
   flowPath?: string;
+  /**
+   * The input format of a string "flow" or of the file behind "flowPath", by
+   * name. Defaults to YAML for a string body — YAML 1.2 reads JSON too, which
+   * is how an untagged body has always been read — and to the file's extension
+   * for a path. The names on offer are `formats` in /capabilities.
+   */
+  format?: string;
 }
 
 export function resolveFlow(
@@ -31,10 +39,13 @@ export function resolveFlow(
   if (!inline && !path) {
     throw new HttpError(400, 'request must provide "flow" or "flowPath"');
   }
+  if (body.format !== undefined && typeof body.format !== 'string') {
+    throw new HttpError(400, '"format" must be a string naming an input format');
+  }
 
   return path
-    ? flowFromPath(body.flowPath as string, config, plugins)
-    : flowFromBody(body.flow, plugins);
+    ? flowFromPath(body.flowPath as string, body.format, config, plugins)
+    : flowFromBody(body.flow, body.format, plugins);
 }
 
 export function resolveFlowPath(flowsRoot: string, requested: string): string {
@@ -65,6 +76,7 @@ export function resolveFlowPath(flowsRoot: string, requested: string): string {
 
 function flowFromPath(
   requested: string,
+  format: string | undefined,
   config: ServerConfig,
   plugins?: PluginRegistry,
 ): ParsedFlow {
@@ -76,14 +88,29 @@ function flowFromPath(
   }
 
   const path = resolveFlowPath(config.flowsRoot, requested);
-  return specErrorAsBadRequest(() => loadFlow(path, plugins));
+  return specErrorAsBadRequest(() => loadFlow(path, plugins, { format }));
 }
 
-function flowFromBody(flow: unknown, plugins?: PluginRegistry): ParsedFlow {
+function flowFromBody(
+  flow: unknown,
+  format: string | undefined,
+  plugins?: PluginRegistry,
+): ParsedFlow {
+  // An object body has no wire format left to choose — the transport already
+  // parsed it — so a "format" beside one is a request that cannot mean
+  // anything, refused rather than ignored.
+  if (typeof flow !== 'string' && format !== undefined) {
+    throw new HttpError(
+      400,
+      '"format" applies to a "flow" sent as a string (or a "flowPath"); ' +
+        'an inline flow object is already parsed',
+    );
+  }
+
   return specErrorAsBadRequest(() => {
     const parsed =
       typeof flow === 'string'
-        ? parseFlowYaml(flow, plugins)
+        ? parseFlowWith(inputFormatByName(format ?? 'yaml', plugins), flow, plugins)
         : parseFlowObject(flow, plugins);
 
     validateFlow(parsed);

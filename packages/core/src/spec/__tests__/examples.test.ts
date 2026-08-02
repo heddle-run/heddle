@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
-import { loadComponent } from '../load.js';
+import { loadComponent, loadFlow } from '../load.js';
 import { loadPlugins } from '../../plugin/loader.js';
 import { validateManifest } from '../../plugin/manifest.js';
 
@@ -52,8 +52,21 @@ function collectSpecFiles(dir: string): string[] {
   return results;
 }
 
+/**
+ * Files the extension-based sweep must not judge.
+ *
+ * The docker-agent example exists to show a spec whose extension does not name
+ * its format: a cagent file called `agent.yaml`, read through the
+ * `docker-agent` input format its plugin declares. Feeding it to the sweep as
+ * YAML would fail for exactly the reason the example gives for `--format`
+ * existing. It gets its own test below, loaded the way its README loads it.
+ */
+const FOREIGN_FORMAT_SPECS = new Set(['docker-agent/agent.yaml']);
+
 const allFiles = collectSpecFiles(examplesDir).sort();
-const specFiles = allFiles.filter((f) => !isManifest(f));
+const specFiles = allFiles.filter(
+  (f) => !isManifest(f) && !FOREIGN_FORMAT_SPECS.has(relative(examplesDir, f)),
+);
 const manifestFiles = allFiles.filter(isManifest);
 
 const fileEntries = specFiles.map((f) => [relative(examplesDir, f), f] as const);
@@ -104,6 +117,17 @@ describe('examples', () => {
     const name = (component as unknown as { name: string }).name;
     expect(ct).toBeTruthy();
     expect(name).toBeTruthy();
+  });
+
+  it('docker-agent/agent.yaml parses through its own input format', async () => {
+    const dir = join(examplesDir, 'docker-agent');
+    const plugins = await loadPlugins([join(dir, 'format.mjs')]);
+
+    const flow = loadFlow(join(dir, 'agent.yaml'), plugins, {
+      format: 'docker-agent',
+    });
+    expect(flow.name).toBe('quayside');
+    expect(flow.parsedNodes.map((n) => n.componentType)).toContain('AgentNode');
   });
 
   it.each(manifestEntries)('%s is a valid plugin manifest', (_label, filePath) => {

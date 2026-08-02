@@ -1,0 +1,26 @@
+# A Docker agent file (cagent configuration), as its own tooling would read it.
+# https://docs.docker.com/ai/docker-agent/configuration/overview/
+#
+# heddle reads it through the docker-agent input format:
+#   heddle validate examples/docker-agent/agent.yaml \
+#     --format docker-agent --plugin ./examples/docker-agent/format.mjs
+
+metadata:
+  name: quayside
+  description: A harbourmaster's assistant
+
+models:
+  smart:
+    provider: openai
+    model: gpt-4o-mini
+    temperature: 0.2
+    max_tokens: 1024
+
+agents:
+  root:
+    model: smart
+    description: Answers questions about berthing, tides and paperwork.
+    instruction: |
+      You are the harbourmaster's assistant at a small port.
+      Answer briefly and practically. When a question involves
+      scheduling, always mention the tide.

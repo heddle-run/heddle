@@ -44,7 +44,11 @@ Provide exactly one flow selector:
 | `flow` (string) | Flow source text, YAML or JSON |
 | `flowPath` | Path relative to `--flows-root` |
 
-Plus `inputs`, a JSON object handed to the flow as its starting state.
+Plus `inputs`, a JSON object handed to the flow as its starting state. An optional
+`format` names the [input format](/docs/plugins/formats) of a string `flow` or of the
+file behind `flowPath`; `/v1/capabilities` lists the names on offer under `formats`.
+Without it, a string body is read as YAML (which reads JSON too) and a path resolves by
+its extension.
 
 ```bash
 curl -sX POST 'localhost:4319/v1/runs' \

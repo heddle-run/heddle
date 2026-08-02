@@ -1,15 +1,32 @@
 import type { ComponentBase } from 'agentspec';
-import YAML from 'yaml';
 import { toSpecFlow } from './adapter.js';
 import type { Agent, ParsedFlow } from './types.js';
 import { PluginRegistry } from '../plugin/registry.js';
 import { checkPluginComponents } from '../plugin/flow-preprocess.js';
 import { installWidenedUnions } from './open-unions.js';
+import {
+  JSON_INPUT_FORMAT,
+  YAML_INPUT_FORMAT,
+  type InputFormatDef,
+} from './input-format.js';
 import { SpecError } from '../errors.js';
 
 installWidenedUnions();
 
 const NO_PLUGINS = PluginRegistry.empty();
+
+/**
+ * `parseFlow` through any input format — the seam every entry point below is
+ * a fixed-format wrapper over. The format turns text into an Agent Spec
+ * document; everything after that is one shared pipeline.
+ */
+export function parseFlowWith(
+  format: InputFormatDef,
+  data: string | Buffer,
+  registry: PluginRegistry = NO_PLUGINS,
+): ParsedFlow {
+  return toFlow(documentOf(format, data), registry);
+}
 
 /**
  * Parse a JSON Agent Spec flow document. Parsing only — `loadFlow` is this
@@ -20,7 +37,7 @@ export function parseFlow(
   data: string | Buffer,
   registry: PluginRegistry = NO_PLUGINS,
 ): ParsedFlow {
-  return toFlow(jsonDocument(data), registry);
+  return parseFlowWith(JSON_INPUT_FORMAT, data, registry);
 }
 
 /** {@link parseFlow} for a YAML document. */
@@ -28,7 +45,7 @@ export function parseFlowYaml(
   data: string,
   registry: PluginRegistry = NO_PLUGINS,
 ): ParsedFlow {
-  return toFlow(yamlDocument(data), registry);
+  return parseFlowWith(YAML_INPUT_FORMAT, data, registry);
 }
 
 /**
@@ -72,7 +89,7 @@ export function parseComponent(
   data: string | Buffer,
   registry: PluginRegistry = NO_PLUGINS,
 ): ParsedFlow | Agent {
-  const component = deserialize(jsonDocument(data), registry);
+  const component = deserialize(documentOf(JSON_INPUT_FORMAT, data), registry);
   const componentType = (component as unknown as { componentType: string })
     .componentType;
 
@@ -89,14 +106,24 @@ export function parseComponent(
 }
 
 /**
- * Parse any single Agent Spec component from YAML, without deciding what it
- * is — the raw deserializer, for the caller that dispatches on the result.
+ * Parse any single Agent Spec component through any input format, without
+ * deciding what it is — the raw deserializer, for the caller that dispatches
+ * on the result.
  */
+export function parseComponentWith(
+  format: InputFormatDef,
+  data: string | Buffer,
+  registry: PluginRegistry = NO_PLUGINS,
+): ComponentBase {
+  return deserialize(documentOf(format, data), registry);
+}
+
+/** {@link parseComponentWith} for a YAML document. */
 export function parseComponentYaml(
   data: string,
   registry: PluginRegistry = NO_PLUGINS,
 ): ComponentBase {
-  return deserialize(yamlDocument(data), registry);
+  return parseComponentWith(YAML_INPUT_FORMAT, data, registry);
 }
 
 /** {@link parseComponentYaml} for a JSON document. */
@@ -104,7 +131,7 @@ export function parseComponentJson(
   data: string | Buffer,
   registry: PluginRegistry = NO_PLUGINS,
 ): ComponentBase {
-  return deserialize(jsonDocument(data), registry);
+  return parseComponentWith(JSON_INPUT_FORMAT, data, registry);
 }
 
 function toFlow(
@@ -122,13 +149,12 @@ function deserialize(
   return registry.deserializer().fromJson(JSON.stringify(raw)) as ComponentBase;
 }
 
-function jsonDocument(data: string | Buffer): Record<string, unknown> {
+function documentOf(
+  format: InputFormatDef,
+  data: string | Buffer,
+): Record<string, unknown> {
   const text = typeof data === 'string' ? data : data.toString();
-  return asDocument(JSON.parse(text), 'JSON');
-}
-
-function yamlDocument(data: string): Record<string, unknown> {
-  return asDocument(YAML.parse(data), 'YAML');
+  return asDocument(format.parse(text), format.name.toUpperCase());
 }
 
 function asDocument(value: unknown, format: string): Record<string, unknown> {

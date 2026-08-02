@@ -5,7 +5,7 @@ description: Learn how to define multi-step agent workflows using nodes and edge
 
 A flow is a directed graph of nodes connected by edges. It defines the execution order and data passing between steps in your workflow.
 
-Flows are written in JSON or YAML following the [Open Agent Specification](https://oracle.github.io/agent-spec/). Field names in the file are `snake_case`.
+Flows are written in JSON or YAML following the [Open Agent Specification](https://oracle.github.io/agent-spec/). Field names in the file are `snake_case`. JSON and YAML are the two builtin [input formats](/docs/plugins/formats); a plugin can add another wire format without touching anything downstream of the parse.
 
 ## Component references
 
