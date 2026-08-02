@@ -78,8 +78,8 @@ export default function Footer() {
               maxWidth: "32ch",
             }}
           >
-            A CLI runtime for the Open Agent Specification. Open source, MIT
-            licensed, and entirely local.
+            A batteries-included declarative agent runtime. Open source and
+            entirely local.
           </p>
         </div>
 
