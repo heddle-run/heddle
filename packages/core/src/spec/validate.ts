@@ -1,6 +1,16 @@
 import type { Agent, ParsedFlow } from './types.js';
 import { SpecError } from '../errors.js';
 
+/**
+ * Check a parsed flow document is internally consistent — named, non-empty, no
+ * duplicate node names, no edge referring to a node the flow does not have.
+ *
+ * The first of heddle's two validation passes, and the one that needs nothing
+ * but the document: `loadFlow` runs it for you, so calling it yourself only
+ * matters for a flow that arrived some other way. The second pass is graph
+ * `validate`, which sees what only the compiled graph can show. Throws a
+ * `SpecError` naming every problem at once rather than the first.
+ */
 export function validateFlow(flow: ParsedFlow): void {
   const nodeNames = new Set(flow.parsedNodes.map((node) => node.name));
 
@@ -17,6 +27,11 @@ export function validateFlow(flow: ParsedFlow): void {
   }
 }
 
+/**
+ * `validateFlow`'s counterpart for a standalone Agent document: a name and the
+ * right componentType, which is all that is checkable before the agent is
+ * embedded in a flow and compiled.
+ */
 export function validateAgent(agent: Agent): void {
   const problems: string[] = [];
 

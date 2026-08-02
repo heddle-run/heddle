@@ -9,6 +9,18 @@ import { ToolNodeExecutor } from '../node/tool.js';
 import { CompiledGraph, type CompiledNode } from './types.js';
 import { CompileError } from '../errors.js';
 
+/**
+ * Turn a parsed flow into something a `Runner` can walk: every node paired
+ * with the executor that will run it, every edge attached to its source.
+ *
+ * This is where `deps` is bound — the tool registry, the provider, the plugin
+ * registry all reach a node's executor here, so a graph compiled against one
+ * set of dependencies runs against that set for its whole life. Compiling is
+ * cheap and starts nothing (no plugin process, no model call), which is why a
+ * compiled graph can be built once and run many times. Run `validate` on the
+ * result before trusting it: `compile` refuses only what it cannot build, not
+ * what will strand a run.
+ */
 export function compile(flow: ParsedFlow, deps: Dependencies): CompiledGraph {
   const nodes = compileNodes(flow, deps);
   const start = findStartNode(nodes);

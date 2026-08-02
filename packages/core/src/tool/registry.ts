@@ -5,6 +5,16 @@ import { ToolError } from '../errors.js';
 
 const EXECUTABLE_BITS = 0o111;
 
+/**
+ * The registry behind `--tools-dir`: every executable file in one directory,
+ * each a tool named after its file with the extension dropped.
+ *
+ * The directory is scanned once, at `create` — a file added afterwards is not
+ * a tool until a new registry is built, which is why a long-lived server scans
+ * per run or holds one registry deliberately. Descriptions and schemas are a
+ * manifest concept; a file has neither, so what the model is told about one of
+ * these tools is its name and nothing more.
+ */
 export class FileRegistry implements Registry {
   private readonly tools: Map<string, ToolDef>;
 
@@ -37,10 +47,25 @@ export class FileRegistry implements Registry {
   }
 }
 
+/**
+ * The names a flow uses that this registry cannot serve — what to check before
+ * a run rather than during one, so a missing executable is an error naming
+ * every absent tool instead of a failure at whichever call reached it first.
+ */
 export function missingTools(registry: Registry, names: string[]): string[] {
   return names.filter((name) => !registry.lookup(name));
 }
 
+/**
+ * Layer registries into one, later sources winning on a shared name.
+ *
+ * The order is the policy: `standardRegistry` puts the plugins' tools first
+ * and the operator's directory after, so a file the operator installed shadows
+ * a plugin's tool rather than the reverse. A plugin capturing a name it did
+ * not declare `shadows: true` for is refused outright — a name bound in bulk
+ * is reached by code that never mentions it, so heddle will not pick a winner
+ * quietly. `onShadow` hears about the collisions that are allowed to stand.
+ */
 export function composeRegistries(
   registries: Registry[],
   onShadow?: (tool: ToolDef, shadowed: ToolDef) => void,

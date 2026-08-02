@@ -12,9 +12,8 @@
  * in does. What must never regress is the property in between — loading is still
  * free, and discovery is a separate step somebody took.
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { describe, it, expect } from 'vitest';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 
@@ -23,18 +22,10 @@ import { discoverTools, loadRemotePlugin } from '../remote-loader.js';
 import { validateManifest } from '../manifest.js';
 import { withRuntime } from '../runtime-source.js';
 import type { PluginRegistry } from '../registry.js';
+import { useDisposal, useScratch } from './helpers/remote-plugin.js';
 
-let scratch: string;
-const open: PluginRegistry[] = [];
-
-beforeEach(() => {
-  scratch = mkdtempSync(join(tmpdir(), 'heddle-discovery-'));
-});
-
-afterEach(() => {
-  while (open.length) open.pop()!.dispose();
-  rmSync(scratch, { recursive: true, force: true });
-});
+const scratch = useScratch('heddle-discovery-');
+const open = useDisposal<PluginRegistry>();
 
 /**
  * Write a plugin whose tools are answered rather than declared.
@@ -43,8 +34,8 @@ afterEach(() => {
  * finds one when a manifest names no `command`.
  */
 function writePlugin(source: string, manifest: Record<string, unknown>): string {
-  writeFileSync(join(scratch, 'proxy.mjs'), withRuntime(source));
-  const path = join(scratch, 'proxy.json');
+  writeFileSync(join(scratch.path, 'proxy.mjs'), withRuntime(source));
+  const path = join(scratch.path, 'proxy.json');
   writeFileSync(path, JSON.stringify(manifest));
   return path;
 }
@@ -111,8 +102,8 @@ function writePluginAt(
   source: string,
   manifest: Record<string, unknown>,
 ): string {
-  writeFileSync(join(scratch, `${base}.mjs`), withRuntime(source));
-  const path = join(scratch, `${base}.json`);
+  writeFileSync(join(scratch.path, `${base}.mjs`), withRuntime(source));
+  const path = join(scratch.path, `${base}.json`);
   writeFileSync(path, JSON.stringify(manifest));
   return path;
 }
@@ -186,7 +177,7 @@ describe('who may start a plugin', () => {
     const path = writePlugin(SERVES_TWO, PROXY);
 
     const registry = await loadPlugins([path], { discovery: true });
-    open.push(registry);
+    open.track(registry);
 
     expect(registry.toolRegistry().all().map((t) => t.name).sort()).toEqual([
       'fetch',
@@ -208,7 +199,7 @@ describe('who may start a plugin', () => {
     // Opting in does not mean asking everybody: discovery is per plugin, and one
     // that did not declare it is never called even with the flag on.
     const registry = await loadPlugins([path], { discovery: true });
-    open.push(registry);
+    open.track(registry);
 
     expect(registry.toolRegistry().all().map((t) => t.name)).toEqual(['declared']);
   });
@@ -218,7 +209,7 @@ describe('what a plugin may answer', () => {
   const load = async (source: string, manifest = PROXY) => {
     const path = writePlugin(source, manifest);
     const registry = await loadPlugins([path], { discovery: true });
-    open.push(registry);
+    open.track(registry);
     return registry;
   };
 
@@ -236,7 +227,7 @@ describe('what a plugin may answer', () => {
       tools: [{ name: 'declared', componentType: 'Proxy' }],
     });
     const registry = await loadPlugins([path], { discovery: true });
-    open.push(registry);
+    open.track(registry);
 
     expect(registry.toolRegistry().all().map((t) => t.name).sort()).toEqual([
       'declared',
@@ -307,7 +298,7 @@ describe('the property discovery spends, and no more', () => {
     const path = writePlugin(SERVES_TWO, PROXY);
     const remote = loadRemotePlugin(
       JSON.parse(readFileSync(path, 'utf-8')),
-      join(scratch, 'proxy.mjs'),
+      join(scratch.path, 'proxy.mjs'),
       { timeout: 5000 },
     );
 
@@ -331,7 +322,7 @@ describe('the property discovery spends, and no more', () => {
     );
 
     const registry = await loadPlugins([path], { discovery: true });
-    open.push(registry);
+    open.track(registry);
 
     registry.toolRegistry().all();
     registry.toolRegistry().lookup('called_1');
@@ -341,7 +332,7 @@ describe('the property discovery spends, and no more', () => {
   it('keeps lookup synchronous, which three call sites depend on', async () => {
     const path = writePlugin(SERVES_TWO, PROXY);
     const registry = await loadPlugins([path], { discovery: true });
-    open.push(registry);
+    open.track(registry);
 
     // Not a promise. Discovery happens before the registry is built rather than
     // inside it, so resolving a tool name during execution never waits on a pipe.

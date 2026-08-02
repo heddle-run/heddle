@@ -25,6 +25,19 @@ const CLOSED_OUTPUTS = new Map<string, string[]>([
   ['LlmNode', ['generated_text']],
 ]);
 
+/**
+ * Check a compiled graph for the faults only the graph can show: unreachable
+ * nodes, dead ends, branches no edge carries, data-flow edges reading what
+ * their source cannot produce, names heddle reserves for itself.
+ *
+ * The second of heddle's two validation passes. The first, `validateFlow`,
+ * checks the *document* — dangling references, duplicate names — and runs
+ * inside `loadFlow`; this one needs the executors' answers about branches and
+ * outputs, so it runs after `compile`. Every fault here is one a run would
+ * otherwise reveal only on the input that hits it, which is why the CLI and
+ * the server both call this before running anything. Throws a `CompileError`
+ * naming every problem at once.
+ */
 export function validate(graph: CompiledGraph): void {
   const reachable = reachableFromStart(graph);
 

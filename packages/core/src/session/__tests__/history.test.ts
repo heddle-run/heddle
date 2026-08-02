@@ -3,8 +3,7 @@ import { historyMessages, readHistory } from '../history.js';
 import { CHAT_HISTORY_KEY, isReservedStateKey } from '../reserved.js';
 
 describe('the chat-history contract', () => {
-  it('is one key, exported once', () => {
-    expect(CHAT_HISTORY_KEY).toBe('_chat_history');
+  it('reserves the history key and no ordinary input', () => {
     expect(isReservedStateKey(CHAT_HISTORY_KEY)).toBe(true);
     expect(isReservedStateKey('query')).toBe(false);
   });

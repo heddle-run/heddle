@@ -1,6 +1,5 @@
-import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { describe, it, expect, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Runner } from '../../runner/runner.js';
 import { DEFAULT_RUNNER_OPTIONS } from '../../runner/options.js';
@@ -10,27 +9,19 @@ import { MAX_RETRY_DELAY, MiddlewareChain, MiddlewareError } from '../middleware
 import { PluginRegistry } from '../registry.js';
 import { validateManifest } from '../manifest.js';
 import { loadRemotePlugin } from '../remote-loader.js';
-import { withRuntime } from '../runtime-source.js';
 import { parseFlow } from '../../spec/parser.js';
 import { compile } from '../../graph/compile.js';
 import type { CompiledGraph, CompiledNode } from '../../graph/types.js';
 import type {
-  HeddlePlugin,
   MiddlewareContext,
   PluginMiddlewareDef,
   SeamOutcome,
 } from '../types.js';
 import type { AfterVerdict } from '../protocol.js';
+import { useScratch } from './helpers/remote-plugin.js';
+import { chainOf, pluginWith } from './helpers/seams.js';
 
-let scratch: string;
-
-beforeAll(() => {
-  scratch = mkdtempSync(join(tmpdir(), 'heddle-middleware-'));
-});
-
-afterAll(() => {
-  rmSync(scratch, { recursive: true, force: true });
-});
+const scratch = useScratch('heddle-middleware-');
 
 interface Failing {
   failFor: number;
@@ -201,14 +192,6 @@ function middleware(
     seams: { nodeError: ['after'] },
     createMiddleware: () => ({ after }),
   };
-}
-
-function pluginWith(...defs: PluginMiddlewareDef[]): HeddlePlugin {
-  return { name: 'policies', version: '1.0.0', middleware: defs };
-}
-
-function chainOf(...defs: PluginMiddlewareDef[]): MiddlewareChain {
-  return MiddlewareChain.build(PluginRegistry.fromPlugins([pluginWith(...defs)]), {});
 }
 
 async function runWith(
@@ -573,12 +556,9 @@ describe('a chain of middleware', () => {
   });
 
   it('gives a remote middleware\'s bad verdict the same class as an in-process one', async () => {
-    const entry = join(scratch, 'remote-nonsense.mjs');
-    writeFileSync(
-      entry,
-      withRuntime(
-        `serve({ RetryPolicy: { nodeError: { after: () => ({ action: 'carry_on' }) } } });`,
-      ),
+    const entry = scratch.writeHelperPlugin(
+      'remote-nonsense',
+      `serve({ RetryPolicy: { nodeError: { after: () => ({ action: 'carry_on' }) } } });`,
     );
     const remote = loadRemotePlugin(
       {
@@ -729,12 +709,6 @@ describe('declaring a middleware', () => {
 });
 
 describe('the configuration channel', () => {
-  function writeMiddleware(name: string, body: string): string {
-    const entry = join(scratch, `${name}.mjs`);
-    writeFileSync(entry, withRuntime(body));
-    return entry;
-  }
-
   const RETRY_MANIFEST = {
     name: 'resilience',
     version: '1.0.0',
@@ -764,21 +738,21 @@ describe('the configuration channel', () => {
   }
 
   it('refuses a configuration the manifest schema rejects', () => {
-    const entry = writeMiddleware('cfg-bad', 'serve({});');
+    const entry = scratch.writeHelperPlugin('cfg-bad', 'serve({});');
     expect(() => chainFrom(RETRY_MANIFEST, entry, { RetryPolicy: { maxAttempts: 'lots' } })).toThrow(
       /maxAttempts/,
     );
   });
 
   it('refuses a middleware whose required configuration was never supplied', () => {
-    const entry = writeMiddleware('cfg-missing', 'serve({});');
+    const entry = scratch.writeHelperPlugin('cfg-missing', 'serve({});');
     expect(() => chainFrom(RETRY_MANIFEST, entry)).toThrow(
       /configuration for "RetryPolicy".*maxAttempts/s,
     );
   });
 
   it('refuses configuration no loaded middleware claims', () => {
-    const entry = writeMiddleware('cfg-typo', 'serve({});');
+    const entry = scratch.writeHelperPlugin('cfg-typo', 'serve({});');
     expect(() =>
       chainFrom(RETRY_MANIFEST, entry, {
         RetryPolicy: { maxAttempts: 2 },
@@ -794,7 +768,7 @@ describe('the configuration channel', () => {
   });
 
   it('delivers the configuration the schema validated, over the wire', async () => {
-    const entry = writeMiddleware(
+    const entry = scratch.writeHelperPlugin(
       'cfg-live',
       `serve({ RetryPolicy: { nodeError: { after: (_i, ctx) =>
          ({ action: 'replace', value: { budget: ctx.component.maxAttempts } }) } } });`,
@@ -808,7 +782,7 @@ describe('the configuration channel', () => {
   });
 
   it('reads an llm_config written the way the error message asks for it', () => {
-    const entry = writeMiddleware('cfg-llm', 'serve({});');
+    const entry = scratch.writeHelperPlugin('cfg-llm', 'serve({});');
     const chain = chainFrom(
       {
         ...RETRY_MANIFEST,
@@ -1043,14 +1017,8 @@ describe('an out-of-process middleware', () => {
     ],
   };
 
-  function writePlugin(name: string, body: string): string {
-    const entry = join(scratch, `${name}.mjs`);
-    writeFileSync(entry, withRuntime(body));
-    return entry;
-  }
-
   it('retries a node from another process', async () => {
-    const entry = writePlugin(
+    const entry = scratch.writeHelperPlugin(
       'remote-retry',
       `serve({
          RetryPolicy: {
@@ -1081,7 +1049,7 @@ describe('an out-of-process middleware', () => {
   });
 
   it('receives the subject, the outcome and the seam over the wire', async () => {
-    const entry = writePlugin(
+    const entry = scratch.writeHelperPlugin(
       'remote-echo',
       `serve({
          RetryPolicy: {
@@ -1123,7 +1091,7 @@ describe('an out-of-process middleware', () => {
   });
 
   it('reports a middleware that declares a seam but implements no handler', async () => {
-    const entry = writePlugin('remote-empty', `serve({ RetryPolicy: {} });`);
+    const entry = scratch.writeHelperPlugin('remote-empty', `serve({ RetryPolicy: {} });`);
     const remote = loadRemotePlugin(MANIFEST, entry, { timeout: 10_000 });
     const registry = PluginRegistry.empty();
     registry.addRemote(remote);
@@ -1140,7 +1108,7 @@ describe('an out-of-process middleware', () => {
   });
 
   it('fails the run when the plugin\'s process dies mid-consult', async () => {
-    const entry = writePlugin(
+    const entry = scratch.writeHelperPlugin(
       'remote-dies',
       `serve({
          RetryPolicy: { nodeError: { after: () => { process.exit(1); } } },

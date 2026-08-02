@@ -1,9 +1,7 @@
-import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { describe, it, expect } from 'vitest';
+import { chmodSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadRemotePlugin } from '../remote-loader.js';
-import { withRuntime } from '../runtime-source.js';
 import { PluginRegistry } from '../registry.js';
 import { compile } from '../../graph/compile.js';
 import { validate } from '../../graph/validate.js';
@@ -13,114 +11,16 @@ import { DEFAULT_RUNNER_OPTIONS } from '../../runner/options.js';
 import type { Event } from '../../runner/events.js';
 import type { SandboxSession } from '../../sandbox/types.js';
 import { PluginError } from '../../errors.js';
+import {
+  ALL_CAPABILITIES,
+  flowUsing,
+  manifest,
+  useDisposal,
+  useScratch,
+} from './helpers/remote-plugin.js';
 
-let scratch: string;
-const open: PluginRegistry[] = [];
-
-beforeAll(() => {
-  scratch = mkdtempSync(join(tmpdir(), 'heddle-remote-plugin-'));
-});
-
-afterAll(() => {
-  rmSync(scratch, { recursive: true, force: true });
-});
-
-afterEach(() => {
-  while (open.length) open.pop()!.dispose();
-});
-
-const PREAMBLE = `
-let buf = '';
-const send = (m) => process.stdout.write(JSON.stringify(m) + '\\n');
-const pendingTools = new Map();
-let toolId = 0;
-const callHost = (method, params) => new Promise((res, rej) => {
-  const id = 't' + toolId++;
-  pendingTools.set(id, { res, rej });
-  send({ id, method, params });
-});
-const runTool = (name, input) => callHost('runTool', { name, input });
-process.stdin.setEncoding('utf-8');
-process.stdin.on('data', async (chunk) => {
-  buf += chunk;
-  const lines = buf.split('\\n');
-  buf = lines.pop() ?? '';
-  for (const line of lines) {
-    if (!line.trim()) continue;
-    const msg = JSON.parse(line);
-    if (!msg.method) {
-      const p = pendingTools.get(String(msg.id));
-      if (p) { pendingTools.delete(String(msg.id));
-        msg.error ? p.rej(new Error(msg.error.message)) : p.res(msg.result); }
-      continue;
-    }
-    try { send({ id: msg.id, result: await handle(msg) }); }
-    catch (e) { send({ id: msg.id, error: { message: String(e && e.message || e) } }); }
-  }
-});
-`;
-
-function writePlugin(name: string, handleBody: string): string {
-  const dir = join(scratch, name);
-  rmSync(dir, { recursive: true, force: true });
-  const entry = join(scratch, `${name}.mjs`);
-  writeFileSync(entry, `${PREAMBLE}\nasync function handle(msg) {\n${handleBody}\n}\n`);
-  return entry;
-}
-
-function writeHelperPlugin(name: string, source: string): string {
-  const entry = join(scratch, `${name}.mjs`);
-  writeFileSync(entry, withRuntime(source));
-  return entry;
-}
-
-function manifest(
-  componentType: string,
-  extra: Record<string, unknown> = {},
-  capabilities: string[] = [],
-) {
-  return {
-    name: 'test-plugin',
-    version: '1.0.0',
-    capabilities,
-    components: [{ componentType, ...extra }],
-  };
-}
-
-const ALL_CAPABILITIES = ['runTool', 'emitEvent', 'log'] as const;
-
-function flowUsing(componentType: string, node: Record<string, unknown> = {}): string {
-  return JSON.stringify({
-    component_type: 'Flow',
-    name: 'remote-flow',
-    start_node: { $component_ref: 's' },
-    nodes: [{ $component_ref: 's' }, { $component_ref: 'p' }, { $component_ref: 'e' }],
-    control_flow_connections: [
-      {
-        component_type: 'ControlFlowEdge',
-        name: 'a',
-        from_node: { $component_ref: 's' },
-        to_node: { $component_ref: 'p' },
-      },
-      {
-        component_type: 'ControlFlowEdge',
-        name: 'b',
-        from_node: { $component_ref: 'p' },
-        to_node: { $component_ref: 'e' },
-      },
-    ],
-    $referenced_components: {
-      s: {
-        component_type: 'StartNode',
-        id: 's',
-        name: 's',
-        outputs: [{ title: 'text', type: 'string' }],
-      },
-      p: { component_type: componentType, id: 'p', name: 'p', ...node },
-      e: { component_type: 'EndNode', id: 'e', name: 'e' },
-    },
-  });
-}
+const scratch = useScratch('heddle-remote-plugin-');
+const open = useDisposal<PluginRegistry>();
 
 async function runFlow(
   flow: string,
@@ -132,7 +32,7 @@ async function runFlow(
   events?: Event[],
 ): Promise<Record<string, unknown>> {
   const registry = PluginRegistry.empty();
-  open.push(registry);
+  open.track(registry);
   registry.addRemote(
     loadRemotePlugin(manifestData, entry, { timeout, capabilities: [...ALL_CAPABILITIES] }),
   );
@@ -163,7 +63,7 @@ async function runWith(
 
 describe('running a node in another process', () => {
   it('executes and returns its output', async () => {
-    const entry = writePlugin(
+    const entry = scratch.writePlugin(
       'shout',
       `return { output: { shouted: String(msg.params.input.text).toUpperCase() } };`,
     );
@@ -172,27 +72,27 @@ describe('running a node in another process', () => {
   });
 
   it('passes the node its own spec fields', async () => {
-    const entry = writePlugin('conf', `return { output: { got: msg.params.node.name } };`);
+    const entry = scratch.writePlugin('conf', `return { output: { got: msg.params.node.name } };`);
     const state = await runWith('ConfNode', entry, manifest('ConfNode'));
     expect(state.got).toBe('p');
   });
 
   it('surfaces an error thrown inside the plugin', async () => {
-    const entry = writePlugin('boom', `throw new Error('deliberate failure');`);
+    const entry = scratch.writePlugin('boom', `throw new Error('deliberate failure');`);
     await expect(runWith('BoomNode', entry, manifest('BoomNode'))).rejects.toThrow(
       /deliberate failure/,
     );
   });
 
   it('rejects a result that is not { output }', async () => {
-    const entry = writePlugin('bad', `return { nope: true };`);
+    const entry = scratch.writePlugin('bad', `return { nope: true };`);
     await expect(runWith('BadNode', entry, manifest('BadNode'))).rejects.toThrow(
       /no "output" object/,
     );
   });
 
   it('names the likely cause when a plugin writes to stdout', async () => {
-    const entry = writePlugin(
+    const entry = scratch.writePlugin(
       'chatty',
       `process.stdout.write('debug noise\\n'); return { output: {} };`,
     );
@@ -202,7 +102,7 @@ describe('running a node in another process', () => {
   });
 
   it('times out a plugin that never answers', async () => {
-    const entry = writePlugin('hang', `return new Promise(() => {});`);
+    const entry = scratch.writePlugin('hang', `return new Promise(() => {});`);
     await expect(
       runWith('HangNode', entry, manifest('HangNode'), {}, {}, 300),
     ).rejects.toThrow(/did not answer execute within/);
@@ -284,7 +184,7 @@ describe('branching out of a plugin node', () => {
   }
 
   it('routes on the branch the plugin returned', async () => {
-    const entry = writePlugin('chooser', CHOOSER);
+    const entry = scratch.writePlugin('chooser', CHOOSER);
     const declared = manifest('ChooserNode', { branches: ['left', 'right'] });
 
     expect(await route(entry, declared, 'left')).toMatchObject({ end: 'end_left' });
@@ -292,7 +192,7 @@ describe('branching out of a plugin node', () => {
   });
 
   it('takes the unbranched edge when the plugin names no branch', async () => {
-    const entry = writePlugin('nobranch', `return { output: { ran: true } };`);
+    const entry = scratch.writePlugin('nobranch', `return { output: { ran: true } };`);
     const { end, state } = await route(
       entry,
       manifest('ChooserNode', { branches: ['left', 'right'] }),
@@ -304,7 +204,7 @@ describe('branching out of a plugin node', () => {
   });
 
   it('refuses a branch the manifest did not declare', async () => {
-    const entry = writePlugin('undeclaredbranch', CHOOSER);
+    const entry = scratch.writePlugin('undeclaredbranch', CHOOSER);
     // The manifest declares both branches the flow's edges leave on, so the
     // undeclared one has to come from the plugin at run time. Declaring fewer
     // than the flow routes on is caught by `validate` before anything runs,
@@ -321,14 +221,14 @@ describe('branching out of a plugin node', () => {
   });
 
   it('refuses any branch from a node that declared none', async () => {
-    const entry = writePlugin('silentbranch', CHOOSER);
+    const entry = scratch.writePlugin('silentbranch', CHOOSER);
     await expect(route(entry, manifest('ChooserNode'), 'left')).rejects.toThrow(
       /not in its declared branches \[\]/,
     );
   });
 
   it('refuses a branch that is not a string', async () => {
-    const entry = writePlugin('numericbranch', `return { output: {}, branch: 42 };`);
+    const entry = scratch.writePlugin('numericbranch', `return { output: {}, branch: 42 };`);
     await expect(
       route(
         entry,
@@ -341,7 +241,7 @@ describe('branching out of a plugin node', () => {
 
 describe('reverse calls', () => {
   it('runs a tool on the plugin behalf', async () => {
-    const entry = writePlugin(
+    const entry = scratch.writePlugin(
       'usetool',
       `const r = await runTool('echo', { v: msg.params.input.text });
        return { output: { fromTool: r.echoed } };`,
@@ -365,7 +265,7 @@ describe('reverse calls', () => {
   });
 
   it('reports a tool the registry does not have', async () => {
-    const entry = writePlugin(
+    const entry = scratch.writePlugin(
       'missingtool',
       `try { await runTool('absent', {}); return { output: { ok: true } }; }
        catch (e) { return { output: { err: e.message } }; }`,
@@ -380,7 +280,7 @@ describe('reverse calls', () => {
   });
 
   it('names what it does serve when the plugin calls something else', async () => {
-    const entry = writePlugin(
+    const entry = scratch.writePlugin(
       'wrongverb',
       `try { await callHost('getState', { key: 'x' }); return { output: { err: 'none' } }; }
        catch (e) { return { output: { err: e.message } }; }`,
@@ -392,7 +292,7 @@ describe('reverse calls', () => {
   });
 
   it('refuses a runTool that names no tool', async () => {
-    const entry = writePlugin(
+    const entry = scratch.writePlugin(
       'noname',
       `try { await callHost('runTool', { input: {} }); return { output: { err: 'none' } }; }
        catch (e) { return { output: { err: e.message } }; }`,
@@ -435,7 +335,7 @@ function scopedExecutor(): {
 
 describe('where a plugin node tools run', () => {
   it('runs them in the scope heddle opened for that execution', async () => {
-    const entry = writeHelperPlugin(
+    const entry = scratch.writeHelperPlugin(
       'scoped-tool',
       `serve({
          ScopedToolNode: {
@@ -466,7 +366,7 @@ describe('where a plugin node tools run', () => {
   });
 
   it('gives the tool the run signal, which the host-wide runner drops', async () => {
-    const entry = writeHelperPlugin(
+    const entry = scratch.writeHelperPlugin(
       'signalled-tool',
       `serve({
          SignalledToolNode: {
@@ -496,7 +396,7 @@ describe('where a plugin node tools run', () => {
   });
 
   it('still serves a plugin that hand-rolls the protocol and names no call', async () => {
-    const entry = writePlugin(
+    const entry = scratch.writePlugin(
       'callless-tool',
       `const r = await runTool('where', {});
        return { output: { toolSaw: r.workspace } };`,
@@ -522,7 +422,7 @@ describe('where a plugin node tools run', () => {
 
 describe('capabilities', () => {
   it('refuses a runTool the manifest never declared', async () => {
-    const entry = writePlugin(
+    const entry = scratch.writePlugin(
       'undeclared',
       `try { await runTool('echo', {}); return { output: { err: 'none' } }; }
        catch (e) { return { output: { err: e.message } }; }`,
@@ -548,7 +448,7 @@ describe('capabilities', () => {
   });
 
   it('lets a plugin that declared it through', async () => {
-    const entry = writePlugin(
+    const entry = scratch.writePlugin(
       'declaredtool',
       `const r = await runTool('echo', {}); return { output: { got: r.echoed } };`,
     );
@@ -571,7 +471,7 @@ describe('capabilities', () => {
   });
 
   it('refuses at load a capability the host does not grant', () => {
-    const entry = writePlugin('ungranted', `return { output: {} };`);
+    const entry = scratch.writePlugin('ungranted', `return { output: {} };`);
     expect(() =>
       loadRemotePlugin(manifest('UngrantedNode', {}, ['runTool']), entry, {
         capabilities: [],
@@ -580,14 +480,14 @@ describe('capabilities', () => {
   });
 
   it('names what the host does grant when it refuses', () => {
-    const entry = writePlugin('ungranted2', `return { output: {} };`);
+    const entry = scratch.writePlugin('ungranted2', `return { output: {} };`);
     expect(() =>
       loadRemotePlugin(manifest('Ungranted2Node', {}, ['runTool']), entry),
     ).toThrow(/Granted here: nothing/);
   });
 
   it('refuses a capability heddle does not serve, before any grant is consulted', () => {
-    const entry = writePlugin('bogus', `return { output: {} };`);
+    const entry = scratch.writePlugin('bogus', `return { output: {} };`);
     expect(() =>
       loadRemotePlugin(manifest('BogusNode', {}, ['readTheDisk']), entry, {
         capabilities: [...ALL_CAPABILITIES],
@@ -596,20 +496,20 @@ describe('capabilities', () => {
   });
 
   it('loads a manifest that says nothing about capabilities', async () => {
-    const entry = writePlugin('silent', `return { output: { ran: true } };`);
+    const entry = scratch.writePlugin('silent', `return { output: { ran: true } };`);
     const state = await runWith('SilentNode', entry, manifest('SilentNode'));
     expect(state).toMatchObject({ ran: true });
   });
 
   it('distinguishes a missing tool runner from a missing grant', async () => {
-    const entry = writePlugin(
+    const entry = scratch.writePlugin(
       'norunner',
       `try { await runTool('echo', {}); return { output: { err: 'none' } }; }
        catch (e) { return { output: { err: e.message } }; }`,
     );
 
     const registry = PluginRegistry.empty();
-    open.push(registry);
+    open.track(registry);
     const remote = loadRemotePlugin(manifest('NoRunnerNode', {}, ['runTool']), entry, {
       timeout: 5000,
       capabilities: [...ALL_CAPABILITIES],
@@ -620,7 +520,7 @@ describe('capabilities', () => {
       componentType: 'NoRunnerNode',
       node: {},
       input: {},
-      workspace: scratch,
+      workspace: scratch.path,
     })) as { output: Record<string, unknown> };
 
     expect(String(result.output.err)).toMatch(/no tool runner was installed/);
@@ -630,9 +530,9 @@ describe('capabilities', () => {
 
 describe('the manifest is data, not code', () => {
   it('supplies inputs, outputs and branches without starting the process', async () => {
-    const entry = writePlugin('declared', `return { output: {}, branch: 'left' };`);
+    const entry = scratch.writePlugin('declared', `return { output: {}, branch: 'left' };`);
     const registry = PluginRegistry.empty();
-    open.push(registry);
+    open.track(registry);
     registry.addRemote(
       loadRemotePlugin(
         manifest('DeclaredNode', {
@@ -654,9 +554,9 @@ describe('the manifest is data, not code', () => {
   });
 
   it('validates a component against the manifest schema', async () => {
-    const entry = writePlugin('schema', `return { output: {} };`);
+    const entry = scratch.writePlugin('schema', `return { output: {} };`);
     const registry = PluginRegistry.empty();
-    open.push(registry);
+    open.track(registry);
     registry.addRemote(
       loadRemotePlugin(
         manifest('StrictNode', {
@@ -670,16 +570,16 @@ describe('the manifest is data, not code', () => {
   });
 
   it('refuses a manifest with no components', () => {
-    const entry = writePlugin('empty', `return { output: {} };`);
+    const entry = scratch.writePlugin('empty', `return { output: {} };`);
     expect(() =>
       loadRemotePlugin({ name: 'x', version: '1', components: [] }, entry),
     ).toThrow(PluginError);
   });
 
   it('refuses a component type that would shadow a builtin', () => {
-    const entry = writePlugin('shadow', `return { output: {} };`);
+    const entry = scratch.writePlugin('shadow', `return { output: {} };`);
     const registry = PluginRegistry.empty();
-    open.push(registry);
+    open.track(registry);
     expect(() =>
       registry.addRemote(loadRemotePlugin(manifest('AgentNode'), entry)),
     ).toThrow(/builtin Agent Spec type/);
@@ -708,9 +608,9 @@ const POLICY = {
 
 describe("kind: 'component'", () => {
   it('is neither a node nor a transform to the compiler', () => {
-    const entry = writePlugin('kindonly', `return { output: {} };`);
+    const entry = scratch.writePlugin('kindonly', `return { output: {} };`);
     const registry = PluginRegistry.empty();
-    open.push(registry);
+    open.track(registry);
     registry.addRemote(loadRemotePlugin(nodeAndComponentManifest(), entry));
 
     expect(registry.kindOf('Policy')).toBe('component');
@@ -719,7 +619,7 @@ describe("kind: 'component'", () => {
   });
 
   it('reaches its parent node as data, and is never executed itself', async () => {
-    const entry = writePlugin(
+    const entry = scratch.writePlugin(
       'holder',
       `globalThis.__asked ??= [];
        if (msg.params.componentType) globalThis.__asked.push(msg.params.componentType);
@@ -745,9 +645,9 @@ describe("kind: 'component'", () => {
   });
 
   it('is validated against its manifest schema when its parent is parsed', async () => {
-    const entry = writePlugin('schemaonly', `return { output: {} };`);
+    const entry = scratch.writePlugin('schemaonly', `return { output: {} };`);
     const registry = PluginRegistry.empty();
-    open.push(registry);
+    open.track(registry);
     registry.addRemote(
       loadRemotePlugin(
         nodeAndComponentManifest({ type: 'object', required: ['rule'] }),
@@ -762,9 +662,9 @@ describe("kind: 'component'", () => {
   });
 
   it('is refused by kind when it is put in a node slot', () => {
-    const entry = writePlugin('inaslot', `return { output: {} };`);
+    const entry = scratch.writePlugin('inaslot', `return { output: {} };`);
     const registry = PluginRegistry.empty();
-    open.push(registry);
+    open.track(registry);
     registry.addRemote(loadRemotePlugin(nodeAndComponentManifest(), entry));
 
     expect(() => parseFlow(flowUsing('Policy'), registry)).toThrow(
@@ -788,7 +688,7 @@ function writeShellPlugin(
   name: string,
   { selfStarting, extension = '.sh' }: { selfStarting: boolean; extension?: string },
 ): string {
-  const entry = join(scratch, `${name}${extension}`);
+  const entry = join(scratch.path, `${name}${extension}`);
   writeFileSync(entry, `${selfStarting ? '#!/bin/sh\n' : ''}${SHELL_PLUGIN}\n`);
   chmodSync(entry, selfStarting ? 0o755 : 0o644);
   return entry;
@@ -839,7 +739,7 @@ describe('a plugin that is not a JavaScript module', () => {
       selfStarting: false,
       extension: '.plugin',
     });
-    const launcher = join(scratch, 'launch.sh');
+    const launcher = join(scratch.path, 'launch.sh');
     writeFileSync(launcher, '#!/bin/sh\nexec /bin/sh "$1"\n');
     chmodSync(launcher, 0o755);
 
@@ -869,7 +769,7 @@ describe('a plugin that is not a JavaScript module', () => {
 
   it('reports an entry point that is not there', () => {
     expect(() =>
-      loadRemotePlugin(manifest('ShellNode'), join(scratch, 'absent.mjs')),
+      loadRemotePlugin(manifest('ShellNode'), join(scratch.path, 'absent.mjs')),
     ).toThrow(/is not accessible/);
   });
 
@@ -882,9 +782,9 @@ describe('a plugin that is not a JavaScript module', () => {
 });
 
 function hangingGraph(componentType: string, name: string) {
-  const entry = writePlugin(name, `return new Promise(() => {});`);
+  const entry = scratch.writePlugin(name, `return new Promise(() => {});`);
   const registry = PluginRegistry.empty();
-  open.push(registry);
+  open.track(registry);
   registry.addRemote(loadRemotePlugin(manifest(componentType), entry, { timeout: 60_000 }));
 
   const pf = parseFlow(flowUsing(componentType), registry);
@@ -928,9 +828,9 @@ describe('aborting a run that is inside a plugin call', () => {
   });
 
   it('does not start a plugin for a run that is already over', async () => {
-    const entry = writePlugin('never-started', `return { output: {} };`);
+    const entry = scratch.writePlugin('never-started', `return { output: {} };`);
     const registry = PluginRegistry.empty();
-    open.push(registry);
+    open.track(registry);
     const remote = loadRemotePlugin(manifest('NeverNode'), entry, { timeout: 60_000 });
     registry.addRemote(remote);
 
@@ -941,7 +841,7 @@ describe('aborting a run that is inside a plugin call', () => {
           componentType: 'NeverNode',
           node: { componentType: 'NeverNode', name: 'p' },
           input: {},
-          workspace: scratch,
+          workspace: scratch.path,
         },
         { signal: AbortSignal.abort() },
       ),
@@ -961,8 +861,8 @@ function stubSession(): StubSession {
   const session: SandboxSession = {
     name: 'stub',
     workspace: {
-      root: scratch,
-      bin: join(scratch, '.heddle', 'bin'),
+      root: scratch.path,
+      bin: join(scratch.path, '.heddle', 'bin'),
       grants: () => [],
       toolPaths: () => [],
       dispose: () => {},
@@ -973,7 +873,7 @@ function stubSession(): StubSession {
         command: toolPath,
         args: args ?? [],
         env: { HEDDLE_SANDBOX: '1', HEDDLE_STUB_BASE: 'floor' },
-        cwd: scratch,
+        cwd: scratch.path,
         cleanup: () => cleanups.push(toolPath),
       };
     },
@@ -983,23 +883,49 @@ function stubSession(): StubSession {
 }
 
 describe('spawning a plugin under a sandbox', () => {
-  it('hands the sandbox the program and its arguments separately', async () => {
-    const entry = writePlugin('sandboxed', `return { output: { ok: true } };`);
+  function spawnUnder(
+    name: string,
+    componentType: string,
+    body: string,
+    env?: Record<string, string>,
+  ): {
+    entry: string;
+    stub: StubSession;
+    host: { dispose(): void };
+    execute: () => Promise<unknown>;
+  } {
+    const entry = scratch.writePlugin(name, body);
     const stub = stubSession();
-    const registry = PluginRegistry.empty();
-    open.push(registry);
-    const remote = loadRemotePlugin(manifest('SandboxedNode'), entry, {
+    const registry = open.track(PluginRegistry.empty());
+    const remote = loadRemotePlugin(manifest(componentType), entry, {
       session: stub.session,
       timeout: 5000,
+      ...(env ? { env } : {}),
     });
     registry.addRemote(remote);
 
-    const result = await remote.host.call('execute', {
-      componentType: 'SandboxedNode',
-      node: { componentType: 'SandboxedNode', name: 'p' },
-      input: {},
-      workspace: scratch,
-    });
+    return {
+      entry,
+      stub,
+      host: remote.host,
+      execute: () =>
+        remote.host.call('execute', {
+          componentType,
+          node: { componentType, name: 'p' },
+          input: {},
+          workspace: scratch.path,
+        }),
+    };
+  }
+
+  it('hands the sandbox the program and its arguments separately', async () => {
+    const { entry, stub, execute } = spawnUnder(
+      'sandboxed',
+      'SandboxedNode',
+      `return { output: { ok: true } };`,
+    );
+
+    const result = await execute();
 
     expect(result).toMatchObject({ output: { ok: true } });
     expect(stub.wraps).toHaveLength(1);
@@ -1016,79 +942,35 @@ describe('spawning a plugin under a sandbox', () => {
     expect(args![2]).toBe(entry);
   });
 
-  it('gives the plugin the environment the backend built for it', async () => {
-    const entry = writePlugin(
-      'sandbox-env',
-      `return { output: { base: process.env.HEDDLE_STUB_BASE ?? 'absent' } };`,
-    );
-    const stub = stubSession();
-    const registry = PluginRegistry.empty();
-    open.push(registry);
-    const remote = loadRemotePlugin(manifest('EnvNode'), entry, {
-      session: stub.session,
-      timeout: 5000,
-    });
-    registry.addRemote(remote);
+  const ENV_PROBE = `return { output: { base: process.env.HEDDLE_STUB_BASE ?? 'absent' } };`;
 
-    await expect(
-      remote.host.call('execute', {
-        componentType: 'EnvNode',
-        node: { componentType: 'EnvNode', name: 'p' },
-        input: {},
-        workspace: scratch,
-      }),
-    ).resolves.toMatchObject({ output: { base: 'floor' } });
-  });
+  it.each([
+    ['the environment the backend built for it', undefined, 'floor'],
+    ['the caller-named override of the sandbox base', { HEDDLE_STUB_BASE: 'chosen' }, 'chosen'],
+  ])('gives the plugin %s', async (_what, env, base) => {
+    const { execute } = spawnUnder(`sandbox-env-${base}`, 'EnvNode', ENV_PROBE, env);
 
-  it('lets what the caller named win over the sandbox base', async () => {
-    const entry = writePlugin(
-      'sandbox-env-override',
-      `return { output: { base: process.env.HEDDLE_STUB_BASE ?? 'absent' } };`,
-    );
-    const stub = stubSession();
-    const registry = PluginRegistry.empty();
-    open.push(registry);
-    const remote = loadRemotePlugin(manifest('OverrideNode'), entry, {
-      session: stub.session,
-      env: { HEDDLE_STUB_BASE: 'chosen' },
-      timeout: 5000,
-    });
-    registry.addRemote(remote);
-
-    await expect(
-      remote.host.call('execute', {
-        componentType: 'OverrideNode',
-        node: { componentType: 'OverrideNode', name: 'p' },
-        input: {},
-        workspace: scratch,
-      }),
-    ).resolves.toMatchObject({ output: { base: 'chosen' } });
+    await expect(execute()).resolves.toMatchObject({ output: { base } });
   });
 
   it('releases the sandbox scratch when the plugin is disposed', async () => {
-    const entry = writePlugin('sandbox-cleanup', `return { output: {} };`);
-    const stub = stubSession();
-    const remote = loadRemotePlugin(manifest('CleanNode'), entry, {
-      session: stub.session,
-      timeout: 5000,
-    });
+    const { stub, host, execute } = spawnUnder(
+      'sandbox-cleanup',
+      'CleanNode',
+      `return { output: {} };`,
+    );
 
-    await remote.host.call('execute', {
-      componentType: 'CleanNode',
-      node: { componentType: 'CleanNode', name: 'p' },
-      input: {},
-      workspace: scratch,
-    });
+    await execute();
     expect(stub.cleanups).toEqual([]);
 
-    remote.host.dispose();
+    host.dispose();
     expect(stub.cleanups).toEqual([process.execPath]);
   });
 });
 
 describe('isolation', () => {
   it('runs the plugin somewhere other than the heddle process', async () => {
-    const entry = writePlugin('pid', `return { output: { pid: process.pid } };`);
+    const entry = scratch.writePlugin('pid', `return { output: { pid: process.pid } };`);
     const state = await runWith('PidNode', entry, manifest('PidNode'));
 
     expect(typeof state.pid).toBe('number');
@@ -1098,7 +980,7 @@ describe('isolation', () => {
   it('does not hand the plugin the server environment', async () => {
     process.env.HEDDLE_TEST_SECRET = 'super-secret-value';
     try {
-      const entry = writePlugin(
+      const entry = scratch.writePlugin(
         'env',
         `return { output: { secret: process.env.HEDDLE_TEST_SECRET ?? null,
                             keys: Object.keys(process.env) } };`,
@@ -1118,7 +1000,7 @@ describe('isolation', () => {
   });
 
   it('does not carry state from one run into the next', async () => {
-    const entry = writePlugin(
+    const entry = scratch.writePlugin(
       'planter',
       `globalThis.__planted ??= [];
        if (msg.params.input.plant) globalThis.__planted.push(msg.params.input.plant);
@@ -1134,7 +1016,7 @@ describe('isolation', () => {
   });
 
   it('keeps two concurrent runs from seeing each other', async () => {
-    const entry = writePlugin(
+    const entry = scratch.writePlugin(
       'concurrent',
       `globalThis.__seen ??= [];
        globalThis.__seen.push(msg.params.input.text);
@@ -1152,7 +1034,7 @@ describe('isolation', () => {
   });
 
   it('contains a plugin that kills its own process', async () => {
-    const entry = writePlugin('suicide', `process.exit(1);`);
+    const entry = scratch.writePlugin('suicide', `process.exit(1);`);
     await expect(runWith('SuicideNode', entry, manifest('SuicideNode'))).rejects.toThrow(
       /exited/,
     );
@@ -1160,7 +1042,7 @@ describe('isolation', () => {
   });
 
   it('stops the plugin process when the registry is disposed', async () => {
-    const entry = writePlugin('lives', `return { output: {} };`);
+    const entry = scratch.writePlugin('lives', `return { output: {} };`);
     const registry = PluginRegistry.empty();
     const remote = loadRemotePlugin(manifest('LivesNode'), entry, { timeout: 5000 });
     registry.addRemote(remote);
@@ -1169,7 +1051,7 @@ describe('isolation', () => {
       componentType: 'LivesNode',
       node: {},
       input: {},
-      workspace: scratch,
+      workspace: scratch.path,
     });
 
     registry.dispose();
@@ -1179,7 +1061,7 @@ describe('isolation', () => {
         componentType: 'LivesNode',
         node: {},
         input: {},
-        workspace: scratch,
+        workspace: scratch.path,
       }),
     ).rejects.toThrow(/disposed/);
   });
@@ -1257,7 +1139,7 @@ async function runTransform(
   deps: Record<string, unknown> = {},
 ): Promise<Record<string, unknown>> {
   const registry = PluginRegistry.empty();
-  open.push(registry);
+  open.track(registry);
   registry.addRemote(
     loadRemotePlugin(manifestData, entry, {
       timeout: 5000,
@@ -1285,7 +1167,7 @@ function transformManifest(componentType: string, phase = 'pre', capabilities: s
 
 describe('transforms out of process', () => {
   it('rejects a prompt without ever calling the model', async () => {
-    const entry = writePlugin(
+    const entry = scratch.writePlugin(
       'blocker',
       `const last = (msg.params.messages ?? []).at(-1);
        if (/forbidden/i.test(last?.content ?? '')) {
@@ -1309,7 +1191,7 @@ describe('transforms out of process', () => {
   });
 
   it('receives the agent messages, not the flow state', async () => {
-    const entry = writePlugin(
+    const entry = scratch.writePlugin(
       'inspector',
       `const messages = msg.params.messages ?? [];
        return { action: 'reject', reason: 'saw ' + messages.length + ' messages, last role ' + messages.at(-1)?.role };`,
@@ -1320,7 +1202,7 @@ describe('transforms out of process', () => {
   });
 
   it('is told which phase it is running in', async () => {
-    const entry = writePlugin(
+    const entry = scratch.writePlugin(
       'phased',
       `return { action: 'reject', reason: 'phase=' + msg.params.phase };`,
     );
@@ -1329,7 +1211,7 @@ describe('transforms out of process', () => {
   });
 
   it('reads its own configuration from the spec', async () => {
-    const entry = writePlugin(
+    const entry = scratch.writePlugin(
       'configured',
       `return { action: 'reject', reason: 'limit=' + msg.params.component.config.limit };`,
     );
@@ -1343,9 +1225,9 @@ describe('transforms out of process', () => {
   });
 
   it('validates a transform component against the manifest schema', async () => {
-    const entry = writePlugin('schema-t', `return { action: 'pass' };`);
+    const entry = scratch.writePlugin('schema-t', `return { action: 'pass' };`);
     const registry = PluginRegistry.empty();
-    open.push(registry);
+    open.track(registry);
     registry.addRemote(
       loadRemotePlugin(
         {
@@ -1369,21 +1251,21 @@ describe('transforms out of process', () => {
   });
 
   it('rejects a result that is not a known action', async () => {
-    const entry = writePlugin('badaction', `return { action: 'explode' };`);
+    const entry = scratch.writePlugin('badaction', `return { action: 'explode' };`);
     await expect(
       runTransform('BadAction', entry, transformManifest('BadAction')),
     ).rejects.toThrow(/expected pass, modify or reject/);
   });
 
   it('rejects a "modify" that carries no messages', async () => {
-    const entry = writePlugin('badmodify', `return { action: 'modify' };`);
+    const entry = scratch.writePlugin('badmodify', `return { action: 'modify' };`);
     await expect(
       runTransform('BadModify', entry, transformManifest('BadModify')),
     ).rejects.toThrow(/without "messages"/);
   });
 
   it('runs a tool on the transform behalf', async () => {
-    const entry = writePlugin(
+    const entry = scratch.writePlugin(
       'classify',
       `const verdict = await runTool('classify', { text: (msg.params.messages ?? []).at(-1)?.content });
        return { action: 'reject', reason: 'classifier said ' + verdict.label };`,
@@ -1415,7 +1297,7 @@ describe('transforms out of process', () => {
   });
 
   it('tells a transform it has no tool access when the flow configured none', async () => {
-    const entry = writePlugin(
+    const entry = scratch.writePlugin(
       'toolless',
       `try { await runTool('classify', {}); return { action: 'pass' }; }
        catch (e) { return { action: 'reject', reason: e.message }; }`,
@@ -1432,7 +1314,7 @@ describe('transforms out of process', () => {
   it('gives a transform none of the server environment', async () => {
     process.env.HEDDLE_TRANSFORM_SECRET = 'nope';
     try {
-      const entry = writePlugin(
+      const entry = scratch.writePlugin(
         'envguard',
         `return { action: 'reject', reason: 'secret=' + (process.env.HEDDLE_TRANSFORM_SECRET ?? 'absent') };`,
       );

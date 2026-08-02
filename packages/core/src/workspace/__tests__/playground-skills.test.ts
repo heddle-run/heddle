@@ -24,7 +24,6 @@ import {
   chmodSync,
   mkdirSync,
   mkdtempSync,
-  readdirSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
@@ -41,6 +40,7 @@ import { createWorkspaceFactory } from '../factory.js';
 import { checkedMount } from '../mount.js';
 import type { ExecutorScope, Registry } from '../../tool/types.js';
 import type { Mount, WorkspaceFactory, WorkspaceTool } from '../types.js';
+import { assertSkillsContract } from './helpers/skills-contract.js';
 
 /**
  * The shipped example, loaded rather than copied — a copy is a second thing to
@@ -149,29 +149,16 @@ const index = async (): Promise<string> =>
   String((await call('list_skills')).skills);
 
 describe('the index the model is always carrying', () => {
-  it('is in the workspace before the first tool runs', () => {
-    expect(readdirSync(join(scope.workspace, 'skills')).sort()).toEqual([
-      'date-arithmetic.md',
-      'incident-note.md',
-      'tabular-summary.md',
-    ]);
-  });
-
-  it('is names and first lines, and carries no body', async () => {
-    const listed = await index();
-
-    for (const file of example.files) {
-      const [description, ...rest] = file.content.split('\n');
-      expect(listed).toContain(description);
-
-      // The load-bearing assertion. A skill body says what to do; a first line
-      // says when it applies. The moment a body appears here, every skill is in
-      // the conversation from the first round and the example is a long prompt
-      // with extra steps.
-      const body = rest.join('\n').trim();
-      expect(body.length).toBeGreaterThan(40);
-      expect(listed).not.toContain(body.slice(0, 40));
-    }
+  it('honours the skills contract', async () => {
+    await assertSkillsContract({
+      scope,
+      registry,
+      names: ['date-arithmetic', 'incident-note', 'tabular-summary'],
+      descriptions: example.files.map((file) => file.content.split('\n')[0]),
+      bodies: example.files.map((file) =>
+        file.content.split('\n').slice(1).join('\n').trim(),
+      ),
+    });
   });
 
   it('names only skills read_skill can produce', async () => {
@@ -197,22 +184,6 @@ describe('reading one body', () => {
 
     expect(body).toContain('timedelta');
     expect(body).not.toContain('csv');
-  });
-
-  it('answers a name nothing matches instead of failing the round', async () => {
-    const { body } = await call('read_skill', { name: 'Spreadsheets' });
-
-    // Not a rejected promise: a failed tool call takes the agent's round with
-    // it, and the model that guessed the name is the one reader who could pick
-    // a better one. So the answer is a sentence listing what there is.
-    expect(body).toContain('there is no skill called');
-    expect(body).toContain('tabular-summary');
-  });
-
-  it('refuses a name that climbs out of the skills directory', async () => {
-    const { body } = await call('read_skill', { name: '../../etc/passwd' });
-
-    expect(body).toContain('there is no skill called');
   });
 });
 

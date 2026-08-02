@@ -15,6 +15,9 @@ export const initCommand = new Command('init')
     console.log(`  1. Edit ${dir}/flow.json to define your workflow`);
     console.log(`  2. Add tool scripts to ${dir}/tools/`);
     console.log(
-      `  3. Run: heddle run ${dir}/flow.json --tools-dir ${dir}/tools --input '{"query": "hello"}'`,
+      '  3. Set the model credential: export OPENAI_API_KEY=sk-...',
+    );
+    console.log(
+      `  4. Run: heddle run ${dir}/flow.json --tools-dir ${dir}/tools --input '{"query": "hello"}'`,
     );
   });

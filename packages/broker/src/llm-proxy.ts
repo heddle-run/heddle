@@ -1,8 +1,8 @@
+import { DEFAULT_MODEL_CALLS_PER_RUN } from "./constants";
 import { intVar, type Env } from "./env";
 import { error } from "./cors";
 import { verifyToken } from "./token";
 
-const DEFAULT_MODEL_CALLS_PER_RUN = 20;
 const RUN_BUDGET_REFILL_SECONDS = 3600;
 const BEARER_PREFIX = /^Bearer\s+/i;
 const TRAILING_SLASHES = /\/+$/;

@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Server } from 'node:http';
-import { CHAT_HISTORY_KEY, FileSessionStore } from '@heddle/core';
+import { FileSessionStore } from '@heddle/core';
 import { createServer } from '../server.js';
 
 function simpleFlow(): Record<string, unknown> {
@@ -116,6 +116,10 @@ describe('a server that keeps no sessions', () => {
   });
 });
 
+// The session semantics themselves — history injection, refusing a caller's
+// own history, turn and checkpoint lifecycles — are core's contract, pinned in
+// core's session tests. What is asserted here is the HTTP surface: routes,
+// status codes, and the wiring from request fields to that contract.
 describe('a server that keeps sessions', () => {
   it('names the store it is using', async () => {
     const res = await fetch(`${sessionBase}/v1/capabilities`);
@@ -161,19 +165,6 @@ describe('a server that keeps sessions', () => {
     ]);
   });
 
-  it('returns the answer that was kept, without heddle\'s own keys', async () => {
-    const id = await newSession();
-    await run(id, 'first');
-
-    const body = await (await run(id, 'second')).json();
-
-    // The run was given the history; the answer does not carry it back out, so
-    // a client echoing this into its next "inputs" is not refused for it.
-    expect(body.state).toEqual({ query: 'second' });
-    expect(CHAT_HISTORY_KEY in body.state).toBe(false);
-    expect((await store.read(id))?.turns[1].output).toEqual(body.state);
-  });
-
   it('serves the transcript back', async () => {
     const id = await newSession();
     await run(id, 'hello');
@@ -214,21 +205,6 @@ describe('a server that keeps sessions', () => {
 
     expect(res.status).toBe(400);
     expect((await res.json()).error.message).toMatch(/not a usable session id/);
-  });
-
-  it('refuses a caller that brought its own history to a session', async () => {
-    const id = await newSession();
-
-    const res = await send(sessionBase, 'POST', '/v1/runs', {
-      flow: simpleFlow(),
-      inputs: { query: 'hi', [CHAT_HISTORY_KEY]: [] },
-      session: id,
-    });
-
-    expect(res.status).toBe(400);
-    expect((await res.json()).error.message).toMatch(
-      /cannot be passed to a run that names a session/,
-    );
   });
 
   it('records a failed run, so the next turn opens on the truth', async () => {
@@ -298,20 +274,6 @@ describe('a durable run over HTTP', () => {
     }
   });
 
-  it('leaves nothing to resume once the run finished', async () => {
-    const id = await newSession();
-
-    const res = await send(sessionBase, 'POST', '/v1/runs', {
-      flow: simpleFlow(),
-      inputs: { query: 'hi' },
-      session: id,
-      durable: true,
-    });
-
-    expect(res.status).toBe(200);
-    expect(await store.readCheckpoint(id)).toBeUndefined();
-  });
-
   it('reports an unfinished run when the transcript is read', async () => {
     const id = await newSession();
     await store.writeCheckpoint(id, {
@@ -328,64 +290,6 @@ describe('a durable run over HTTP', () => {
     expect(await res.json()).toMatchObject({ unfinished: true });
   });
 
-  it('picks a checkpointed run up where it stopped', async () => {
-    const id = await newSession();
-    await store.writeCheckpoint(id, {
-      runId: 'r1',
-      at: new Date().toISOString(),
-      node: 'end',
-      carried: { query: 'hi', already: 'done' },
-      nodeOutputs: { start: { query: 'hi' } },
-      attempt: 1,
-      input: { query: 'hi' },
-    });
-
-    const res = await send(sessionBase, 'POST', '/v1/runs', {
-      flow: simpleFlow(),
-      session: id,
-      resume: true,
-    });
-
-    expect(res.status).toBe(200);
-    expect((await res.json()).state).toMatchObject({
-      query: 'hi',
-      already: 'done',
-    });
-    expect(await store.readCheckpoint(id)).toBeUndefined();
-  });
-
-  it('refuses a new message while a run is unfinished', async () => {
-    const id = await newSession();
-    await store.writeCheckpoint(id, {
-      runId: 'r1',
-      at: new Date().toISOString(),
-      node: 'end',
-      carried: {},
-      nodeOutputs: {},
-      attempt: 1,
-      input: {},
-    });
-
-    const res = await run(id, 'another question');
-
-    expect(res.status).toBe(400);
-    expect((await res.json()).error.message).toMatch(
-      /has an unfinished run in it/,
-    );
-  });
-
-  it('refuses to resume a session with nothing unfinished', async () => {
-    const id = await newSession();
-
-    const res = await send(sessionBase, 'POST', '/v1/runs', {
-      flow: simpleFlow(),
-      session: id,
-      resume: true,
-    });
-
-    expect(res.status).toBe(400);
-    expect((await res.json()).error.message).toMatch(/has nothing to resume/);
-  });
 });
 
 describe('a run that stopped on a human', () => {

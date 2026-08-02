@@ -24,6 +24,7 @@ import { invokeTool } from '../../tool/invoke.js';
 import { composeRegistries, FileRegistry } from '../../tool/registry.js';
 import type { ExecutorScope, Registry } from '../../tool/types.js';
 import type { WorkspaceTool } from '../types.js';
+import { assertSkillsContract } from './helpers/skills-contract.js';
 
 const repoRoot = join(fileURLToPath(import.meta.url), '../../../../../..');
 const example = join(repoRoot, 'examples/skills-agent');
@@ -68,42 +69,19 @@ async function call(
 }
 
 describe('skills as files a plugin ships', () => {
-  it('are in the workspace before the first tool runs', async () => {
-    const listed = readdirSync(join(scope.workspace, 'skills'));
-
-    expect(listed.sort()).toEqual([
-      'date-arithmetic.md',
-      'incident-note.md',
-      'tabular-summary.md',
-    ]);
-  });
-
-  it('are an index of names and one line each', async () => {
-    const { skills } = await call('list_skills');
-
-    expect(skills).toContain('tabular-summary:');
-    expect(skills).toContain('date-arithmetic:');
-    expect(skills).toContain('incident-note:');
-  });
-
-  /**
-   * The load-bearing assertion, and the one this whole arrangement exists for.
-   * Names and descriptions are cheap and always in context; a body is a tool
-   * call the model decided to make, on a task it decided the skill covers.
-   */
-  it('carries no body in the index', async () => {
-    const { skills } = await call('list_skills');
-
-    for (const file of readdirSync(join(example, 'skills'))) {
-      const body = readFileSync(join(example, 'skills', file), 'utf-8')
-        .split('\n')
-        .slice(2)
-        .join('\n')
-        .trim();
-
-      expect(body.length).toBeGreaterThan(40);
-      expect(skills as string).not.toContain(body.slice(0, 40));
-    }
+  it('honour the skills contract', async () => {
+    await assertSkillsContract({
+      scope,
+      registry,
+      names: ['date-arithmetic', 'incident-note', 'tabular-summary'],
+      bodies: readdirSync(join(example, 'skills')).map((file) =>
+        readFileSync(join(example, 'skills', file), 'utf-8')
+          .split('\n')
+          .slice(2)
+          .join('\n')
+          .trim(),
+      ),
+    });
   });
 
   it('returns one body, by the name the index gave', async () => {
@@ -111,19 +89,6 @@ describe('skills as files a plugin ships', () => {
 
     expect(body).toContain('Do not add the rows up yourself');
     expect(body).not.toContain('Counting days by hand');
-  });
-
-  it('answers a name nothing matches instead of failing the round', async () => {
-    const { body } = await call('read_skill', { name: 'tabluar-summary' });
-
-    expect(body).toContain('there is no skill called');
-    expect(body).toContain('tabular-summary');
-  });
-
-  it('refuses a name that climbs out of the skills directory', async () => {
-    const { body } = await call('read_skill', { name: '../../etc/passwd' });
-
-    expect(body).toContain('there is no skill called');
   });
 });
 

@@ -1,63 +1,22 @@
-import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadRemotePlugin } from '../remote-loader.js';
 import { PROTOCOL_VERSION } from '../protocol.js';
 import { EVENT_CONTRACT_VERSION } from '../../runner/events.js';
-import { withRuntime } from '../runtime-source.js';
 import type { PluginHost } from '../host.js';
+import { manifest as baseManifest, useDisposal, useScratch } from './helpers/remote-plugin.js';
 
-let scratch: string;
-const open: PluginHost[] = [];
+const scratch = useScratch('heddle-plugin-lifecycle-');
+const open = useDisposal<PluginHost>();
 
-beforeAll(() => {
-  scratch = mkdtempSync(join(tmpdir(), 'heddle-plugin-lifecycle-'));
-});
-
-afterAll(() => {
-  rmSync(scratch, { recursive: true, force: true });
-});
-
-afterEach(() => {
-  while (open.length) open.pop()!.dispose();
-});
-
-const LOOP = `
-const send = (m) => process.stdout.write(JSON.stringify(m) + '\\n');
-let buf = '';
-process.stdin.setEncoding('utf-8');
-process.stdin.on('data', (chunk) => {
-  buf += chunk;
-  const lines = buf.split('\\n');
-  buf = lines.pop() ?? '';
-  for (const line of lines) {
-    if (line.trim()) void onMessage(JSON.parse(line));
-  }
-});
-`;
-
-function writePlugin(name: string, body: string): string {
-  const entry = join(scratch, `${name}.mjs`);
-  writeFileSync(entry, `${LOOP}\nasync function onMessage(msg) {\n${body}\n}\n`);
-  return entry;
-}
-
-function writeHelperPlugin(name: string, source: string): string {
-  const entry = join(scratch, `${name}.mjs`);
-  writeFileSync(entry, withRuntime(source));
-  return entry;
-}
-
-function manifest(componentType: string, capabilities: string[] = []) {
-  return {
-    name: 'lifecycle-plugin',
-    version: '1.0.0',
-    capabilities,
-    components: [{ componentType }],
-  };
-}
+// The plugin name is asserted in the handshake failures below.
+const manifest = (
+  componentType: string,
+  capabilities: string[] = [],
+): Record<string, unknown> =>
+  baseManifest(componentType, {}, capabilities, 'lifecycle-plugin');
 
 function hostFor(
   entry: string,
@@ -68,7 +27,7 @@ function hostFor(
     timeout: options.timeout ?? 5_000,
     capabilities: (options.capabilities ?? []) as never,
   });
-  open.push(host);
+  open.track(host);
   return host;
 }
 
@@ -80,7 +39,7 @@ function execute(
 ): Promise<unknown> {
   return host.call(
     'execute',
-    { componentType, node: { name: 'p' }, input, workspace: scratch },
+    { componentType, node: { name: 'p' }, input, workspace: scratch.path },
     { onPartial },
   );
 }
@@ -90,7 +49,7 @@ const wait = (ms: number): Promise<void> =>
 
 describe('the version handshake', () => {
   it('greets the plugin before it asks it for anything', async () => {
-    const entry = writePlugin(
+    const entry = scratch.writeLoopPlugin(
       'greeted',
       `globalThis.__seen ??= [];
        globalThis.__seen.push(msg.method);
@@ -119,7 +78,7 @@ describe('the version handshake', () => {
   });
 
   it('tells the plugin what it was granted, not what heddle can do', async () => {
-    const entry = writePlugin(
+    const entry = scratch.writeLoopPlugin(
       'ungranted',
       `if (msg.method === 'init') {
          globalThis.__greeting = msg.params;
@@ -140,7 +99,7 @@ describe('the version handshake', () => {
   });
 
   it('fails the call when the plugin speaks a different version', async () => {
-    const entry = writePlugin(
+    const entry = scratch.writeLoopPlugin(
       'future',
       `if (msg.method === 'init') { send({ id: msg.id, result: { protocol: 99 } }); return; }
        send({ id: msg.id, result: { output: { fine: true } } });`,
@@ -154,7 +113,7 @@ describe('the version handshake', () => {
   });
 
   it('refuses later calls once the versions are known not to match', async () => {
-    const entry = writePlugin(
+    const entry = scratch.writeLoopPlugin(
       'future-again',
       `if (msg.method === 'init') { send({ id: msg.id, result: { protocol: 7 } }); return; }
        send({ id: msg.id, result: { output: {} } });`,
@@ -166,7 +125,7 @@ describe('the version handshake', () => {
   });
 
   it('runs a plugin that refuses the handshake', async () => {
-    const entry = writePlugin(
+    const entry = scratch.writeLoopPlugin(
       'legacy-error',
       `if (msg.method === 'init') {
          send({ id: msg.id, error: { message: 'unknown method: init' } });
@@ -182,7 +141,7 @@ describe('the version handshake', () => {
   });
 
   it('runs a plugin that ignores the handshake entirely', async () => {
-    const entry = writePlugin(
+    const entry = scratch.writeLoopPlugin(
       'legacy-silent',
       `if (msg.method === 'init') return;
        send({ id: msg.id, result: { output: { ran: true } } });`,
@@ -195,7 +154,7 @@ describe('the version handshake', () => {
   });
 
   it('runs a plugin whose handshake answer says nothing about a version', async () => {
-    const entry = writePlugin(
+    const entry = scratch.writeLoopPlugin(
       'shrugging',
       `send({ id: msg.id, result: { output: { ran: true } } });`,
     );
@@ -209,7 +168,7 @@ describe('the version handshake', () => {
 
 describe('partials', () => {
   it('delivers each partial and still settles on the result', async () => {
-    const entry = writePlugin(
+    const entry = scratch.writeLoopPlugin(
       'streamer',
       `if (msg.method !== 'execute') return;
        send({ id: msg.id, partial: { token: 'he' } });
@@ -241,7 +200,7 @@ describe('partials', () => {
    * it.
    */
   it('does not settle the call', async () => {
-    const entry = writePlugin(
+    const entry = scratch.writeLoopPlugin(
       'partial-only',
       `if (msg.method !== 'execute') return;
        send({ id: msg.id, partial: { token: 'a' } });`,
@@ -281,7 +240,7 @@ describe('partials', () => {
    */
   it('keeps a call alive for longer than its timeout while partials arrive', async () => {
     const budget = 1_000;
-    const entry = writePlugin(
+    const entry = scratch.writeLoopPlugin(
       'slow-streamer',
       `if (msg.method !== 'execute') return;
        const stop = Date.now() + ${budget * 1.2};
@@ -304,7 +263,7 @@ describe('partials', () => {
   });
 
   it('ignores a partial for a call nobody is waiting on', async () => {
-    const entry = writePlugin(
+    const entry = scratch.writeLoopPlugin(
       'stray',
       `if (msg.method !== 'execute') return;
        send({ id: 4242, partial: { orphan: true } });
@@ -320,7 +279,7 @@ describe('partials', () => {
   });
 
   it('fails the call when its own consumer cannot take a partial', async () => {
-    const entry = writePlugin(
+    const entry = scratch.writeLoopPlugin(
       'thrower',
       `if (msg.method !== 'execute') return;
        send({ id: msg.id, partial: { token: 'a' } });
@@ -351,7 +310,7 @@ describe('partials', () => {
  * from the moment the plugin went quiet, which is what these tests are about.
  */
 function writeHangingPlugin(name: string, cancels: boolean): string {
-  return writePlugin(
+  return scratch.writeLoopPlugin(
     name,
     `if (msg.method === 'init') return;
      if (msg.method === 'cancel') {
@@ -454,8 +413,8 @@ describe('cancelling a call heddle has given up on', () => {
 
 describe('stopping a plugin process', () => {
   it('asks before it kills', async () => {
-    const marker = join(scratch, 'said-goodbye');
-    const entry = writePlugin(
+    const marker = join(scratch.path, 'said-goodbye');
+    const entry = scratch.writeLoopPlugin(
       'polite-exit',
       `if (msg.method === 'shutdown') {
          const { writeFileSync } = await import('node:fs');
@@ -482,7 +441,7 @@ describe('stopping a plugin process', () => {
   });
 
   it('kills a plugin that ignores both the verb and its closed stdin', async () => {
-    const entry = writePlugin(
+    const entry = scratch.writeLoopPlugin(
       'immortal',
       `if (msg.method === 'init' || msg.method === 'shutdown') return;
        setInterval(() => {}, 1000);
@@ -563,7 +522,7 @@ function speakTo(
 
 describe('the inlined runtime helper', () => {
   it('answers the handshake with the version it was generated from', async () => {
-    const entry = writeHelperPlugin(
+    const entry = scratch.writeHelperPlugin(
       'helper-init',
       `serve({ Noop: { execute: () => ({ output: {} }) } });`,
     );
@@ -574,7 +533,7 @@ describe('the inlined runtime helper', () => {
   });
 
   it('acknowledges a cancel only after dropping the call it names', async () => {
-    const entry = writeHelperPlugin(
+    const entry = scratch.writeHelperPlugin(
       'helper-cancel',
       `serve({
          Hang: {
@@ -599,8 +558,8 @@ describe('the inlined runtime helper', () => {
   });
 
   it('runs a plugin shutdown hook before the process ends', async () => {
-    const marker = join(scratch, 'helper-said-goodbye');
-    const entry = writeHelperPlugin(
+    const marker = join(scratch.path, 'helper-said-goodbye');
+    const entry = scratch.writeHelperPlugin(
       'helper-shutdown',
       `import { writeFileSync } from 'node:fs';
        serve(
@@ -629,7 +588,7 @@ describe('a plugin that writes JSON which is not a frame', () => {
 
   for (const [label, literal] of cases) {
     it(`fails the call rather than the process, for ${label}`, async () => {
-      const entry = writePlugin(
+      const entry = scratch.writeLoopPlugin(
         `garbage-${literal.replace(/\W/g, '')}`,
         `if (msg.method !== 'execute') return;
          process.stdout.write('${literal.replace(/'/g, "\\'")}' + '\\n');`,
