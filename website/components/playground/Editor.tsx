@@ -1,5 +1,9 @@
 "use client";
 
+/* Code is always navy in this system, and a textarea a reader types a spec
+   into is code — so the editing surface is the inside of the window rather
+   than a field sitting in one. It carries no border of its own: the window
+   around it already is the border. */
 export default function Editor({
   value,
   onChange,
@@ -19,6 +23,7 @@ export default function Editor({
 }) {
   return (
     <textarea
+      className="hds-code-input"
       aria-label={label}
       value={value}
       onChange={(event) => onChange(event.target.value)}
@@ -37,11 +42,13 @@ export default function Editor({
         padding: "var(--space-4) var(--space-5)",
         border: 0,
         outline: "none",
-        background: "var(--bg-inset)",
-        color: "var(--text-strong)",
+        background: "transparent",
+        color: "var(--code-fg)",
+        caretColor: "var(--cyan-500)",
         fontFamily: "var(--font-mono)",
-        fontSize: "var(--fs-xs)",
-        lineHeight: "var(--lh-relaxed)",
+        fontSize: "var(--fs-code)",
+        lineHeight: "var(--lh-code)",
+        letterSpacing: "var(--ls-mono)",
       }}
     />
   );

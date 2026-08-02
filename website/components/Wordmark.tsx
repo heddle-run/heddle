@@ -1,47 +1,22 @@
-import { Icon } from "@/ds";
-
-export default function Wordmark({
-  size = "md",
-  showDomain = true,
-}: {
-  size?: "sm" | "md" | "lg";
-  showDomain?: boolean;
-}) {
-  const fs =
-    size === "sm"
-      ? "var(--fs-sm)"
-      : size === "lg"
-        ? "var(--fs-xl)"
-        : "var(--fs-lg)";
-  const glyph = size === "sm" ? 16 : size === "lg" ? 24 : 20;
-
+/**
+ * The wordmark: the lowercase word, set in Plex Sans Medium.
+ *
+ * There is no logo and no glyph beside it — the word is the mark. The nav, the
+ * playground bar and the docs shell all set it at 17px; `sm` exists for the
+ * places fumadocs gives it less room than that.
+ */
+export default function Wordmark({ size = "md" }: { size?: "sm" | "md" }) {
   return (
     <span
-      className="ff-text-transition"
       style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: "var(--space-2)",
-        color: "var(--text-strong)",
+        fontFamily: "var(--font-sans)",
         fontWeight: "var(--fw-medium)",
-        letterSpacing: "var(--tracking-tight)",
-        fontSize: fs,
+        fontSize: size === "sm" ? 15 : 17,
+        letterSpacing: "-0.02em",
+        color: "var(--text-strong)",
       }}
     >
-      <Icon name="waypoints" size={glyph} />
-      <span>heddle</span>
-      {showDomain && (
-        <span
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: "var(--fs-xs)",
-            color: "var(--text-faint)",
-            letterSpacing: 0,
-          }}
-        >
-          .run
-        </span>
-      )}
+      heddle
     </span>
   );
 }

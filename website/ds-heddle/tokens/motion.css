@@ -1,4 +1,4 @@
-.hds{--ease-standard:cubic-bezier(.2,0,.2,1); /* @kind other */
+:root{--ease-standard:cubic-bezier(.2,0,.2,1); /* @kind other */
 --ease-out:cubic-bezier(.16,1,.3,1); /* @kind other */
 --ease-in-out:cubic-bezier(.4,0,.2,1); /* @kind other */
 --dur-instant:80ms; /* @kind other */
@@ -7,7 +7,7 @@
 --dur-slow:400ms; /* @kind other */
 --dur-deliberate:700ms; /* @kind other */
 --transition-control:background-color var(--dur-fast) var(--ease-standard),border-color var(--dur-fast) var(--ease-standard),color var(--dur-fast) var(--ease-standard),box-shadow var(--dur-fast) var(--ease-standard); /* @kind other */}
-@media (prefers-reduced-motion:reduce){.hds{--dur-fast:0ms; /* @kind other */
+@media (prefers-reduced-motion:reduce){:root{--dur-fast:0ms; /* @kind other */
 --dur-normal:0ms; /* @kind other */
 --dur-slow:0ms; /* @kind other */
 --dur-deliberate:0ms; /* @kind other */}}

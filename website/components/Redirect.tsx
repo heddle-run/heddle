@@ -22,23 +22,24 @@ export default function Redirect({
 
   return (
     <main
-      className="hd-section"
-      style={{ display: "grid", placeItems: "center", minHeight: "60dvh" }}
+      style={{
+        display: "grid",
+        placeItems: "center",
+        minHeight: "60dvh",
+        padding: "var(--section-y-sm) var(--space-6)",
+      }}
     >
       <p
         style={{
           margin: 0,
-          fontSize: "var(--fs-base)",
-          lineHeight: "var(--lh-relaxed)",
+          fontSize: "var(--fs-body)",
+          lineHeight: "var(--lh-body)",
           color: "var(--text-muted)",
           textAlign: "center",
         }}
       >
         This page has moved.{" "}
-        <a href={to} style={{ color: "var(--text-strong)" }}>
-          Continue to {label}
-        </a>
-        .
+        <a href={to}>Continue to {label}</a>.
       </p>
     </main>
   );

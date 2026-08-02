@@ -1,7 +1,7 @@
-/* DEVIATION: token scope is `.hds` rather than `:root`, and the dark theme keys
-   on the site's `html.dark` (next-themes) rather than `data-theme="dark"` —
-   see ../DEVIATIONS.md. Values are upstream, verbatim. */
-.hds{
+/* DEVIATION: the dark theme keys on the site's `html.dark` (next-themes)
+   rather than upstream's `:root[data-theme="dark"]` — see ../DEVIATIONS.md.
+   Values are upstream, verbatim. */
+:root{
 /* navy — Stripe's dark blue */
 --navy-900:#0a2540;--navy-800:#103654;--navy-700:#164668;
 /* slate — cool grey text ramp */
@@ -26,4 +26,4 @@
 /* aliases — syntax (navy code surfaces) */
 --code-fg:#f6f9fc;--code-comment:var(--slate-500);--code-key:var(--cyan-300);--code-string:var(--blurple-200);--code-punct:var(--slate-400);--code-num:#ffcb57
 }
-:where(html.dark) .hds{--surface-page:#000000;--surface-raised:#0a0a0a;--surface-sunken:#000000;--surface-card:#0a0a0a;--surface-inverse:#ffffff;--surface-code:#0f0f0f;--surface-code-alt:#141414;--surface-accent-soft:#17163a;--text-strong:#ffffff;--text-body:#d4d4d4;--text-muted:#a1a1a1;--text-subtle:#8f8f8f;--text-inverse:#000000;--text-inverse-muted:#666666;--text-accent:var(--blurple-300);--text-link:var(--blurple-300);--text-link-hover:#ffffff;--border-hairline:#262626;--border-default:#333333;--border-strong:#444444;--border-inverse:#e6ebf1;--border-accent:var(--blurple-300);--action-primary-bg:#ffffff;--action-primary-bg-hover:#e6e6e6;--action-primary-fg:#000000;--focus-ring:var(--blurple-300)}
+html.dark{--surface-page:#000000;--surface-raised:#0a0a0a;--surface-sunken:#000000;--surface-card:#0a0a0a;--surface-inverse:#ffffff;--surface-code:#0f0f0f;--surface-code-alt:#141414;--surface-accent-soft:#17163a;--text-strong:#ffffff;--text-body:#d4d4d4;--text-muted:#a1a1a1;--text-subtle:#8f8f8f;--text-inverse:#000000;--text-inverse-muted:#666666;--text-accent:var(--blurple-300);--text-link:var(--blurple-300);--text-link-hover:#ffffff;--border-hairline:#262626;--border-default:#333333;--border-strong:#444444;--border-inverse:#e6ebf1;--border-accent:var(--blurple-300);--action-primary-bg:#ffffff;--action-primary-bg-hover:#e6e6e6;--action-primary-fg:#000000;--focus-ring:var(--blurple-300)}

@@ -1,7 +1,9 @@
 "use client";
 
 import Editor from "./Editor";
-import { Icon, Select } from "@/ds";
+import Glyph from "../Glyph";
+import { Icon } from "@/ds-heddle";
+import { WindowIconButton, WindowInput, WindowSelect } from "./WindowControls";
 import { INTERPRETERS } from "@/lib/playground";
 
 interface Entry {
@@ -59,10 +61,10 @@ export default function CodeList({
         style={{
           margin: 0,
           padding: "var(--space-3) var(--space-5)",
-          borderBottom: "1px solid var(--border-hairline)",
-          fontSize: "var(--fs-xs)",
-          lineHeight: "var(--lh-relaxed)",
-          color: "var(--text-muted)",
+          borderBottom: "1px solid var(--border-inverse)",
+          fontSize: "var(--fs-caption)",
+          lineHeight: 1.6,
+          color: "var(--slate-400)",
         }}
       >
         {note}
@@ -70,11 +72,12 @@ export default function CodeList({
 
       {entries.length === 0 && (
         <p
-          className="hd-eyebrow"
+          className="hds-eyebrow"
           style={{
             margin: 0,
             padding: "var(--space-10) var(--space-5)",
             textAlign: "center",
+            color: "var(--slate-500)",
           }}
         >
           No {kind}s
@@ -84,7 +87,7 @@ export default function CodeList({
       {entries.map((entry, index) => (
         <div
           key={index}
-          style={{ borderBottom: "1px solid var(--border-hairline)" }}
+          style={{ borderBottom: "1px solid var(--border-inverse)" }}
         >
           <div
             style={{
@@ -92,34 +95,24 @@ export default function CodeList({
               alignItems: "center",
               gap: "var(--space-2)",
               padding: "var(--space-2) var(--space-3)",
-              borderBottom: "1px solid var(--border-hairline)",
-              background: "var(--surface-subtle)",
+              borderBottom: "1px solid var(--border-inverse)",
+              background: "var(--surface-code-alt)",
             }}
           >
             <label className="sr-only" htmlFor={`${kind}-name-${index}`}>
               {kind} {kind === "file" ? "path" : "name"}
             </label>
-            <input
+            <WindowInput
               id={`${kind}-name-${index}`}
               value={entry.name}
-              onChange={(e) => update(index, { name: e.target.value })}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                update(index, { name: e.target.value })
+              }
               spellCheck={false}
               autoCapitalize="off"
               autoCorrect="off"
               placeholder={kind === "file" ? "path" : "name"}
-              style={{
-                minHeight: 36,
-                minWidth: 0,
-                flex: 1,
-                padding: "0 var(--space-3)",
-                background: "var(--bg-inset)",
-                color: "var(--text-strong)",
-                border: "1px solid var(--border-default)",
-                borderRadius: "var(--radius-lg)",
-                outline: "none",
-                fontFamily: "var(--font-mono)",
-                fontSize: "var(--fs-xs)",
-              }}
+              style={{ minWidth: 0, flex: 1 }}
             />
 
             {entry.interpreter !== undefined && (
@@ -127,7 +120,7 @@ export default function CodeList({
                 <label className="sr-only" htmlFor={`${kind}-interp-${index}`}>
                   interpreter
                 </label>
-                <Select
+                <WindowSelect
                   id={`${kind}-interp-${index}`}
                   value={entry.interpreter}
                   onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
@@ -139,26 +132,12 @@ export default function CodeList({
               </>
             )}
 
-            <button
-              type="button"
+            <WindowIconButton
+              label={`Remove ${kind} ${entry.name}`}
               onClick={() => remove(index)}
-              aria-label={`Remove ${kind} ${entry.name}`}
-              style={{
-                display: "flex",
-                minHeight: 36,
-                width: 36,
-                flex: "0 0 auto",
-                alignItems: "center",
-                justifyContent: "center",
-                background: "transparent",
-                border: "1px solid var(--border-default)",
-                borderRadius: "var(--radius-lg)",
-                color: "var(--text-faint)",
-                cursor: "pointer",
-              }}
             >
-              <Icon name="x" size={14} />
-            </button>
+              <Icon name="x" size={13} />
+            </WindowIconButton>
           </div>
 
           <Editor
@@ -182,18 +161,18 @@ export default function CodeList({
             justifyContent: "center",
             gap: "var(--space-2)",
             border: 0,
-            borderTop: "1px solid var(--border-hairline)",
+            borderTop: "1px solid var(--border-inverse)",
             background: "transparent",
             cursor: "pointer",
-            fontFamily: "var(--font-sans)",
-            fontSize: "var(--fs-xs)",
-            fontWeight: "var(--fw-medium)",
+            fontFamily: "var(--font-mono)",
+            fontSize: "var(--fs-label)",
             textTransform: "uppercase",
-            letterSpacing: "var(--tracking-widest)",
-            color: "var(--text-muted)",
+            letterSpacing: "var(--ls-label)",
+            color: "var(--slate-400)",
+            transition: "var(--transition-control)",
           }}
         >
-          <Icon name="plus" size={14} />
+          <Glyph name="plus" size={14} />
           Add {kind}
         </button>
       )}

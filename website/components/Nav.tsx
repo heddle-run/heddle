@@ -1,61 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, type CSSProperties } from "react";
 import { Icon } from "@/ds-heddle";
-import { useTheme } from "@/lib/theme";
+import ThemeSwitch, { iconControl } from "./ThemeSwitch";
 import { GITHUB_URL, PLAYGROUND_URL } from "@/lib/constants";
-
-/* Sun/moon are site-specific (the vendored Icon set has no theme glyphs and
-   takes no site additions), so they live here as inline lucide paths drawn
-   to the same 24-grid and stroke as ds-heddle's Icon. */
-function ThemeGlyph({ dark }: { dark: boolean }) {
-  const paths = dark
-    ? [
-        "M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z",
-        "M12 2v2",
-        "M12 20v2",
-        "m4.93 4.93 1.41 1.41",
-        "m17.66 17.66 1.41 1.41",
-        "M2 12h2",
-        "M20 12h2",
-        "m6.34 17.66-1.41 1.41",
-        "m19.07 4.93-1.41 1.41",
-      ]
-    : ["M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"];
-  return (
-    <svg
-      width={16}
-      height={16}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.5}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      style={{ flex: "0 0 auto" }}
-      aria-hidden="true"
-    >
-      {paths.map((d) => (
-        <path key={d} d={d} />
-      ))}
-    </svg>
-  );
-}
-
-const iconControl: CSSProperties = {
-  width: 30,
-  height: 30,
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  cursor: "pointer",
-  borderRadius: "var(--radius-control)",
-  border: "1px solid var(--border-default)",
-  background: "transparent",
-  color: "var(--text-muted)",
-  transition: "var(--transition-control)",
-};
 
 /* Destinations only — the numbered sections do their own wayfinding on scroll,
    and the footer carries the full index. One entry for the playground: the
@@ -67,15 +15,6 @@ const links = [
 ];
 
 export default function Nav() {
-  const { dark, toggle } = useTheme();
-
-  /* next-themes resolves the theme only on the client, so the glyph must not
-     depend on it until after hydration — the server always paints the
-     dark-assumption (sun) and the first client render must match it. */
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
-  const showDark = mounted ? dark : true;
-
   return (
     <header
       style={{
@@ -141,16 +80,7 @@ export default function Nav() {
           }}
           className="hds-nav-actions"
         >
-          <button
-            type="button"
-            onClick={toggle}
-            aria-label={
-              showDark ? "Switch to light theme" : "Switch to dark theme"
-            }
-            style={iconControl}
-          >
-            <ThemeGlyph dark={showDark} />
-          </button>
+          <ThemeSwitch />
           <a
             href={GITHUB_URL}
             target="_blank"
