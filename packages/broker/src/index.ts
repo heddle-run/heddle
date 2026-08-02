@@ -1,4 +1,16 @@
 import { getContainer } from "@cloudflare/containers";
+import {
+  DEFAULT_MODEL_CALLS_PER_RUN,
+  DEFAULT_RUNS_PER_MINUTE,
+  ENGINE_MAX_BODY_BYTES,
+  ENGINE_MAX_CONCURRENT_RUNS,
+  ENGINE_MAX_ITERATIONS,
+  ENGINE_MAX_REQUEST_CODE_BYTES,
+  ENGINE_MAX_REQUEST_FILES,
+  ENGINE_MAX_REQUEST_PLUGINS,
+  ENGINE_MAX_REQUEST_TOOLS,
+  ENGINE_TIMEOUT_MS,
+} from "./constants";
 import { corsHeaders, error, json, preflight, withCors } from "./cors";
 import { intVar, origins, type Env } from "./env";
 import { RUN_TOKEN_HEADER } from "./container";
@@ -11,8 +23,6 @@ export { RateLimiter } from "./ratelimit";
 
 const TOKEN_TTL_SECONDS = 300;
 const SECONDS_PER_MINUTE = 60;
-const DEFAULT_RUNS_PER_MINUTE = 6;
-const DEFAULT_MODEL_CALLS_PER_RUN = 20;
 const LLM_PROXY_PREFIX = "/llm/";
 const TRAILING_SLASHES = /\/+$/;
 const TURNSTILE_VERIFY_URL =
@@ -83,13 +93,14 @@ function capabilities(env: Env): Record<string, unknown> {
     sandbox: null,
     tools: [],
     limits: {
-      maxIterations: 25,
-      timeout: 60_000,
-      maxBodyBytes: 1024 * 1024,
-      maxRequestTools: 10,
-      maxRequestPlugins: 5,
-      maxRequestCodeBytes: 256 * 1024,
-      maxConcurrentRuns: 1,
+      maxIterations: ENGINE_MAX_ITERATIONS,
+      timeout: ENGINE_TIMEOUT_MS,
+      maxBodyBytes: ENGINE_MAX_BODY_BYTES,
+      maxRequestTools: ENGINE_MAX_REQUEST_TOOLS,
+      maxRequestPlugins: ENGINE_MAX_REQUEST_PLUGINS,
+      maxRequestFiles: ENGINE_MAX_REQUEST_FILES,
+      maxRequestCodeBytes: ENGINE_MAX_REQUEST_CODE_BYTES,
+      maxConcurrentRuns: ENGINE_MAX_CONCURRENT_RUNS,
       runsPerMinute: intVar(env.RUNS_PER_MINUTE, DEFAULT_RUNS_PER_MINUTE),
       modelCallsPerRun: intVar(
         env.MODEL_CALLS_PER_RUN,

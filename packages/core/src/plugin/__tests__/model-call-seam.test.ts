@@ -14,10 +14,10 @@
 import { describe, it, expect } from 'vitest';
 import { completeChat } from '../../node/agent.js';
 import { MiddlewareChain } from '../middleware.js';
-import { PluginRegistry } from '../registry.js';
 import type { Event } from '../../runner/events.js';
 import type { ChatRequest, ChatResponse, Provider } from '../../llm/types.js';
-import type { PluginMiddlewareDef, SeamOutcome } from '../../index.js';
+import type { SeamOutcome } from '../../index.js';
+import { chainOf, policy } from './helpers/seams.js';
 
 const REQUEST: ChatRequest = {
   model: 'gpt-4o',
@@ -46,23 +46,6 @@ function recording(answers: Array<ChatResponse | Error>): {
 }
 
 const ANSWER: ChatResponse = { content: 'the answer', finish_reason: 'stop' };
-
-const chainOf = (...defs: PluginMiddlewareDef[]): MiddlewareChain =>
-  MiddlewareChain.build(
-    PluginRegistry.fromPlugins([{ name: 'p', version: '1.0.0', middleware: defs }]),
-    {},
-  );
-
-function policy(
-  seams: PluginMiddlewareDef['seams'],
-  impl: Record<string, unknown>,
-): PluginMiddlewareDef {
-  return {
-    componentType: 'Policy',
-    seams,
-    createMiddleware: () => impl as never,
-  };
-}
 
 const run = (
   provider: Provider,

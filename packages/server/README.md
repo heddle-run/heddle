@@ -67,6 +67,7 @@ heddle-server --tools-dir ./tools
 | `--allow-write <path>` | none | Write access for sandboxed tools. Repeatable. |
 | `--allow-env <name>` | none | Environment variable to forward into the sandbox. Repeatable. |
 | `--deny-net` | off | Block network access for sandboxed tools. |
+| `--version` | — | Print the server version and exit. |
 
 | Environment variable | Default | Meaning |
 |---|---|---|

@@ -340,28 +340,6 @@ describe('request-submitted plugins', () => {
     expect(body.error.type).toBe('PluginError');
   });
 
-  it('gives the plugin none of the server environment', async () => {
-    process.env.HEDDLE_SERVER_SECRET = 'do-not-leak';
-    try {
-      const res = await post('/v1/runs', {
-        flow: pluginFlow(),
-        inputs: { text: 'x' },
-        plugins: [
-          {
-            name: 'peek',
-            manifest: SHOUT_MANIFEST,
-            source: `serve({ ShoutNode: { execute: () => ({
-              output: { text: String(process.env.HEDDLE_SERVER_SECRET ?? 'absent') } }) } });`,
-          },
-        ],
-      });
-      expect(res.status).toBe(200);
-      expect(await res.json()).toMatchObject({ state: { text: 'absent' } });
-    } finally {
-      delete process.env.HEDDLE_SERVER_SECRET;
-    }
-  });
-
   const toolCaller = (capabilities?: string[]) => ({
     name: 'caller',
     manifest: { ...SHOUT_MANIFEST, ...(capabilities ? { capabilities } : {}) },
@@ -430,63 +408,10 @@ describe('request-submitted plugins', () => {
   });
 });
 
-describe('isolation between runs', () => {
-  const planter = (name: string) => ({
-    name,
-    manifest: { ...SHOUT_MANIFEST, components: [{ componentType: 'ShoutNode' }] },
-    source: `
-      globalThis.__planted ??= [];
-      serve({
-        ShoutNode: {
-          execute: (input) => {
-            if (input.text) globalThis.__planted.push(input.text);
-            return { output: { text: JSON.stringify(globalThis.__planted) } };
-          },
-        },
-      });
-    `,
-  });
-
-  it('does not carry one caller state into the next request', async () => {
-    const first = await post('/v1/runs', {
-      flow: pluginFlow(),
-      inputs: { text: 'caller-one-secret' },
-      plugins: [planter('a')],
-    });
-    expect(first.status).toBe(200);
-    expect((await first.json()) as Record<string, unknown>).toMatchObject({
-      state: { text: '["caller-one-secret"]' },
-    });
-
-    const second = await post('/v1/runs', {
-      flow: pluginFlow(),
-      inputs: {},
-      plugins: [planter('b')],
-    });
-    expect(second.status).toBe(200);
-    expect((await second.json()) as Record<string, unknown>).toMatchObject({
-      state: { text: '[]' },
-    });
-  });
-
-  it('keeps concurrent runs from seeing each other', async () => {
-    const [a, b] = await Promise.all([
-      post('/v1/runs', {
-        flow: pluginFlow(),
-        inputs: { text: 'alice-private' },
-        plugins: [planter('a')],
-      }),
-      post('/v1/runs', {
-        flow: pluginFlow(),
-        inputs: { text: 'bob-private' },
-        plugins: [planter('b')],
-      }),
-    ]);
-
-    expect(await a.json()).toMatchObject({ state: { text: '["alice-private"]' } });
-    expect(await b.json()).toMatchObject({ state: { text: '["bob-private"]' } });
-  });
-
+// Plugin-process isolation itself — state, environment, concurrency — is
+// core's property, pinned in core's remote.test.ts. What is the server's to
+// prove is that it keeps serving after a plugin takes its own process down.
+describe('server recovery', () => {
   it('survives a plugin that kills its own process', async () => {
     const res = await post('/v1/runs', {
       flow: pluginFlow(),
