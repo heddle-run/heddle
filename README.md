@@ -45,14 +45,7 @@ migrate when heddle changes its mind.
 To keep it on the machine rather than fetching it each time:
 
 ```bash
-# npm
 npm install -g @heddle/cli
-
-# Homebrew
-brew install spichen/tap/heddle
-
-# Docker, with no Node at all
-docker run --rm salahpichen/heddle --help
 ```
 
 ## Quick start
@@ -96,40 +89,6 @@ The final state is printed to stdout as JSON; progress and errors go to stderr.
 ```bash
 heddle validate my-project/flow.json --tools-dir my-project/tools
 ```
-
-## Docker
-
-Two images, `linux/amd64` and `linux/arm64`:
-
-| Image | Contains |
-|---|---|
-| [`salahpichen/heddle`](https://hub.docker.com/r/salahpichen/heddle) | the CLI |
-| [`salahpichen/heddle-server`](https://hub.docker.com/r/salahpichen/heddle-server) | the HTTP API |
-
-Both are also on GitHub Container Registry, as
-`ghcr.io/heddle-run/heddle` and `ghcr.io/heddle-run/heddle-server`: same
-build, same digests, and no per-IP cap on anonymous pulls to trip over in CI.
-
-`/work` is the CLI image's working directory, so a mounted project keeps the
-paths you would have typed anyway:
-
-```bash
-docker run --rm -e OPENAI_API_KEY -v "$PWD:/work" \
-  salahpichen/heddle run flow.json --tools-dir tools --input '{"query": "hello"}'
-```
-
-The examples ship in the image, so there is something to run before you have
-written anything:
-
-```bash
-docker run --rm -e OPENAI_API_KEY salahpichen/heddle run \
-  /opt/heddle/examples/research-assistant/flow.json \
-  --tools-dir /opt/heddle/examples/research-assistant/tools \
-  --input '{"query": "what is a heddle"}'
-```
-
-See [docs/docker.md](docs/docker.md) for chat mode, local models, file
-ownership, `--safe` inside a container, and running the server image.
 
 ## CLI reference
 
