@@ -6,7 +6,7 @@ description: A runtime for Open Agent Specification flows. The workflow is a doc
 **heddle needs no SDK.** Most agent frameworks are libraries: you install one, import it,
 and assemble the graph in code, so the agent ends up depending on the library's
 abstractions. heddle inverts that. The flow is a document you write, and heddle is a
-runtime you point at it — nothing in the document imports anything, and nothing in your
+runtime you point at it. Nothing in the document imports anything, and nothing in your
 project depends on heddle's types.
 
 The document is an [Open Agent Specification](https://oracle.github.io/agent-spec/) flow,
@@ -15,7 +15,7 @@ the tools they may use.
 
 **One document runs two ways.** `heddle run` executes it on your machine; `heddle-server`
 serves it over HTTP with the run streamed back as it happens. There is no rewrite between
-them and no separate deployment format — the same file, pointed at by a different
+them and no separate deployment format: the same file, pointed at by a different
 program.
 
 ## Quick start
@@ -42,7 +42,7 @@ references `{{query}}`, so a run without it sends the placeholder to the model u
 <Callout>
 Set `OPENAI_API_KEY` before running, or point the spec's `llm_config` somewhere that
 needs no key. A spec may write `$OPENAI_API_KEY` and heddle resolves it from the
-environment — with one exception, covered in [LLM providers](/docs/llm-providers).
+environment, with one exception covered in [LLM providers](/docs/llm-providers).
 </Callout>
 
 ## What happens when you run it
@@ -53,8 +53,8 @@ document → parse → validate spec → compile graph → validate graph → ex
 
 There are two validation passes and they check different things. The first reads the
 document against the Agent Spec schema, before heddle knows what a graph is. The second
-runs after compilation and checks the graph itself — that every node is reachable, that
-every branch a node can take has an edge, that the flow terminates.
+runs after compilation and checks the graph itself: that every node is reachable, that
+every branch a node can take has an edge, and that the flow terminates.
 
 `heddle validate` runs everything up to execution, so it is the whole of that pipeline
 minus the model calls.

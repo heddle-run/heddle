@@ -3,7 +3,7 @@
 The `heddle` command: a runtime for agentic workflows written as
 [Open Agent Specification](https://oracle.github.io/agent-spec/) documents.
 
-heddle needs no SDK. The workflow is a document — YAML or JSON — naming nodes,
+heddle needs no SDK. The workflow is a document, YAML or JSON, naming nodes,
 the edges between them, the model each agent calls and the tools they may use.
 heddle is what you point at it.
 
@@ -40,7 +40,7 @@ my-project/
   tools/example_tool.sh  - Example tool script
 ```
 
-The generated flow calls OpenAI, so give it a key — every provider needs a
+The generated flow calls OpenAI, so give it a key. Every provider needs a
 resolvable one, local models included:
 
 ```bash
@@ -61,13 +61,13 @@ The final state is printed to stdout as JSON; progress and errors go to stderr.
 |---|---|
 | `run <flow>` | Run a flow, or a `.heddle` bundle. `--tools-dir`, `--input`, `--session`, `-i`, `--plugin`, `--protocol`, `--safe` |
 | `bundle <flow>` | Pack a flow and everything it runs with into one shareable `.heddle` archive |
-| `validate <spec>` | Parse and check a flow — or a `.heddle` bundle — before running it |
+| `validate <spec>` | Parse and check a flow, or a `.heddle` bundle, before running it |
 | `init <name>` | Scaffold a project |
 | `sessions` | Inspect kept conversations: `ls`, `show <id>`, `rm <id>` |
 
 `heddle --help` lists every flag. Four worth knowing about:
 
-- **`--safe`** runs each tool inside an OS sandbox — bubblewrap on Linux,
+- **`--safe`** runs each tool inside an OS sandbox: bubblewrap on Linux,
   Seatbelt on macOS. Without it, a tool is a subprocess with your whole
   environment, API keys included.
 - **`--session [id]`** keeps the run in a conversation on disk, under
@@ -86,8 +86,8 @@ heddle bundle flow.json --tools-dir tools -o agent.heddle
 heddle run agent.heddle
 ```
 
-The bundle carries the spec, the tools, any manifest plugins and mounted files —
-never credentials, which resolve as `$ENV_VAR` on the machine that runs.
+The bundle carries the spec, the tools, any manifest plugins and mounted files.
+Never credentials, which resolve as `$ENV_VAR` on the machine that runs.
 
 ## The rest
 

@@ -1,8 +1,8 @@
 # Session Persistence: Design and Roadmap
 
-> Internal design notes — not user documentation; see https://heddle.run/docs.
+> Internal design notes, not user documentation; see https://heddle.run/docs.
 
-Status: **landed**, S0 through S5. §2 is archaeology — it describes heddle before any of this, and
+Status: **landed**, S0 through S5. §2 is archaeology: it describes heddle before any of this, and
 is kept because it is the justification. §8 records what each phase actually did, including the three
 places the implementation disagreed with the plan.
 
@@ -12,7 +12,7 @@ Three features want the same thing, and heddle has it for none of them:
 
 - **A conversation that outlives the process**, continuable from the CLI or over HTTP with the same
   identifier.
-- **A run that can be cut and resumed** — durable execution across a crash, a deploy, or a deliberate
+- **A run that can be cut and resumed**, durable execution across a crash, a deploy, or a deliberate
   pause.
 - **A run that can stop on a human** and start again when they answer.
 
@@ -41,7 +41,7 @@ without the terminal UI, and the terminal UI is not a thing you can have without
 Four consequences worth naming, because the replacement has to not inherit them:
 
 - **Session ids are timestamps.** `chat-2026-08-01T12-30-00-000Z` (`chat/session.ts`, `createSession`). Two sessions
-  started in the same millisecond collide, and an id derived from a clock is guessable — which is
+  started in the same millisecond collide, and an id derived from a clock is guessable, which is
   survivable in a user's home directory and is not survivable on a server (§7.3).
 - **Every message rewrites the whole file.** `persist` is `writeFileSync(JSON.stringify(session))`
   (`chat/session.ts`, `persist`). A conversation costs O(n²) bytes to record.
@@ -85,7 +85,7 @@ The repo's own design doc already lists it as a gap (`docs/plugin-system-design.
 
 | Value | Type | Serializable |
 |---|---|---|
-| `nodeOutputs` | `Map<string, State>` | yes — `State.toJSON()` |
+| `nodeOutputs` | `Map<string, State>` | yes, `State.toJSON()` |
 | `carried` | `State` | yes |
 | `current` | `CompiledNode` | by name |
 | `attempt` | `number` | yes |
@@ -94,8 +94,8 @@ No closures, no live handles, nothing to reconstruct. **Node-boundary checkpoint
 and that is the granularity to start at.**
 
 What is *not* reachable at that granularity is everything inside `node.executor.execute()`
-(`runner.ts:159`). An `AgentNode`'s whole tool loop — up to ten rounds of model calls and tool calls
-(`agent.ts:110`) — is a single await. A human-in-the-loop approval fires at `toolCall.before`, which
+(`runner.ts:159`). An `AgentNode`'s whole tool loop, up to ten rounds of model calls and tool calls
+(`agent.ts:110`), is a single await. A human-in-the-loop approval fires at `toolCall.before`, which
 is deep inside it. §6.2 is about that, and it is the only genuinely hard part of this plan.
 
 ## 3. What a session is
@@ -138,7 +138,7 @@ read on every single turn. A checkpoint is large, opaque, and read only when res
 means loading the previous run's entire node-output map to answer "hello".
 
 `Turn.output` is the final `State`, not a rendered string. Today the TUI stores `formatResult(...)`
-(`ui.tsx:284`), which throws away structure to produce something printable — fine for a log, wrong for
+(`ui.tsx:284`), which throws away structure to produce something printable, fine for a log, wrong for
 a record something else will read.
 
 ## 4. `SessionStore`
@@ -164,14 +164,14 @@ Seven methods, and three decisions inside them:
 
 - **`create` exists, and `append` creates too.** This document originally argued there should be no
   `create`, because every caller's first act on a new session is to write a turn to it. That is true
-  on the CLI and false on a server, where a conversation begins with an *identifier* — see the S1
+  on the CLI and false on a server, where a conversation begins with an *identifier*; see the S1
   entry in §8. The redundancy is load-bearing rather than sloppy.
 - **`expect` is a version and the return is the new one.** Two writers on one session stops being
   hypothetical the moment this is served over HTTP. A lock is something a Redis store would have to
   invent; a compare-and-swap is something every store already has. A mismatch throws
   `SessionConflictError`.
 - **No range read.** `read` returns every turn. This is the first thing that will need to change when
-  a transcript gets long, and it is deliberately not being solved in v1 — see §9.
+  a transcript gets long, and it is deliberately not being solved in v1; see §9.
 
 ### 4.2 The file store, which is the default
 
@@ -210,7 +210,7 @@ A `SessionStore` is resolved once, before any run:
 
 ## 5. The `store` plugin kind
 
-A store is installed by whoever runs heddle and is **never named by a spec** — exactly the shape
+A store is installed by whoever runs heddle and is **never named by a spec**, exactly the shape
 `middleware` and `encoder` already have. Everything below follows their precedent rather than
 inventing a parallel mechanism.
 
@@ -243,11 +243,11 @@ inventing a parallel mechanism.
 | `sessionList` | `{ componentType, limit?, cursor? }` | `{ sessions, cursor? }` |
 | `sessionDelete` | `{ componentType, id }` | `{}` |
 
-Six is the widest single addition the protocol has taken, and the alternative — one `session` verb
-carrying an `op` — is worth naming and rejecting: every existing verb is one operation
+Six is the widest single addition the protocol has taken, and the alternative, one `session` verb
+carrying an `op`, is worth naming and rejecting: every existing verb is one operation
 (`execute`, `apply`, `callTool`, `chat`, `before`, `after`, `encode`, `finishEncode`, `listTools`),
 and an `op` field would be the first dispatcher inside the protocol. If the width is judged too much,
-`sessionList` and `sessionDelete` are the two to defer — nothing in the run path calls them; they
+`sessionList` and `sessionDelete` are the two to defer, since nothing in the run path calls them; they
 serve `heddle sessions ls|rm`.
 
 Two things this does *not* need:
@@ -255,13 +255,13 @@ Two things this does *not* need:
 - **No new `PluginCapability`.** Capabilities gate plugin → host calls (`plugin/protocol.ts`, `PluginCapability`). These are
   host → plugin, like every other `HostMethod`.
 - **No sandbox change.** A store plugin that talks to a database needs network, which is what
-  `--safe --deny-net` would take away — that is the operator's existing decision, made the existing
+  `--safe --deny-net` would take away; that is the operator's existing decision, made the existing
   way.
 
 One thing it does need saying: **a store is on the hot path of every turn.** `pluginCallTimeout`
 applies to each call, and a slow store stalls runs while holding a concurrency slot. On the server the
 process is `shared` (`packages/core/src/plugin/loader.ts`, `LoadPluginsOptions.shared`), which is what
-makes a connection pool in a store plugin worth having — the same property `heddle-server`'s own help
+makes a connection pool in a store plugin worth having, the same property `heddle-server`'s own help
 text already describes at `packages/server/src/heddle-server.ts:31`.
 
 ## 6. Cutting a run
@@ -279,7 +279,7 @@ This is opt-in per run (`--durable`, or `"durable": true` in a request body) and
 What it buys on its own: a run that survives a process death between nodes, and `--resume`. No human
 involved, no seam changes, no protocol changes.
 
-### 6.2 Suspension — the part that makes HITL work
+### 6.2 Suspension, the part that makes HITL work
 
 A sixth verdict. `BeforeVerdict` (`plugin/protocol.ts`, `BeforeVerdict`) gains:
 
@@ -294,7 +294,7 @@ by design, and Phase 14 settled that (`docs/plugin-system-design.md:2772`).
 When a middleware suspends:
 
 1. The call site throws a `Suspended` sentinel that unwinds to `Runner.walk`.
-2. `walk` writes a checkpoint that additionally records **where inside the node it stopped** — the node
+2. `walk` writes a checkpoint that additionally records **where inside the node it stopped**, the node
    name, the agent's message array as built so far, and the pending tool call.
 3. The run ends with a distinguished outcome, **not an error**: CLI prints the session id and the
    question and exits with a reserved code; HTTP answers `202` with `{ session, suspended: { ask } }`;
@@ -314,7 +314,7 @@ re-made (its response is in the array) and the tool results already collected ar
 checkpoint with extra steps.
 
 **What genuinely cannot be replayed**: a partial token stream. Suspending mid-stream drops the tokens
-already emitted to the client. Accept it — the answer is not final until the round ends, and a client
+already emitted to the client. Accept it: the answer is not final until the round ends, and a client
 that rendered a partial answer re-renders on resume.
 
 ## 7. The surfaces
@@ -333,7 +333,7 @@ heddle run <flow>
 heddle sessions ls | show <id> | rm <id>
 ```
 
-- `-i` alone is today's chat, ephemeral. `-i --session <id>` is today's chat, persisted — and
+- `-i` alone is today's chat, ephemeral. `-i --session <id>` is today's chat, persisted, and
   **resumable**, seeding its history from the store, which is what `loadSession` was written for and
   never got (§2.1).
 - `--session` composes with `--protocol`, because a persisted non-interactive turn is one ordinary run
@@ -345,7 +345,7 @@ heddle sessions ls | show <id> | rm <id>
 ### 7.2 HTTP
 
 - **`POST /v1/runs` gains `"session": "<id>"`.** The server reads the transcript, injects it as
-  history, runs, and appends the turn. Streaming, `?protocol=`, and every encoder are untouched —
+  history, runs, and appends the turn. Streaming, `?protocol=`, and every encoder are untouched,
   sessions are an input/output concern, not a transport one. `"durable": true` opts into checkpoints.
 - **`GET /v1/sessions/:id`** returns the transcript. **`DELETE /v1/sessions/:id`** removes it.
   **`POST /v1/sessions/:id/resume`** takes `{ answer }`.
@@ -359,13 +359,13 @@ heddle sessions ls | show <id> | rm <id>
 
 - **The server stops being stateless.** Today any replica serves any request, which is what the drain
   message assumes when it says "retry against another replica" (`server.ts:216`). With the file store,
-  two replicas do not share sessions. **This is the reason the store is pluggable — not a
+  two replicas do not share sessions. **This is the reason the store is pluggable, not a
   nice-to-have.** Multi-replica means a shared store, and the docs have to say so where an operator
   will read it.
 - **There is no authentication** (`heddle-server.ts:83`). A session id is therefore the only thing
   between a caller and someone else's conversation. It must be unguessable, and on the server it is
   **always server-generated**: a request supplying `"session": "alice"` for an unknown id is a 400, not
-  a creation. On the CLI a chosen id is fine — the store is the user's own home directory. The docs get
+  a creation. On the CLI a chosen id is fine, because the store is the user's own home directory. The docs get
   one blunt line: *a session id is a bearer capability; sessions are not an authorization boundary.*
 - **Sessions are off by default on the server.** No store configured means `"session"` in a body is a
   400. Default-on would have every existing deployment start writing conversations to disk on the next
@@ -376,13 +376,13 @@ heddle sessions ls | show <id> | rm <id>
 
 ## 8. Roadmap
 
-**Phase S0 — `_chat_history` becomes a contract — landed.** The constant is exported from core and
+**Phase S0: `_chat_history` becomes a contract. Landed.** The constant is exported from core and
 the CLI's duplicate is gone. `readHistory` now *refuses* a malformed history instead of casting it:
 the old code mapped entries with a cast, so a bad one reached the provider as a message with an
 undefined role and came back as an API error naming the model. Reserved keys live in
 `session/reserved.ts`, and `validate` refuses a flow declaring an input or output by one of them.
 
-**Phase S1 — sessions — landed.** `SessionStore`, the file store, `--session`, `--interactive`,
+**Phase S1: sessions. Landed.** `SessionStore`, the file store, `--session`, `--interactive`,
 `heddle sessions ls|show|rm`; `--chat` removed and not aliased. Server: `"session"` on `/v1/runs`,
 `POST`/`GET`/`DELETE /v1/sessions`, off unless `--session-store` is given, ids issued rather than
 chosen.
@@ -392,10 +392,10 @@ chosen.
 > server, where a conversation begins with an *identifier*: `POST /v1/sessions` mints one and hands
 > it back before any run has named it, and a session that did not exist until its first turn would
 > make the caller's next request a 404 for an id it was just given. The first attempt worked around
-> this by writing a placeholder turn and filtering it back out on read — which is the shape of a
+> this by writing a placeholder turn and filtering it back out on read, which is the shape of a
 > design that is wrong rather than inconvenient. `create` is idempotent, and `append` still creates.
 
-**Phase S2 — the `store` plugin kind — landed.** `ComponentKind` and `ManifestKind` gained `store`;
+**Phase S2: the `store` plugin kind. Landed.** `ComponentKind` and `ManifestKind` gained `store`;
 it stays out of `SPEC_WRITABLE_KINDS`, at most one may be installed, and a submitted plugin
 declaring one is refused the way middleware is. `examples/session-store` is a working SQLite store,
 exercised out of process by `store-plugin.test.ts`.
@@ -407,21 +407,21 @@ exercised out of process by `store-plugin.test.ts`.
 > *constructs* one, so the settings ride along on every call. Writing the example is what surfaced
 > it.
 
-**Phase S3 — node-boundary checkpoints — landed.** `RunnerOptions.checkpoints` and `durable`,
+**Phase S3: node-boundary checkpoints. Landed.** `RunnerOptions.checkpoints` and `durable`,
 `Runner.run(signal, inputs, from)`, `--durable`, `--resume`, and the same two fields on a request
 body. A checkpoint names the node to *re-enter*, never the one that just finished.
 
-**Phase S4 — `suspend` — landed.** The sixth `before` verdict, admitted at `toolCall.before` and
+**Phase S4: `suspend`. Landed.** The sixth `before` verdict, admitted at `toolCall.before` and
 `node.before` and nowhere else. `RunSuspended` unwinds to the runner, which writes the checkpoint and
 rethrows; the agent's bookmark carries the conversation, the pending call and the calls the round had
 not reached. CLI `--answer`, HTTP `202` with the question, `suspended` on the SSE stream.
 
 > **Found by running it: a `node` gate needs to see its own answer.** A `toolCall` suspension is
-> never re-consulted — the bookmark replays the answer as the call's result. A `node` one is:
+> never re-consulted, because the bookmark replays the answer as the call's result. A `node` one is:
 > resuming re-enters the node and every `before` hook runs again, so a gate with no way to tell
 > "asked again, and here is what they said" from "asked for the first time" suspends forever. This
 > surfaced in a smoke test, not in a unit test, because the first version of the test middleware
-> tracked its own state in a module variable — which happens to work in one process and not across
+> tracked its own state in a module variable, which happens to work in one process and not across
 > two. `MiddlewareContext.answered` closes it, and rides the wire for a remote middleware.
 >
 > **Diverged from the plan: the sink is installed whenever there is a session, not only when the run
@@ -430,7 +430,7 @@ not reached. CLI `--answer`, HTTP `202` with the question, `suspended` on the SS
 > `durable` (per-node writes) costs nothing and removes the trap. A run with no session at all still
 > refuses to suspend, with an error saying why.
 
-**Phase S5 — ergonomics and docs — landed.** `examples/approval-gate` as a worked middleware, a
+**Phase S5: ergonomics and docs. Landed.** `examples/approval-gate` as a worked middleware, a
 `suspended` frame on the CLI's `--protocol` path to match the server's SSE event, the TUI seeded from
 the store, and every `--chat` reference in the README, the website docs, the Docker guide and the
 examples rewritten.
@@ -449,7 +449,7 @@ Dependencies as planned: S1 needed S0; S2 and S3 each needed S1; S4 needed S3; S
   success while its transcript silently did not record.
 - **Transcript growth is unsolved in v1.** Every turn is sent to the model as history
   (`agent.ts:158`), so a long session gets expensive and eventually exceeds the context. Windowing or
-  summarizing belongs in a transform or a middleware — not in the store, which should not be in the
+  summarizing belongs in a transform or a middleware, not in the store, which should not be in the
   business of deciding what the model remembers.
 - **No migration from `~/.heddle/conversations/`.** Nothing reads those files today (`loadSession` has
   no callers), so there is nothing to migrate. The release note says to delete the directory.

@@ -3,7 +3,7 @@ title: CLI Reference
 description: Complete reference for all heddle CLI commands and options.
 ---
 
-## Global Options
+## Global options
 
 These are declared on `heddle` itself and may appear before or after the subcommand:
 
@@ -102,7 +102,7 @@ heddle run flow.yaml --tools-dir ./tools --safe --deny-net --allow-write ./out
 
 ### Output
 
-The final state is printed to stdout as formatted JSON — unless `--protocol` is given, which
+The final state is printed to stdout as formatted JSON, unless `--protocol` is given, which
 replaces it with a frame stream. Progress, tool activity, and errors go to stderr, so stdout
 stays pipeable:
 
@@ -112,7 +112,7 @@ heddle run flow.json --input '{"query": "hello"}' | jq .result
 
 `--input` becomes the run's starting state as given. It is not checked against the start
 node's declared outputs: malformed JSON fails immediately, but a key nothing declares is
-carried and is readable — an agent is sent its whole input state as JSON, and `{{key}}`
+carried and is readable, since an agent is sent its whole input state as JSON and `{{key}}`
 substitution reads whatever the state holds. A declared key you omit is simply absent, and
 a prompt referencing it keeps the placeholder.
 
@@ -120,7 +120,7 @@ a prompt referencing it keeps the placeholder.
 
 `--protocol <name>` hands the run's events to an [encoder](/docs/plugins/encoders) and writes
 its frames to stdout, one JSON object per line. The human progress output is replaced, not
-merely redirected — the encoder is the only thing rendering the run.
+merely redirected: the encoder is the only thing rendering the run.
 
 ```bash
 heddle run examples/ag-ui/flow.json --plugin ./examples/ag-ui/encoder.json \
@@ -141,7 +141,7 @@ heddle run examples/ag-ui/flow.json --plugin ./examples/ag-ui/encoder.json \
 JSON Lines rather than the server's `event:`/`data:` framing, because SSE is how an HTTP
 response body carries a name beside a payload and stdout is not one. The name is not lost:
 each line is the frame, so `event` is present when the protocol names its frames and absent
-when it carries the type inside `data`. `--protocol heddle` shows the named half — heddle's
+when it carries the type inside `data`. `--protocol heddle` shows the named half, heddle's
 own frames, with no plugin loaded at all:
 
 ```
@@ -151,7 +151,7 @@ own frames, with no plugin loaded at all:
 
 The final state is **not** appended. With a protocol selected stdout is the frame stream, and
 a pretty-printed object after it is a parse error for anything reading a line at a time.
-Nothing is lost either — `flow_complete` carries the whole run state, so an encoder that wants
+Nothing is lost either: `flow_complete` carries the whole run state, so an encoder that wants
 the answer already has it.
 
 A protocol nothing provides is an error listing what is available; the encoder for one comes
@@ -160,7 +160,7 @@ from `--plugin`, and a plugin may not claim the name `heddle`.
 <Callout type="warn">
 `--protocol` and `--interactive` are refused together. The chat UI paints the answers in the
 terminal, so there is no single stream of frames to render and no stdout left to write them
-to. `--session` composes with `--protocol` — a persisted turn is one ordinary run.
+to. `--session` composes with `--protocol`, since a persisted turn is one ordinary run.
 </Callout>
 
 ### Sessions
@@ -177,7 +177,7 @@ heddle run flow.yaml --session support-42 --input '{"query":"and the second one?
 A session is a directory: `meta.json`, a `turns.jsonl` appended to once per turn, and a
 `checkpoint.json` present only while a run is unfinished. Ids are random unless you name one;
 on the CLI a name you chose is fine, because the store is your own home directory. (The server
-issues its own — see [Server](/docs/server).)
+issues its own; see [Server](/docs/server).)
 
 Passing `_chat_history` yourself alongside `--session` is refused: the session *is* the
 conversation, and heddle would have to pick one of the two to throw away.
@@ -185,7 +185,7 @@ conversation, and heddle would have to pick one of the two to throw away.
 ### Durable runs
 
 `--durable` writes the run down at every node boundary. A process that dies mid-run leaves a
-checkpoint, and `--resume` picks it up at the node it had reached — nothing before that node
+checkpoint, and `--resume` picks it up at the node it had reached. Nothing before that node
 runs again.
 
 ```bash
@@ -208,7 +208,7 @@ Stopped for a human: "ApprovalGate" is asking.
 ```
 
 `--resume --answer '<json>'` continues it. The answer reaches the run as the result of the call
-that was waiting, and nothing that already ran runs again — not the model call for that round,
+that was waiting, and nothing that already ran runs again: not the model call for that round,
 not the tools already called in it. Calls the round never reached are made on the way back.
 
 A suspension needs a session to be written into; a run without one is refused rather than
@@ -251,7 +251,7 @@ heddle run agent.heddle
 | Option | Description |
 |--------|-------------|
 | `--tools-dir <dir>` | Directory of tool executables to ship. Read back exactly as `heddle run --tools-dir` would: flat, executables only, name = filename minus extension |
-| `--plugin <manifest>` | Plugin to ship, as a `.json` manifest (repeatable). The plugin's **whole directory** travels — its confinement rule (everything it references resolves inside its directory) is what makes it shippable |
+| `--plugin <manifest>` | Plugin to ship, as a `.json` manifest (repeatable). The plugin's **whole directory** travels, and its confinement rule (everything it references resolves inside its directory) is what makes it shippable |
 | `--discover-tools` | Let a plugin that declares `discoverTools` be started, so the bundle can be checked against its tools |
 | `--plugin-config <Type>=<json>` | Component settings recorded in the bundle (repeatable). A `@file` value is read now, so only its contents travel |
 | `--mount <src[:dest][:ro\|:rw]>` | File or directory to ship, landing in every workspace where a `--mount` would put it (repeatable) |
@@ -260,7 +260,7 @@ heddle run agent.heddle
 
 ### What a bundle is
 
-A `.heddle` is a gzipped tar with a `heddle.json` manifest at its root — `tar -tzf
+A `.heddle` is a gzipped tar with a `heddle.json` manifest at its root, so `tar -tzf
 agent.heddle` shows exactly what you were handed, no heddle required. The bundle is
 checked before it is written: the spec must parse, the graph must hold, and every tool
 the flow names must be carried by `--tools-dir` or a `--plugin`, so a bundle that packs
@@ -276,7 +276,7 @@ What a bundle deliberately does **not** carry:
 - **Credentials.** A spec references a key as `$ENV_VAR`; it resolves on the machine
   that runs, never the one that packed.
 - **Sandbox policy and session state.** `--safe` and `--session` are the operator's
-  decisions about their own machine — a file that arrived in the mail does not make them.
+  decisions about their own machine, and a file that arrived in the mail does not make them.
 - **Discovery grants.** A bundled plugin declaring `discoverTools` still needs
   `--discover-tools` from whoever runs it.
 
@@ -309,7 +309,7 @@ heddle validate <spec> [options]
 
 | Argument | Description |
 |----------|-------------|
-| `spec` | Path to the spec file (JSON or YAML), or a `.heddle` bundle — validated with the tools and plugins it carries |
+| `spec` | Path to the spec file (JSON or YAML), or a `.heddle` bundle, validated with the tools and plugins it carries |
 
 ### Options
 
@@ -319,15 +319,15 @@ heddle validate <spec> [options]
 | `--plugin <module>` | Load a plugin (repeatable), so a flow naming its component types can be parsed |
 | `--discover-tools` | Allow a plugin declaring `discoverTools` to be started. Without it, such a plugin is refused at load rather than loaded without its tools |
 
-### What It Checks
+### What it checks
 
 1. Schema validation against the Open Agent Specification
 2. Graph compilation and structural validation, for flows
-3. That every tool the flow names resolves — against the composed registry, so this runs
+3. That every tool the flow names resolves, against the composed registry, so this runs
    when `--tools-dir` is given *or* when a loaded plugin contributes tools
 
-**No API key is needed.** Providers are constructed on first use, so compiling a flow —
-and therefore validating it — never reaches a credential. A spec whose `llm_config` names
+**No API key is needed.** Providers are constructed on first use, so compiling a flow, and
+therefore validating it, never reaches a credential. A spec whose `llm_config` names
 `$OPENAI_API_KEY` validates with nothing in the environment.
 
 A `.json` argument to `--plugin` is read as a manifest, which is data: validating a flow
@@ -335,11 +335,11 @@ that uses an out-of-process plugin starts none of that plugin's code.
 
 <Callout type="warn">
 One case worth knowing in CI. A spec that does not parse exits 1, so does an invalid
-graph, and so does a tool the flow names that nothing provides — exiting 0 while printing
+graph, and so does a tool the flow names that nothing provides. Exiting 0 while printing
 the problem is the one outcome a validator must not have. What still exits 0 is a graph
 heddle could not *compile* at all, reported as `Graph validation skipped` with the reason.
-That skip is there so a check which could not run — a node type whose plugin was not
-loaded is the usual cause — is not mistaken for a fault in the spec. Read the output as
+That skip is there so a check which could not run, usually because a node type's plugin was
+not loaded, is not mistaken for a fault in the spec. Read the output as
 well as the status, and treat `Graph validation passed` as the signal you want.
 </Callout>
 

@@ -4,7 +4,7 @@ Manifests for running the engine as a **long-lived, multi-run service** that
 streams SSE and autoscales.
 
 This is a different deployment from the one in [`../DEPLOYMENT.md`](../DEPLOYMENT.md),
-and the difference is not a setting — it is who the callers are.
+and the difference is not a setting; it is who the callers are.
 
 |  | Playground (`DEPLOYMENT.md`) | This directory |
 |---|---|---|
@@ -25,7 +25,7 @@ environment, and a submitted spec can no longer dereference it either.
 `packages/core/src/plugin/__tests__/remote.test.ts` runs the cross-tenant
 attack and asserts it fails.
 
-If you do turn it on, read `../DEPLOYMENT.md` first — the remaining exposure is
+If you do turn it on, read `../DEPLOYMENT.md` first. The remaining exposure is
 egress, not memory.
 
 ## The residual trade
@@ -52,7 +52,7 @@ add pods rather than raising it.
 
 | Endpoint | Purpose |
 |---|---|
-| `/healthz` | Liveness. Stays 200 while draining — a draining pod must not be restarted. |
+| `/healthz` | Liveness. Stays 200 while draining, because a draining pod must not be restarted. |
 | `/readyz` | Readiness. 503 once draining, so the pod leaves the Service endpoints. |
 | `/metrics` | Prometheus text exposition. In-cluster only; never route it publicly. |
 
@@ -63,7 +63,7 @@ add pods rather than raising it.
 ## `--safe` needs gVisor here
 
 The Deployment sets `--safe --sandbox=bubblewrap` **and** a hardened security
-context — `capabilities.drop: [ALL]`, `allowPrivilegeEscalation: false`,
+context: `capabilities.drop: [ALL]`, `allowPrivilegeEscalation: false`,
 `seccompProfile: RuntimeDefault`. Those two are incompatible under runc:
 bubblewrap has to create a user namespace and mount `/proc` in it, which that
 context denies. Every tool call fails with `bwrap: Can't mount proc`, and no
@@ -85,8 +85,8 @@ spec:
 ```
 
 or remove `--safe` and `--sandbox=bubblewrap` from the container args. With
-trusted callers the second is perfectly reasonable — tool sandboxing is defence
-in depth there, not the boundary.
+trusted callers the second is perfectly reasonable, since tool sandboxing is defence
+in depth there rather than the boundary.
 
 ## Two things that are easy to get wrong
 
@@ -105,7 +105,7 @@ want one genuinely blended number, see the PromQL at the bottom of
 ## Draining, which is the part that matters for SSE
 
 A run is a long-lived HTTP response. Killing the process ends it mid-flight, and
-under an orchestrator that is not an edge case — it is every rolling deploy and
+under an orchestrator that is not an edge case; it is every rolling deploy and
 every scale-in. The sequence on SIGTERM:
 
 1. `/readyz` starts answering 503 → the pod leaves the Service endpoints.
@@ -115,7 +115,7 @@ every scale-in. The sequence on SIGTERM:
 4. Once the last run finishes, the listener closes and the process exits 0.
 5. Only if `--drain-timeout` expires are remaining connections closed.
 
-`/healthz` stays 200 throughout — a draining pod is healthy, and failing
+`/healthz` stays 200 throughout, because a draining pod is healthy and failing
 liveness here would have the kubelet restart the very pod that is trying to
 finish its streams.
 
@@ -141,7 +141,7 @@ refusing while some proxies still list the pod.
 kubectl apply -f packages/server/k8s/
 ```
 
-The HPA's `Pods` metric needs prometheus-adapter configured first — see
+The HPA's `Pods` metric needs prometheus-adapter configured first; see
 `prometheus-adapter.yaml`. Without it that metric never resolves and the HPA
 silently scales on CPU and memory alone, which looks like it is working.
 

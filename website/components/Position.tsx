@@ -57,7 +57,7 @@ export default function Position() {
           >
             Your agent is a document, not framework code. Batteries included
             usually means a bigger library in your lockfile; heddle refuses the
-            trade — the same equipment sits behind a binary you point at the
+            trade, and the same equipment sits behind a binary you point at the
             document.
           </p>
           <p
@@ -68,9 +68,10 @@ export default function Position() {
               margin: "14px 0 0",
             }}
           >
-            And the document is an Open Agent Specification flow — a format
-            published by Oracle, not invented here — so it runs on any other
-            conforming runtime, which makes leaving cheap and staying a choice.
+            And the document is an Open Agent Specification flow. Oracle
+            publishes that format; this project did not invent it. So it runs on
+            any other conforming runtime, which makes leaving cheap and staying
+            a choice.
           </p>
         </div>
 

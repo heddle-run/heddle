@@ -32,8 +32,8 @@ explore first, plan before acting, edit rather than rewrite, verify with
 `agents/` holds two more Agent Spec flows, each the same three-node shape as
 the main one:
 
-- `code_reviewer.yaml` — reviews code for bugs, security issues and improvements
-- `test_writer.yaml` — generates test cases for code
+- `code_reviewer.yaml` reviews code for bugs, security issues and improvements
+- `test_writer.yaml` generates test cases for code
 
 Neither is referenced from `spec.yaml`. The wiring is entirely inside
 `tools/delegate_task.sh`: the tool takes an `agent_name` and a `task`, resolves
@@ -41,7 +41,7 @@ Neither is referenced from `spec.yaml`. The wiring is entirely inside
 flow with `npx --package=@heddle/cli heddle run`, passing the task as input and
 handing the sub-flow's `result` back as its own tool output.
 
-So "sub-agent" is not a heddle feature — it is a tool that happens to invoke
+So "sub-agent" is not a heddle feature; it is a tool that happens to invoke
 heddle. The main agent sees `delegate_task` as one more tool; the sub-agent
 runs in its own process with its own model loop, and only its final result
 returns.
@@ -74,6 +74,6 @@ The final state lands on stdout:
 > as the invoking user. A relative path resolves in the run's workspace, but an
 > absolute path reaches anything you can. Read the
 > [tools warning](../../README.md#tools) in the root README, and consider
-> `--safe` — with the caveat that `delegate_task` spawns `npx`, which a
+> `--safe`, with the caveat that `delegate_task` spawns `npx`, which a
 > sandbox without network and `$HOME` access will break. Try the agent on a
 > scratch directory first.

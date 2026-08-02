@@ -3,7 +3,7 @@
 The Cloudflare Worker in front of the playground engine. It is the only public
 face of a service that executes code its callers wrote.
 
-`@heddle/server` is deliberate about having no authentication — its README says
+`@heddle/server` is deliberate about having no authentication, and its README says
 so plainly. This is where that is meant to be terminated.
 
 ## Shape
@@ -25,14 +25,14 @@ code therefore runs *as* the engine, in the engine's process.
 
 A shared engine leaks between callers, and not subtly. Three ordinary requests
 are enough: one plants a hook on a global, an unrelated visitor runs, and the
-first returns to read what the hook captured. No escape and no exploit — just
+first returns to read what the hook captured. No escape and no exploit, just
 `globalThis` outliving a request.
 
 So instances are addressed by run id. Each run gets an engine that has never
 executed anyone else's code, and the broker destroys it when the response
 stream closes. `sleepAfter` is the backstop for the paths that miss.
 
-The cost is a cold start per run — about 2.5s end to end when measured
+The cost is a cold start per run, about 2.5s end to end when measured
 locally. If that becomes too slow, a warm pool preserves the property; sharing
 one process does not.
 
@@ -69,7 +69,7 @@ The key lives in the worker's secrets and nowhere else.
 | Var | Meaning |
 |---|---|
 | `ALLOWED_ORIGINS` | Comma-separated browser origins. Matched exactly. |
-| `PROXY_HOST` | The broker's hostname — the one host a container may reach. |
+| `PROXY_HOST` | The broker's hostname, and the one host a container may reach. |
 | `PROXY_URL` | Absolute URL of `/llm/v1`, handed to the engine as `OPENAI_BASE_URL`. |
 | `UPSTREAM_BASE` | What `/llm/*` forwards to. |
 | `RUNS_PER_MINUTE` | Runs per caller IP. |
@@ -90,7 +90,7 @@ the first deploy tells you the real one.
 
 ## Deploying
 
-Requires Docker locally — wrangler builds the engine image before uploading.
+Requires Docker locally, since wrangler builds the engine image before uploading.
 
 ```bash
 pnpm install
@@ -107,7 +107,7 @@ Then set `PROXY_HOST` / `PROXY_URL` to the real hostname, redeploy, and set the
 at it.
 
 **CI does not deploy this.** `.github/workflows/deploy-playground.yml` deploys
-the engine to the Oracle Cloud host that currently serves `engine.heddle.run` —
+the engine to the Oracle Cloud host that currently serves `engine.heddle.run`;
 see [`../server/DEPLOYMENT.md`](../server/DEPLOYMENT.md). This broker has never
 been published; the playground reaches the engine through a Cloudflare tunnel
 instead, with no authentication and no rate limiting in front of it. Until that

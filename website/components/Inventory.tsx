@@ -47,7 +47,7 @@ export default function Inventory() {
                 maxWidth: "26ch",
               }}
             >
-              What the batteries cost your project — everything a library would
+              What the batteries cost your project: everything a library would
               have added, at zero.
             </p>
           </div>

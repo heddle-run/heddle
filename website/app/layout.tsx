@@ -49,7 +49,7 @@ export const metadata: Metadata = {
     template: "%s — heddle",
   },
   description:
-    "A batteries-included declarative agent runtime. The tool-calling loop, OS-level sandbox, HTTP server, guardrails and retry policies ship with heddle — and none of them enter your codebase. Declare the flow as an Open Agent Specification document in YAML or JSON, wire tools in any language, and run it from the CLI or behind an HTTP server.",
+    "A batteries-included declarative agent runtime. The tool-calling loop, OS-level sandbox, HTTP server, guardrails and retry policies ship with heddle, and none of them enter your codebase. Declare the flow as an Open Agent Specification document in YAML or JSON, wire tools in any language, and run it from the CLI or behind an HTTP server.",
   keywords: [
     "heddle",
     "declarative agent runtime",
@@ -69,7 +69,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "heddle — A batteries-included declarative agent runtime",
     description:
-      "Sandbox, HTTP server, guardrails, retries and streaming already in the runtime — and none of it in your codebase. Declare the agent as a document and point heddle at it.",
+      "Sandbox, HTTP server, guardrails, retries and streaming already in the runtime, and none of it in your codebase. Declare the agent as a document and point heddle at it.",
     url: "https://heddle.run",
     siteName: "heddle",
     type: "website",

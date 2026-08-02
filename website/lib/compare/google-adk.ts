@@ -316,7 +316,7 @@ export const googleAdk: Framework = {
     "Change model=: a bare string for Gemini, LiteLlm(...) for anything else.",
   docs: "https://google.github.io/adk-docs/",
   note:
-    "Tools are the high point — a plain function is a tool, with no " +
+    "Tools are the high point. A plain function is a tool, with no " +
     "decorator and no registration step. Everything else assumes Gemini and " +
     "a session-backed runner, so a non-Google model and a one-off script are " +
     "both slightly against the grain.",
@@ -371,9 +371,9 @@ export const googleAdk: Framework = {
       files: [{ name: "skills.py", language: "python", source: SKILLS }],
       run: "python skills.py",
       note:
-        "Skills are not a framework concept here, and do not need to be — " +
-        "two functions over a directory and a prompt that insists they be " +
-        "called is the entire pattern.",
+        "Skills are not a framework concept here, and do not need to be. " +
+        "Two functions over a directory, plus a prompt that insists they be " +
+        "called, is the whole pattern.",
     },
 
     "tool-and-plugin": {
@@ -389,7 +389,7 @@ export const googleAdk: Framework = {
 
     "ag-ui": {
       unsupported:
-        "ag-ui-adk exposes an ADK agent over AG-UI as a served endpoint — " +
+        "ag-ui-adk exposes an ADK agent over AG-UI as a served endpoint: " +
         "a way for a client to drive the agent, not a second rendering of " +
         "a run that already happened. Nothing here attaches to " +
         "`python research.py`.",

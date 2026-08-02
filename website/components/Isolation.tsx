@@ -36,7 +36,7 @@ export default function Isolation() {
             title={
               <>
                 Under <code style={{ fontSize: "0.85em" }}>{safeMode.flag}</code>
-                , tools run confined — or they do not run.
+                , tools run confined, or they do not run at all.
               </>
             }
             lede="What the flag means, mechanism by mechanism."

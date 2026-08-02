@@ -818,7 +818,7 @@ export const heddle: Reference = {
   docs: "/docs",
   note:
     "The flow is data, not code. heddle parses it, validates the whole graph, " +
-    "and runs it — nothing enters your dependency tree, and because the " +
+    "and runs it. Nothing enters your dependency tree, and because the " +
     "document is Open Agent Specification rather than heddle's own format, it " +
     "runs on any compliant runtime.",
 
@@ -859,7 +859,7 @@ export const heddle: Reference = {
         "heddle run flow.yaml --plugin ./guardrail.js \\\n" +
         `  --input '{"query": "what is my password"}'`,
       note:
-        "Agent Spec already defines the slot — Agent.transforms — so the " +
+        "Agent Spec already defines the slot, Agent.transforms, so the " +
         "guardrail is configuration. A plugin supplies the one component type " +
         "heddle does not ship, and the patterns stay in the document.",
     },
@@ -917,7 +917,7 @@ export const heddle: Reference = {
         "heddle run flow.yaml --tools-dir ./tools --mount ./skills \\\n" +
         `  --input '{"task": "tidy up the numbers in report.csv"}'`,
       note:
-        "Skills are not a heddle concept either — the pattern is two tools " +
+        "Skills are not a heddle concept either. The pattern is two tools " +
         "and a prompt, and every column writes the same one. What differs is " +
         "that the prompt and the tool shapes are a document, and --mount is " +
         "what decides the folder is there, rather than the process happening " +
@@ -934,8 +934,8 @@ export const heddle: Reference = {
         "heddle run flow.yaml --tools-dir ./tools --plugin ./reverse.js \\\n" +
         `  --input '{"text": "weave agents from spec"}'`,
       note:
-        "Both steps are out of the engine's process — the tool as a " +
-        "subprocess, the plugin node in its own — and the flow names them " +
+        "Both steps are out of the engine's process, the tool as a " +
+        "subprocess and the plugin node in its own, and the flow names them " +
         "without knowing either is not a heddle type.",
     },
 
@@ -951,7 +951,7 @@ export const heddle: Reference = {
         "  --protocol ag-ui \\\n" +
         `  --input '{"question": "the sha-256 of: weave agents from spec"}'`,
       note:
-        "The flow is the agent column again, unchanged — the rendering is " +
+        "The flow is the agent column again, unchanged. The rendering is " +
         "a plugin and a flag, not a property of the program. That is what " +
         "the other three have no equivalent of.",
     },
