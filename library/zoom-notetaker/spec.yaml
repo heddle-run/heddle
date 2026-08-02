@@ -4,10 +4,12 @@
 #                                           └─> end_failed
 #
 # The one ToolNode is the whole trick: `attend` drives a local headless
-# Chromium into the meeting through Zoom's web client, harvests the live
-# captions as they stabilize in the DOM, and comes back when the meeting ends.
+# Chromium into the meeting through Zoom's web client, records the call's
+# audio in the page, and runs it through a speech-to-text model configured
+# entirely by env vars (an OpenAI-compatible endpoint, or a local command) —
+# or, in captions mode, harvests Zoom's live captions from the DOM instead.
 # It is a single step because the browser session has to stay alive from the
-# first click to the last caption — and it has no decisions in it, so it is a
+# first click to the last word — and it has no decisions in it, so it is a
 # plain tool, not an agent. The flow's only branch is the one that matters:
 # did a transcript come back or not.
 component_type: Flow
@@ -164,9 +166,11 @@ $referenced_components:
       name: attend_meeting
       description: >
         Join a Zoom meeting in a local headless Chromium via the web client,
-        collect the live captions until the call ends, and answer
-        outcome=captured with the transcript — or outcome=failed with error
-        saying why: no browser found, join refused, or no captions to read.
+        record the call until it ends, and transcribe it with the STT model
+        the STT_* env vars configure (or harvest Zoom's live captions when
+        ZOOM_TRANSCRIBER=captions). Answers outcome=captured with the
+        transcript — or outcome=failed with error saying why: no browser
+        found, join refused, no audio, or the transcriber failed.
       metadata: {}
       inputs:
         - { title: meeting_url, type: string }
@@ -212,11 +216,13 @@ $referenced_components:
       model_id: gpt-4o-mini
       api_key: $OPENAI_API_KEY
     prompt_template: |
-      You attended a meeting as its notetaker, and the transcript below is the
-      meeting's live captions. Machine captions are rough: names come through
-      misspelled, sentences arrive cut in half, lines repeat as the recognizer
-      corrects itself, and filler dominates. Write the notes for someone who
-      was not there, under exactly these four headings, in this order:
+      You attended a meeting as its notetaker, and the transcript below is
+      machine transcription of the call — speech-to-text over the recorded
+      audio, or the meeting's live captions. Either way it is rough: names
+      come through misspelled, speakers are not always labeled, sentences
+      arrive cut in half, lines repeat as the recognizer corrects itself, and
+      filler dominates. Write the notes for someone who was not there, under
+      exactly these four headings, in this order:
 
       ## Summary
       Two or three sentences: what the meeting was about and where it landed.
