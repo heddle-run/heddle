@@ -200,6 +200,10 @@ workspace read-only, exactly where `--mount` would have put it. What differs is 
 bytes they are: `--mount` names a directory the operator already has, and `files` carries
 the caller's own.
 
+A [bundle](/docs/bundles) ships mounts too: `heddle bundle --mount ./skills` records the
+directory and its destination in the `.heddle` archive, and whoever runs the bundle gets
+it in every workspace without holding the path themselves.
+
 ### Keeping it
 
 ```bash

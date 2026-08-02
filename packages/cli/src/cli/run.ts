@@ -33,9 +33,11 @@ import {
   DEFAULT_MOUNT_MAX_BYTES,
   DEFAULT_MOUNT_MAX_ENTRIES,
   DEFAULT_RUNNER_OPTIONS,
+  isBundlePath,
   State,
   type CompiledGraph,
   type Dependencies,
+  type Mount,
   type Registry,
   type RunnerOptions,
   type Event,
@@ -47,6 +49,7 @@ import {
   type WorkspaceFactory,
   type WorkspaceTool,
 } from '@heddle/core';
+import { mergeBundleOptions, openBundle, type OpenedBundle } from './bundles.js';
 import { frameLine, resolveEncoder, type EncoderFactory } from './encoders.js';
 import { createProgressWriter, renderEvent } from './progress.js';
 import { selectSession, type SelectedSession, type SessionFlags } from './sessions.js';
@@ -89,7 +92,11 @@ interface RunOptions extends SafeOptions, WorkspaceOptions, SessionFlags {
 
 export const runCommand = new Command('run')
   .description('Run an Agent Spec flow')
-  .argument('<flow>', 'Path to flow JSON or YAML file')
+  .argument(
+    '<flow>',
+    'Path to flow JSON or YAML file, or a .heddle bundle made by ' +
+      '"heddle bundle"',
+  )
   .option('--tools-dir <dir>', 'Directory containing tool executables')
   .option('--input <json>', 'Input JSON object')
   .option(
@@ -204,14 +211,32 @@ export const runCommand = new Command('run')
   .action(async (flowPath: string, options: RunOptions, command: Command) => {
     const verbose = command.parent?.opts().verbose ?? false;
 
-    const plugins = await loadPlugins(options.plugin, {
-      discovery: options.discoverTools === true,
-    });
+    // Opened before the plugins load, because the bundle is where some of
+    // them come from. What it recorded becomes defaults in the same options
+    // the flags parse into, so everything below this line is one code path.
+    const bundle = isBundlePath(flowPath) ? openBundle(flowPath) : undefined;
+    if (bundle) mergeBundleOptions(options, bundle);
+
     let interactive = false;
     try {
-      interactive = await runFlow(flowPath, options, plugins, verbose);
+      const plugins = await loadPlugins(options.plugin, {
+        discovery: options.discoverTools === true,
+      });
+      try {
+        interactive = await runFlow(
+          bundle?.flowPath ?? flowPath,
+          options,
+          plugins,
+          verbose,
+          bundle?.mounts,
+        );
+      } finally {
+        if (!interactive) plugins.dispose();
+      }
     } finally {
-      if (!interactive) plugins.dispose();
+      // An interactive run keeps its extraction: the chat UI outlives this
+      // action, and its flow, tools and mounts live in that directory.
+      if (!interactive) bundle?.dispose();
     }
   });
 
@@ -220,6 +245,7 @@ async function runFlow(
   options: RunOptions,
   plugins: PluginRegistry,
   verbose: boolean,
+  bundleMounts: Mount[] = [],
 ): Promise<boolean> {
   const interactive = options.interactive ?? false;
   // Before `loadFlow`, so two flags that cannot both hold are refused without
@@ -231,7 +257,7 @@ async function runFlow(
   const flow = loadFlow(flowPath, plugins);
   // Before the sandbox, because a `--workspace` directory has to be on the
   // policy's write paths and the policy is fixed once the sandbox is made.
-  const workspaces = buildWorkspaces(options, plugins);
+  const workspaces = buildWorkspaces(options, plugins, bundleMounts);
   const sandbox = buildSandbox(
     options,
     options.toolsDir,
@@ -688,11 +714,18 @@ function detectInputKey(flow: ParsedFlow): string {
 function buildWorkspaces(
   options: RunOptions,
   plugins: PluginRegistry,
+  bundleMounts: Mount[] = [],
 ): WorkspaceFactory {
   return createWorkspaceFactory({
     // The operator's first, so a collision reads as "your --mount and this
-    // plugin want the same path" rather than the other way round.
-    mounts: [...options.mount.map(parseMount), ...plugins.workspaceMounts()],
+    // plugin want the same path" rather than the other way round — and the
+    // bundle's before the plugins', because its origin names the file the
+    // operator was handed rather than code nobody typed.
+    mounts: [
+      ...options.mount.map(parseMount),
+      ...bundleMounts,
+      ...plugins.workspaceMounts(),
+    ],
     root: options.workspace,
     budget: {
       maxBytes: positive('--mount-max-bytes', options.mountMaxBytes, DEFAULT_MOUNT_MAX_BYTES),

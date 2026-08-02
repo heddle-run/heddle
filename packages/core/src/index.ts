@@ -327,7 +327,25 @@ export type {
   ToolDefinition,
 } from './llm/types.js';
 
+// The `.heddle` bundle: a flow and everything it runs with, in one gzipped tar
+// a stock `tar -xzf` can open. Exported so the CLI packs and opens them with
+// the same code, and so an embedder taking bundles applies the same checks.
 export {
+  BUNDLE_EXTENSION,
+  BUNDLE_FORMAT,
+  BUNDLE_MANIFEST,
+  MAX_BUNDLE_BYTES,
+  MAX_BUNDLE_ENTRIES,
+  isBundlePath,
+  validateBundleManifest,
+} from './bundle/format.js';
+export type { BundleManifest, BundleMount } from './bundle/format.js';
+export { packBundle } from './bundle/pack.js';
+export type { BundlePlan, PackedBundle } from './bundle/pack.js';
+export { extractBundle } from './bundle/unpack.js';
+
+export {
+  BundleError,
   CompileError,
   LLMError,
   PluginError,
