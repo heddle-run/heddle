@@ -6,7 +6,6 @@ import {
   AGENT_SPEC_URL,
   GITHUB_URL,
   PLAYGROUND_URL,
-  VERSION,
 } from "@/lib/constants";
 
 /* Destinations only — the numbered sections do their own wayfinding on scroll,
@@ -50,20 +49,6 @@ export default function Nav() {
         >
           heddle
         </Link>
-
-        <span
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 11,
-            color: "var(--text-subtle)",
-            border: "1px solid var(--border-default)",
-            borderRadius: "var(--radius-pill)",
-            padding: "2px 8px",
-            whiteSpace: "nowrap",
-          }}
-        >
-          v{VERSION}
-        </span>
 
         <nav
           aria-label="Primary"

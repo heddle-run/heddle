@@ -149,17 +149,7 @@ export default function Footer() {
           }}
         >
           <span>heddle.run</span>
-          <span>
-            Built by{" "}
-            <a
-              href="https://github.com/spichen"
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{ color: "var(--text-muted)" }}
-            >
-              spichen
-            </a>
-          </span>
+          <span>Built by agents, guided by humans</span>
           <span>v{VERSION}</span>
         </div>
       </div>
