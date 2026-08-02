@@ -51,15 +51,6 @@ jobs:
       - run: pnpm test
       - run: pnpm build
 
-      # Create GitHub Release
-      - name: Create GitHub Release
-        run: |
-          gh release create "${{ github.ref_name }}" \
-            --title "${{ github.ref_name }}" \
-            --generate-notes
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       # Publish to npm. `pnpm -r publish` walks the workspace in topological
       # order, so @heddle/core goes out before the packages that depend on
       # it. Private packages (the workspace root, vendor/agentspec) are
@@ -68,6 +59,25 @@ jobs:
         run: pnpm -r publish --provenance --access public --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # Created after the publish, so a GitHub Release means the packages are
+      # actually on npm rather than merely that a tag was pushed.
+      #
+      # `gh release create` 422s on a tag that already has a release, which
+      # wedges the whole pipeline — a release cut by hand in the UI, or left
+      # behind by a run that failed further down, would otherwise block every
+      # retry of that tag forever. Skip instead, and leave the existing notes
+      # alone rather than overwriting whatever a human wrote there.
+      - name: Create GitHub Release
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists — leaving it as is."
+          else
+            gh release create "$TAG" --title "$TAG" --generate-notes
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
 
       # Update Homebrew formula
       - name: Update Homebrew formula
