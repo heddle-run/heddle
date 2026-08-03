@@ -1,7 +1,15 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
-import { checkedMount, extractBundle, type Mount } from '@heddle-run/core';
+import {
+  BundleError,
+  checkedMount,
+  extractBundle,
+  messageOf,
+  parseRequirements,
+  type Mount,
+  type Requirement,
+} from '@heddle-run/core';
 
 /**
  * A `.heddle` archive, extracted and translated back into run inputs.
@@ -24,6 +32,13 @@ export interface OpenedBundle {
   mounts: Mount[];
   /** The recorded default input, as `--input` JSON. */
   input?: string;
+  /**
+   * What the bundle says this machine must already have. Unlike everything
+   * above it is not a flag's worth of defaults — no flag grants a requirement,
+   * because none of this is heddle's to grant. It is checked before the run
+   * and reported.
+   */
+  requires: Requirement[];
   /** Remove the extraction directory. */
   dispose(): void;
 }
@@ -61,11 +76,51 @@ export function openBundle(archivePath: string): OpenedBundle {
         manifest.input === undefined
           ? undefined
           : JSON.stringify(manifest.input),
+      requires: manifest.requires ?? [],
       dispose,
     };
   } catch (err) {
     dispose();
     throw err;
+  }
+}
+
+/**
+ * `--requires`, as inline JSON or `@file`.
+ *
+ * The same two spellings `--plugin-config` takes, for the same reason: a short
+ * declaration belongs on the command line and a real one belongs in a file
+ * beside the flow. What it is *not* is a flag language of its own — the value
+ * is the JSON that lands in the manifest, so what an author reads back in
+ * `heddle.json` is what they wrote.
+ *
+ * One reader for `heddle bundle` and `heddle doctor` both, so a declaration
+ * `doctor` accepted is one `bundle` will pack, which is the point of being
+ * able to try it before packing it.
+ */
+export function readRequiresOption(
+  raw: string | undefined,
+): Requirement[] | undefined {
+  if (raw === undefined) return undefined;
+
+  const text = raw.startsWith('@') ? readRequiresFile(raw.slice(1)) : raw;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch (err) {
+    throw new BundleError('failed to parse --requires JSON', { cause: err });
+  }
+  return parseRequirements(parsed);
+}
+
+function readRequiresFile(path: string): string {
+  try {
+    return readFileSync(path, 'utf-8');
+  } catch (err) {
+    throw new BundleError(
+      `--requires @${path}: the file is not readable (${messageOf(err)})`,
+    );
   }
 }
 

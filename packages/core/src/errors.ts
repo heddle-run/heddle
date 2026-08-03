@@ -84,6 +84,22 @@ export class BundleError extends Error {
   }
 }
 
+/**
+ * This machine does not have what the agent declared it needs.
+ *
+ * Not a `BundleError`, though the declaration usually arrives in one: nothing
+ * is wrong with the file. The same bundle runs on the machine next to this one,
+ * and the fix is an install here rather than a repack there. Not a `ToolError`
+ * either — that one means the flow named a tool heddle cannot find, where this
+ * means heddle found everything it ships and the machine is missing the rest.
+ */
+export class RequirementError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = 'RequirementError';
+  }
+}
+
 export class SessionError extends Error {
   constructor(message: string, options?: ErrorOptions) {
     super(message, options);

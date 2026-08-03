@@ -142,6 +142,55 @@ describe('the bundle manifest', () => {
       validateBundleManifest({ format: 1, name: 'x', flow: '/etc/passwd' }),
     ).toThrow(/relative/);
   });
+
+  it('reads requirements, still at format 1', () => {
+    const manifest = validateBundleManifest({
+      format: 1,
+      name: 'x',
+      flow: 'flow/f.json',
+      requires: [{ binary: 'ffmpeg', hint: 'brew install ffmpeg' }],
+    });
+
+    // The field arrived without a version bump on purpose: an older heddle
+    // ignores what it does not know and runs the bundle unchecked, where a bump
+    // would have made it refuse the file outright.
+    expect(manifest.format).toBe(1);
+    expect(manifest.requires).toEqual([
+      { binary: ['ffmpeg'], hint: 'brew install ffmpeg' },
+    ]);
+  });
+
+  it('normalizes the older { env, binaries } object it may find there', () => {
+    expect(
+      validateBundleManifest({
+        format: 1,
+        name: 'x',
+        flow: 'flow/f.json',
+        requires: { env: ['OPENAI_API_KEY'], binaries: ['ffmpeg'] },
+      }).requires,
+    ).toEqual([{ binary: ['ffmpeg'] }, { env: 'OPENAI_API_KEY' }]);
+  });
+
+  it('leaves a manifest without the field exactly as it was', () => {
+    const manifest = validateBundleManifest({
+      format: 1,
+      name: 'x',
+      flow: 'flow/f.json',
+    });
+
+    expect(manifest.requires).toBeUndefined();
+  });
+
+  it('refuses a requirement it cannot read, naming the entry', () => {
+    expect(() =>
+      validateBundleManifest({
+        format: 1,
+        name: 'x',
+        flow: 'flow/f.json',
+        requires: [{ binary: 'ffmpeg' }, { nonsense: true }],
+      }),
+    ).toThrow(/requires\[1\] must name exactly one of/);
+  });
 });
 
 describe('packing and extracting', () => {
@@ -229,6 +278,46 @@ describe('packing and extracting', () => {
     expect(statSync(join(extracted, 'plugins/greeter/wave.sh')).mode & 0o111).not.toBe(0);
     expect(readFileSync(join(extracted, 'mounts/0/facts.md'), 'utf-8')).toBe('# facts');
     expect(readFileSync(join(extracted, 'mounts/1'), 'utf-8')).toBe('one file');
+  });
+
+  it('round-trips requirements, as written', () => {
+    const out = join(dir, 'needs.heddle');
+    packBundle(
+      plan({
+        requires: [
+          { binary: ['whisper-cli'], hint: 'brew install whisper-cpp' },
+          { binary: ['chromium', 'google-chrome'] },
+          { env: 'OPENAI_API_KEY' },
+          { file: '~/models/ggml-base.en.bin' },
+          { node: '>=22' },
+        ],
+      }),
+      out,
+    );
+
+    expect(extractBundle(out, join(dir, 'extracted')).requires).toEqual([
+      { binary: ['whisper-cli'], hint: 'brew install whisper-cpp' },
+      { binary: ['chromium', 'google-chrome'] },
+      { env: 'OPENAI_API_KEY' },
+      { file: '~/models/ggml-base.en.bin' },
+      { node: '>=22' },
+    ]);
+  });
+
+  it('carries no requires key when a bundle declares none', () => {
+    const out = join(dir, 'plain.heddle');
+    packBundle(plan(), out);
+
+    const written = JSON.parse(
+      readTarGz(readFileSync(out), LIMITS)
+        .find((entry) => entry.name === BUNDLE_MANIFEST)!
+        .data!.toString(),
+    );
+
+    // Not an empty list: every bundle that existed before this field is read
+    // back byte for byte the same way, and nothing new is there to interpret.
+    expect('requires' in written).toBe(false);
+    expect(extractBundle(out, join(dir, 'extracted')).requires).toBeUndefined();
   });
 
   it('refuses to pack a symbolic link', () => {

@@ -45,6 +45,7 @@ heddle run <flow> [options]
 | `--plugin-config <Type>=<json>` | Configuration for a middleware component type (repeatable, once per type). `@path` reads the JSON from a file |
 | `--max-node-attempts <n>` | How many times one arrival at a node may be attempted when middleware retries. Whole number ≥ 1, default 3 |
 | `--no-stream` | Ask the model for one buffered response instead of a token stream |
+| `--no-preflight` | Start without checking the [requirements](/docs/bundles#what-a-bundle-needs-from-your-machine) a bundle declares. They are the author's description of your machine; this is how you say they are wrong |
 | `--no-ask-env` | Never ask for an environment variable the spec names and this shell does not have. Without it, a terminal is asked before the run starts |
 | `--protocol <name>` | Render the run through an installed [encoder](/docs/plugins/encoders), one JSON frame per line on stdout, instead of the human progress output |
 | `--mount <src[:dest][:ro\|:rw]>` | Put a file or directory in every node's [workspace](/docs/tools#the-workspace) (repeatable). `ro`, the default, is a copy the run cannot carry back; `rw` copies changed files out again when a node finishes |
@@ -265,6 +266,7 @@ heddle run agent.heddle
 | `--plugin-config <Type>=<json>` | Component settings recorded in the bundle (repeatable). A `@file` value is read now, so only its contents travel |
 | `--mount <src[:dest][:ro\|:rw]>` | File or directory to ship, landing in every workspace where a `--mount` would put it (repeatable) |
 | `--input <json>` | Default input recorded in the bundle; `heddle run --input` overrides it |
+| `--requires <json\|@file>` | What the receiving machine must already have, as a JSON list of predicates. Checked before a run starts and reported all at once — never installed, fetched or executed. See [requirements](/docs/bundles#what-a-bundle-needs-from-your-machine) |
 | `-o`, `--output <file>` | Where to write the bundle. Default: `<flow name>.heddle`, named for the flow rather than the file, since flow files are usually all called `flow.json` |
 
 ### What a bundle is
@@ -292,6 +294,44 @@ What a bundle deliberately does **not** carry:
 An in-process plugin (an importable module rather than a `.json` manifest) is refused:
 what it imports lives on the author's machine, so a bundle cannot carry its closure.
 Give the plugin a manifest and bundle that.
+
+## heddle doctor
+
+Ask whether this machine has what a bundle needs, without running it.
+
+```bash
+heddle doctor <bundle-or-flow> [options]
+```
+
+```bash
+$ heddle doctor zoom-notetaker.heddle
+zoom-notetaker cannot run here — 2 requirements unmet:
+
+  ✗ whisper-cli      not on PATH     brew install whisper-cpp
+  ✗ OPENAI_API_KEY   not set         needed for the notes step
+
+  ✓ ffmpeg, node v22.17.0, Google Chrome
+```
+
+Everything missing is listed at once, with whatever the author wrote beside it, so a
+machine is fixed in one pass rather than one failure at a time. Exit status is 0 when
+every requirement holds and 1 when any does not, which is what makes it usable in CI —
+a workflow that packs a bundle can assert its runner can run one.
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `--requires <json\|@file>` | The requirements to check, in the same JSON [`heddle bundle --requires`](#heddle-bundle) takes. For a flow that is not packed yet, or to try a declaration before packing it. Refused against a bundle that records its own, which would check something other than what running it checks |
+
+This runs nothing and installs nothing — see
+[requirements](/docs/bundles#what-a-bundle-needs-from-your-machine) for why that is the
+whole design rather than a missing feature. `heddle run` performs the same check before it
+starts; on a terminal it pauses there — fix the machine in another shell, press enter to
+re-check — and anywhere else it fails with the same list. `heddle doctor` is how you ask
+before the meeting rather than during it.
+
+An environment variable is reported as set or not set. Its value is never printed.
 
 ## heddle sessions
 

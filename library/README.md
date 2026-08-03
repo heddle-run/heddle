@@ -73,7 +73,7 @@ page.
 | `plugins` | Plugin manifests to ship, if any |
 | `mounts` | `src[:dest][:ro\|:rw]`, exactly as `--mount` spells it, with `src` relative to the entry |
 | `pluginConfig` | `{ "<ComponentType>": { … } }`, resolved at pack time |
-| `requires` | `env` variables and `binaries` the machine running it needs |
+| `requires` | What the machine running it must already have, as a list of `{"binary"\|"env"\|"file"\|"node": …, "hint": …}` — checked before a run starts, never installed. See below |
 | `input` | The default input recorded in the bundle, so `heddle run <it>.heddle` works with no flags |
 
 ## Adding one
@@ -104,6 +104,25 @@ than a big one:
 - **Nothing is bundled that should not travel.** No keys, no session state, no
   sandbox policy. A spec names its key as `$OPENAI_API_KEY` and it resolves on
   the machine that runs. See [Bundles](https://heddle.run/docs/bundles).
+
+## What an entry needs, and checking for it
+
+Most entries need nothing but heddle and a key. When one needs more, `requires`
+says so, and it says it in a form that is checked rather than only displayed:
+
+```json
+"requires": [
+  { "node": ">=22" },
+  { "binary": ["chromium", "google-chrome"], "hint": "or set CHROME_BIN" },
+  { "env": "OPENAI_API_KEY", "hint": "the notes step" }
+]
+```
+
+`heddle doctor library/dist/<name>.heddle` reports everything missing at once
+and exits non-zero if anything is, and `heddle run` performs the same check
+before it starts. Every predicate only looks — nothing here installs, downloads
+or runs anything, and a `hint` is a sentence for a person, never a command. The
+older `{ "env": [...], "binaries": [...] }` object still reads, as the same list.
 
 ## Running one safely
 

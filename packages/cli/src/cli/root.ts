@@ -3,6 +3,7 @@ import { Command } from 'commander';
 import { runCommand } from './run.js';
 import { bundleCommand } from './bundle.js';
 import { validateCommand } from './validate.js';
+import { doctorCommand } from './doctor.js';
 import { initCommand } from './init.js';
 import { sessionsCommand } from './sessions.js';
 
@@ -22,5 +23,6 @@ export const program = new Command('heddle')
 program.addCommand(runCommand);
 program.addCommand(bundleCommand);
 program.addCommand(validateCommand);
+program.addCommand(doctorCommand);
 program.addCommand(initCommand);
 program.addCommand(sessionsCommand);

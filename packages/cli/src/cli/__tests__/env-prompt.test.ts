@@ -72,6 +72,36 @@ describe('asking for the variables a flow names', () => {
     expect(env.OPENAI_API_KEY).toBe('sk-typed');
   });
 
+  it('asks for a variable a bundle requires but the spec never names', async () => {
+    const io = terminal({ STT_API_KEY: 'sk-typed' });
+    const env: NodeJS.ProcessEnv = {};
+
+    // What `requires` declares and what `collectEnvRefs` finds are different
+    // sets: a key only a tool reads is in the first and not the second, and it
+    // is worth asking for rather than refusing over.
+    const filled = await askForEnvRefs(flowReading(), {
+      ...io.options,
+      env,
+      also: ['STT_API_KEY'],
+    });
+
+    expect(io.asked).toEqual(['STT_API_KEY']);
+    expect(filled).toEqual(['STT_API_KEY']);
+  });
+
+  it('asks once for a variable the spec and the bundle both name', async () => {
+    const io = terminal({ OPENAI_API_KEY: 'sk-typed' });
+    const env: NodeJS.ProcessEnv = {};
+
+    await askForEnvRefs(flowReading('OPENAI_API_KEY'), {
+      ...io.options,
+      env,
+      also: ['OPENAI_API_KEY'],
+    });
+
+    expect(io.asked).toEqual(['OPENAI_API_KEY']);
+  });
+
   it('asks once per variable, in the order the flow named them', async () => {
     const io = terminal({ A_KEY: 'a', B_KEY: 'b' });
     const env: NodeJS.ProcessEnv = {};
