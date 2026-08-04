@@ -1,5 +1,9 @@
-import { describe, it, expect } from 'vitest';
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterAll, describe, it, expect } from 'vitest';
 import { RequirementError, type Requirement } from '@heddle-run/core';
+import { describeRecipe, type InstallRecipe } from '../install-recipes.js';
 import { waitForRequirements } from '../preflight-prompt.js';
 
 /**
@@ -29,6 +33,29 @@ function terminal(
       },
     },
   };
+}
+
+const tempDirs: string[] = [];
+afterAll(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+});
+
+/**
+ * A fresh PATH directory holding only `brew` — enough for the recipe table to
+ * make its offer, empty of everything a test wants to see appear. One per
+ * test, so an installed fake cannot leak into the next test's machine.
+ */
+function pathWithBrew(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'heddle-preflight-'));
+  tempDirs.push(dir);
+  fakeExecutable(dir, 'brew');
+  return dir;
+}
+
+function fakeExecutable(dir: string, name: string): void {
+  const path = join(dir, name);
+  writeFileSync(path, '#!/bin/sh\n');
+  chmodSync(path, 0o755);
 }
 
 describe('pausing a run at its unmet requirements', () => {
@@ -70,7 +97,7 @@ describe('pausing a run at its unmet requirements', () => {
     expect(screen).toContain('demo cannot run here — 1 requirement unmet');
     expect(screen).toContain('Everything holds now — starting.');
     // The question says whose job the fix is, in so many words.
-    expect(io.questions[0]).toContain('heddle installs nothing');
+    expect(io.questions[0]).toContain('heddle has no recipe');
   });
 
   it('keeps re-checking, and re-reporting, until the list is empty', async () => {
@@ -113,6 +140,66 @@ describe('pausing a run at its unmet requirements', () => {
     await expect(
       waitForRequirements([{ env: 'KEY' }], 'demo', { ...io.options, env: {} }),
     ).rejects.toThrow(RequirementError);
+  });
+
+  it('runs an accepted recipe and starts once it lands', async () => {
+    const bin = pathWithBrew();
+    const executed: string[] = [];
+    const io = terminal([{ value: 'y' }]);
+
+    await waitForRequirements([{ binary: ['whisper-cli'] }], 'demo', {
+      ...io.options,
+      env: { PATH: bin },
+      execute: async (recipe: InstallRecipe) => {
+        executed.push(describeRecipe(recipe));
+        fakeExecutable(bin, 'whisper-cli'); // what a real brew install leaves behind
+      },
+    });
+
+    expect(executed).toEqual(['brew install whisper-cpp']);
+    const screen = io.written.join('');
+    // Consent is informed: the exact command is on screen before the question.
+    expect(screen).toContain('brew install whisper-cpp');
+    expect(screen).toContain('Everything holds now — starting.');
+    expect(io.questions[0]).toContain('Run that now?');
+  });
+
+  it('offers once; declining leaves every fix to the operator', async () => {
+    const bin = pathWithBrew();
+    const executed: string[] = [];
+    const io = terminal([
+      { value: 'n' },
+      { value: '' }, // enter, nothing fixed — the offer must not come back
+      { value: '', before: () => fakeExecutable(bin, 'whisper-cli') },
+    ]);
+
+    await waitForRequirements([{ binary: ['whisper-cli'] }], 'demo', {
+      ...io.options,
+      env: { PATH: bin },
+      execute: async (recipe: InstallRecipe) => {
+        executed.push(describeRecipe(recipe));
+      },
+    });
+
+    expect(executed).toEqual([]);
+    const offers = io.questions.filter((q) => q.includes('Run that now?'));
+    expect(offers).toHaveLength(1);
+    expect(io.questions[1]).toContain('The rest of the fixes are yours');
+  });
+
+  it('holds the pause when a recipe fails, error on screen', async () => {
+    const io = terminal([{ value: 'y' }, { value: 'q' }]);
+
+    const wait = waitForRequirements([{ binary: ['whisper-cli'] }], 'demo', {
+      ...io.options,
+      env: { PATH: pathWithBrew() },
+      execute: async () => {
+        throw new Error('brew exited with 1');
+      },
+    });
+
+    await expect(wait).rejects.toThrow(RequirementError);
+    expect(io.written.join('')).toContain('That did not land: brew exited with 1');
   });
 
   it('refuses without pausing when nothing can answer', async () => {

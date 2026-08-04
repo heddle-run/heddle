@@ -8,12 +8,13 @@
  *
  * The transcript comes from one of two sources:
  *
- *   stt (default)  The meeting's audio, recorded in the page and run through
- *                  a speech-to-text model you configure with env vars. A
- *                  script injected before Zoom's own code taps remote WebRTC
- *                  audio tracks, media elements and WebAudio graphs into one
- *                  MediaRecorder; the recording is drained in standalone webm
- *                  segments so a long meeting never produces one giant file.
+ *   stt (default)  The meeting's audio, recorded in the page and transcribed
+ *                  on this machine by whisper.cpp — audio never leaves it
+ *                  unless you point STT_URL at an endpoint. A script injected
+ *                  before Zoom's own code taps remote WebRTC audio tracks,
+ *                  media elements and WebAudio graphs into one MediaRecorder;
+ *                  the recording is drained in standalone webm segments so a
+ *                  long meeting never produces one giant file.
  *   captions       Zoom's own live captions, harvested from the DOM as they
  *                  stabilize. No STT model involved, but the host's settings
  *                  must allow captions.
@@ -23,24 +24,29 @@
  * share it.
  *
  * Environment:
- *   ZOOM_TRANSCRIBER        'stt' (default) or 'captions'
- *   STT_URL                 OpenAI-compatible transcription endpoint
- *                           (default https://api.openai.com/v1/audio/transcriptions;
- *                           point it at a local faster-whisper/speaches server
- *                           to keep audio off the cloud)
+ *   WHISPER_MODEL           path to a ggml model for the default local
+ *                           transcriber (default ~/.heddle/models/ggml-base.en.bin,
+ *                           where `heddle run` offers to put one)
+ *   WHISPER_VAD_MODEL       path to a Silero VAD model (default
+ *                           ~/.heddle/models/ggml-silero-v5.1.2.bin); used when
+ *                           present, so silence does not transcribe as "Thank
+ *                           you."
+ *   STT_URL                 an OpenAI-compatible transcription endpoint, which
+ *                           replaces the local whisper: the OpenAI API, or a
+ *                           local faster-whisper/speaches server
  *   STT_MODEL               model name sent to that endpoint (default whisper-1)
  *   STT_API_KEY             bearer token for it (default: OPENAI_API_KEY)
  *   STT_LANGUAGE            optional language hint, e.g. 'en'
- *   STT_COMMAND             a local command template that replaces the HTTP
- *                           endpoint entirely. {audio} becomes the path to a
- *                           webm segment; the transcript is whatever the
- *                           command prints. It runs under /bin/sh, so a
- *                           pipeline is allowed — and whisper.cpp needs one:
- *                           convert to 16 kHz mono WAV first (it does not read
- *                           webm), and strip the timestamps with sed instead of
+ *   STT_COMMAND             a local command template that replaces both of the
+ *                           above. {audio} becomes the path to a webm segment;
+ *                           the transcript is whatever the command prints. It
+ *                           runs under /bin/sh, so a pipeline is allowed — and
+ *                           a hand-rolled whisper.cpp line needs one: convert
+ *                           to 16 kHz mono WAV first (it does not read webm),
+ *                           and strip the timestamps with sed instead of
  *                           passing -nt, which in 1.9.1 drops spans of speech
- *                           rather than only the timestamps. The README carries
- *                           the whole line.
+ *                           rather than only the timestamps. The built-in local
+ *                           mode already does all of that.
  *   STT_CHUNK_MINUTES       minutes of audio per segment (default 10)
  *   CHROME_BIN              path to a Chromium/Chrome binary (otherwise
  *                           common names and install paths are searched)
@@ -56,8 +62,14 @@
 
 import { execFile, spawn, execSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
+
+// Where `heddle run`'s installer puts the whisper models, next to
+// ~/.heddle/sessions. The bundle's requires name the same two files.
+const MODELS_DIR = join(homedir(), '.heddle', 'models');
+const WHISPER_MODEL_DEFAULT = join(MODELS_DIR, 'ggml-base.en.bin');
+const WHISPER_VAD_DEFAULT = join(MODELS_DIR, 'ggml-silero-v5.1.2.bin');
 
 const CHROME_CANDIDATES = [
   'chromium',
@@ -136,16 +148,79 @@ function webClientUrl(meetingUrl) {
 
 function sttConfig() {
   const command = (process.env.STT_COMMAND || '').trim();
+  const url = (process.env.STT_URL || '').trim();
   const apiKey = (process.env.STT_API_KEY || process.env.OPENAI_API_KEY || '').trim();
   return {
     command,
-    url: (process.env.STT_URL || 'https://api.openai.com/v1/audio/transcriptions').trim(),
+    url,
+    // Local whisper is the default; either env var is an explicit opt-out.
+    kind: command ? 'command' : url ? 'endpoint' : 'local',
     model: (process.env.STT_MODEL || 'whisper-1').trim(),
     apiKey,
     language: (process.env.STT_LANGUAGE || '').trim(),
+    whisperModel: (process.env.WHISPER_MODEL || '').trim() || WHISPER_MODEL_DEFAULT,
+    whisperVad: (process.env.WHISPER_VAD_MODEL || '').trim() || WHISPER_VAD_DEFAULT,
     chunkMinutes:
       Number(process.env.STT_CHUNK_MINUTES) > 0 ? Number(process.env.STT_CHUNK_MINUTES) : 10,
   };
+}
+
+function onPath(name) {
+  try {
+    return execSync(`command -v ${name}`, { encoding: 'utf8' }).trim() !== '';
+  } catch {
+    return false;
+  }
+}
+
+/** What the default local transcriber is missing, as reasons — empty when ready. */
+function localSttMissing(stt) {
+  const missing = [];
+  if (!onPath('whisper-cli')) missing.push('whisper-cli is not on PATH (brew install whisper-cpp)');
+  if (!onPath('ffmpeg')) missing.push('ffmpeg is not on PATH (brew install ffmpeg)');
+  if (!existsSync(stt.whisperModel)) missing.push(`no whisper model at ${stt.whisperModel}`);
+  return missing;
+}
+
+function run(file, fileArgs, failure) {
+  return new Promise((resolve, reject) => {
+    execFile(file, fileArgs, { maxBuffer: 64 * 1024 * 1024 }, (err, stdout, stderr) => {
+      if (err) reject(new Error(`${failure}: ${(stderr || err.message).slice(0, 400)}`));
+      else resolve(stdout);
+    });
+  });
+}
+
+/**
+ * The default transcriber: whisper.cpp on this machine, no shell in between.
+ *
+ * The three traps the README documents are all handled here rather than left
+ * to the operator: whisper-cli cannot read webm (and exits 0 on a file it
+ * could not decode), so every segment goes through ffmpeg to 16 kHz mono WAV
+ * first; -nt drops spans of speech in 1.9.1, so whisper prints timestamps and
+ * they come off here; and silence transcribes as "Thank you." unless voice
+ * activity detection runs, so the VAD model is passed whenever it exists.
+ */
+async function transcribeLocally(stt, audioPath) {
+  const wav = `${audioPath}.wav`;
+  try {
+    await run(
+      'ffmpeg',
+      ['-nostdin', '-loglevel', 'error', '-i', audioPath, '-ar', '16000', '-ac', '1', wav],
+      'ffmpeg could not convert the segment',
+    );
+    const cliArgs = ['-m', stt.whisperModel, '-np', '-f', wav];
+    if (existsSync(stt.whisperVad)) cliArgs.push('--vad', '-vm', stt.whisperVad);
+    if (stt.language) cliArgs.push('-l', stt.language);
+    const raw = await run('whisper-cli', cliArgs, 'whisper-cli failed');
+    return raw
+      .split('\n')
+      .map((line) => line.replace(/^\s*\[[0-9:.]+ --> [0-9:.]+\]\s*/, '').trim())
+      .filter(Boolean)
+      .join('\n');
+  } finally {
+    try { rmSync(wav, { force: true }); } catch { /* best effort */ }
+  }
 }
 
 function transcribeWithCommand(command, audioPath) {
@@ -183,9 +258,12 @@ async function transcribeWithApi(stt, audioPath) {
 async function transcribeSegments(stt, segments) {
   const texts = [];
   for (const segment of segments) {
-    const text = stt.command
-      ? await transcribeWithCommand(stt.command, segment)
-      : await transcribeWithApi(stt, segment);
+    const text =
+      stt.kind === 'command'
+        ? await transcribeWithCommand(stt.command, segment)
+        : stt.kind === 'endpoint'
+          ? await transcribeWithApi(stt, segment)
+          : await transcribeLocally(stt, segment);
     if (text) texts.push(text);
   }
   return texts.join('\n');
@@ -491,12 +569,25 @@ async function attend(args) {
   if (mode !== 'stt' && mode !== 'captions') {
     return { outcome: 'failed', error: `ZOOM_TRANSCRIBER must be 'stt' or 'captions', not '${mode}'` };
   }
-  if (mode === 'stt' && !stt.command && !stt.apiKey && stt.url.includes('api.openai.com')) {
+  // Checked before the browser launches, not after the meeting ends: a
+  // transcriber missing two hours from now is a transcript lost, not an error.
+  if (mode === 'stt' && stt.kind === 'local') {
+    const missing = localSttMissing(stt);
+    if (missing.length > 0) {
+      return {
+        outcome: 'failed',
+        error: `the local transcriber is not ready: ${missing.join('; ')}. ` +
+          '`heddle run` offers to install these. Or opt out of local whisper: ' +
+          'STT_URL points at an OpenAI-compatible endpoint, STT_COMMAND at your ' +
+          'own command, and ZOOM_TRANSCRIBER=captions needs no transcriber at all',
+      };
+    }
+  }
+  if (mode === 'stt' && stt.kind === 'endpoint' && !stt.apiKey && stt.url.includes('api.openai.com')) {
     return {
       outcome: 'failed',
-      error: 'stt mode needs a transcriber: set STT_API_KEY (or OPENAI_API_KEY) for the ' +
-        'default endpoint, STT_URL for a local server, or STT_COMMAND for a local model. ' +
-        'ZOOM_TRANSCRIBER=captions works with none of them',
+      error: 'STT_URL points at the OpenAI endpoint but no key is set — set ' +
+        'STT_API_KEY or OPENAI_API_KEY, or unset STT_URL to transcribe locally',
     };
   }
   const url = webClientUrl(meetingUrl);
