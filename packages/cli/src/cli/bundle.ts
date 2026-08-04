@@ -13,6 +13,7 @@ import {
   packBundle,
   parseMount,
   parsePluginConfig,
+  requirementLabel,
   validate,
   BUNDLE_EXTENSION,
   type BundlePlan,
@@ -20,6 +21,7 @@ import {
   type ParsedFlow,
   type PluginRegistry,
 } from '@heddle-run/core';
+import { readRequiresOption } from './bundles.js';
 
 interface BundleOptions {
   toolsDir?: string;
@@ -28,6 +30,7 @@ interface BundleOptions {
   pluginConfig: string[];
   mount: string[];
   input?: string;
+  requires?: string;
   output?: string;
 }
 
@@ -70,6 +73,12 @@ export const bundleCommand = new Command('bundle')
     'Default input recorded in the bundle; "heddle run --input" overrides it',
   )
   .option(
+    '--requires <json|@file>',
+    'What the machine running this must already have, as a JSON list of ' +
+      '{"binary"|"env"|"file"|"node": …, "hint": …} entries. Checked before a ' +
+      'run starts and reported all at once; never installed, fetched or run',
+  )
+  .option(
     '-o, --output <file>',
     `Where to write the bundle (default: <flow name>${BUNDLE_EXTENSION})`,
   )
@@ -101,6 +110,10 @@ export const bundleCommand = new Command('bundle')
       pluginConfig: parsePluginConfig(options.pluginConfig),
       mounts: options.mount.map(parseMount),
       input: parseDefaultInput(options.input),
+      // Read here rather than only at unpack time, so a typo in a declaration
+      // is caught on the machine that can fix it instead of the one that was
+      // sent the bundle.
+      requires: readRequiresOption(options.requires),
     };
 
     const outPath = options.output ?? defaultOutput(flow.name, flowPath);
@@ -205,6 +218,11 @@ function report(packed: PackedBundle, plan: BundlePlan): void {
   }
   if (plan.input !== undefined) {
     console.log('  Default input: recorded');
+  }
+  // Said out loud at pack time, because this is the field an author cannot
+  // otherwise tell went in — and the one whose absence the recipient pays for.
+  if (plan.requires?.length) {
+    console.log(`  Requires: ${plan.requires.map(requirementLabel).join(', ')}`);
   }
   console.log(
     `Wrote ${packed.path} (${size(packed.bytes)}, ${packed.entries} entries)`,

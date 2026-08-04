@@ -1,5 +1,10 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
+import {
+  parseRequirements,
+  requirementLabel,
+  type Requirement,
+} from "../../packages/core/src/preflight";
 
 /**
  * The bundle library, read off disk at build time.
@@ -19,10 +24,19 @@ const LIBRARY_DIR = resolve(process.cwd(), "..", "library");
 /** Directories that are packing output or noise, never part of an entry. */
 const SKIP = new Set(["dist", "node_modules", "__pycache__"]);
 
-export interface LibraryRequires {
-  env?: string[];
-  binaries?: string[];
-}
+/**
+ * What an entry needs from the machine, read by heddle's own parser.
+ *
+ * Imported from `packages/core` rather than reimplemented here, because this
+ * page and `heddle run` are making the same claim about the same file: what a
+ * reader is told to install is exactly what the run will check for. Two readers
+ * of one field drift, and the drift is silent — a listing that says a bundle
+ * needs nothing while the bundle refuses to start.
+ *
+ * It also means this page understands the older `{ env, binaries }` object for
+ * as long as heddle does, and stops the day heddle does.
+ */
+export type { Requirement };
 
 export interface LibraryEntry {
   /** Directory name, and the entry's address under /library. */
@@ -39,7 +53,7 @@ export interface LibraryEntry {
   plugins: string[];
   mounts: string[];
   input: Record<string, unknown>;
-  requires: LibraryRequires;
+  requires: Requirement[];
   /** Every file the entry ships, relative to its directory. */
   files: string[];
   /** Tool executables, by the name a spec refers to them by. */
@@ -91,7 +105,7 @@ function read(name: string): LibraryEntry | null {
     plugins: manifest.plugins ?? [],
     mounts: manifest.mounts ?? [],
     input: manifest.input ?? {},
-    requires: manifest.requires ?? {},
+    requires: parseRequirements(manifest.requires),
     files,
     tools,
     spec: existsSync(specPath) ? readFileSync(specPath, "utf8") : "",
@@ -100,9 +114,12 @@ function read(name: string): LibraryEntry | null {
 
 /** How much a reader has to have in place before an entry runs. */
 function setupWeight(entry: LibraryEntry): number {
-  return (
-    (entry.requires.env?.length ?? 0) + (entry.requires.binaries?.length ?? 0)
-  );
+  return entry.requires.length;
+}
+
+/** What an entry needs, in the words heddle itself would use for it. */
+export function requirementNames(entry: LibraryEntry): string[] {
+  return entry.requires.map(requirementLabel);
 }
 
 export function libraryEntries(): LibraryEntry[] {

@@ -25,6 +25,7 @@ import {
   MiddlewareChain,
   parsePluginConfig,
   assertToolsAvailable,
+  envRequirements,
   sandboxFromOptions,
   standardRegistry,
   workspacesFromOptions,
@@ -35,7 +36,6 @@ import {
   State,
   type CompiledGraph,
   type Dependencies,
-  type Mount,
   type RunnerOptions,
   type Event,
   type ParsedFlow,
@@ -47,6 +47,7 @@ import {
 import { mergeBundleOptions, openBundle, type OpenedBundle } from './bundles.js';
 import { frameLine, resolveEncoder, type EncoderFactory } from './encoders.js';
 import { askForEnvRefs } from './env-prompt.js';
+import { waitForRequirements } from './preflight-prompt.js';
 import { createProgressWriter, renderEvent } from './progress.js';
 import { selectSession, type SelectedSession, type SessionFlags } from './sessions.js';
 
@@ -56,6 +57,7 @@ interface RunOptions extends SandboxOptions, WorkspaceOptions, SessionFlags {
   toolsDir?: string;
   mountTools?: boolean;
   askEnv?: boolean;
+  preflight?: boolean;
   input?: string;
   interactive?: boolean;
   durable?: boolean;
@@ -136,6 +138,12 @@ export const runCommand = new Command('run')
   .option(
     '--no-stream',
     'Ask the model for one buffered response instead of a token stream',
+  )
+  .option(
+    '--no-preflight',
+    "Start the run without checking the bundle's declared requirements. They " +
+      'are the author\'s description of your machine, and when it is wrong — a ' +
+      'browser somewhere they did not think of — this is how you say so',
   )
   .option(
     '--no-ask-env',
@@ -220,7 +228,7 @@ export const runCommand = new Command('run')
           options,
           plugins,
           verbose,
-          bundle?.mounts,
+          bundle,
         );
       } finally {
         if (!interactive) plugins.dispose();
@@ -237,7 +245,7 @@ async function runFlow(
   options: RunOptions,
   plugins: PluginRegistry,
   verbose: boolean,
-  bundleMounts: Mount[] = [],
+  bundle?: OpenedBundle,
 ): Promise<boolean> {
   const interactive = options.interactive ?? false;
   // Before `loadFlow`, so two flags that cannot both hold are refused without
@@ -253,7 +261,7 @@ async function runFlow(
     options,
     plugins,
     (message) => console.error(message),
-    bundleMounts,
+    bundle?.mounts ?? [],
   );
   const sandbox = sandboxFromOptions(
     options,
@@ -309,7 +317,32 @@ async function runFlow(
   // before anything that runs: a spec that will be refused should be refused
   // without first asking somebody to type a key into it. Also before the chat
   // UI, which takes the terminal this question is asked on.
-  if (options.askEnv !== false) await askForEnvRefs(flow);
+  //
+  // A bundle's declared `env` requirements are asked for here too, and the
+  // check below runs after: on a terminal, "OPENAI_API_KEY is not set" is a
+  // question worth asking before it is a refusal worth printing, and an answer
+  // typed here satisfies the requirement it was asked for.
+  if (options.askEnv !== false) {
+    await askForEnvRefs(flow, { also: envRequirements(bundle?.requires ?? []) });
+  }
+
+  // The other half of the tool check above — what the machine has to bring
+  // itself — held back to here so the questions come before the refusal.
+  // Everything after this line starts something; nothing before it did.
+  //
+  // On a terminal an unmet requirement is a pause, not an exit: fix it in
+  // another shell, press enter, and the run that was typed still happens.
+  // Anywhere else it is the hard refusal `heddle doctor` prints. Named for the
+  // bundle rather than the flow inside it, because the reader typed the
+  // bundle's name and has never seen the other one.
+  //
+  // Declined with --no-preflight, and that is not a hole in anything: a
+  // requirement is a bundle author's description of a machine they have never
+  // seen, so the operator standing at that machine gets the last word — the
+  // same way `--discover-tools` leaves them the one about starting a process.
+  if (options.preflight !== false) {
+    await waitForRequirements(bundle?.requires ?? [], bundle?.name ?? flow.name);
+  }
 
   if (interactive) {
     await startChatSession(flowPath, flow, graph, runnerOpts, plugins, session);

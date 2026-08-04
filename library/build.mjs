@@ -29,7 +29,13 @@ import { fileURLToPath } from 'node:url';
 const LIBRARY_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(LIBRARY_DIR, '..');
 
-/** Fields the website reads. Missing one is a broken page, so it fails here. */
+/**
+ * Fields the website reads. Missing one is a broken page, so it fails here.
+ *
+ * `requires` is not among them, and stays optional: most entries need nothing
+ * beyond heddle itself, and an empty list in every bundle.json would be
+ * ceremony. What it declares, when it declares any, travels into the archive.
+ */
 const REQUIRED = ['name', 'title', 'summary', 'blurb', 'tags', 'flow', 'input'];
 
 function findCli() {
@@ -102,6 +108,13 @@ function packArgs({ dir, manifest }, outPath) {
 
   for (const [type, settings] of Object.entries(manifest.pluginConfig ?? {})) {
     args.push('--plugin-config', `${type}=${JSON.stringify(settings)}`);
+  }
+
+  // Passed through untouched: what an entry declares it needs is checked by
+  // `heddle bundle`, so a malformed one fails this build rather than reaching
+  // the recipient as a bundle that silently checks nothing.
+  if (manifest.requires !== undefined) {
+    args.push('--requires', JSON.stringify(manifest.requires));
   }
 
   args.push('--input', JSON.stringify(manifest.input));

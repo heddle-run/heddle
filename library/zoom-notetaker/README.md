@@ -116,6 +116,20 @@ transcript on stdout, and a non-zero exit if it could not do the job.
   that is a feature — and in stt mode it records the call. Tell people, and
   know your jurisdiction: recording laws are consent laws.
 
+The first, second and last of those are declared in `bundle.json`, so the
+bundle checks them itself rather than failing at whichever one you hit first:
+
+```bash
+heddle doctor library/dist/zoom-notetaker.heddle
+```
+
+It lists everything missing at once, installs nothing, and exits non-zero if
+anything is — worth running before the meeting rather than during it. `heddle
+run` makes the same check before it opens a browser. The transcriber and the
+host's settings are not in the list: which one you are using is an env-var
+decision this cannot read, and whether captions are allowed is a fact about a
+meeting rather than about your machine.
+
 ## Run it
 
 ```bash

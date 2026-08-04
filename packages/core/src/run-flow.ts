@@ -12,6 +12,7 @@ import { State } from './state/state.js';
 import { SubprocessExecutor } from './tool/executor.js';
 import { workspaceTools } from './workspace/index.js';
 import { assertToolsAvailable, standardRegistry } from './runenv.js';
+import { assertRequirements, type Requirement } from './preflight.js';
 
 export interface RunFlowOptions extends Partial<Omit<RunnerOptions, 'eventHandler'>> {
   /** A path to a flow document, or one already parsed with `loadFlow`. */
@@ -26,6 +27,12 @@ export interface RunFlowOptions extends Partial<Omit<RunnerOptions, 'eventHandle
    * caller built stays the caller's to dispose.
    */
   plugins?: string[] | PluginRegistry;
+  /**
+   * What this machine must already have for the run to work — a bundle's
+   * `requires`, or an embedder's own list. Checked before anything starts and
+   * never acted on: heddle looks and reports, it does not install.
+   */
+  requires?: Requirement[];
   onEvent?: EventHandler;
   signal?: AbortSignal;
 }
@@ -53,8 +60,16 @@ export interface RunFlowOptions extends Partial<Omit<RunnerOptions, 'eventHandle
  * ```
  */
 export async function runFlow(options: RunFlowOptions): Promise<State> {
-  const { flow, toolsDir, inputs, plugins, onEvent, signal, ...runnerOpts } =
-    options;
+  const {
+    flow,
+    toolsDir,
+    inputs,
+    plugins,
+    requires,
+    onEvent,
+    signal,
+    ...runnerOpts
+  } = options;
 
   const loadedHere = Array.isArray(plugins);
   const registry = loadedHere
@@ -65,6 +80,12 @@ export async function runFlow(options: RunFlowOptions): Promise<State> {
     const parsed = typeof flow === 'string' ? loadFlow(flow, registry) : flow;
 
     const tools = standardRegistry({ plugins: registry, toolsDir });
+    // Beside the tool check, and for the same reason it is here: both are the
+    // machine failing to hold up its end, and both are cheaper to learn now
+    // than at the node that reaches for the missing thing. Requirements first,
+    // since "install ffmpeg" is the more useful of two messages a caller with
+    // an empty machine would otherwise get one at a time.
+    assertRequirements(requires ?? [], parsed.name);
     assertToolsAvailable(tools, collectToolNames(parsed));
 
     const deps: Dependencies = {

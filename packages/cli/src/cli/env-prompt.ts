@@ -19,6 +19,13 @@ export interface EnvPromptOptions {
   read?: (question: string) => Promise<string>;
   /** Where the answers land. Defaults to this process's environment. */
   env?: NodeJS.ProcessEnv;
+  /**
+   * Variables to ask about beyond the ones the flow names — a bundle's
+   * declared `env` requirements. `collectEnvRefs` finds what a spec *mentions*,
+   * which is not the same set: a bundle may need a key only its tools read,
+   * and that one is worth asking for too rather than refusing over.
+   */
+  also?: string[];
 }
 
 /**
@@ -43,7 +50,8 @@ export async function askForEnvRefs(
   options: EnvPromptOptions = {},
 ): Promise<string[]> {
   const env = options.env ?? process.env;
-  const missing = collectEnvRefs(flow).filter((key) => !env[key]);
+  const named = new Set([...collectEnvRefs(flow), ...(options.also ?? [])]);
+  const missing = [...named].filter((key) => !env[key]);
   if (missing.length === 0) return [];
 
   const interactive = options.interactive ?? isTerminal();
@@ -78,7 +86,12 @@ export async function askForEnvRefs(
   return filled;
 }
 
-function isTerminal(): boolean {
+/**
+ * Whether there is somebody at a terminal to answer — the gate every
+ * interactive question in this CLI shares, so "when heddle may ask" does not
+ * depend on which prompt is asking.
+ */
+export function isTerminal(): boolean {
   return process.stdin.isTTY === true && process.stderr.isTTY === true;
 }
 

@@ -7,10 +7,28 @@
   "model": "gpt-4o-mini",
   "flow": "spec.yaml",
   "toolsDir": "tools",
-  "requires": {
-    "env": ["OPENAI_API_KEY"],
-    "binaries": ["node", "chromium"]
-  },
+  "requires": [
+    {
+      "node": ">=22",
+      "hint": "the tool speaks the DevTools protocol over Node's built-in WebSocket"
+    },
+    {
+      "binary": [
+        "chromium",
+        "chromium-browser",
+        "google-chrome",
+        "google-chrome-stable",
+        "/opt/pw-browsers/chromium",
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+        "/Applications/Chromium.app/Contents/MacOS/Chromium"
+      ],
+      "hint": "the same names attend_meeting.mjs searches; CHROME_BIN=/path/to/chrome pins another"
+    },
+    {
+      "env": "OPENAI_API_KEY",
+      "hint": "the notes step, and transcription unless STT_URL or STT_COMMAND points elsewhere"
+    }
+  ],
   "input": {
     "meeting_url": "https://zoom.us/j/1234567890?pwd=replace-with-your-meeting"
   }

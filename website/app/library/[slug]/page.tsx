@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import Nav from "@/components/Nav";
@@ -10,6 +11,7 @@ import {
   bundleCommand,
   libraryEntries,
   libraryEntry,
+  requirementNames,
   type LibraryEntry,
 } from "@/lib/library";
 
@@ -51,8 +53,27 @@ const label = {
   margin: 0,
 } as const;
 
+function Requirements({ entry }: { entry: LibraryEntry }) {
+  const names = requirementNames(entry);
+
+  return (
+    <span style={{ display: "grid", gap: 4 }}>
+      {entry.requires.map((requirement, index) => (
+        <span key={names[index]}>
+          {names[index]}
+          {requirement.hint ? (
+            <span style={{ display: "block", color: "var(--text-subtle)" }}>
+              {requirement.hint}
+            </span>
+          ) : null}
+        </span>
+      ))}
+    </span>
+  );
+}
+
 function Facts({ entry }: { entry: LibraryEntry }) {
-  const rows: Array<[string, string]> = [];
+  const rows: Array<[string, ReactNode]> = [];
 
   if (entry.model) rows.push(["Model", entry.model]);
   rows.push(["Tools", entry.tools.length > 0 ? entry.tools.join(", ") : "none"]);
@@ -60,11 +81,10 @@ function Facts({ entry }: { entry: LibraryEntry }) {
     "Mounts",
     entry.mounts.length > 0 ? entry.mounts.join(", ") : "none",
   ]);
-  if (entry.requires.env?.length) {
-    rows.push(["Environment", entry.requires.env.join(", ")]);
-  }
-  if (entry.requires.binaries?.length) {
-    rows.push(["On PATH", entry.requires.binaries.join(", ")]);
+  /* One line per requirement, carrying the author's hint — the same list
+     `heddle doctor <entry>.heddle` prints, read by the same parser. */
+  if (entry.requires.length > 0) {
+    rows.push(["Requires", <Requirements key="requires" entry={entry} />]);
   }
 
   return (

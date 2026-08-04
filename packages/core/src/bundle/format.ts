@@ -1,4 +1,5 @@
 import { BundleError } from '../errors.js';
+import { parseRequirements, type Requirement } from '../preflight.js';
 import type { MountMode } from '../workspace/types.js';
 
 /**
@@ -51,6 +52,12 @@ export interface BundleManifest {
   mounts: BundleMount[];
   /** Default `--input`, overridable at run time. */
   input?: Record<string, unknown>;
+  /**
+   * What the machine running this has to already have — checked before a run
+   * starts, never acted on. A declaration, like everything else here: heddle
+   * looks, reports what is missing, and installs nothing.
+   */
+  requires?: Requirement[];
 }
 
 export function isBundlePath(path: string): boolean {
@@ -87,6 +94,14 @@ export function validateBundleManifest(raw: unknown): BundleManifest {
     pluginConfig: asPluginConfig(manifest.pluginConfig),
     mounts: asMounts(manifest.mounts),
     input: asOptionalObject(manifest.input, 'input'),
+    // `requires` arrived after format 1 and did *not* bump it, deliberately.
+    // Everything above reads the fields it knows and ignores the rest, so an
+    // older heddle opening a bundle that declares requirements skips the check
+    // and behaves exactly as it did before the field existed. A version bump
+    // would instead make it refuse the file outright — trading a check it
+    // cannot perform for a bundle it cannot run, which is the worse half of
+    // the deal for the person holding the file.
+    requires: asRequires(manifest.requires),
   };
 }
 
@@ -163,6 +178,22 @@ function asMounts(raw: unknown): BundleMount[] {
       mode,
     };
   });
+}
+
+/**
+ * The requirements, through the one reader that understands the declaration.
+ *
+ * `parseRequirements` throws a `BundleError` of its own naming the offending
+ * entry, which is what belongs in a manifest message, so nothing is caught and
+ * rephrased here. A bundle with an unreadable `requires` is refused rather than
+ * opened with the check quietly skipped: a declaration nobody evaluates is the
+ * state this whole field exists to end.
+ */
+function asRequires(raw: unknown): Requirement[] | undefined {
+  if (raw === undefined) return undefined;
+
+  const requires = parseRequirements(raw);
+  return requires.length > 0 ? requires : undefined;
 }
 
 function asOptionalObject(

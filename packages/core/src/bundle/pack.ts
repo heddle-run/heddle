@@ -8,6 +8,7 @@ import {
 import { basename, dirname, join } from 'node:path';
 import { BundleError } from '../errors.js';
 import { validateManifest } from '../plugin/manifest.js';
+import type { Requirement } from '../preflight.js';
 import type { Mount } from '../workspace/types.js';
 import {
   BUNDLE_FORMAT,
@@ -31,6 +32,8 @@ export interface BundlePlan {
   /** Already through `parseMount`, so sources exist and dests are lawful. */
   mounts: Mount[];
   input?: Record<string, unknown>;
+  /** Already through `parseRequirements`, so every predicate is readable. */
+  requires?: Requirement[];
 }
 
 export interface PackedBundle {
@@ -81,6 +84,9 @@ export function packBundle(plan: BundlePlan, outPath: string): PackedBundle {
     pluginConfig: plan.pluginConfig,
     mounts,
     input: plan.input,
+    // Only when there are any, so a bundle that needs nothing carries no key
+    // rather than an empty list somebody has to interpret.
+    requires: plan.requires?.length ? plan.requires : undefined,
   };
 
   entries.unshift({

@@ -101,6 +101,8 @@ Commands:
   validate <flow>          Validate a flow or bundle without running it
   bundle <flow>            Pack a flow and everything it runs with into one
                            shareable .heddle archive
+  doctor <bundle>          Check whether this machine has what a bundle
+                           declared it needs, without running it
   init <project-name>      Scaffold a new heddle project
   sessions                 Inspect kept conversations: ls, show <id>, rm <id>
 ```
@@ -192,6 +194,19 @@ hold, and every tool the flow names must be carried. A bundle that packs is a
 bundle that runs. Flags still win at run time: `--input` overrides the recorded
 default, and extra `--mount` or `--plugin` flags compose with what the bundle
 carries. `heddle validate agent.heddle` inspects one without running it.
+
+An agent that also needs something *heddle cannot ship* — a browser, `ffmpeg`, a
+key — says so with `--requires`, and heddle checks it before the run starts,
+reporting everything missing in one message instead of one failure at a time:
+
+```bash
+heddle doctor agent.heddle    # would this work here? exits non-zero if not
+```
+
+Every predicate only looks at the machine — a name on `$PATH`, a variable, a
+path, a Node version. Nothing a bundle declares is ever executed, downloaded or
+installed; a file that arrived in the mail does not get to run commands when you
+open it.
 
 A `.heddle` is a plain gzipped tar with a `heddle.json` manifest at its root, so
 `tar -tzf agent.heddle` shows exactly what you were handed. No new dependency was

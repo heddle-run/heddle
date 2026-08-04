@@ -5,7 +5,7 @@ import Footer from "@/components/Footer";
 import { CodeBlock, SectionHeading } from "@/ds-heddle";
 import LibraryTag from "@/components/LibraryTag";
 import { GITHUB_URL } from "@/lib/constants";
-import { libraryEntries } from "@/lib/library";
+import { libraryEntries, requirementNames } from "@/lib/library";
 
 export const metadata: Metadata = {
   title: "Library",
@@ -24,11 +24,10 @@ export const metadata: Metadata = {
 
 const LIBRARY_URL = `${GITHUB_URL}/tree/main/library`;
 
+/* Named by heddle's own labeller, so the card promises what `heddle doctor`
+   checks — see the note on `requires` in lib/library.ts. */
 function Requirement({ entry }: { entry: ReturnType<typeof libraryEntries>[0] }) {
-  const needs = [
-    ...(entry.requires.env ?? []),
-    ...(entry.requires.binaries ?? []),
-  ];
+  const needs = requirementNames(entry);
   if (needs.length === 0) return null;
   return (
     <span

@@ -334,6 +334,30 @@ export {
   workspacesFromOptions,
 } from './runenv.js';
 export type { SandboxOptions, WorkspaceOptions } from './runenv.js';
+
+// What a bundle says the machine must already have, and the check that reads
+// it. Beside the run environment because it is the other half of the same
+// preflight: `assertToolsAvailable` covers what heddle ships, this covers what
+// it cannot. Every predicate only looks — nothing here installs, fetches or
+// runs what a bundle declared.
+export {
+  assertRequirements,
+  checkRequirements,
+  envRequirements,
+  formatRequirements,
+  inspectRequirements,
+  parseRequirements,
+  requirementLabel,
+} from './preflight.js';
+export type {
+  BinaryRequirement,
+  CheckedRequirement,
+  EnvRequirement,
+  FileRequirement,
+  NodeRequirement,
+  Requirement,
+  Unmet,
+} from './preflight.js';
 export type {
   CopyBudget,
   Mount,
@@ -404,6 +428,7 @@ export {
   LLMError,
   messageOf,
   PluginError,
+  RequirementError,
   RunError,
   SandboxError,
   SessionConflictError,

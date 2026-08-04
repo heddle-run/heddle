@@ -31,6 +31,7 @@ heddle run agent.heddle
 | `--mount <src[:dest][:ro\|:rw]>` | The file or directory, with where it lands and whether changes copy back |
 | `--plugin-config <Type>=<json>` | The settings, resolved now; a `@file` value is read at pack time, so only its contents travel |
 | `--input <json>` | A default input, recorded so the receiver's first run can be zero-configuration |
+| `--requires <json\|@file>` | What the receiving machine must already have — checked before a run starts, never acted on. See [below](#what-a-bundle-needs-from-your-machine) |
 
 The bundle is checked before it is written: the spec must parse, the graph must compile
 and validate, and every tool the flow names must be carried by `--tools-dir` or a
@@ -115,6 +116,78 @@ that shipped only the entry file would run on one machine in the world. `heddle 
 refuses it and points at the [manifest format](/docs/plugins/manifest), which is the
 shippable kind.
 
+## What a bundle needs from your machine
+
+Some agents want more than heddle. `zoom-notetaker` drives a browser it does not ship,
+transcribes with a model it does not carry, and writes up the notes with a key that is
+yours. A bundle can say so:
+
+```bash
+heddle bundle spec.yaml --tools-dir tools --requires '[
+  {"binary": "whisper-cli", "hint": "brew install whisper-cpp"},
+  {"binary": ["chromium", "google-chrome"], "hint": "or set CHROME_BIN"},
+  {"env": "OPENAI_API_KEY", "hint": "needed for the notes step"},
+  {"file": "~/models/ggml-base.en.bin", "hint": "see the README for the download"},
+  {"node": ">=22"}
+]' -o agent.heddle
+```
+
+The list travels in `heddle.json`, and `heddle run` checks it before it starts anything —
+the same moment it checks that the tools resolve. Everything missing is reported at once:
+
+```
+zoom-notetaker cannot run here — 2 requirements unmet:
+
+  ✗ whisper-cli      not on PATH     brew install whisper-cpp
+  ✗ OPENAI_API_KEY   not set         needed for the notes step
+
+  ✓ ffmpeg, node v22.17.0, Google Chrome
+```
+
+That is the whole point of it being a list. Without one you fix a machine one failure at
+a time, and each failure arrives later than the last — the missing binary mid-run, the
+missing key at the first model call. [`heddle doctor
+agent.heddle`](/docs/cli-reference#heddle-doctor) prints exactly this without running
+anything, and exits non-zero when something is missing, so CI can ask the same question.
+
+On a terminal, `heddle run` turns the report into a pause rather than an exit. A missing
+environment variable is asked for first, hidden as you type and kept for that run only —
+the same prompt a spec's `$OPENAI_API_KEY` gets. Whatever is left waits: run the install
+in another shell, press enter, and heddle checks again; `q` stops with the failure CI
+would have seen. The fixes stay yours to make — the pause changes when you make them, not
+who does. In a script or a pipeline nothing is asked and the refusal is immediate, so
+automation sees exit codes, never questions.
+
+There are four kinds of requirement, and each is a **pure observation** of your machine:
+
+| Kind | Holds when | Notes |
+|------|------------|-------|
+| `{"binary": "name"}` | the name resolves on `$PATH` | a list means any one of them will do; an entry containing `/` is checked where it points, for the app-bundle paths a Mac needs |
+| `{"env": "NAME"}` | the variable is set and non-empty | the **value is never read into the report** — only whether it is set |
+| `{"file": "path"}` | the path exists | a leading `~` is your home directory |
+| `{"node": ">=22"}` | the running Node satisfies it | one `>=` against a version; heddle carries no semver library and will not pretend to. Anything else is refused when the bundle is packed |
+
+`hint` is free text shown beside the failure it explains. It is a **string for a human to
+read** — nothing passes it to a shell.
+
+<Callout type="warn">
+A requirement is a thing to *look for*, never a thing to run. There is deliberately no
+`setup`, `install` or `preRun` field, and this check installs, downloads and executes
+nothing: a `.heddle` can be downloaded from anywhere, and a bundle that ran commands on
+open would be remote code execution by design. What is missing is printed; installing it
+is yours to do, with your own package manager, after reading what it said.
+</Callout>
+
+The declaration is the author's description of a machine they have never seen, so the
+operator keeps the last word: `heddle run --no-preflight` starts anyway. It is the same
+bargain as `--discover-tools` — the bundle declares, and the person at the keyboard
+decides.
+
+Nothing breaks for bundles without the field, in either direction. A bundle that declares
+nothing is checked for nothing, and an older heddle handed a bundle that declares
+requirements ignores the field and runs as it always did — which is why adding it did not
+bump the format version.
+
 ## Receiving one
 
 A bundle is somebody else's code, packaged conveniently. Treat it exactly as you would a
@@ -124,6 +197,8 @@ repository you just cloned. heddle's side of that bargain:
   in the archive, and caps what a bundle may unpack to, so *opening* one is safe.
 - Reading a plugin manifest runs nothing, so `heddle validate agent.heddle` inspects the
   whole bundle, spec and graph and tools and plugin manifests, without executing a line of it.
+- `heddle doctor agent.heddle` answers "would this work here?" the same way — by looking
+  at your machine, not by touching the bundle's code.
 
 *Running* it is running its tools, like any tools directory. The same advice applies,
 with more reason:
