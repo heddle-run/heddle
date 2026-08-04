@@ -19,7 +19,10 @@ import { BundleError, RequirementError } from './errors.js';
  * whole premise is that opening one runs nothing — a requirement that executed
  * a declared command would be remote code execution wearing a preflight's
  * clothes. Installing what is missing is the operator's move, with their
- * package manager, after reading what this printed.
+ * package manager, after reading what this printed. (The CLI can make some of
+ * those moves for them — see its `install-recipes.ts` — but every command it
+ * offers comes from its own reviewed table, never from the declaration; a
+ * requirement still only selects, and this module still only looks.)
  *
  * `hint` follows the same rule from the other direction: it is a string shown
  * to a human, and nothing anywhere passes it to a shell. Do not add a caller

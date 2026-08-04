@@ -152,11 +152,14 @@ anything, and exits non-zero when something is missing, so CI can ask the same q
 
 On a terminal, `heddle run` turns the report into a pause rather than an exit. A missing
 environment variable is asked for first, hidden as you type and kept for that run only —
-the same prompt a spec's `$OPENAI_API_KEY` gets. Whatever is left waits: run the install
-in another shell, press enter, and heddle checks again; `q` stops with the failure CI
-would have seen. The fixes stay yours to make — the pause changes when you make them, not
-who does. In a script or a pipeline nothing is asked and the refusal is immediate, so
-automation sees exit codes, never questions.
+the same prompt a spec's `$OPENAI_API_KEY` gets. For a few well-known requirements —
+`whisper-cli`, `ffmpeg`, the whisper model files — heddle knows the fix itself and offers
+to make it, the exact commands on screen first, acting only on a typed `y`; every command
+and URL in that offer comes from a table versioned with the CLI, never from the bundle
+(see the callout below). Whatever is left waits: run the install in another shell, press
+enter, and heddle checks again; `q` stops with the failure CI would have seen. In a
+script or a pipeline nothing is asked, nothing is offered, and the refusal is immediate,
+so automation sees exit codes, never questions.
 
 There are four kinds of requirement, and each is a **pure observation** of your machine:
 
@@ -172,10 +175,14 @@ read** — nothing passes it to a shell.
 
 <Callout type="warn">
 A requirement is a thing to *look for*, never a thing to run. There is deliberately no
-`setup`, `install` or `preRun` field, and this check installs, downloads and executes
-nothing: a `.heddle` can be downloaded from anywhere, and a bundle that ran commands on
-open would be remote code execution by design. What is missing is printed; installing it
-is yours to do, with your own package manager, after reading what it said.
+`setup`, `install` or `preRun` field, and the check itself installs, downloads and
+executes nothing: a `.heddle` can be downloaded from anywhere, and a bundle that ran
+commands on open would be remote code execution by design. When `heddle run` offers to
+install something, the declaration has only *selected* an entry from the CLI's own
+reviewed table — the command, the URL and the destination are heddle's words, shown to
+you and run only after your `y`. A bundle cannot author an install, and a hint is still
+a string for a human to read. Everything the table does not cover is yours to install,
+with your own package manager, after reading what the report said.
 </Callout>
 
 The declaration is the author's description of a machine they have never seen, so the

@@ -327,9 +327,11 @@ a workflow that packs a bundle can assert its runner can run one.
 This runs nothing and installs nothing — see
 [requirements](/docs/bundles#what-a-bundle-needs-from-your-machine) for why that is the
 whole design rather than a missing feature. `heddle run` performs the same check before it
-starts; on a terminal it pauses there — fix the machine in another shell, press enter to
-re-check — and anywhere else it fails with the same list. `heddle doctor` is how you ask
-before the meeting rather than during it.
+starts; on a terminal it pauses there — for the few requirements heddle has its own
+install recipe for (`whisper-cli`, `ffmpeg`, the whisper models) it offers to run the fix
+after showing it, and the rest you fix in another shell and press enter to re-check — and
+anywhere else it fails with the same list. `heddle doctor` is how you ask before the
+meeting rather than during it.
 
 An environment variable is reported as set or not set. Its value is never printed.
 

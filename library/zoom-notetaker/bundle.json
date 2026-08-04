@@ -2,7 +2,7 @@
   "name": "zoom-notetaker",
   "title": "Zoom notetaker",
   "summary": "Joins a Zoom meeting in a headless browser, records it, and writes up the notes.",
-  "blurb": "Paste a Zoom link and get minutes back — with no meeting-bot service in the loop. One tool drives a local headless Chromium into the call through Zoom's web client, records the meeting's audio in the page, and transcribes it with a speech-to-text model you configure entirely by env vars: any OpenAI-compatible transcription endpoint (the OpenAI API by default, a local faster-whisper server if you point STT_URL at one) or a local command like whisper-cli via STT_COMMAND. A captions mode reads Zoom's own live captions instead, needing no STT at all. The same fixed-heading prompt as meeting-notes turns the transcript into a summary, decisions, action items and open questions — and the flow branches to a plain-spoken failure end when the browser could not get in, nothing made a sound, or the transcriber failed, rather than summarizing a meeting it never heard.",
+  "blurb": "Paste a Zoom link and get minutes back — with no meeting-bot service in the loop. One tool drives a local headless Chromium into the call through Zoom's web client, records the meeting's audio in the page, and transcribes it with whisper.cpp on your machine — the audio never leaves it. whisper-cli, ffmpeg and the models are prerequisites the CLI checks before the run and offers to install when missing. Env vars swap the transcriber out: STT_URL points at any OpenAI-compatible transcription endpoint (the OpenAI API, a local faster-whisper server), STT_COMMAND at a command of your own, and a captions mode reads Zoom's own live captions instead, needing no STT at all. The same fixed-heading prompt as meeting-notes turns the transcript into a summary, decisions, action items and open questions — and the flow branches to a plain-spoken failure end when the browser could not get in, nothing made a sound, or the transcriber failed, rather than summarizing a meeting it never heard.",
   "tags": ["meetings", "zoom", "browser", "stt", "notes"],
   "model": "gpt-4o-mini",
   "flow": "spec.yaml",
@@ -25,8 +25,24 @@
       "hint": "the same names attend_meeting.mjs searches; CHROME_BIN=/path/to/chrome pins another"
     },
     {
+      "binary": ["whisper-cli"],
+      "hint": "the default local transcriber; heddle run offers to brew install whisper-cpp"
+    },
+    {
+      "binary": ["ffmpeg"],
+      "hint": "converts recorded webm to the WAV whisper reads; heddle run offers to install it"
+    },
+    {
+      "file": "~/.heddle/models/ggml-base.en.bin",
+      "hint": "the whisper model; heddle run offers the download, WHISPER_MODEL picks another"
+    },
+    {
+      "file": "~/.heddle/models/ggml-silero-v5.1.2.bin",
+      "hint": "voice activity detection, so silence does not transcribe as speech; heddle run offers the download"
+    },
+    {
       "env": "OPENAI_API_KEY",
-      "hint": "the notes step, and transcription unless STT_URL or STT_COMMAND points elsewhere"
+      "hint": "the notes step; transcription stays on this machine"
     }
   ],
   "input": {
