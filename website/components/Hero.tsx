@@ -4,6 +4,7 @@ import { useState, type ReactNode } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import { Button, Icon, InstallCommand } from "@/ds-heddle";
 import { AnimatedTerminal } from "@/components/AnimatedTerminal";
+import { HeroWeave } from "@/components/HeroWeave";
 import { WeaveTexture } from "@/components/WeaveTexture";
 import { GITHUB_URL, installTabs, specimenSpread, steps } from "@/lib/constants";
 
@@ -62,6 +63,7 @@ export default function Hero() {
     <section
       style={{
         position: "relative",
+        overflow: "hidden",
         background: "var(--gradient-warp)",
         borderBottom: "1px solid var(--border-hairline)",
       }}
@@ -199,6 +201,7 @@ export default function Hero() {
         </div>
 
         <div className="hds-hero-windows" style={{ position: "relative" }}>
+          <HeroWeave />
           <div
             style={{
               background: "var(--surface-code)",
