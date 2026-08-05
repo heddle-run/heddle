@@ -1,3 +1,4 @@
+import { WeaveTexture } from "@/components/WeaveTexture";
 import { specimenSpread } from "@/lib/constants";
 
 /* 002 — the position, on the always-dark navy band. The window shows the real
@@ -11,13 +12,17 @@ export default function Position() {
     <section
       id="position"
       style={{
+        position: "relative",
         borderTop: "1px solid var(--border-hairline)",
-        background: "var(--surface-code)",
+        backgroundColor: "var(--surface-code)",
       }}
     >
+      <WeaveTexture variant="strong" inverse />
       <div
         className="hds-container hds-position-grid"
         style={{
+          position: "relative",
+          zIndex: 1,
           paddingTop: "var(--section-y)",
           paddingBottom: "var(--section-y)",
         }}
@@ -38,8 +43,9 @@ export default function Position() {
           </div>
           <h2
             style={{
+              fontFamily: "var(--font-serif)",
+              fontStyle: "italic",
               fontSize: "var(--fs-h1)",
-              fontWeight: "var(--fw-light)",
               letterSpacing: "var(--ls-heading)",
               color: "var(--code-fg)",
               margin: "14px 0 0",

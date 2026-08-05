@@ -1,7 +1,7 @@
 import { Icon, SectionHeading } from "@/ds-heddle";
 import { faqItems } from "@/lib/constants";
 
-/* 005 — native <details>, keyboard-accessible without JavaScript. */
+/* 006 — native <details>, keyboard-accessible without JavaScript. */
 export default function FAQ() {
   return (
     <section
@@ -17,7 +17,7 @@ export default function FAQ() {
         }}
       >
         <SectionHeading
-          number="005"
+          number="006"
           eyebrow="Questions"
           title="Asked and answered."
         />

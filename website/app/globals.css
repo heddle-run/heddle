@@ -292,6 +292,31 @@ body {
   }
 }
 
+/* The hero terminal's cursor, blinking only while the prompt line is being
+   typed (components/AnimatedTerminal.tsx fades it out once typing finishes).
+   Static and hidden under prefers-reduced-motion, since there the whole log
+   is shown settled rather than performed. */
+.hds-cursor {
+  display: inline-block;
+  width: 7px;
+  height: 1em;
+  margin-left: 1px;
+  vertical-align: -2px;
+  background: var(--code-fg);
+  animation: hds-blink 1s steps(1) infinite;
+}
+@keyframes hds-blink {
+  50% {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hds-cursor {
+    animation: none;
+    opacity: 0;
+  }
+}
+
 /* ── Site layout helpers (hds-*) ──────────────────────────────────────────
    These exist only for what inline styles cannot express: media queries,
    ::placeholder, ::-webkit-scrollbar, hover. Everything else styles inline
@@ -382,6 +407,18 @@ body {
   .hds-position-grid {
     grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
     gap: 56px;
+  }
+}
+
+.hds-runtimes-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 32px;
+}
+@media (min-width: 760px) {
+  .hds-runtimes-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 40px;
   }
 }
 
@@ -836,3 +873,33 @@ html.dark {
 html.dark {
   --border-inverse: #262626;
 }
+
+/* ── Loom, literalized ────────────────────────────────────────────────────
+   The warp-thread metaphor stops being a texture reserved for the CTA band
+   and becomes the page's own ground — see BRAND.md. Ink deepens for more
+   contrast against paper, shadows tighten from a soft Stripe float into
+   something closer to a printed edge, and the serif gets two more headline
+   moments (Position, CTA) beyond the dictionary epigraph. Overridden here,
+   not in the vendored tokens, following the pattern above. */
+:root {
+  /* Deeper ink — a printed navy rather than a screen blue. Cascades through
+     --text-strong, --surface-code and the window borders, since colors.css
+     defines all three as var(--navy-900) rather than a literal value. */
+  --navy-900: #081b2c;
+  --navy-800: #0e2f4a;
+  --navy-700: #133e5c;
+
+  /* Crisper, ink-tinted shadows in place of Stripe's soft multi-layer float. */
+  --shadow-xs: 0 1px 0 rgba(8, 27, 44, 0.07), 0 0 0 1px rgba(8, 27, 44, 0.08);
+  --shadow-sm: 0 1px 2px rgba(8, 27, 44, 0.14), 0 0 0 1px rgba(8, 27, 44, 0.1);
+  --shadow-md: 0 3px 6px rgba(8, 27, 44, 0.16), 0 0 0 1px rgba(8, 27, 44, 0.1);
+  --shadow-lg: 0 8px 16px rgba(8, 27, 44, 0.2), 0 0 0 1px rgba(8, 27, 44, 0.1);
+}
+
+/* The page's own ground is a real plain weave now — components/WeaveTexture.tsx,
+   mounted once as a fixed backdrop in app/layout.tsx — rather than a flat
+   repeating-linear-gradient of vertical lines. A CSS gradient can only draw
+   stripes; an actual over/under crossing needs the checkerboard alternation
+   that component builds in SVG. Sections painting their own opaque surface
+   (Hero, Position, CTA) mount their own instance at full strength over that
+   surface instead of relying on the page-level one showing through. */

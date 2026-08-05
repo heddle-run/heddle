@@ -1,4 +1,5 @@
 import { FeatureListItem, SectionHeading } from "@/ds-heddle";
+import { Reveal } from "@/components/motion/Reveal";
 import { manifest } from "@/lib/constants";
 
 /* 001 — the inventory that makes "batteries included" countable. Every line
@@ -24,13 +25,14 @@ export default function Inventory() {
         />
         <div className="hds-inventory-list" style={{ marginTop: 36 }}>
           {manifest.map((item, i) => (
-            <FeatureListItem
-              key={item.title}
-              index={String(i + 1).padStart(2, "0")}
-              title={item.title}
-            >
-              {item.detail}
-            </FeatureListItem>
+            <Reveal key={item.title} index={Math.floor(i / 2)}>
+              <FeatureListItem
+                index={String(i + 1).padStart(2, "0")}
+                title={item.title}
+              >
+                {item.detail}
+              </FeatureListItem>
+            </Reveal>
           ))}
         </div>
       </div>

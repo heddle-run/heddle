@@ -217,6 +217,39 @@ json.dump({
   },
 ];
 
+/* The receipt for "one document, two runtimes": the same flow, run locally
+   and served over HTTP. Both commands and both outputs are checked against
+   docs/cli-reference.mdx and docs/server.mdx — the CLI examples and the
+   POST /v1/runs example there, not illustrative shorthand. */
+export const runtimes = {
+  cli: {
+    label: "Local",
+    windowTitle: "zsh — heddle",
+    code: `$ heddle run flow.yaml \\
+    --tools-dir ./tools \\
+    --input '{"query": "hello"}'
+
+{
+  "query": "hello",
+  "result": "..."
+}`,
+    caption: "One process. Nothing installed but the binary.",
+  },
+  server: {
+    label: "Server",
+    windowTitle: "zsh — heddle-server",
+    code: `$ heddle-server --port 4319 \\
+    --tools-dir ./tools
+
+$ curl -sX POST localhost:4319/v1/runs \\
+    -d '{"flowPath": "flow.yaml",
+         "inputs": {"query": "hello"}}'
+
+{"flow":"flow","state":{"result":"..."}}`,
+    caption: "The same engine, over HTTP, streamed as it runs.",
+  },
+};
+
 /* The manifest lists what is included; this goes deep on the handful that are
    hard to copy. Every other batteries-included runtime is a library, so its
    batteries arrive as dependencies — that difference leads. */

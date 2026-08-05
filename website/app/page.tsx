@@ -3,6 +3,7 @@ import Hero from "@/components/Hero";
 import Inventory from "@/components/Inventory";
 import Position from "@/components/Position";
 import Method from "@/components/Method";
+import Runtimes from "@/components/Runtimes";
 import Isolation from "@/components/Isolation";
 import Definition from "@/components/Definition";
 import FAQ from "@/components/FAQ";
@@ -23,6 +24,7 @@ export default function Home() {
         <Inventory />
         <Position />
         <Method />
+        <Runtimes />
         <Isolation />
         <Definition />
         <FAQ />

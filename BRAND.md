@@ -96,6 +96,37 @@ navy windows that stay dark in both themes. Inspired by the craft of Stripe's
 marketing site and the restraint of Vercel's AI SDK page — inspiration only,
 nothing copied.
 
+**Loom, literalized (evolution on top of the above).** The warp-thread
+metaphor stopped being a texture reserved for the CTA band and became the
+page's own ground — and a real plain weave, not a repeating stripe of
+vertical lines. `components/WeaveTexture.tsx` draws an actual over/under
+crossing in SVG: two warp columns and two weft rows per tile, with the
+thread on top alternating in a checkerboard the way a real tabby weave
+alternates every row and column. A CSS `repeating-linear-gradient` can only
+draw stripes in one direction; this is why the texture is a component, not a
+token. One instance is mounted once, fixed, in `app/layout.tsx` at
+`variant="faint"` as the page's own ground; Hero, Position and the CTA band
+each mount their own `variant="strong"` instance over their own painted
+surface, and Position/CTA pass `inverse` so the threads read in
+`--border-inverse` rather than `--border-hairline`, matching the rule that
+always-dark surfaces never use the hairline alias. Ink deepened (`--navy-900`
+is `#081b2c`, not upstream's `#0a2540`) for more contrast against paper, and
+shadows tightened from a soft Stripe float into something closer to a printed
+edge — ink-tinted, not generic grey-blue. A fixed, near-invisible grain
+overlay (`components/Grain.tsx`) gives the paper actual tooth. Instrument
+Serif, upstream reserved for the dictionary epigraph alone, now also carries
+two headline moments — Position's "The specification is the program." and the
+CTA's "Thread the loom." — because those two sentences are the closest thing
+the page has to a second pull quote. Beneath the epigraph itself, the flat
+`--gradient-thread` bar was replaced with a small hand-drawn weave: five warp
+threads in the gradient's own five hues, and a weft thread that draws itself
+across them once, on scroll, passing over three and under two — the actual
+mechanism the copy above it describes, not a decorative rule. These are
+deviations from the vendored `ds-heddle` tokens, applied at the site layer in
+`app/globals.css` and `components/` (following the same override pattern
+already used there for `--gradient-warp` and `--border-inverse`), not edits
+to `ds-heddle/` itself.
+
 ### Palette
 
 Ramps live in `ds-heddle/tokens/colors.css`; always use the semantic aliases,
@@ -104,25 +135,37 @@ never raw ramp values.
 | Token | Value | Use |
 |---|---|---|
 | `--surface-page` | cloud-50 `#f6f9fc` / black | Page ground |
-| `--navy-900` | `#0a2540` | Headings, code windows, dark bands |
+| `--navy-900` | `#081b2c` (site override; upstream `#0a2540`) | Headings, code windows, dark bands |
 | `--blurple-500` | `#635bff` | Primary accent, primary buttons |
 | `--cyan-500` | `#00d4ff` | Secondary accent (CTA button on navy) |
 | `--text-body` | slate-700 `#425466` / `#d4d4d4` | Prose |
 | `--border-hairline` | cloud-200 / `#262626` | Section and list rules |
 
-`--gradient-thread` (the multi-hue ribbon) appears only as thin rules — the
-Definition underline — never as a fill. `--texture-warp` (1px warp-thread
-lines at 32px pitch) may sit behind the inverse CTA band. Max two background
-tints per page. **Always-dark surfaces use `--surface-code`/`--surface-code-alt`
-(not `--surface-inverse`, which flips to white in dark theme).**
+`--gradient-thread` (the multi-hue ribbon) supplies the five hues the
+Definition weave draws with; it no longer appears as a flat fill or bar
+anywhere. The page's structural motif is `components/WeaveTexture.tsx` (see
+above), not a one-off accent: it sits behind every plain section as a fixed
+`variant="faint"` instance, and Hero, Position and the CTA band each mount
+their own `variant="strong"` instance over their own surface. Max two
+background tints per page beyond that shared woven ground. **Always-dark
+surfaces use
+`--surface-code`/`--surface-code-alt` (not `--surface-inverse`, which flips to
+white in dark theme).** Shadows (`--shadow-xs` … `--shadow-lg`) are overridden
+at the site layer to be tighter and ink-tinted (`rgba(8,27,44,…)`) rather than
+upstream's softer, bluer-grey Stripe float.
 
 ### Type
 
 **IBM Plex Sans** (300/400/500/600) for UI and display — display sizes set
 Light with `--ls-display` tracking; **IBM Plex Mono** (400/500) for code,
 commands, numbered eyebrows, stats and uppercase labels at `--ls-label`;
-**Instrument Serif** for editorial moments only — the dictionary definition and
-pull quotes. All three load through `next/font/google` in `app/layout.tsx`
+**Instrument Serif** for editorial moments — the dictionary definition and pull
+quotes, and now also two headline moments on the always-dark bands, italic:
+Position's "The specification is the program." and the CTA's "Thread the
+loom." Both are the closest thing the page has to a second pull quote, which
+is the bar for reaching for the serif outside the epigraph — it does not
+belong on the numbered section headings, which stay Plex Sans Light. All
+three load through `next/font/google` in `app/layout.tsx`
 (deviation §2). Headings are sentence case and end in periods. Numbered mono
 eyebrows mark the sections: `001 Inventory`, `002 Position`, …
 
@@ -134,9 +177,15 @@ eyebrows mark the sections: `001 Inventory`, `002 Position`, …
   background swap.
 - Shadows mostly none; cards `--shadow-xs` lifting to `--shadow-sm` on hover;
   the hero windows carry one large soft drop each. Never coloured glows.
+  The shadow tokens themselves are tighter and ink-tinted at the site layer
+  (see Palette) — a printed edge, not a soft Stripe float.
 - Layout: 1180px container (`--maxw-container`), `--section-y` (112px) rhythm.
   Responsive grids are the `hds-*` classes in `globals.css` — media queries
   only; everything else styles inline from tokens.
+- A fixed, pointer-events-none grain overlay (`components/Grain.tsx`, mounted
+  once in `app/layout.tsx`) sits above everything at ~5% opacity: an inline
+  SVG fractal-noise filter, alpha-composited rather than blend-moded, because
+  `mix-blend-mode: overlay` does nothing over the dark theme's pure black.
 
 ### Motion
 
@@ -196,16 +245,23 @@ lowercase word "heddle" set in Plex Sans Medium, which is all
    `specimenSpread` spec.
 5. **Method** — 003, four hairline-divided moves: Declare, Point, Confine,
    Serve.
-6. **Isolation** — 004, the sandboxing claims as four cards, verbatim from
+6. **Runtimes** — 004, on plain paper: the receipt for Position's "same
+   equipment behind a binary" and for Method's Point/Serve moves. Two navy
+   windows side by side, `runtimes.cli` and `runtimes.server` from
+   `lib/constants.ts` — the identical flow, run locally and served over HTTP.
+   Both transcripts are checked against `docs/cli-reference.mdx` and
+   `docs/server.mdx`, not written to look plausible; update this section if
+   either doc's example commands change.
+7. **Isolation** — 005, the sandboxing claims as four cards, verbatim from
    `safeMode` (see the security note above). The design's illustrative badges
    ("default in CI", "no daemon") were claims heddle does not make and must not
    return.
-7. **Definition** — the dictionary epigraph, in Instrument Serif, over the
+8. **Definition** — the dictionary epigraph, in Instrument Serif, over the
    thread-gradient rule.
-8. **FAQ** — 005, native `<details>`.
-9. **CTA** — the navy band with the warp texture: "Thread the loom.", accent
-   Get started, ghost playground link, the npx command.
-10. **Footer** — brand blurb plus the Project / Source / Standard columns, and
+9. **FAQ** — 006, native `<details>`.
+10. **CTA** — the navy band with the warp texture: "Thread the loom.", accent
+    Get started, ghost playground link, the npx command.
+11. **Footer** — brand blurb plus the Project / Source / Standard columns, and
     a mono bottom bar (heddle.run · "Woven by agents, heddled by humans" ·
     version). The byline leans on the Definition block above it having
     already taught the reader what a heddle does.

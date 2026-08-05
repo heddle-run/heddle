@@ -1,27 +1,35 @@
 import { Button, Icon, InstallCommand } from "@/ds-heddle";
+import { WeaveTexture } from "@/components/WeaveTexture";
 import { installTabs, PLAYGROUND_URL } from "@/lib/constants";
 
-/* The close, on the always-dark band with the warp-thread texture. Same
-   surface reasoning as Position: --surface-code stays navy-dark in both
-   themes where --surface-inverse flips. */
+/* The close, on the always-dark band with the woven texture. Same surface
+   reasoning as Position: --surface-code stays navy-dark in both themes
+   where --surface-inverse flips. */
 export default function CTA() {
   return (
     <section
       style={{
+        position: "relative",
         background: "var(--surface-code)",
-        backgroundImage: "var(--texture-warp)",
-        backgroundBlendMode: "overlay",
         borderTop: "1px solid var(--border-hairline)",
       }}
     >
+      <WeaveTexture variant="strong" inverse />
       <div
         className="hds-container"
-        style={{ paddingTop: 88, paddingBottom: 88, textAlign: "center" }}
+        style={{
+          position: "relative",
+          zIndex: 1,
+          paddingTop: 88,
+          paddingBottom: 88,
+          textAlign: "center",
+        }}
       >
         <h2
           style={{
+            fontFamily: "var(--font-serif)",
+            fontStyle: "italic",
             fontSize: "var(--fs-display-3)",
-            fontWeight: "var(--fw-light)",
             letterSpacing: "var(--ls-display)",
             color: "var(--code-fg)",
             margin: 0,

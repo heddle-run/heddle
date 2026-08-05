@@ -1,7 +1,10 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { Button, Icon, InstallCommand, Terminal } from "@/ds-heddle";
+import { motion, useReducedMotion } from "motion/react";
+import { Button, Icon, InstallCommand } from "@/ds-heddle";
+import { AnimatedTerminal } from "@/components/AnimatedTerminal";
+import { WeaveTexture } from "@/components/WeaveTexture";
 import { GITHUB_URL, installTabs, specimenSpread, steps } from "@/lib/constants";
 
 /* The spec in the window is the real Open Agent Specification fragment from
@@ -53,17 +56,20 @@ function yamlLine(line: string): ReactNode {
 export default function Hero() {
   const [tabId, setTabId] = useState(installTabs[0].id);
   const tab = installTabs.find((t) => t.id === tabId) ?? installTabs[0];
+  const reduce = useReducedMotion();
 
   return (
     <section
       style={{
+        position: "relative",
         background: "var(--gradient-warp)",
         borderBottom: "1px solid var(--border-hairline)",
       }}
     >
+      <WeaveTexture variant="strong" />
       <div
         className="hds-container hds-hero-grid"
-        style={{ paddingTop: 88, paddingBottom: 72 }}
+        style={{ position: "relative", zIndex: 1, paddingTop: 88, paddingBottom: 72 }}
       >
         <div>
           <div
@@ -250,7 +256,17 @@ export default function Hero() {
               }}
             >
               {SPEC_LINES.map((line, i) => (
-                <div key={i} style={{ whiteSpace: "pre" }}>
+                <motion.div
+                  key={i}
+                  style={{ whiteSpace: "pre" }}
+                  initial={reduce ? false : { opacity: 0, x: -6 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{
+                    duration: 0.3,
+                    delay: 0.15 + i * 0.035,
+                    ease: [0.2, 0, 0.2, 1],
+                  }}
+                >
                   <span
                     style={{
                       color: "var(--code-punct)",
@@ -262,13 +278,13 @@ export default function Hero() {
                     {i + 1}
                   </span>
                   {yamlLine(line)}
-                </div>
+                </motion.div>
               ))}
             </div>
           </div>
 
           <div className="hds-hero-terminal">
-            <Terminal
+            <AnimatedTerminal
               title="zsh — heddle"
               lines={TERMINAL_LINES}
               style={{

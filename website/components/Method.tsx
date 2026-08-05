@@ -1,4 +1,5 @@
 import { SectionHeading } from "@/ds-heddle";
+import { Reveal } from "@/components/motion/Reveal";
 
 /* 003 — the method grid. Four moves from the design template; the copy states
    commands and flags that exist (heddle run, --safe, heddle-server). */
@@ -42,7 +43,7 @@ export default function Method() {
         />
         <div className="hds-method-grid">
           {MOVES.map((move, i) => (
-            <div key={move.title}>
+            <Reveal key={move.title} index={i}>
               <div
                 style={{
                   fontFamily: "var(--font-mono)",
@@ -73,7 +74,7 @@ export default function Method() {
               >
                 {move.detail}
               </p>
-            </div>
+            </Reveal>
           ))}
         </div>
       </div>

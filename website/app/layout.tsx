@@ -5,6 +5,8 @@ import {
   Instrument_Serif,
 } from "next/font/google";
 import { RootProvider } from "fumadocs-ui/provider";
+import Grain from "@/components/Grain";
+import { WeaveTexture } from "@/components/WeaveTexture";
 import "./globals.css";
 import "../ds-heddle/styles.css";
 
@@ -78,6 +80,7 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <body>
+        <WeaveTexture variant="faint" style={{ position: "fixed", zIndex: -1 }} />
         <RootProvider
           theme={{
             enabled: true,
@@ -92,6 +95,7 @@ export default function RootLayout({
         >
           {children}
         </RootProvider>
+        <Grain />
       </body>
     </html>
   );

@@ -1,7 +1,8 @@
 import { Badge, Card, SectionHeading } from "@/ds-heddle";
+import { Reveal } from "@/components/motion/Reveal";
 import { safeMode } from "@/lib/constants";
 
-/* 004 — the sandboxing claims. Copy comes verbatim from safeMode in
+/* 005 — the sandboxing claims. Copy comes verbatim from safeMode in
    lib/constants.ts, which is checked against packages/core/src/sandbox/ and
    packages/server/DEPLOYMENT.md — mechanisms, not adjectives. The design's
    sample badges ("default in CI", "no daemon") were claims heddle does not
@@ -31,7 +32,7 @@ export default function Isolation() {
           }}
         >
           <SectionHeading
-            number="004"
+            number="005"
             eyebrow="Isolation"
             title={
               <>
@@ -43,10 +44,10 @@ export default function Isolation() {
           />
         </div>
         <div className="hds-isolation-grid">
-          {safeMode.points.map((point) => (
-            <Card key={point.title} title={point.title}>
-              {point.description}
-            </Card>
+          {safeMode.points.map((point, i) => (
+            <Reveal key={point.title} index={i}>
+              <Card title={point.title}>{point.description}</Card>
+            </Reveal>
           ))}
         </div>
         <div style={{ display: "flex", gap: 8, marginTop: 20 }}>
