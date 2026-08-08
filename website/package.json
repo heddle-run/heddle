@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@types/mdx": "^2.0.13",
+    "@types/three": "^0.185.4",
     "fumadocs-core": "^15.8.5",
     "fumadocs-mdx": "^14.2.11",
     "fumadocs-ui": "^15.8.5",
@@ -17,7 +18,8 @@
     "motion": "^13.0.0",
     "next": "^15.3.1",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "three": "^0.185.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.4",
