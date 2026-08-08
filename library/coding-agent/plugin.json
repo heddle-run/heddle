@@ -1,0 +1,58 @@
+{
+  "name": "codex-orchestration",
+  "version": "1.0.0",
+  "capabilities": ["emitEvent", "log"],
+  "components": [
+    {
+      "componentType": "CodexApprovals",
+      "kind": "middleware",
+      "seams": { "toolCall": ["before"] },
+      "schema": {
+        "type": "object",
+        "properties": {
+          "approval_policy": {
+            "type": "string",
+            "enum": ["untrusted", "on-request", "on-failure", "never"],
+            "description": "Codex's AskForApproval. untrusted: only known-safe read commands run unasked. on-request (the default): the model asks via sandbox_permissions when it needs escalation; on-failure is its alias, as in Codex. never: nothing is ever asked, refusals are returned to the model."
+          },
+          "rules": {
+            "type": "array",
+            "description": "Codex execpolicy rules: a command prefix and what to do when a sub-command matches it. Every sub-command of a call must be covered for the rule decision to apply.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "prefix": {
+                  "type": "array",
+                  "items": { "type": "string" },
+                  "description": "Argv prefix, e.g. [\"git\", \"push\"]."
+                },
+                "decision": {
+                  "type": "string",
+                  "enum": ["allow", "prompt", "forbidden"]
+                }
+              },
+              "required": ["prefix"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "componentType": "CodexContextWindow",
+      "kind": "middleware",
+      "seams": { "modelCall": ["before"] },
+      "schema": {
+        "type": "object",
+        "properties": {
+          "auto_compact_limit_chars": {
+            "type": "number",
+            "description": "Compact when the serialized conversation reaches this many characters. Codex fires at 90% of the model's context window; 400000 chars is that, roughly, for a 128k-token window."
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  ]
+}
