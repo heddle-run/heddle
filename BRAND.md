@@ -404,10 +404,10 @@ one Cloudflare Pages project, so the page is exported at `/playground` and
 Function exists at all. `heddle.run/playground` keeps working; `/compare`
 forwards to `?view=compare`.
 
-Two things have to agree with that hostname or the playground loads and cannot
-run: `ALLOWED_ORIGINS` in `packages/broker/wrangler.jsonc`, and `--cors-origin`
-in `packages/server/k8s/deployment.yaml`. Both list an exact origin, never a
-suffix. The subdomain itself is a custom domain on the Pages project, and
+One thing has to agree with that hostname or the playground loads and cannot
+run: the engine's `--cors-origin` list — in `packages/server/k8s/deployment.yaml`
+here, and in the systemd unit on the host that serves `engine.heddle.run` (see
+`packages/server/DEPLOYMENT.md`). It lists an exact origin, never a suffix. The subdomain itself is a custom domain on the Pages project, and
 `vars.PLAYGROUND_URL` in the deploy workflow is what makes the site link to
 it — unset, every link stays relative and nothing breaks.
 

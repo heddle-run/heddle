@@ -99,7 +99,7 @@ ENV NODE_ENV=production
 # Bound to all interfaces because the only thing that can reach this port is
 # whatever the container runtime attaches to it. The loopback default exists to
 # protect a developer's laptop; here it would just make the container
-# unreachable from its own broker. The isolation comes from the network the
+# unreachable from whatever fronts it. The isolation comes from the network the
 # container is placed on -- see DEPLOYMENT.md.
 EXPOSE 4319
 

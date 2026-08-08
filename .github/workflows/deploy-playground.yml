@@ -188,18 +188,18 @@ jobs:
       # carrying traffic to the thing that was just deployed.
       - name: Verify the deployment answers through the tunnel
         env:
-          BROKER_URL: ${{ vars.HEDDLE_API_URL }}
+          ENGINE_URL: ${{ vars.HEDDLE_API_URL }}
         run: |
           set -euo pipefail
 
-          if [ -z "$BROKER_URL" ]; then
+          if [ -z "$ENGINE_URL" ]; then
             echo "HEDDLE_API_URL is not set; skipping the post-deploy check."
             echo "Set it to the engine's public URL so this step can run."
             exit 0
           fi
 
-          echo "checking $BROKER_URL/healthz"
-          status=$(curl -sS -o /tmp/health -w '%{http_code}' --max-time 30 "$BROKER_URL/healthz" || echo 000)
+          echo "checking $ENGINE_URL/healthz"
+          status=$(curl -sS -o /tmp/health -w '%{http_code}' --max-time 30 "$ENGINE_URL/healthz" || echo 000)
           cat /tmp/health || true
           echo
           if [ "$status" != "200" ]; then

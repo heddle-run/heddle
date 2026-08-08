@@ -55,11 +55,10 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           # Pinned because the action otherwise picks its own default, and it
           # picks one silently: it looks for wrangler in workingDirectory below,
-          # website/ does not depend on it — packages/broker holds this
-          # repository's only declaration — and the lookup failing is what sends
-          # it to an install of its own. Naming the version is the difference
-          # between choosing one and being handed whichever the action defaults
-          # to on the day.
+          # website/ does not depend on it — nothing in this repository declares
+          # wrangler — and the lookup failing is what sends it to an install of
+          # its own. Naming the version is the difference between choosing one
+          # and being handed whichever the action defaults to on the day.
           wranglerVersion: "4.118.0"
           # NOTE: "specrun" here is the existing Cloudflare Pages project name,
           # not the product name. Renaming it requires creating the project on

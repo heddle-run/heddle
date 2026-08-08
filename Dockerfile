@@ -35,11 +35,7 @@ RUN corepack enable
 
 # Manifests first, so a source-only change does not re-resolve the lockfile.
 # The server's is here for symmetry with packages/server/Dockerfile and costs
-# nothing — its devDependencies are already core's. packages/broker is the one
-# member left out on purpose: nothing here builds a Worker, and its wrangler
-# toolchain is larger than everything else in this stage put together. A
-# workspace member absent from the context is simply not an importer, which
-# --frozen-lockfile accepts.
+# nothing — its devDependencies are already core's.
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY vendor/agentspec/package.json ./vendor/agentspec/
 COPY packages/core/package.json ./packages/core/

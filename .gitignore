@@ -6,7 +6,6 @@ dist/
 # wrangler local secrets
 .dev.vars
 .wrangler/
-packages/broker/dist/
 
 # scratch directory examples/bash-agent presents files into
 heddle-out/
