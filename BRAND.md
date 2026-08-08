@@ -186,16 +186,22 @@ eyebrows mark the sections: `001 Inventory`, `002 Position`, …
   once in `app/layout.tsx`) sits above everything at ~5% opacity: an inline
   SVG fractal-noise filter, alpha-composited rather than blend-moded, because
   `mix-blend-mode: overlay` does nothing over the dark theme's pure black.
-- The Hero's code-window stack is framed by `components/HeroWeave.tsx`: one
-  large, thick ribbon plus a thinner echo, both carrying the full
-  `--gradient-thread` gradient, drawing themselves in on mount and then
-  drifting forever — a slow rotation plus the gradient sliding along the
-  ribbon — rather than freezing like the rest of the page's motion. It is
-  the one deliberately Stripe-inspired flourish on the page, sized and
-  animated the way Stripe's hero graphic is (large, continuously moving),
-  executed in heddle's own crisp vector line language (round caps, no blur)
-  rather than Stripe's soft airbrushed mesh. The draw-in measures each
-  path's real length with `getTotalLength()` rather than the
+- The Hero's code-window stack is framed by `components/HeroWeave.tsx`: five
+  thick, solid-colour bands — one per `--gradient-thread` hue — heavily
+  overlapping and run through one shared `feGaussianBlur` as a group. It is
+  the one deliberately Stripe-inspired flourish on the page, and it chases
+  Stripe's actual *technique*, not just its scale: a soft, continuously
+  blended silk surface, where the blur is what turns five hard-edged
+  overlaps into smooth colour transitions — a cheap stand-in for the
+  gradient-mesh shader Stripe actually runs. Two earlier passes (thin
+  decorative threads, then two clean unblurred strokes) both stayed too
+  close to this system's usual crisp-vector line language and read as
+  decoration behind the windows rather than the thing itself; matching what
+  Stripe actually looks like meant leaving that restraint at the door for
+  this one component. It draws in on mount, then the whole group drifts
+  forever — a slow rotation plus translate — rather than freezing like the
+  rest of the page's motion. The draw-in measures each path's real length
+  with `getTotalLength()` rather than the
   `pathLength`-attribute normalization trick used elsewhere on this page
   (Definition, AnimatedTerminal): with these longer multi-curve paths,
   `pathLength` normalization silently failed — dashes stayed sized in raw
