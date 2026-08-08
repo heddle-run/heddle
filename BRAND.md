@@ -212,17 +212,27 @@ eyebrows mark the sections: `001 Inventory`, `002 Position`, …
   text). It bleeds up behind the sticky nav — Stripe's own graphic runs the
   full height of the page, nav included — so `Nav`'s translucent
   `backdrop-filter` picks up a soft glow of it. That bleed is why the Hero
-  `<section>` itself no longer sets `overflow: hidden`: `body` already has
-  it (`globals.css`), which is enough to stop the ribbon's horizontal bleed
-  from ever creating a page scrollbar, and removing it from Hero is what
-  lets the ribbon escape upward past the section's own top edge. The escape
-  is one-directional on purpose — the wrapping `<div>` inside `HeroWeave`
-  sets `top: -220` (past the nav) but `bottom: 0` (flush with Hero's own
-  bottom) with its own `overflow: hidden`, so the ribbon bleeds up into the
-  nav but stops cleanly at Hero's bottom edge rather than spilling into
-  Inventory below. Widening the bleed values further starts pushing the
-  ribbon into the copy column, which is the one thing to check after
-  touching this component.
+  `<section>` itself no longer sets `overflow: hidden`: removing it is what
+  lets the ribbon escape upward past the section's own top edge. `html` and
+  `body` both carry `overflow-x: hidden` (`globals.css`) as the actual
+  backstop against a page scrollbar; both, not just one, because on the
+  vertical bleed's first pass `body`'s alone left the ribbon's horizontal
+  overshoot capable of being scrolled into by `scrollLeft`/`scrollTo`, even
+  though wheel and trackpad respected it — `html`'s own `overflow-x: hidden`
+  is what closes that off for good.
+
+  The escape is one-directional on purpose — the wrapping `<div>` inside
+  `HeroWeave` sets `top: -220` (past the nav) but `bottom: 0` (flush with
+  Hero's own bottom) with its own `overflow: hidden`, so the ribbon bleeds
+  up into the nav but stops cleanly at Hero's bottom edge rather than
+  spilling into Inventory below. That same wrapping div's `right`/`width`
+  (currently `-600`/`280%`) have to clear the *viewport's* right edge, not
+  just `.hds-hero-windows`'s: sized too small, the div's own `overflow:
+  hidden` clips the ribbon at its own right edge, well short of the
+  viewport, and the ribbon reads as cropped rather than bleeding off-screen.
+  Widening either value further starts pushing the ribbon into the copy
+  column on the left, which is the other thing to check after touching this
+  component.
 
 ### Motion
 

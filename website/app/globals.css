@@ -42,6 +42,10 @@ html {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   color-scheme: light;
+  /* Belt and braces with body's overflow-x below: HeroWeave's ribbon bleeds
+     past the viewport edge on purpose, and a page-level horizontal scroll
+     is the one thing that bleed must never cause. */
+  overflow-x: hidden;
 }
 html.dark {
   color-scheme: dark;

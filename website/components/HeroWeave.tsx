@@ -88,9 +88,9 @@ export function HeroWeave() {
       style={{
         position: "absolute",
         top: -220,
-        right: -160,
+        right: -600,
         bottom: 0,
-        width: "165%",
+        width: "280%",
         overflow: "hidden",
         zIndex: -1,
         pointerEvents: "none",
