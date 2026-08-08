@@ -1,0 +1,26 @@
+{
+  "name": "coding-agent",
+  "title": "Coding agent",
+  "summary": "Works on a codebase the way OpenAI's Codex CLI does: plan, shell, apply_patch, repeat.",
+  "blurb": "A port of the agent orchestration inside OpenAI's Codex CLI, expressed as a heddle flow. The session opens the way Codex opens one — instructions, then AGENTS.md as user instructions, then an environment_context block — and the agent works the same loop Codex works: keep a plan with update_plan, investigate with shell, edit with apply_patch (Codex's patch grammar, implemented in full), verify, repeat until done. Codex's approval policies (untrusted, on-failure, on-request, never) ship as a middleware the run can be configured with, and its sandbox posture maps onto --safe.",
+  "tags": ["coding", "codex", "shell", "patch"],
+  "model": "gpt-4o-mini",
+  "flow": "spec.yaml",
+  "toolsDir": "tools",
+  "plugins": ["plugin.json"],
+  "pluginConfig": {
+    "CodexApprovals": { "approval_policy": "on-request" }
+  },
+  "mounts": ["workspace:.:rw"],
+  "requires": [
+    { "env": "OPENAI_API_KEY" },
+    { "binary": "python3" },
+    { "binary": "bash" }
+  ],
+  "input": {
+    "task": "Run the tests, find out why one fails, and fix the code with apply_patch. Keep the change minimal, then run the tests again to prove it.",
+    "cwd": ".",
+    "approval_policy": "on-request",
+    "sandbox_mode": "workspace-write"
+  }
+}
