@@ -63,7 +63,6 @@ export default function Hero() {
     <section
       style={{
         position: "relative",
-        overflow: "hidden",
         background: "var(--gradient-warp)",
         borderBottom: "1px solid var(--border-hairline)",
       }}

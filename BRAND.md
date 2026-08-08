@@ -209,10 +209,20 @@ eyebrows mark the sections: `001 Inventory`, `002 Position`, …
   `z-index` of its own, so the ribbon's negative z-index resolves against
   the outer `.hds-hero-grid` wrapper — which does have one — rather than
   creating a stacking context that would let it paint over the left column's
-  text). Geometrically it bleeds well past the code-window column
-  (`top:-80, right:-160, 165%×155%`) the way Stripe's does; widening those
-  values further starts pushing the ribbon into the copy column, which is
-  the one thing to check after touching this component.
+  text). It bleeds up behind the sticky nav — Stripe's own graphic runs the
+  full height of the page, nav included — so `Nav`'s translucent
+  `backdrop-filter` picks up a soft glow of it. That bleed is why the Hero
+  `<section>` itself no longer sets `overflow: hidden`: `body` already has
+  it (`globals.css`), which is enough to stop the ribbon's horizontal bleed
+  from ever creating a page scrollbar, and removing it from Hero is what
+  lets the ribbon escape upward past the section's own top edge. The escape
+  is one-directional on purpose — the wrapping `<div>` inside `HeroWeave`
+  sets `top: -220` (past the nav) but `bottom: 0` (flush with Hero's own
+  bottom) with its own `overflow: hidden`, so the ribbon bleeds up into the
+  nav but stops cleanly at Hero's bottom edge rather than spilling into
+  Inventory below. Widening the bleed values further starts pushing the
+  ribbon into the copy column, which is the one thing to check after
+  touching this component.
 
 ### Motion
 

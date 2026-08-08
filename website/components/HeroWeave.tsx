@@ -84,56 +84,61 @@ export function HeroWeave() {
   }, [reduce]);
 
   return (
-    <svg
-      ref={svgRef}
-      aria-hidden="true"
-      viewBox="0 0 720 920"
-      preserveAspectRatio="xMidYMid slice"
+    <div
       style={{
         position: "absolute",
-        top: -80,
+        top: -220,
         right: -160,
+        bottom: 0,
         width: "165%",
-        height: "155%",
+        overflow: "hidden",
         zIndex: -1,
         pointerEvents: "none",
       }}
     >
-      <defs>
-        <linearGradient
-          ref={gradRef}
-          id="hero-ribbon-gradient"
-          gradientUnits="userSpaceOnUse"
-          x1={0}
-          y1={0}
-          x2={720}
-          y2={920}
-        >
-          {STOPS.map((s) => (
-            <stop key={s.offset} offset={s.offset} stopColor={s.color} />
-          ))}
-        </linearGradient>
-      </defs>
-      <g data-ribbon-group style={{ opacity: reduce ? 1 : 0 }}>
-        <path
-          data-strand
-          d="M 600 -80 C 480 100, 700 260, 540 440 S 380 700, 600 840 S 760 960, 660 1020"
-          fill="none"
-          stroke="url(#hero-ribbon-gradient)"
-          strokeWidth={140}
-          strokeLinecap="round"
-          opacity={0.94}
-        />
-        <path
-          data-strand
-          d="M 740 -40 C 640 180, 820 340, 700 520 S 560 760, 760 900"
-          fill="none"
-          stroke="url(#hero-ribbon-gradient)"
-          strokeWidth={64}
-          strokeLinecap="round"
-          opacity={0.55}
-        />
-      </g>
-    </svg>
+      <svg
+        ref={svgRef}
+        aria-hidden="true"
+        viewBox="0 0 720 920"
+        preserveAspectRatio="xMidYMid slice"
+        style={{ width: "100%", height: "100%", display: "block" }}
+      >
+        <defs>
+          <linearGradient
+            ref={gradRef}
+            id="hero-ribbon-gradient"
+            gradientUnits="userSpaceOnUse"
+            x1={0}
+            y1={0}
+            x2={720}
+            y2={920}
+          >
+            {STOPS.map((s) => (
+              <stop key={s.offset} offset={s.offset} stopColor={s.color} />
+            ))}
+          </linearGradient>
+        </defs>
+        <g data-ribbon-group style={{ opacity: reduce ? 1 : 0 }}>
+          <path
+            data-strand
+            d="M 600 -80 C 480 100, 700 260, 540 440 S 380 700, 600 840 S 760 960, 660 1020"
+            fill="none"
+            stroke="url(#hero-ribbon-gradient)"
+            strokeWidth={140}
+            strokeLinecap="round"
+            opacity={0.94}
+          />
+          <path
+            data-strand
+            d="M 740 -40 C 640 180, 820 340, 700 520 S 560 760, 760 900"
+            fill="none"
+            stroke="url(#hero-ribbon-gradient)"
+            strokeWidth={64}
+            strokeLinecap="round"
+            opacity={0.55}
+          />
+        </g>
+      </svg>
+    </div>
   );
 }
