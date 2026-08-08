@@ -186,20 +186,33 @@ eyebrows mark the sections: `001 Inventory`, `002 Position`, …
   once in `app/layout.tsx`) sits above everything at ~5% opacity: an inline
   SVG fractal-noise filter, alpha-composited rather than blend-moded, because
   `mix-blend-mode: overlay` does nothing over the dark theme's pure black.
-- The Hero's code-window stack is framed by `components/HeroWeave.tsx`: five
-  flowing strands, one per `--gradient-thread` hue, that draw themselves in
-  on mount. It is the one deliberately Stripe-inspired flourish on the page —
-  a colourful graphic behind the hero content — executed in heddle's own
-  crisp vector line language (round caps, no blur) rather than Stripe's soft
-  airbrushed mesh. It sits behind `.hds-hero-windows` at `z-index: -1`
-  (that div needs `position: relative` for the SVG's containing block, but
-  deliberately no `z-index` of its own, so the strand's negative z-index
-  resolves against the outer `.hds-hero-grid` wrapper — which does have one —
-  rather than creating a stacking context that would let the strands paint
-  over the left column's text). Geometrically it is anchored tightly to the
-  code-window column (`top:-40, right:-30, 112%×118%`); widening those bleed
-  values pushes strands into the copy column, which is the one thing to
-  check after touching this component.
+- The Hero's code-window stack is framed by `components/HeroWeave.tsx`: one
+  large, thick ribbon plus a thinner echo, both carrying the full
+  `--gradient-thread` gradient, drawing themselves in on mount and then
+  drifting forever — a slow rotation plus the gradient sliding along the
+  ribbon — rather than freezing like the rest of the page's motion. It is
+  the one deliberately Stripe-inspired flourish on the page, sized and
+  animated the way Stripe's hero graphic is (large, continuously moving),
+  executed in heddle's own crisp vector line language (round caps, no blur)
+  rather than Stripe's soft airbrushed mesh. The draw-in measures each
+  path's real length with `getTotalLength()` rather than the
+  `pathLength`-attribute normalization trick used elsewhere on this page
+  (Definition, AnimatedTerminal): with these longer multi-curve paths,
+  `pathLength` normalization silently failed — dashes stayed sized in raw
+  path units, effectively invisible — where `getTotalLength()` is unaffected
+  by path complexity. If a future draw-in animation on a long or curvy path
+  seems to render nothing, check this before assuming the timeline itself is
+  broken.
+
+  It sits behind `.hds-hero-windows` at `z-index: -1` (that div needs
+  `position: relative` for the SVG's containing block, but deliberately no
+  `z-index` of its own, so the ribbon's negative z-index resolves against
+  the outer `.hds-hero-grid` wrapper — which does have one — rather than
+  creating a stacking context that would let it paint over the left column's
+  text). Geometrically it bleeds well past the code-window column
+  (`top:-80, right:-160, 165%×155%`) the way Stripe's does; widening those
+  values further starts pushing the ribbon into the copy column, which is
+  the one thing to check after touching this component.
 
 ### Motion
 

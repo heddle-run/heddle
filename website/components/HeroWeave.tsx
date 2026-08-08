@@ -4,35 +4,80 @@ import { useEffect, useRef } from "react";
 import { gsap } from "gsap";
 import { useReducedMotion } from "motion/react";
 
-/* Stripe's hero has a colourful flowing graphic behind the content; heddle's
-   own gradient-thread already names five hues for exactly that kind of
-   ribbon, so this draws them as actual flowing strands rather than
-   borrowing Stripe's soft airbrushed mesh look. Crisp vector edges, round
-   caps, no blur — heddle's own line language (see Icon.jsx), just five
-   colours instead of one. Each strand draws itself in on mount, staggered,
-   the way the hero's spec window and terminal already do: the loom
-   threading itself as the page loads. Reduced motion shows every strand
-   fully drawn, still. */
-const STRANDS = [
-  { color: "#a960ee", width: 10, d: "M -20 90 C 100 40, 180 160, 300 110 S 500 40, 580 100" },
-  { color: "#ff333d", width: 9, d: "M -20 200 C 120 260, 200 140, 320 220 S 480 300, 580 230" },
-  { color: "#ff8a00", width: 11, d: "M -20 340 C 100 280, 220 400, 340 320 S 500 260, 580 340" },
-  { color: "#90e0ff", width: 9, d: "M -20 470 C 130 520, 210 400, 340 460 S 490 540, 580 470" },
-  { color: "#ffcb57", width: 10, d: "M -20 580 C 110 620, 230 540, 350 600 S 500 640, 580 580" },
+/* Stripe's own hero: one large, thick, continuously flowing ribbon, not a
+   thin decorative line. This is the same move in heddle's own five hues
+   (--gradient-thread) and heddle's own line language — a crisp stroked
+   path, not Stripe's soft airbrushed mesh — but sized and animated the way
+   Stripe's is: it dominates its side of the hero, and it never sits still.
+   A thick primary ribbon carries the full five-stop gradient; a thinner
+   echo, offset and dimmer, gives it the layered depth a single line can't.
+   Both draw themselves in once on mount, then settle into a slow, endless
+   drift — a gentle rotation and a colour wash sliding along the gradient —
+   rather than freezing the way the rest of this page's motion does.
+
+   The draw-in measures each path's real length with getTotalLength() rather
+   than the pathLength-attribute normalization trick used elsewhere on this
+   page (Definition, AnimatedTerminal): with these longer multi-curve paths
+   pathLength normalization silently failed in testing (dashes stayed sized
+   in raw units, effectively invisible), where the classic getTotalLength
+   approach is unaffected by path complexity. The group starts at opacity 0
+   so there is no flash of the fully-drawn ribbon before the dash offsets are
+   set. Reduced motion skips all of it and shows the ribbon drawn, still. */
+const STOPS = [
+  { offset: "0%", color: "#a960ee" },
+  { offset: "25%", color: "#ff333d" },
+  { offset: "50%", color: "#ff8a00" },
+  { offset: "75%", color: "#90e0ff" },
+  { offset: "100%", color: "#ffcb57" },
 ];
 
 export function HeroWeave() {
-  const ref = useRef<SVGSVGElement>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
+  const gradRef = useRef<SVGLinearGradientElement>(null);
   const reduce = useReducedMotion();
 
   useEffect(() => {
-    if (reduce || !ref.current) return;
-    const svg = ref.current;
+    if (reduce || !svgRef.current) return;
+    const svg = svgRef.current;
+    const grad = gradRef.current;
+    const group = svg.querySelector<SVGGElement>("[data-ribbon-group]");
+
     const ctx = gsap.context(() => {
       const paths = Array.from(svg.querySelectorAll<SVGPathElement>("[data-strand]"));
-      const tl = gsap.timeline({ defaults: { ease: "power2.inOut" } });
+
+      paths.forEach((path) => {
+        const length = path.getTotalLength();
+        gsap.set(path, { strokeDasharray: length, strokeDashoffset: length });
+      });
+      if (group) gsap.set(group, { opacity: 1 });
+
+      const draw = gsap.timeline({ defaults: { ease: "power2.inOut" } });
       paths.forEach((path, i) => {
-        tl.to(path, { strokeDashoffset: 0, duration: 1.1 }, i * 0.14);
+        draw.to(path, { strokeDashoffset: 0, duration: 1.4 }, i * 0.2);
+      });
+
+      draw.eventCallback("onComplete", () => {
+        if (group) {
+          gsap.to(group, {
+            rotate: 2.2,
+            x: 14,
+            y: -16,
+            duration: 10,
+            ease: "sine.inOut",
+            yoyo: true,
+            repeat: -1,
+            transformOrigin: "50% 50%",
+          });
+        }
+        if (grad) {
+          gsap.to(grad, {
+            attr: { x1: -160, x2: 660 },
+            duration: 8,
+            ease: "sine.inOut",
+            yoyo: true,
+            repeat: -1,
+          });
+        }
       });
     });
     return () => ctx.revert();
@@ -40,35 +85,55 @@ export function HeroWeave() {
 
   return (
     <svg
-      ref={ref}
+      ref={svgRef}
       aria-hidden="true"
-      viewBox="0 0 560 680"
+      viewBox="0 0 720 920"
       preserveAspectRatio="xMidYMid slice"
       style={{
         position: "absolute",
-        top: -40,
-        right: -30,
-        width: "112%",
-        height: "118%",
+        top: -80,
+        right: -160,
+        width: "165%",
+        height: "155%",
         zIndex: -1,
         pointerEvents: "none",
       }}
     >
-      {STRANDS.map((s, i) => (
+      <defs>
+        <linearGradient
+          ref={gradRef}
+          id="hero-ribbon-gradient"
+          gradientUnits="userSpaceOnUse"
+          x1={0}
+          y1={0}
+          x2={720}
+          y2={920}
+        >
+          {STOPS.map((s) => (
+            <stop key={s.offset} offset={s.offset} stopColor={s.color} />
+          ))}
+        </linearGradient>
+      </defs>
+      <g data-ribbon-group style={{ opacity: reduce ? 1 : 0 }}>
         <path
-          key={i}
           data-strand
-          d={s.d}
+          d="M 600 -80 C 480 100, 700 260, 540 440 S 380 700, 600 840 S 760 960, 660 1020"
           fill="none"
-          stroke={s.color}
-          strokeWidth={s.width}
+          stroke="url(#hero-ribbon-gradient)"
+          strokeWidth={140}
           strokeLinecap="round"
-          opacity={0.92}
-          pathLength={1}
-          strokeDasharray="1 1"
-          strokeDashoffset={reduce ? 0 : 1}
+          opacity={0.94}
         />
-      ))}
+        <path
+          data-strand
+          d="M 740 -40 C 640 180, 820 340, 700 520 S 560 760, 760 900"
+          fill="none"
+          stroke="url(#hero-ribbon-gradient)"
+          strokeWidth={64}
+          strokeLinecap="round"
+          opacity={0.55}
+        />
+      </g>
     </svg>
   );
 }
