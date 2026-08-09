@@ -1,22 +1,75 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { render, Box, Text, useInput, useApp } from 'ink';
 import TextInput from 'ink-text-input';
 import {
   CHAT_HISTORY_KEY,
   Runner,
   answerOf,
+  checkpointSink,
   closeTurn,
   historyFromTurns,
+  isSuspended,
   messageOf,
   openTurn,
+  positionOf,
+  resumeInputs,
+  resumeTurn,
   withoutReserved,
   type CompiledGraph,
   type RunnerOptions,
+  type RunPosition,
   type Event,
   type SessionStore,
   type Turn,
 } from '@heddle-run/core';
 import { getToolIcon, getToolTitle, formatDuration } from './tool-display.js';
+
+/** What a middleware suspension is asking the human, as the UI shows it. */
+export type Ask = Record<string, unknown>;
+
+/** How the chat asks the human a suspended run's question and gets an answer. */
+export type Approver = (ask: Ask) => Promise<Record<string, unknown>>;
+
+/**
+ * A typed approval answer from what the human wrote at the prompt.
+ *
+ * `y`/`n` and their friends are the whole point — a person approving a command
+ * should not have to type JSON. A raw JSON object is still accepted, for a
+ * suspension whose reply is richer than yes-or-no, and anything unrecognised
+ * is read as a refusal, because the safe default for "I did not understand
+ * your approval" is not to approve.
+ */
+export function parseApproval(value: string): Record<string, unknown> {
+  const word = value.trim().toLowerCase();
+  if (['y', 'yes', 'approve', 'approved', 'ok', 'allow'].includes(word)) {
+    return { approved: true };
+  }
+  if (['n', 'no', 'deny', 'denied', 'reject', 'cancel'].includes(word)) {
+    return { approved: false };
+  }
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (parsed && typeof parsed === 'object') {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    // Not JSON, and not a word we know — fall through to a refusal.
+  }
+  return { approved: false };
+}
+
+/** One line describing what is being approved, from the suspension's ask. */
+export function describeAsk(ask: Ask): string {
+  const question =
+    typeof ask.question === 'string' ? ask.question : 'Approve this action?';
+  const detail =
+    typeof ask.command === 'string'
+      ? ask.command
+      : typeof ask.tool === 'string'
+        ? String(ask.tool)
+        : undefined;
+  return detail ? `${question}\n${INDENT}${detail}` : question;
+}
 
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 const SPINNER_INTERVAL_MS = 80;
@@ -71,6 +124,25 @@ function Chat({ graph, opts, session, flowPath, inputKey }: StartChatOptions) {
   const [running, setRunning] = useState(false);
   const [streamed, setStreamed] = useState('');
   const [failure, setFailure] = useState<string | undefined>();
+  // The question a suspended run is waiting on, and the resolver that hands
+  // the human's answer back to the turn. The resolver is a ref, not state, so
+  // the submit handler reaches the current one without being rebuilt each time
+  // it changes.
+  const [pendingAsk, setPendingAsk] = useState<Ask | undefined>();
+  const pendingResolve = useRef<((answer: Record<string, unknown>) => void) | null>(
+    null,
+  );
+
+  const approve = useCallback<Approver>((ask) => {
+    return new Promise((resolve) => {
+      setHistory((prev) => [
+        ...prev,
+        { role: 'assistant', content: `⚠ ${describeAsk(ask)}` },
+      ]);
+      setPendingAsk(ask);
+      pendingResolve.current = resolve;
+    });
+  }, []);
 
   useInput((typed, key) => {
     if (key.ctrl && typed === 'c') exit();
@@ -81,6 +153,23 @@ function Chat({ graph, opts, session, flowPath, inputKey }: StartChatOptions) {
 
   const handleSubmit = useCallback(
     async (value: string) => {
+      // A run waiting on approval owns the prompt. Whatever is typed is the
+      // answer to its question, not a new message — routed to the resolver the
+      // turn is blocked on, and the turn carries on from there.
+      if (pendingResolve.current) {
+        const answer = parseApproval(value);
+        setHistory((prev) => [
+          ...prev,
+          { role: 'user', content: value.trim() || '(no answer)' },
+        ]);
+        setInput('');
+        setPendingAsk(undefined);
+        const resolve = pendingResolve.current;
+        pendingResolve.current = null;
+        resolve(answer);
+        return;
+      }
+
       const message = value.trim();
       if (!message || running) return;
 
@@ -103,7 +192,7 @@ function Chat({ graph, opts, session, flowPath, inputKey }: StartChatOptions) {
         };
 
         const answer = session
-          ? await runRecorded(graph, opts, session, flowPath, inputs)
+          ? await runRecorded(graph, opts, session, flowPath, inputs, approve)
           : await runEphemeral(graph, opts, history, inputs);
 
         setHistory((prev) => [...prev, { role: 'assistant', content: answer }]);
@@ -115,9 +204,11 @@ function Chat({ graph, opts, session, flowPath, inputKey }: StartChatOptions) {
       } finally {
         setStreamed('');
         setRunning(false);
+        setPendingAsk(undefined);
+        pendingResolve.current = null;
       }
     },
-    [graph, opts, session, flowPath, inputKey, running, history, exit],
+    [graph, opts, session, flowPath, inputKey, running, history, exit, approve],
   );
 
   return (
@@ -151,11 +242,19 @@ function Chat({ graph, opts, session, flowPath, inputKey }: StartChatOptions) {
         </Box>
       )}
 
-      {running && !hasActiveToolCall && !streamed && (
+      {running && !pendingAsk && !hasActiveToolCall && !streamed && (
         <Box marginTop={0}>
           <Text dimColor>
             {INDENT}
             <Spinner /> Thinking...
+          </Text>
+        </Box>
+      )}
+
+      {pendingAsk && (
+        <Box marginTop={0}>
+          <Text color="yellow">
+            {INDENT}Waiting for you: approve? (y/n)
           </Text>
         </Box>
       )}
@@ -170,14 +269,20 @@ function Chat({ graph, opts, session, flowPath, inputKey }: StartChatOptions) {
       )}
 
       <Box marginTop={history.length > 0 ? 1 : 0}>
-        <Text bold color="green">
+        <Text bold color={pendingAsk ? 'yellow' : 'green'}>
           {'> '}
         </Text>
         <TextInput
           value={input}
           onChange={setInput}
           onSubmit={handleSubmit}
-          placeholder={running ? 'Waiting...' : 'Type a message...'}
+          placeholder={
+            pendingAsk
+              ? 'y to approve, n to deny'
+              : running
+                ? 'Waiting...'
+                : 'Type a message...'
+          }
         />
       </Box>
     </Box>
@@ -191,22 +296,60 @@ function Chat({ graph, opts, session, flowPath, inputKey }: StartChatOptions) {
  * a session picked up in a second process opens on the same conversation the
  * first one left — which is the whole difference between a transcript and a log.
  */
-async function runRecorded(
+export async function runRecorded(
   graph: CompiledGraph,
   opts: RunnerOptions,
   session: ChatSession,
   flowPath: string,
   inputs: Record<string, unknown>,
+  approve: Approver,
 ): Promise<string> {
   const opened = await openTurn(session.store, session.id, inputs, {
     flow: flowPath,
   });
 
+  // The wire the non-chat run has and this one was missing: a place for a
+  // suspension to be written down. Without it a middleware that stops to ask
+  // a human — an approval gate, exactly what a coding agent has — fails with
+  // "nowhere to be written down", even inside a session. Set, a suspend
+  // checkpoints here and a success clears it.
+  opts.checkpoints = checkpointSink({
+    store: session.store,
+    sessionId: session.id,
+    runId: opened.runId,
+    input: opened.input,
+  });
+
+  let started = opened.inputs;
+  let from: RunPosition | undefined;
+
   try {
-    const state = await new Runner(graph, opts).run(undefined, opened.inputs);
-    const output = state.toData();
-    await closeTurn(session.store, session.id, opened, { output });
-    return answerOf(withoutReserved(output));
+    for (;;) {
+      try {
+        const state = await new Runner(graph, opts).run(
+          undefined,
+          started,
+          from,
+        );
+        const output = state.toData();
+        await closeTurn(session.store, session.id, opened, { output });
+        return answerOf(withoutReserved(output));
+      } catch (err) {
+        if (!isSuspended(err)) throw err;
+
+        // Codex asks in the terminal and runs on yes; so does this. The turn
+        // is not closed — it is mid-sentence — so the answer continues it from
+        // the checkpoint the suspension just wrote, and a second question in
+        // the same turn loops right back here.
+        const answer = await approve(err.suspension.ask);
+        const resumed = await resumeTurn(session.store, session.id);
+        from = positionOf(resumed.checkpoint);
+        started = {
+          ...resumed.inputs,
+          ...resumeInputs(resumed.checkpoint.suspension!, answer),
+        };
+      }
+    }
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
     await closeTurn(session.store, session.id, opened, {
@@ -227,12 +370,26 @@ async function runEphemeral(
     .filter((entry): entry is MessageEntry => !isToolCall(entry))
     .map(({ role, content }) => ({ role, content }));
 
-  const state = await new Runner(graph, opts).run(undefined, {
-    ...inputs,
-    ...(conversation.length > 0 ? { [CHAT_HISTORY_KEY]: conversation } : {}),
-  });
-
-  return answerOf(withoutReserved(state.toData()));
+  try {
+    const state = await new Runner(graph, opts).run(undefined, {
+      ...inputs,
+      ...(conversation.length > 0 ? { [CHAT_HISTORY_KEY]: conversation } : {}),
+    });
+    return answerOf(withoutReserved(state.toData()));
+  } catch (err) {
+    // A suspension needs a checkpoint to wait in, and an unsaved chat has
+    // none. Rather than the engine's "nowhere to be written down", say the one
+    // thing that fixes it: this chat wants a session.
+    if (isSuspended(err)) {
+      throw new Error(
+        `"${err.suspension.by}" wants to ask you before it runs "` +
+          `${err.suspension.node}", but this chat is not saved, so there is ` +
+          `nowhere for the question to wait. Restart with --session to answer ` +
+          `it here.`,
+      );
+    }
+    throw err;
+  }
 }
 
 function MessageLine({ entry }: { entry: MessageEntry }) {

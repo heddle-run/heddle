@@ -108,39 +108,49 @@ sandbox you gave the run, and the model asks — with
 believes a command needs more, exactly as Codex's permissions instructions
 tell it to.
 
-Codex asks you inline; heddle stops the run and writes the question into the
-session. That is the one seam where the port is heddle-shaped rather than
-Codex-shaped, and the handshake is:
+Codex asks you inline and runs the command on yes. In the chat UI, so does
+this: when the gate stops for approval, the question and the command appear,
+the prompt turns yellow, and you answer `y` or `n` right there — the run
+resumes on your answer without leaving the session.
+
+```
+> refactor the pricing module and run the tests
+  ⚠ Run this command with escalated permissions?
+     python3 -m unittest discover -s tests -v
+  Waiting for you: approve? (y/n)
+> y
+```
+
+`y` lets the command run; `n` refuses it, and the model reads the refusal as
+the call's result and finds another way — precisely what Codex's model does
+when you deny. Approving is single-use: the gate remembers the one command you
+said yes to, lets the model's re-issue of it through, and asks again the next
+time, so one approval is not a blank cheque.
+
+Under `--protocol` or a piped run there is no prompt to answer, so the same
+suspension stops the run instead, and you continue it from another process:
 
 ```bash
-heddle run library/dist/coding-agent.heddle --durable \
+heddle run library/dist/coding-agent.heddle --session <id> \
   --plugin-config CodexApprovals='{"approval_policy":"untrusted"}'
 ```
 
-```
-"CodexApprovals" suspended the run before "shell_command" and is waiting on a human.
-  question: Allow this command? (untrusted: only known-safe reads run unasked)
-  command:  python3 -m unittest discover -s tests -v
-```
-
-Decline by resuming with `--answer '{"approved":false}'` — the model reads the
-refusal as the call's result and finds another way, which is precisely what
-Codex's model does when you deny an approval. Approve by resuming with the
-answer *and* a rule that lets the re-issued call through:
+Decline with `--resume --answer '{"approved":false}'`; approve with
+`--answer '{"approved":true}'` and — because module state does not cross a
+process boundary — a rule that lets the re-issued call through:
 
 ```bash
-heddle run library/dist/coding-agent.heddle --resume <session-id> \
+heddle run library/dist/coding-agent.heddle --session <id> --resume \
   --answer '{"approved":true}' \
   --plugin-config CodexApprovals='{"approval_policy":"untrusted","rules":[{"prefix":["python3","-m","unittest"],"decision":"allow"}]}'
 ```
 
-The prompt teaches the model that `{"approved": true}` means "re-issue the
-identical call"; the rule is what lets that second ask run. Rules are Codex's
-execpolicy prefix rules: `allow`, `prompt`, or `forbidden` per argv prefix,
-and the model's own `prefix_rule` suggestions surface in the question so you
-can copy one in. The known-safe list (`ls`, `cat`, `rg`, `sed -n`, read-only
-`git`, and friends) and the dangerous-command checks (`rm -f`…, `sudo`)
-are ported from Codex's `is_safe_command.rs` and `is_dangerous_command.rs`.
+Rules are Codex's execpolicy prefix rules: `allow`, `prompt`, or `forbidden`
+per argv prefix, and the model's own `prefix_rule` suggestions surface in the
+question so you can copy one in. The known-safe list (`ls`, `cat`, `rg`,
+`sed -n`, read-only `git`, and friends) and the dangerous-command checks
+(`rm -f`…, `sudo`) are ported from Codex's `is_safe_command.rs` and
+`is_dangerous_command.rs`.
 
 Run `--safe` to put the tools in an OS sandbox — that is the part of Codex's
 posture heddle already owned:
