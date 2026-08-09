@@ -318,7 +318,7 @@ in `app/page.tsx`, the keyframes in `components/weave-world/chapters.ts`, and
 2. **Hero** (`start`) — the two-column composition, one viewport over the
    loom: copy on the left (mono eyebrow, the display-Light "Write down a
    job. Let it run.", a plain-language lede, playground-first dual CTA, the
-   labelled install tabs from `installTabs` — "For you" runs a finished
+   Humans/Agents install tabs from `installTabs` — Humans runs a finished
    library bundle from its published URL — and the beta marker, above the
    fold on purpose), and on the right the navy `flow.yaml` editor showing
    the csv-analyst excerpt from `specimenSpread`, cut where the instruction

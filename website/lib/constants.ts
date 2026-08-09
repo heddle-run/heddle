@@ -39,7 +39,7 @@ export const VERSION = "0.2.0-beta.1";
 export const installTabs = [
   {
     id: "humans",
-    label: "For you",
+    label: "Humans",
     note: "A finished agent from the library, run from its address. Nothing is installed into anything.",
     commands: [
       {
@@ -50,7 +50,7 @@ export const installTabs = [
   },
   {
     id: "agents",
-    label: "For your coding agent",
+    label: "Agents",
     note: "Teaches your coding agent to write, validate and run a heddle agent.",
     commands: [{ label: "skill", cmd: "npx skills add heddle-run/heddle" }],
   },
