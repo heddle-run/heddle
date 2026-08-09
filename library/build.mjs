@@ -9,7 +9,7 @@
  *
  *   node library/build.mjs                 # pack all entries into library/dist
  *   node library/build.mjs --out /tmp/x    # somewhere else
- *   node library/build.mjs docs-qa         # just one
+ *   node library/build.mjs coding-agent    # just one
  *
  * Archives are build output, not source: library/dist is covered by the repo's
  * `dist/` ignore rule and nothing here is committed.

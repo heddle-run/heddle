@@ -42,7 +42,7 @@ export const installTabs = [
     commands: [
       {
         label: "npx",
-        cmd: "npx @heddle-run/cli run https://heddle.run/library/meeting-notes.heddle",
+        cmd: "npx @heddle-run/cli run https://heddle.run/library/coding-agent.heddle",
       },
     ],
   },
@@ -61,36 +61,24 @@ export const definition = {
   body: "The part of a loom that lifts individual warp threads to form the shed — the opening through which the weft passes. It decides, thread by thread, what the pattern becomes.",
 };
 
-/* 001 — what you can build. Four agents from the library, each one real:
-   the slug is the directory under library/ and the page at /library/<slug>,
-   and every detail line is checked against that entry's README. A reader who
+/* 001 — what you can build. The library's agents, each one real: the slug
+   is the directory under library/ and the page at /library/<slug>, and
+   every detail line is checked against that entry's README. A reader who
    opens the linked flow file learns more than any paragraph here can teach,
    so the links are the point — never let a use case stand without a flow
    that exists. */
 export const useCases = [
   {
-    slug: "meeting-notes",
-    title: "The meeting write-up",
+    slug: "local-notetaker",
+    title: "The meeting notes",
     detail:
-      "Hand it a raw transcript. It writes up the decisions, the action items and the open questions — and sticks to what was actually said.",
+      "It listens from your own computer — no bot joins the call, and the audio never leaves your machine. Stop it when the meeting ends and you get the summary, the decisions, the action items and the open questions. macOS today.",
   },
   {
-    slug: "csv-analyst",
-    title: "The spreadsheet question",
+    slug: "coding-agent",
+    title: "The coding agent",
     detail:
-      "Point it at a folder of CSV exports and ask in English. It works out the query, runs it, and answers with the numbers and the query it ran, so you can check it.",
-  },
-  {
-    slug: "issue-triage",
-    title: "Inbox triage",
-    detail:
-      "Give it a bug report or a support message. It sorts it into bug, feature or question, and drafts the kind of reply each one needs.",
-  },
-  {
-    slug: "docs-qa",
-    title: "The document check",
-    detail:
-      "Ask a question about a folder of documents. It answers and cites the file and the line the answer came from.",
+      "Point it at a repository and give it a task. It plans, edits, runs the tests and repeats — OpenAI Codex CLI's own orchestration, rebuilt as one readable flow.",
   },
 ];
 
@@ -194,58 +182,62 @@ export const safeMode = {
   ],
 };
 
-/* The specimen the hero and How-it-works windows show: the csv-analyst
+/* The specimen the hero and How-it-works windows show: the local-notetaker
    entry from library/, not an illustration. The spec is an excerpt of
-   library/csv-analyst/spec.yaml with the graph plumbing elided and the
-   instruction — the interesting part — kept; "…" marks every cut. The
-   transcript's figures are computed from the entry's own sample data
-   (orders.csv), so the answer shown is the true one. Check both against
-   the library entry before changing either.
+   library/local-notetaker/spec.yaml with the graph plumbing elided and the
+   instruction — the interesting part — kept; "…" marks every cut, and the
+   node's keys are reordered so the prompt leads (YAML map order is not
+   semantic). The transcript states only what the spec guarantees: the
+   graph's true shape (6 nodes, 5 edges), the real tool name, and the four
+   fixed headings the prompt demands — the notes themselves are elided,
+   never invented. Check both against the library entry before changing
+   either.
 
    The rule for samples on this page: never elide the instruction, elide
    the plumbing. A reader who can see one line of English they could
    imagine changing has learned what no paragraph teaches. */
 export const specimenSpread = {
   spec: `component_type: Flow
-name: csv-analyst
-# start ── analyst ── end; graph elided
+name: local-notetaker
+# start ─ record ─ route ─ notes ─ end
 $referenced_components:
-  analyst:
-    component_type: AgentNode
-    name: analyst
-    agent:
-      component_type: Agent
-      system_prompt: |
-        You answer questions about a
-        set of CSV files by querying
-        them. Call describe_data
-        first, every time. Write one
-        SELECT and call run_sql.
-        Every figure must come from
-        a row run_sql returned; if
-        the data cannot answer, say
-        so — do not estimate.
-      llm_config:
-        component_type: OpenAiConfig
-        model_id: gpt-4o-mini
-      tools:
-        - { component_type: ServerTool, name: describe_data }
-        - { component_type: ServerTool, name: run_sql }`,
+  # …
+  notes:
+    component_type: LlmNode
+    name: notes
+    prompt_template: |
+      You took the notes for a
+      meeting … Write the notes
+      for someone who was not
+      there, under exactly these
+      four headings, in this
+      order:
+      ## Summary
+      ## Decisions
+      ## Action items
+      ## Open questions
+      … Add nothing that is not
+      in the transcript: an empty
+      heading is a correct answer.
+    llm_config:
+      component_type: OpenAiConfig
+      model_id: gpt-4o-mini`,
   terminal: [
-    { kind: "prompt", text: "heddle run csv-analyst.heddle" },
+    { kind: "prompt", text: "heddle run local-notetaker.heddle" },
     { kind: "blank", text: "" },
     { kind: "muted", text: "  spec      valid" },
-    { kind: "muted", text: "  graph     3 nodes, 2 edges, reachable" },
+    { kind: "muted", text: "  graph     6 nodes, 5 edges, reachable" },
     { kind: "blank", text: "" },
-    { kind: "tool", text: "[analyst] ⚙ describe_data" },
-    { kind: "tool", text: "[analyst] ⚙ run_sql SELECT region, SUM(…" },
+    { kind: "tool", text: "[record] ⚙ record_meeting" },
+    {
+      kind: "muted",
+      text: "  recording — Ctrl-C to stop early, or it ends itself in 60 min",
+    },
     { kind: "blank", text: "" },
     { kind: "out", text: "{" },
-    { kind: "out", text: '  "question": "Which region had the highest' },
-    { kind: "out", text: '    revenue after discounts, and what' },
-    { kind: "out", text: '    was the gross margin on it?",' },
-    { kind: "out", text: '  "result": "North: 7,485.75 after discounts,' },
-    { kind: "out", text: '    at a 48.8% gross margin. …"' },
+    { kind: "out", text: '  "notes": "## Summary …' },
+    { kind: "out", text: "    ## Decisions … ## Action items …" },
+    { kind: "out", text: '    ## Open questions …"' },
     { kind: "out", text: "}" },
   ],
 };
@@ -270,7 +262,7 @@ export const faqItems = [
   {
     question: "What does it cost to run?",
     answer:
-      "heddle itself is free: open source under the MIT licence, no account, no paid tier. The AI model is the running cost. Hosted models charge per use — the library agents run on gpt-4o-mini as written, where a typical short run costs a fraction of a cent, and a pass over many long documents costs more. A local model through Ollama costs nothing but electricity. Either way a mistaken file is rejected before anything is spent: heddle checks the whole flow before the first request leaves your machine.",
+      "heddle itself is free: open source under the MIT licence, no account, no paid tier. The AI model is the running cost. Hosted models charge per use — the library agents run on gpt-4o-mini as written, where a short run costs a fraction of a cent and an hour-long meeting or a long coding session costs more. A local model through Ollama costs nothing but electricity. Either way a mistaken file is rejected before anything is spent: heddle checks the whole flow before the first request leaves your machine.",
   },
   {
     question: "Where does my data go?",

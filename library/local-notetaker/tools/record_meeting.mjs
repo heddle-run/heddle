@@ -468,7 +468,7 @@ async function capture(args) {
         `local-notetaker records through macOS Core Audio and avfoundation, and ` +
         `this is ${process.platform}. On Linux, PulseAudio or PipeWire monitor ` +
         `sources do the same job — point ffmpeg at one and pipe it through ` +
-        `STT_COMMAND, or use the meeting-notes entry with a transcript you already have`,
+        `STT_COMMAND`,
     };
   }
 

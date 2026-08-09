@@ -15,7 +15,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "heddle library — ready-made agent bundles",
     description:
-      "Meeting notes, issue triage, docs Q&A, a CSV analyst and a changelog writer. Each one a single file that runs anywhere heddle is installed.",
+      "A local meeting notetaker and a Codex-style coding agent. Each one a single file that runs anywhere heddle is installed.",
     url: "https://heddle.run/library",
     siteName: "heddle",
     type: "website",
@@ -188,7 +188,7 @@ export default function LibraryPage() {
             <div style={{ marginTop: 32, maxWidth: 760 }}>
               <CodeBlock
                 filename="terminal"
-                code={`npx @heddle-run/cli run ${SITE_URL}/library/meeting-notes.heddle`}
+                code={`npx @heddle-run/cli run ${SITE_URL}/library/coding-agent.heddle`}
               />
             </div>
 

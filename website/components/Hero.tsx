@@ -6,18 +6,19 @@ import { Button, Icon, InstallCommand } from "@/ds-heddle";
 import { AnimatedTerminal } from "@/components/AnimatedTerminal";
 import { installTabs, PLAYGROUND_URL, specimenSpread } from "@/lib/constants";
 
-/* The spec in the window is the csv-analyst excerpt from specimenSpread —
-   a real library entry, cut where the instruction finishes a sentence. The
-   rule for this window: the English instruction is the part that must be
-   visible; the graph plumbing is what gets elided. */
-const SPEC_LINES = specimenSpread.spec.split("\n").slice(0, 15);
+/* The spec in the window is the local-notetaker excerpt from
+   specimenSpread — a real library entry, cut at the last of the prompt's
+   four fixed headings. The rule for this window: the English instruction
+   is the part that must be visible; the graph plumbing is what gets
+   elided. */
+const SPEC_LINES = specimenSpread.spec.split("\n").slice(0, 19);
 
-/* The run beside it: command, the tools working, and the true answer. The
-   validation lines and the question echo are dropped here to keep the
-   window short — the terminal overlaps the spec window, and every extra
-   line hides another line of the instruction, which is the thing this
-   window exists to show. */
-const TERMINAL_LINES = [0, 1, 5, 6, 7, 8, 12, 13, 14]
+/* The run beside it: command, the recorder working, and the fixed-heading
+   notes (elided, never invented). The validation lines are dropped here to
+   keep the window short — the terminal overlaps the spec window, and every
+   extra line hides another line of the instruction, which is the thing
+   this window exists to show. */
+const TERMINAL_LINES = [0, 1, 5, 6, 7, 8, 9, 10, 11, 12]
   .map((i) => specimenSpread.terminal[i])
   .map((line) => ({
     text: line.text,
