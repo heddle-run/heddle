@@ -1,0 +1,263 @@
+# local-notetaker — records the machine, not the meeting. Any platform.
+#
+#   start ──> record (ToolNode) ──> route ──┬─> notes (LlmNode) ──> end
+#                                           └─> end_failed
+#
+# The same shape as zoom-notetaker, with the browser taken out. `record` taps
+# the machine's own audio through Core Audio and transcribes it locally, so
+# nothing joins the call and nothing asks the platform's permission — which is
+# the whole point. Zoom and Google Meet both block third-party bots now, and a
+# tap below the application layer does not care which app made the sound.
+#
+# The trade is real and worth stating: this captures only meetings you are in,
+# on this machine, and one mixed stream means the transcript rarely knows who
+# said what. Speaker labels are what the platform APIs sell; this buys
+# everything else for nothing.
+component_type: Flow
+agentspec_version: 26.2.0
+id: flow_local_notetaker
+name: local-notetaker
+description: >
+  Records this machine's own audio for the length of a meeting, transcribes it
+  with a local whisper model, and turns it into a summary, decisions, action
+  items and open questions. Works with any call app, because it never joins one.
+metadata: {}
+inputs: []
+outputs: []
+
+start_node:
+  $component_ref: n_start
+nodes:
+  - $component_ref: n_start
+  - $component_ref: n_record
+  - $component_ref: n_route
+  - $component_ref: n_notes
+  - $component_ref: n_end
+  - $component_ref: n_end_failed
+
+control_flow_connections:
+  - component_type: ControlFlowEdge
+    id: e_start_record
+    name: start_to_record
+    metadata: {}
+    from_node: { $component_ref: n_start }
+    from_branch: null
+    to_node: { $component_ref: n_record }
+  - component_type: ControlFlowEdge
+    id: e_record_route
+    name: record_to_route
+    metadata: {}
+    from_node: { $component_ref: n_record }
+    from_branch: null
+    to_node: { $component_ref: n_route }
+  - component_type: ControlFlowEdge
+    id: e_route_notes
+    name: route_to_notes
+    metadata: {}
+    from_node: { $component_ref: n_route }
+    from_branch: notes_branch
+    to_node: { $component_ref: n_notes }
+  - component_type: ControlFlowEdge
+    id: e_route_failed
+    name: route_to_end_failed
+    metadata: {}
+    from_node: { $component_ref: n_route }
+    from_branch: failed_branch
+    to_node: { $component_ref: n_end_failed }
+  - component_type: ControlFlowEdge
+    id: e_notes_end
+    name: notes_to_end
+    metadata: {}
+    from_node: { $component_ref: n_notes }
+    from_branch: null
+    to_node: { $component_ref: n_end }
+
+data_flow_connections:
+  - component_type: DataFlowEdge
+    id: e_minutes
+    name: minutes_to_record
+    metadata: {}
+    source_node: { $component_ref: n_start }
+    source_output: minutes
+    destination_node: { $component_ref: n_record }
+    destination_input: minutes
+  - component_type: DataFlowEdge
+    id: e_device
+    name: device_to_record
+    metadata: {}
+    source_node: { $component_ref: n_start }
+    source_output: device
+    destination_node: { $component_ref: n_record }
+    destination_input: device
+  # `record` answers outcome=captured or outcome=failed; the branch reads it.
+  - component_type: DataFlowEdge
+    id: e_outcome
+    name: outcome_to_route
+    metadata: {}
+    source_node: { $component_ref: n_record }
+    source_output: outcome
+    destination_node: { $component_ref: n_route }
+    destination_input: branching_mapping_key
+  - component_type: DataFlowEdge
+    id: e_transcript
+    name: transcript_to_notes
+    metadata: {}
+    source_node: { $component_ref: n_record }
+    source_output: transcript
+    destination_node: { $component_ref: n_notes }
+    destination_input: transcript
+  # An LlmNode writes `generated_text` and nothing else, whatever its spec
+  # declares. The edge renames it on the way out, so the run's final state
+  # reads `notes` rather than the executor's own key.
+  - component_type: DataFlowEdge
+    id: e_notes
+    name: notes_to_end_input
+    metadata: {}
+    source_node: { $component_ref: n_notes }
+    source_output: generated_text
+    destination_node: { $component_ref: n_end }
+    destination_input: notes
+  - component_type: DataFlowEdge
+    id: e_error
+    name: error_to_end_failed
+    metadata: {}
+    source_node: { $component_ref: n_record }
+    source_output: error
+    destination_node: { $component_ref: n_end_failed }
+    destination_input: error
+
+$referenced_components:
+  n_start:
+    component_type: StartNode
+    id: n_start
+    name: start
+    metadata: {}
+    inputs: []
+    outputs:
+      - { title: minutes, type: integer }
+      - { title: device, type: string }
+    branches: [next]
+
+  n_record:
+    component_type: ToolNode
+    id: n_record
+    name: record
+    metadata: {}
+    inputs:
+      - { title: minutes, type: integer }
+      - { title: device, type: string }
+    outputs:
+      - { title: outcome, type: string }
+      - { title: transcript, type: string }
+      - { title: error, type: string }
+    branches: [next]
+    tool:
+      component_type: ServerTool
+      id: t_record
+      name: record_meeting
+      description: >
+        Record this machine's audio with ffmpeg for up to `minutes`, in rolling
+        segments, and transcribe each one with a local whisper model. Stops
+        early on Ctrl-C and still answers with everything heard so far.
+        Answers outcome=captured with the transcript — or outcome=failed with
+        error saying why: no ffmpeg, no whisper, unknown audio device, or
+        nothing made a sound for the whole recording.
+      metadata: {}
+      inputs:
+        - title: minutes
+          type: integer
+          default: 60
+        - title: device
+          type: string
+          default: ""
+      outputs:
+        - { title: outcome, type: string }
+        - { title: transcript, type: string }
+        - { title: error, type: string }
+
+  n_route:
+    component_type: BranchingNode
+    id: n_route
+    name: route
+    metadata: {}
+    inputs:
+      - { title: branching_mapping_key, type: string }
+    outputs: []
+    branches: [notes_branch, failed_branch]
+    mapping:
+      captured: notes_branch
+      DEFAULT_BRANCH: failed_branch
+
+  n_notes:
+    component_type: LlmNode
+    id: n_notes
+    name: notes
+    metadata: {}
+    inputs:
+      - { title: transcript, type: string }
+    outputs:
+      - { title: generated_text, type: string }
+    branches: [next]
+    llm_config:
+      component_type: OpenAiConfig
+      id: llm_openai
+      name: gpt
+      metadata: {}
+      model_id: gpt-4o-mini
+      api_key: $OPENAI_API_KEY
+    prompt_template: |
+      You took the notes for a meeting, and the transcript below is machine
+      transcription of audio recorded from the room and the call mixed
+      together. It is rough, and rough in a particular way: it is one stream
+      with no speaker labels, so who said what is usually not marked. Names
+      come through misspelled, sentences arrive cut in half, and filler
+      dominates. Anything else audible on the machine — a notification, a
+      video, someone walking past — landed in it too.
+
+      Write the notes for someone who was not there, under exactly these four
+      headings, in this order:
+
+      ## Summary
+      Two or three sentences: what the meeting was about and where it landed.
+
+      ## Decisions
+      What was actually settled. One line each. If something was discussed but
+      not settled, it is not a decision — it is an open question.
+
+      ## Action items
+      One line each, in the form `owner — what — by when`. Use the name the
+      transcript uses. Write `owner: unassigned` when nobody took it, which
+      will be often here, and `by when: not stated` rather than inventing a
+      date. Do not guess who spoke from context.
+
+      ## Open questions
+      What was raised and left hanging.
+
+      Quote no more than a short phrase from the transcript. Add nothing that is
+      not in it: an empty heading is a correct answer when the meeting produced
+      nothing under it.
+
+      Transcript:
+      {{transcript}}
+
+  n_end:
+    component_type: EndNode
+    id: n_end
+    name: end
+    metadata: {}
+    inputs:
+      - { title: notes, type: string }
+    outputs: []
+    branches: []
+    branch_name: notes_branch
+
+  n_end_failed:
+    component_type: EndNode
+    id: n_end_failed
+    name: end_failed
+    metadata: {}
+    inputs:
+      - { title: error, type: string }
+    outputs: []
+    branches: []
+    branch_name: failed_branch

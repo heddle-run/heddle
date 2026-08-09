@@ -1,0 +1,41 @@
+{
+  "name": "local-notetaker",
+  "title": "Local notetaker",
+  "summary": "Records this machine's audio with a Core Audio tap and writes up the meeting. Any call app, no driver, no bot. macOS only.",
+  "blurb": "The meeting notetaker that never joins the meeting. Zoom refuses third-party bots outright and Google Meet now defaults to denying them entry, so every browser-automation notetaker is on a treadmill against the platforms \u2014 this one steps off it. A Core Audio process tap reads the machine's own output while the microphone carries your side, ffmpeg mixes the two, and a local whisper model transcribes each rolling segment while the call is still going, so the notes land seconds after you stop it rather than minutes. There is no virtual audio driver to install, no reboot, and no Audio MIDI Setup: the tap and its aggregate device are created in code, built and signed on first run. Because it sits below the application layer it never asks a platform for permission and never notices which app made the sound \u2014 Zoom, Meet, Teams, a browser tab, a phone call. Nothing leaves the machine and there is nothing to pay per minute. The trade is stated plainly: it hears only meetings you are in, on this machine, as one mixed stream, so the transcript rarely knows who said what \u2014 which is exactly what the paid platform APIs sell. The same fixed-heading prompt as meeting-notes turns it into a summary, decisions, action items and open questions, and the flow branches to a plain-spoken failure end when nothing made a sound rather than inventing minutes for a meeting it never heard.",
+  "tags": [
+    "meetings",
+    "audio",
+    "stt",
+    "notes",
+    "macos"
+  ],
+  "model": "gpt-4o-mini",
+  "flow": "spec.yaml",
+  "toolsDir": "tools",
+  "requires": [
+    {
+      "env": "OPENAI_API_KEY",
+      "hint": "for the notes step; the transcription is local and needs no key"
+    },
+    {
+      "binary": "ffmpeg",
+      "hint": "brew install ffmpeg"
+    },
+    {
+      "binary": "whisper-cli",
+      "hint": "brew install whisper-cpp"
+    },
+    {
+      "file": "~/.heddle/models/ggml-base.en.bin",
+      "hint": "the ggml model the local transcriber runs"
+    },
+    {
+      "file": "~/.heddle/models/ggml-silero-v5.1.2.bin",
+      "hint": "voice-activity model; without it silence transcribes as \"You\""
+    }
+  ],
+  "input": {
+    "minutes": 60
+  }
+}
