@@ -8,12 +8,7 @@ Browse them at [heddle.run/library](https://heddle.run/library).
 
 | Entry | What it does | Needs |
 |---|---|---|
-| [meeting-notes](meeting-notes/README.md) | Turns a raw transcript into decisions, action items and open questions. | A model key |
-| [issue-triage](issue-triage/README.md) | Sorts an issue into bug, feature or question and drafts the reply that kind needs. | A model key |
-| [docs-qa](docs-qa/README.md) | Answers questions from a folder of documents, citing the file and line. | A model key, `python3` |
-| [csv-analyst](csv-analyst/README.md) | Answers questions about a folder of CSVs by writing SQL against them. | A model key, `python3` |
-| [changelog-writer](changelog-writer/README.md) | Reads a range of git commits and writes the release notes for them. | A model key, `git`, `python3` |
-| [zoom-notetaker](zoom-notetaker/README.md) | Joins a Zoom meeting in a headless browser, records it, and writes up the notes. | A model key, `node` ≥ 22, Chromium, whisper.cpp + ffmpeg (`heddle run` offers the install) |
+| [local-notetaker](local-notetaker/README.md) | Records this machine's audio, transcribes it locally, and writes up the meeting — no bot joins the call. | A model key, macOS 14.2+, `ffmpeg`, whisper.cpp |
 | [coding-agent](coding-agent/README.md) | Works on a codebase with OpenAI Codex CLI's orchestration: plan, shell, apply_patch, verify, repeat. | A model key, `python3`, `bash` |
 
 Every one runs on `gpt-4o-mini` as written, and every one is a text file you can
@@ -25,27 +20,27 @@ A published entry runs by its bare name, no checkout needed — a name that is
 not a file in the working directory is fetched from this library:
 
 ```bash
-heddle run docs-qa    # fetches https://heddle.run/library/docs-qa.heddle
+heddle run coding-agent    # fetches https://heddle.run/library/coding-agent.heddle
 ```
 
 From this repository, pack it yourself and run the archive:
 
 ```bash
-node library/build.mjs docs-qa
-heddle run library/dist/docs-qa.heddle
+node library/build.mjs coding-agent
+heddle run library/dist/coding-agent.heddle
 ```
 
-That is two commands because the second one is the point: `docs-qa.heddle` is a
-single file carrying the flow, both tools and the sample documents, and it runs
-on a machine that has never seen this repository. Send it to someone.
+That is two commands because the second one is the point: `coding-agent.heddle`
+is a single file carrying the flow, its tools, its plugin and a sample project,
+and it runs on a machine that has never seen this repository. Send it to
+someone.
 
 Or run the source directly, which is what you want while you are editing it:
 
 ```bash
-heddle run library/docs-qa/spec.yaml \
-  --tools-dir library/docs-qa/tools \
-  --mount library/docs-qa/docs:docs:ro \
-  --input '{"question":"how long before an unacknowledged page escalates?"}'
+heddle run library/local-notetaker/spec.yaml \
+  --tools-dir library/local-notetaker/tools \
+  --input '{"minutes":60}'
 ```
 
 `node library/build.mjs` with no arguments packs every entry into
@@ -86,8 +81,8 @@ page.
 
 ## Adding one
 
-1. Copy the closest entry and edit it. `meeting-notes` is the smallest,
-   `issue-triage` branches, `docs-qa` has tools and a mount.
+1. Copy the closest entry and edit it. `local-notetaker` branches and has
+   tools; `coding-agent` carries a plugin and a bundled workspace.
 2. Check it, then run it against a stub model — no key, no spend:
 
    ```bash
@@ -120,9 +115,9 @@ says so, and it says it in a form that is checked rather than only displayed:
 
 ```json
 "requires": [
-  { "node": ">=22" },
-  { "binary": ["chromium", "google-chrome"], "hint": "or set CHROME_BIN" },
-  { "env": "OPENAI_API_KEY", "hint": "the notes step" }
+  { "binary": "ffmpeg", "hint": "brew install ffmpeg" },
+  { "binary": "whisper-cli", "hint": "brew install whisper-cpp" },
+  { "env": "OPENAI_API_KEY", "hint": "for the notes step" }
 ]
 ```
 
@@ -138,13 +133,11 @@ These bundles come with tools, and a tool is a program that runs on your
 machine. `--safe` puts every one of them in an OS sandbox:
 
 ```bash
-heddle run library/dist/docs-qa.heddle --safe
+heddle run library/dist/coding-agent.heddle --safe
 ```
 
-`docs-qa`, `csv-analyst`, `meeting-notes` and `issue-triage` read nothing outside
-the workspace the bundle mounted into, which is what `--safe` leaves reachable.
-`changelog-writer` is the exception: it reads a repository elsewhere on the
-machine, so under `--safe` it also needs `--allow-read` for that path. Its README
-says so. `zoom-notetaker` is the other: its one tool drives a full Chromium,
-which no tool sandbox will contain — run it unsandboxed and read the tool
-instead, as its README explains.
+`coding-agent` is built for it — Codex's `workspace-write` sandbox maps onto
+`--safe`, and its README describes the posture. `local-notetaker` is the
+exception: its recorder reaches the machine's audio devices and builds a helper
+binary into `~/.heddle/bin` on first run, which is exactly the reach a tool
+sandbox denies — run it unsandboxed and read its tools first.

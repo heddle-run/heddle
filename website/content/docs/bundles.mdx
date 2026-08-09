@@ -59,8 +59,8 @@ a temporary file and opened the same way, and a bare name — no dots, no path s
 is shorthand for the [library](/library)'s copy of that entry:
 
 ```bash
-heddle run https://heddle.run/library/meeting-notes.heddle   # fetched, then run as above
-heddle run meeting-notes                                     # the same, spelled short
+heddle run https://heddle.run/library/coding-agent.heddle   # fetched, then run as above
+heddle run coding-agent                                     # the same, spelled short
 ```
 
 The disk is consulted first, so a file or directory that answers to the name keeps meaning
@@ -131,15 +131,15 @@ shippable kind.
 
 ## What a bundle needs from your machine
 
-Some agents want more than heddle. `zoom-notetaker` drives a browser it does not ship,
-transcribes with a model it does not carry, and writes up the notes with a key that is
-yours. A bundle can say so:
+Some agents want more than heddle. `local-notetaker` records with binaries it does not
+ship, transcribes with a model file it does not carry, and writes up the notes with a
+key that is yours. A bundle can say so:
 
 ```bash
 heddle bundle spec.yaml --tools-dir tools --requires '[
+  {"binary": "ffmpeg", "hint": "brew install ffmpeg"},
   {"binary": "whisper-cli", "hint": "brew install whisper-cpp"},
-  {"binary": ["chromium", "google-chrome"], "hint": "or set CHROME_BIN"},
-  {"env": "OPENAI_API_KEY", "hint": "needed for the notes step"},
+  {"env": "OPENAI_API_KEY", "hint": "for the notes step"},
   {"file": "~/models/ggml-base.en.bin", "hint": "see the README for the download"},
   {"node": ">=22"}
 ]' -o agent.heddle
@@ -149,12 +149,12 @@ The list travels in `heddle.json`, and `heddle run` checks it before it starts a
 the same moment it checks that the tools resolve. Everything missing is reported at once:
 
 ```
-zoom-notetaker cannot run here — 2 requirements unmet:
+local-notetaker cannot run here — 2 requirements unmet:
 
   ✗ whisper-cli      not on PATH     brew install whisper-cpp
-  ✗ OPENAI_API_KEY   not set         needed for the notes step
+  ✗ OPENAI_API_KEY   not set         for the notes step
 
-  ✓ ffmpeg, node v22.17.0, Google Chrome
+  ✓ ffmpeg, node v22.17.0
 ```
 
 That is the whole point of it being a list. Without one you fix a machine one failure at

@@ -24,7 +24,7 @@ export default function UseCases() {
           number="001"
           eyebrow="What you can build"
           title="Jobs it already does."
-          lede="A sample of the ready-made agents in the library, which keeps growing. Each one is a text file you can open, read and change, and each runs with one command."
+          lede="The library's ready-made agents. Each one is a text file you can open, read and change, and each runs with one command."
         />
         <div className="hds-inventory-list" style={{ marginTop: 36 }}>
           {useCases.map((item, i) => (
@@ -57,15 +57,15 @@ export default function UseCases() {
             maxWidth: "62ch",
           }}
         >
-          There are more in the{" "}
+          Open either in the{" "}
           <Link
             href="/library"
             style={{ color: "var(--text-accent)", textDecoration: "none" }}
           >
             library
           </Link>{" "}
-          — a changelog writer, a Zoom notetaker, a coding agent — and a job of
-          your own starts from any of them.
+          and the whole flow is there to read. A job of your own starts by
+          changing a line of one.
         </p>
       </div>
     </div>

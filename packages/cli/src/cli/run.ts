@@ -84,8 +84,8 @@ export const runCommand = new Command('run')
     '<flow>',
     'Path to flow JSON or YAML file, a .heddle bundle made by ' +
       '"heddle bundle", an https:// address of one, or a bare name from ' +
-      'the library — "heddle run meeting-notes" runs ' +
-      'https://heddle.run/library/meeting-notes.heddle',
+      'the library — "heddle run coding-agent" runs ' +
+      'https://heddle.run/library/coding-agent.heddle',
   )
   .option('--tools-dir <dir>', 'Directory containing tool executables')
   .option('--input <json>', 'Input JSON object')

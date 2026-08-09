@@ -350,34 +350,36 @@ in `app/page.tsx`, the keyframes in `components/weave-world/chapters.ts`, and
    band, where `--text-strong` vanishes), click to jump. The rail hides
    below 980px, where the page scrolls without chapter wayfinding.
 2. **Hero** (`start`) — the two-column composition, one viewport over the
-   loom: copy on the left (mono eyebrow, the display-Light descriptor H1
-   with its plain-language lede beneath it, playground-first dual CTA, the
+   loom: copy on the left (label eyebrow, the display descriptor H1 with
+   its plain-language lede beneath it, playground-first dual CTA, the
    Humans/Agents install tabs from `installTabs` — Humans runs a finished
-   library bundle from its published URL — and the early-release marker, above the
-   fold on purpose), and on the right the navy `flow.yaml` editor showing
-   the csv-analyst excerpt from `specimenSpread`, cut where the instruction
-   finishes a sentence, with the `zsh — heddle` terminal overlapping it —
-   command, tools, true answer. **The sample rule for this audience: never
-   elide the instruction, elide the plumbing.** The specimen is the real
-   `library/csv-analyst` entry and its transcript figures are computed from
-   that entry's own sample data — check both against the library before
-   changing either. A scroll cue sits bottom-centre.
-3. **What you can build** (`included`) — 001. Three-to-five recognisable
-   jobs from `useCases` in `lib/constants.ts`, each a real library entry
-   whose "Read the flow" link opens `/library/<slug>`. **The highest-value
-   section for this audience** — a reader who can open the file that
-   produces the meeting write-up has learned more than the rest of the page
-   teaches. Never let a use case stand without a flow that exists; check
-   each detail line against that entry's README. It stays a hairline list,
-   not a card grid.
+   library bundle from its published URL — and the early-release marker,
+   above the fold on purpose), and on the right the navy `flow.yaml`
+   editor showing the local-notetaker excerpt from `specimenSpread`, cut
+   at the last of the prompt's four fixed headings, with the
+   `zsh — heddle` terminal overlapping it. **The sample rule for this
+   audience: never elide the instruction, elide the plumbing.** The
+   specimen is the real `library/local-notetaker` entry; its transcript
+   states only what the spec guarantees — the graph's true shape, the real
+   tool name and progress line, the prompt's fixed headings — and elides
+   the notes rather than inventing them. Check both against the library
+   before changing either. A scroll cue sits bottom-centre.
+3. **What you can build** (`included`) — 001. The library's agents from
+   `useCases` in `lib/constants.ts`, each a real entry whose "Read the
+   flow" link opens `/library/<slug>`. **The highest-value section for
+   this audience** — a reader who can open the file that produces the
+   meeting notes has learned more than the rest of the page teaches. Never
+   let a use case stand without a flow that exists; check each detail line
+   against that entry's README. It stays a hairline list, not a card
+   grid.
 4. **How it works** (`position`) — 002, the page's first dark moment: the
    *world's canvas* turns navy for this chapter (the section paints no
    background of its own), the shed opens — the loom action the brand is
    named for — and the threads glow. "The whole thing is one file you can
    read.", the config-file analogy (docker-compose, GitHub Actions, Home
-   Assistant), and the open-format reassurance with the Open Agent
-   Specification linked inline, beside the full `specimenSpread` spec with
-   the English instruction in full view.
+   Assistant), and the open-format reassurance — a published open standard,
+   deliberately unnamed on this page — beside the full `specimenSpread`
+   spec with the English instruction in full view.
 5. **First run** (`method`) — 003, "About ten minutes to your first
    result.": four hairline-divided literal steps from `firstRun` (Node 18+,
    a model key or Ollama, `heddle init` or a library entry, run it) —

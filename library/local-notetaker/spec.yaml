@@ -3,7 +3,7 @@
 #   start ──> record (ToolNode) ──> route ──┬─> notes (LlmNode) ──> end
 #                                           └─> end_failed
 #
-# The same shape as zoom-notetaker, with the browser taken out. `record` taps
+# A notetaker with no browser and no bot: `record` taps
 # the machine's own audio through Core Audio and transcribes it locally, so
 # nothing joins the call and nothing asks the platform's permission — which is
 # the whole point. Zoom and Google Meet both block third-party bots now, and a

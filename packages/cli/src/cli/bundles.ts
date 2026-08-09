@@ -91,8 +91,8 @@ export interface FetchedBundle {
  * The download a flow argument names, fetched — or nothing, for a file here.
  *
  * Two spellings reach the network. An https:// address is taken as typed. A
- * bare name is the library shorthand: `heddle run meeting-notes` runs what
- * `heddle run https://heddle.run/library/meeting-notes.heddle` would, with
+ * bare name is the library shorthand: `heddle run coding-agent` runs what
+ * `heddle run https://heddle.run/library/coding-agent.heddle` would, with
  * the part nobody remembers filled in. The disk is consulted first, so a
  * file or directory that answers to the name keeps meaning itself — a
  * shorthand allowed to shadow the working directory would let the library

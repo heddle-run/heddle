@@ -36,7 +36,7 @@ There is nothing to install. `npx` fetches the CLI and runs it — here running 
 finished agent from the [library](https://heddle.run/library) by its bare name:
 
 ```bash
-npx @heddle-run/cli run meeting-notes
+npx @heddle-run/cli run coding-agent
 ```
 
 Or your own flow:
@@ -551,20 +551,17 @@ runs anywhere heddle is installed.
 
 | Entry | What it does |
 |---|---|
-| [meeting-notes](library/meeting-notes/README.md) | Turns a raw transcript into decisions, action items and open questions. |
-| [issue-triage](library/issue-triage/README.md) | Sorts an issue into bug, feature or question and drafts the reply that kind needs. |
-| [docs-qa](library/docs-qa/README.md) | Answers questions from a folder of documents, citing the file and line. |
-| [csv-analyst](library/csv-analyst/README.md) | Answers questions about a folder of CSVs by writing SQL against them. |
-| [changelog-writer](library/changelog-writer/README.md) | Reads a range of git commits and writes the release notes for them. |
+| [local-notetaker](library/local-notetaker/README.md) | Records this machine's audio, transcribes it locally, and writes up the meeting — no bot joins the call. |
+| [coding-agent](library/coding-agent/README.md) | Works on a codebase with OpenAI Codex CLI's orchestration: plan, shell, apply_patch, verify, repeat. |
 
 ```bash
-node library/build.mjs docs-qa       # pack it
-heddle run library/dist/docs-qa.heddle
+node library/build.mjs coding-agent   # pack it
+heddle run library/dist/coding-agent.heddle
 ```
 
 Browsable at [heddle.run/library](https://heddle.run/library), and CI packs every
 entry, so a listing there is a bundle that builds. A listing is also one command:
-`heddle run meeting-notes` fetches the library's published archive when no file
+`heddle run coding-agent` fetches the library's published archive when no file
 of that name is here.
 
 ## LLM configuration

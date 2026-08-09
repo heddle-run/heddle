@@ -98,7 +98,7 @@ shorthand for the [library](https://heddle.run/library)'s copy of that entry —
 ready-made agents, one archive each:
 
 ```bash
-npx @heddle-run/cli run meeting-notes
+npx @heddle-run/cli run coding-agent
 ```
 
 A file of the same name in the working directory wins over the shorthand.
