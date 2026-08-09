@@ -342,13 +342,13 @@ in `app/page.tsx`, the keyframes in `components/weave-world/chapters.ts`, and
 
 1. **LandingChrome** — the landing's own chrome, replacing the shared sticky
    Nav *on this page only* (`components/Nav.tsx` still serves /library and
-   the 404): a fixed bar, transparent over the hero and paper-blurred once
-   scrolled, with wordmark, a live mono chapter indicator ("002 · POSITION"),
-   Docs / Library / Playground links, theme toggle and GitHub; plus the
-   right-edge chapter rail — one dot per chapter, active one named and
-   accent-coloured (blurple has contrast on both paper and the navy band,
-   where `--text-strong` vanishes), click to jump. Hidden below 980px; the
-   bar's chapter label carries wayfinding there.
+   the 404): a fixed bar with wordmark, Docs / Library / Playground links,
+   theme toggle and GitHub — the bar stays still while scrolling (a live
+   chapter indicator used to sit beside the wordmark; removed on request);
+   plus the right-edge chapter rail — one dot per chapter, active one named
+   and accent-coloured (blurple has contrast on both paper and the navy
+   band, where `--text-strong` vanishes), click to jump. The rail hides
+   below 980px, where the page scrolls without chapter wayfinding.
 2. **Hero** (`start`) — the two-column composition, one viewport over the
    loom: copy on the left (mono eyebrow, the display-Light descriptor H1
    with its plain-language lede beneath it, playground-first dual CTA, the

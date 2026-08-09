@@ -7,14 +7,15 @@ import ThemeSwitch, { iconControl } from "@/components/ThemeSwitch";
 import { useReducedMotion } from "motion/react";
 import { GITHUB_URL, PLAYGROUND_URL } from "@/lib/constants";
 
-/* The landing page's own chrome, kage-style: a fixed bar that starts
-   transparent over the loom and gains its paper blur once the page moves,
-   plus a right-edge chapter rail — one dot per chapter, the active one
-   named. The shared Nav.tsx stays as-is for /library and the 404; this
-   file is mounted only by app/page.tsx.
+/* The landing page's own chrome, kage-style: a fixed bar plus a
+   right-edge chapter rail — one dot per chapter, the active one named.
+   The shared Nav.tsx stays as-is for /library and the 404; this file is
+   mounted only by app/page.tsx.
 
-   One IntersectionObserver feeds both the bar's chapter indicator and the
-   rail, keyed to the Chapter wrapper ids in app/page.tsx. */
+   One IntersectionObserver feeds the rail's active dot, keyed to the
+   Chapter wrapper ids in app/page.tsx. The bar used to carry a live
+   chapter label beside the wordmark; it was removed on request, so the
+   rail is the only wayfinding and the bar stays still while scrolling. */
 
 export const CHAPTERS = [
   { id: "start", label: "Loom" },
@@ -105,20 +106,6 @@ export default function LandingChrome() {
           >
             heddle
           </Link>
-
-          <span
-            className="hds-nav-links"
-            style={{
-              fontFamily: "var(--font-label)",
-              fontVariantNumeric: "tabular-nums",
-              fontSize: 10.5,
-              letterSpacing: "var(--ls-label)",
-              textTransform: "uppercase",
-              color: "var(--text-subtle)",
-            }}
-          >
-            {CHAPTERS[active].label}
-          </span>
 
           <nav
             aria-label="Primary"
