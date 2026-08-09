@@ -1,4 +1,4 @@
-import { AGENT_SPEC_URL, specimenSpread } from "@/lib/constants";
+import { specimenSpread } from "@/lib/constants";
 
 /* 002 — how it works, on the page's first dark moment. The section paints no
    navy band of its own: the loom world behind the page goes navy for this
@@ -71,21 +71,9 @@ export default function Position() {
               margin: "14px 0 0",
             }}
           >
-            The format is not ours. It is the{" "}
-            <a
-              href={AGENT_SPEC_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                color: "var(--cyan-500)",
-                textDecoration: "underline",
-                textUnderlineOffset: 3,
-              }}
-            >
-              Open Agent Specification
-            </a>
-            , published by Oracle, and other runtimes read it too. If heddle
-            disappeared tomorrow, your files would still work somewhere else.
+            The format is not ours: it is a published open standard, and other
+            runtimes read it too. If heddle disappeared tomorrow, your files
+            would still work somewhere else.
           </p>
         </div>
 

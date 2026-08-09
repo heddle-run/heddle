@@ -315,8 +315,8 @@ export const faqItems = [
       "heddle itself runs entirely on your machine: no backend, no gateway, no account. If your flow calls a hosted model you will need a connection for those requests; point it at Ollama or vLLM and the whole thing runs offline.",
   },
   {
-    question: "What is the Open Agent Specification?",
+    question: "Am I locked in?",
     answer:
-      "The published, open format heddle's files are written in. Oracle publishes it; this project only implements it. Other conforming runtimes read the same files, so the agents you write are not locked to heddle — if this project disappeared tomorrow, your files would still run somewhere else.",
+      "No. The file format is a published open standard that heddle implements rather than owns, and other conforming runtimes read the same files. If this project disappeared tomorrow, your agents would still run somewhere else.",
   },
 ];
