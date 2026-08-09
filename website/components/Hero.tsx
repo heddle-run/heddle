@@ -88,20 +88,10 @@ export default function Hero() {
         paddingBottom: 56,
       }}
     >
-      {/* The copy column's scrim: a soft radial pool, not an oval patch on a
-          band — the braid lives on the right, so the left needs only a
-          whisper of ground for the lede and install note. */}
-      <div
-        aria-hidden="true"
-        style={{
-          position: "absolute",
-          inset: "0 30% 0 0",
-          pointerEvents: "none",
-          background:
-            "radial-gradient(ellipse at 35% 45%, color-mix(in srgb, var(--surface-page) 85%, transparent) 0%, color-mix(in srgb, var(--surface-page) 55%, transparent) 55%, transparent 80%)",
-        }}
-      />
-
+      {/* No scrim: the braid lives on the right where the opaque windows
+          sit, so the copy column reads on plain ivory — an earlier radial
+          wash here clipped at its element's edge and left a visible seam
+          over the threads. */}
       <div
         className="hds-container hds-hero-grid"
         style={{ position: "relative", zIndex: 1, width: "100%" }}
