@@ -44,7 +44,13 @@ import {
   type TurnOutcome,
   type WorkspaceOptions,
 } from '@heddle-run/core';
-import { mergeBundleOptions, openBundle, type OpenedBundle } from './bundles.js';
+import {
+  downloadBundle,
+  isRemotePath,
+  mergeBundleOptions,
+  openBundle,
+  type OpenedBundle,
+} from './bundles.js';
 import { frameLine, resolveEncoder, type EncoderFactory } from './encoders.js';
 import { askForEnvRefs } from './env-prompt.js';
 import { waitForRequirements } from './preflight-prompt.js';
@@ -76,8 +82,8 @@ export const runCommand = new Command('run')
   .description('Run an Agent Spec flow')
   .argument(
     '<flow>',
-    'Path to flow JSON or YAML file, or a .heddle bundle made by ' +
-      '"heddle bundle"',
+    'Path to flow JSON or YAML file, a .heddle bundle made by ' +
+      '"heddle bundle", or an https:// address of one',
   )
   .option('--tools-dir <dir>', 'Directory containing tool executables')
   .option('--input <json>', 'Input JSON object')
@@ -211,32 +217,47 @@ export const runCommand = new Command('run')
   .action(async (flowPath: string, options: RunOptions, command: Command) => {
     const verbose = command.parent?.opts().verbose ?? false;
 
-    // Opened before the plugins load, because the bundle is where some of
-    // them come from. What it recorded becomes defaults in the same options
-    // the flags parse into, so everything below this line is one code path.
-    const bundle = isBundlePath(flowPath) ? openBundle(flowPath) : undefined;
-    if (bundle) mergeBundleOptions(options, bundle);
+    // A URL is a download first and a bundle second: fetched to a temporary
+    // file, then opened exactly as a local archive would be. The download is
+    // disposed of unconditionally below — extraction has happened by then, so
+    // even an interactive run, which keeps its extraction, is done with it.
+    const fetched = isRemotePath(flowPath)
+      ? await downloadBundle(flowPath)
+      : undefined;
+    const archivePath = fetched?.path ?? flowPath;
 
     let interactive = false;
     try {
-      const plugins = await loadPlugins(options.plugin, {
-        discovery: options.discoverTools === true,
-      });
+      // Opened before the plugins load, because the bundle is where some of
+      // them come from. What it recorded becomes defaults in the same options
+      // the flags parse into, so everything below this line is one code path.
+      const bundle = isBundlePath(archivePath)
+        ? openBundle(archivePath)
+        : undefined;
+      if (bundle) mergeBundleOptions(options, bundle);
+
       try {
-        interactive = await runFlow(
-          bundle?.flowPath ?? flowPath,
-          options,
-          plugins,
-          verbose,
-          bundle,
-        );
+        const plugins = await loadPlugins(options.plugin, {
+          discovery: options.discoverTools === true,
+        });
+        try {
+          interactive = await runFlow(
+            bundle?.flowPath ?? archivePath,
+            options,
+            plugins,
+            verbose,
+            bundle,
+          );
+        } finally {
+          if (!interactive) plugins.dispose();
+        }
       } finally {
-        if (!interactive) plugins.dispose();
+        // An interactive run keeps its extraction: the chat UI outlives this
+        // action, and its flow, tools and mounts live in that directory.
+        if (!interactive) bundle?.dispose();
       }
     } finally {
-      // An interactive run keeps its extraction: the chat UI outlives this
-      // action, and its flow, tools and mounts live in that directory.
-      if (!interactive) bundle?.dispose();
+      fetched?.dispose();
     }
   });
 

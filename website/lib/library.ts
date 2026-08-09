@@ -145,28 +145,3 @@ export function libraryEntries(): LibraryEntry[] {
 export function libraryEntry(name: string): LibraryEntry | undefined {
   return libraryEntries().find((entry) => entry.name === name);
 }
-
-/**
- * The command that packs an entry — the same one `library/build.mjs` runs,
- * written out so the page shows what the script does rather than only its name.
- */
-export function bundleCommand(entry: LibraryEntry): string {
-  const parts = [`heddle bundle library/${entry.name}/${entry.flow}`];
-
-  if (entry.toolsDir) {
-    parts.push(`--tools-dir library/${entry.name}/${entry.toolsDir}`);
-  }
-  for (const plugin of entry.plugins) {
-    parts.push(`--plugin library/${entry.name}/${plugin}`);
-  }
-  for (const mount of entry.mounts) {
-    const [source, ...rest] = mount.split(":");
-    parts.push(
-      `--mount ${[`library/${entry.name}/${source}`, ...rest].join(":")}`,
-    );
-  }
-  parts.push(`--input '${JSON.stringify(entry.input)}'`);
-  parts.push(`-o ${entry.name}.heddle`);
-
-  return parts.join(" \\\n  ");
-}

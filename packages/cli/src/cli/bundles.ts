@@ -1,10 +1,11 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import {
   BundleError,
   checkedMount,
   extractBundle,
+  isBundlePath,
   messageOf,
   parseRequirements,
   type Mount,
@@ -41,6 +42,59 @@ export interface OpenedBundle {
   requires: Requirement[];
   /** Remove the extraction directory. */
   dispose(): void;
+}
+
+/** A flow argument that names a download rather than a file on disk. */
+export function isRemotePath(path: string): boolean {
+  return /^https?:\/\//i.test(path);
+}
+
+/** A downloaded archive: where it landed, and how to remove it. */
+export interface FetchedBundle {
+  path: string;
+  dispose(): void;
+}
+
+/**
+ * Fetch a `.heddle` archive from a URL into a temporary file.
+ *
+ * Only bundles travel this way. A bare flow file is refused rather than
+ * fetched, because a flow names tools and mounts by path and none of those
+ * paths came with it — the archive is the form that carries everything, which
+ * is why it is the form worth an address.
+ */
+export async function downloadBundle(url: string): Promise<FetchedBundle> {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch (err) {
+    throw new BundleError(`"${url}" is not a usable URL`, { cause: err });
+  }
+  if (!isBundlePath(parsed.pathname)) {
+    throw new BundleError(
+      `only .heddle bundles are fetched from a URL. "${url}" names something ` +
+        `else — a flow file depends on tools and mounts beside it, and a ` +
+        `download has no beside. Bundle it first with "heddle bundle".`,
+    );
+  }
+
+  const dir = mkdtempSync(join(tmpdir(), 'heddle-fetch-'));
+  const dispose = (): void => rmSync(dir, { recursive: true, force: true });
+
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new BundleError(
+        `${url} answered ${response.status} ${response.statusText}`,
+      );
+    }
+    const path = join(dir, basename(parsed.pathname));
+    writeFileSync(path, Buffer.from(await response.arrayBuffer()));
+    return { path, dispose };
+  } catch (err) {
+    dispose();
+    throw err;
+  }
 }
 
 export function openBundle(archivePath: string): OpenedBundle {

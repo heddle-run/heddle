@@ -20,11 +20,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: pnpm/action-setup@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: website/package-lock.json
+
+      # The workspace build exists here for one artifact: the CLI that
+      # library/build.mjs packs the bundles with, below. The site itself is
+      # still the npm build under website/.
+      - name: Build the CLI
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
 
       - name: Install dependencies
         run: npm ci
@@ -47,6 +57,14 @@ jobs:
           # Function serves it at the subdomain's root — so leaving this unset
           # is safe: the links stay relative and keep working.
           NEXT_PUBLIC_PLAYGROUND_URL: ${{ vars.PLAYGROUND_URL }}
+
+      # After the Next build, because `next build` empties out/ first. Each
+      # archive lands beside the entry's page — coding-agent/ the page,
+      # coding-agent.heddle the bundle — which is what makes the one command
+      # the pages show ("npx @heddle-run/cli run https://heddle.run/library/
+      # <name>.heddle") resolve to a real file.
+      - name: Pack the library into the export
+        run: node library/build.mjs --out website/out/library
 
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3

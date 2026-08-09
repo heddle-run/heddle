@@ -6,9 +6,8 @@ import Nav from "@/components/Nav";
 import Footer from "@/components/Footer";
 import { CodeBlock, SectionHeading } from "@/ds-heddle";
 import LibraryTag from "@/components/LibraryTag";
-import { GITHUB_URL } from "@/lib/constants";
+import { GITHUB_URL, SITE_URL } from "@/lib/constants";
 import {
-  bundleCommand,
   libraryEntries,
   libraryEntry,
   requirementNames,
@@ -135,7 +134,6 @@ export default async function LibraryEntryPage({ params }: Params) {
   if (!entry) notFound();
 
   const source = `${GITHUB_URL}/tree/main/library/${entry.name}`;
-  const runInput = JSON.stringify(entry.input);
 
   return (
     <div className="hds" style={{ minHeight: "100vh" }}>
@@ -208,8 +206,7 @@ export default async function LibraryEntryPage({ params }: Params) {
                   <h2 style={{ ...label, marginBottom: 14 }}>Run it</h2>
                   <CodeBlock
                     filename="terminal"
-                    code={`node library/build.mjs ${entry.name}
-heddle run library/dist/${entry.name}.heddle`}
+                    code={`npx @heddle-run/cli run ${SITE_URL}/library/${entry.name}.heddle`}
                   />
                   <p
                     style={{
@@ -219,21 +216,12 @@ heddle run library/dist/${entry.name}.heddle`}
                       color: "var(--text-muted)",
                     }}
                   >
-                    The bundle records a default input, so that second command
-                    needs no flags. To pass your own:
+                    One command, pasted into a terminal. It fetches heddle and
+                    the agent — flow, tools and sample data travel inside the
+                    bundle, along with a default input — and asks for anything
+                    still missing, like your model key, before it starts.
+                    Nothing is installed.
                   </p>
-                  <CodeBlock
-                    filename="terminal"
-                    style={{ marginTop: 12 }}
-                    code={`heddle run library/dist/${entry.name}.heddle \\\n  --input '${runInput}'`}
-                  />
-                </div>
-
-                <div>
-                  <h2 style={{ ...label, marginBottom: 14 }}>
-                    What build.mjs runs
-                  </h2>
-                  <CodeBlock filename="terminal" code={bundleCommand(entry)} />
                 </div>
 
                 <div>
