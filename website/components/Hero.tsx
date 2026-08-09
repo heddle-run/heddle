@@ -4,12 +4,7 @@ import { useState, type ReactNode } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import { Button, Icon, InstallCommand } from "@/ds-heddle";
 import { AnimatedTerminal } from "@/components/AnimatedTerminal";
-import {
-  installTabs,
-  PLAYGROUND_URL,
-  specimenSpread,
-  VERSION,
-} from "@/lib/constants";
+import { installTabs, PLAYGROUND_URL, specimenSpread } from "@/lib/constants";
 
 /* The spec in the window is the csv-analyst excerpt from specimenSpread —
    a real library entry, cut where the instruction finishes a sentence. The
@@ -235,8 +230,8 @@ export default function Hero() {
             </div>
 
             {/* The maturity marker, above the fold on purpose: a reader who
-                finds the beta in the footer after their first bug feels
-                misled; one who read it here does not. */}
+                discovers the rough edges without warning feels misled; one
+                who read this here does not. */}
             <div
               style={{
                 fontSize: 12.5,
@@ -244,8 +239,7 @@ export default function Hero() {
                 marginTop: 12,
               }}
             >
-              Free, MIT-licensed. Early release (v{VERSION}) — expect rough
-              edges.
+              Free, MIT-licensed. Early release — expect rough edges.
             </div>
           </motion.div>
         </div>

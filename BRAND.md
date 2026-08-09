@@ -42,7 +42,7 @@ landing page's comparison class is therefore doing the job by hand, a chat
 window, or a fixed-rule Zapier flow — **not** other agent frameworks. Its
 rules: at most one unexplained term per screen; outcome-first headings;
 examples before features; prerequisites, cost and data-handling stated
-plainly; the beta version visible in the hero. The H1 keeps the descriptor —
+plainly; an early-release marker visible in the hero (no version number anywhere in the app — the user removed it deliberately). The H1 keeps the descriptor —
 "A batteries-included declarative agent runtime." was chosen deliberately in
 2026-08 and reconfirmed after a retarget experiment briefly replaced it — and
 the lede beneath it is the descriptor's plain-language translation, which is
@@ -322,7 +322,7 @@ in `app/page.tsx`, the keyframes in `components/weave-world/chapters.ts`, and
    loom: copy on the left (mono eyebrow, the display-Light descriptor H1
    with its plain-language lede beneath it, playground-first dual CTA, the
    Humans/Agents install tabs from `installTabs` — Humans runs a finished
-   library bundle from its published URL — and the beta marker, above the
+   library bundle from its published URL — and the early-release marker, above the
    fold on purpose), and on the right the navy `flow.yaml` editor showing
    the csv-analyst excerpt from `specimenSpread`, cut where the instruction
    finishes a sentence, with the `zsh — heddle` terminal overlapping it —
