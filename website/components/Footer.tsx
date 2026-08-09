@@ -1,6 +1,5 @@
 import Link from "next/link";
 import {
-  AGENT_SPEC_URL,
   COMPARE_URL,
   GITHUB_URL,
   NPM_URL,
@@ -35,9 +34,8 @@ const columns = [
     ],
   },
   {
-    title: "Standard",
+    title: "Legal",
     links: [
-      { label: "Open Agent Spec", href: AGENT_SPEC_URL, external: true },
       {
         label: "MIT licence",
         href: `${GITHUB_URL}/blob/main/LICENSE`,

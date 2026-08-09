@@ -23,7 +23,6 @@ export const HOME_URL = PLAYGROUND_ORIGIN ? SITE_URL : "/";
 
 export const GITHUB_URL = "https://github.com/heddle-run/heddle";
 export const NPM_URL = "https://www.npmjs.com/package/@heddle-run/cli";
-export const AGENT_SPEC_URL = "https://oracle.github.io/agent-spec/";
 export const VERSION = "0.2.0-beta.1";
 
 /* Two audiences arrive wanting different first commands, and the difference is
