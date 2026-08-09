@@ -156,8 +156,8 @@ never raw ramp values.
 |---|---|---|
 | `--surface-page` | warm ivory `#faf7f0` (site override; upstream cloud-50) / black | Page ground |
 | `--navy-900` | `#081b2c` (site override; upstream `#0a2540`) | Headings, code windows, dark bands |
-| `--blurple-500` | `#635bff` | Primary accent, primary buttons |
-| `--cyan-500` | `#00d4ff` | Secondary accent (CTA button on navy) |
+| `--blurple-500` | deep sage `#66785f` (site override; upstream blurple `#635bff`) | Primary accent, primary buttons, links |
+| `--cyan-500` | camel `#c8a96b` (site override; upstream cyan `#00d4ff`) | Secondary accent (CTA button on navy, in-window accent) |
 | `--text-body` | slate-700 `#425466` / `#d4d4d4` | Prose |
 | `--border-hairline` | cloud-200 / `#262626` | Section and list rules |
 
@@ -175,6 +175,23 @@ band `#081b2c`; in dark, flat black with the near-black band `#0f0f0f` —
 kept in `chapters.ts` `palette()` because a WebGL ground cannot read a CSS
 variable, and paired with the site-layer `--surface-page: #faf7f0`
 override in `app/globals.css`; change the two files together.
+
+**The interface accents follow the loom.** The site layer remaps the whole
+blurple ramp to sage and the cyan ramp to camel (`app/globals.css`, in the
+`:root` override block), so every alias routed through them — primary
+buttons, links, `--text-accent` eyebrows, the focus ring, `::selection`,
+the playground's in-window accent — wears Meadow without touching
+`ds-heddle/`. The 500 slot carries a deepened sage `#66785f`, not the
+palette's own `#8fa28a`: the lighter sage fails contrast as text or a
+button fill on ivory (~2.8:1) and lives at the 400 slot, where only
+non-text uses reach it. Camel-500 keeps `#c8a96b`; its alias pairs it with
+navy text (≈7:1), and on the navy bands it is the same candlelit gold as
+the weft. **These overrides only work because `app/layout.tsx` imports
+`ds-heddle/styles.css` before `globals.css`** — for equal-specificity
+`:root` declarations the later stylesheet wins, and with the order flipped
+every site-layer token silently loses (which is exactly what happened:
+the printed-ink navy and ivory ground shipped inert until the Meadow
+ramps' having no effect exposed the ordering).
 **Always-dark surfaces use
 `--surface-code`/`--surface-code-alt` (not `--surface-inverse`, which flips to
 white in dark theme).** Shadows (`--shadow-xs` … `--shadow-lg`) are overridden

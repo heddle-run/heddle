@@ -907,6 +907,35 @@ html.dark {
   --shadow-sm: 0 1px 2px rgba(8, 27, 44, 0.14), 0 0 0 1px rgba(8, 27, 44, 0.1);
   --shadow-md: 0 3px 6px rgba(8, 27, 44, 0.16), 0 0 0 1px rgba(8, 27, 44, 0.1);
   --shadow-lg: 0 8px 16px rgba(8, 27, 44, 0.2), 0 0 0 1px rgba(8, 27, 44, 0.1);
+
+  /* Meadow accents. The interface follows the loom: the blurple ramp
+     becomes a sage ramp and the cyan ramp becomes camel, so every alias
+     that routes through them — primary buttons, links, --text-accent
+     eyebrows, the focus ring, ::selection, the playground's in-window
+     accent — recolours in one move, and ds-heddle/ itself stays untouched.
+     Slotting: the user's sage #8FA28A fails contrast as text or a button
+     fill on the ivory ground (~2.8:1), so the 500 slot carries a deepened
+     sage (#66785f, ≥4.5:1 with white) and #8FA28A sits at 400, where only
+     non-text uses (focus ring, hover tints) reach it. The camel 500 keeps
+     the user's #C8A96B: its alias pairs it with navy text (≈7:1), and on
+     the navy bands it is the same candlelit gold as the weft. The dark
+     theme's aliases point at the 300 slots, which stay light enough on
+     black. */
+  --blurple-700: #3f4a3b;
+  --blurple-600: #536349;
+  --blurple-500: #66785f;
+  --blurple-400: #8fa28a;
+  --blurple-300: #a3b49d;
+  --blurple-200: #d5decc;
+  --blurple-100: #e5eae0;
+  --blurple-50: #f2f5ef;
+  --cyan-700: #8a6d3f;
+  --cyan-600: #ad8c4f;
+  --cyan-500: #c8a96b;
+  --cyan-400: #d4ba85;
+  --cyan-300: #dfcaa0;
+  --cyan-200: #ead9bd;
+  --cyan-100: #f3e9d7;
 }
 
 /* The page's own ground is a real plain weave now — components/WeaveTexture.tsx,

@@ -6,9 +6,15 @@ import {
 } from "next/font/google";
 import { RootProvider } from "fumadocs-ui/provider";
 import Grain from "@/components/Grain";
-import { WeaveGround } from "@/components/weave-world/WeaveGround";
-import "./globals.css";
+import { WeaveTexture } from "@/components/WeaveTexture";
+/* Vendored system first, site layer second: globals.css ends with the
+   site's :root token overrides (printed-ink navy, ivory ground, the Meadow
+   accent ramps), and for equal-specificity :root declarations the later
+   stylesheet wins. With ds-heddle imported last, every one of those
+   overrides silently lost the cascade and the site ran on upstream
+   tokens — caught when the Meadow ramps had no effect. */
 import "../ds-heddle/styles.css";
+import "./globals.css";
 
 /* The three Heddle families, self-hosted through next/font — see
    ds-heddle/DEVIATIONS.md §2. */
@@ -80,7 +86,7 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <body>
-        <WeaveGround />
+        <WeaveTexture variant="faint" style={{ position: "fixed", zIndex: -2 }} />
         <RootProvider
           theme={{
             enabled: true,

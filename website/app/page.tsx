@@ -1,5 +1,6 @@
 import LandingChrome from "@/components/landing/LandingChrome";
 import Chapter from "@/components/landing/Chapter";
+import { WeaveGround } from "@/components/weave-world/WeaveGround";
 import Hero from "@/components/Hero";
 import Inventory from "@/components/Inventory";
 import Position from "@/components/Position";
@@ -29,6 +30,7 @@ export default function Home() {
         Skip to content
       </a>
 
+      <WeaveGround />
       <LandingChrome />
 
       <main id="main" style={{ paddingTop: 60 }}>
