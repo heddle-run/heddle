@@ -103,20 +103,30 @@ Options:
   --allow-write <path>   Grant sandboxed tools write access to a path (repeatable)
   --allow-env <name>     Forward an environment variable into the sandbox (repeatable)
   --deny-net             Block network access for sandboxed tools
+  --auth-token <token>   Refuse any request not carrying this bearer token as
+                         "Authorization: Bearer <token>". Health probes stay
+                         open. Prefer $HEDDLE_AUTH_TOKEN, which stays out of
+                         "ps" output. This is one shared secret for a local
+                         front end holding its own loopback server — not
+                         accounts, and not a reason to bind beyond loopback
   --version              Print the server version and exit
   -h, --help             Show this message
 
 Environment:
   HEDDLE_LLM_DEFAULT_KEY The default model credential. Read from the environment
                          rather than a flag so it stays out of "ps" output.
+  HEDDLE_AUTH_TOKEN      The bearer token --auth-token would set, kept out of
+                         "ps" output the same way. The flag wins if both are
+                         given.
   HEDDLE_STREAM          Whether model calls stream (default: on). Set 0, false
                          or off for an endpoint that serves buffered requests
                          but not "stream: true", or that bills the two
                          differently. Accepted values: 1/0, true/false, on/off.
 
-SECURITY: there is no authentication. Every caller can execute the tools in
---tools-dir. The default bind address is loopback; overriding --host exposes an
-unauthenticated remote-code-execution surface.
+SECURITY: without --auth-token there is no authentication, and with it there is
+one shared secret, not accounts. Every authorized caller can execute the tools
+in --tools-dir. The default bind address is loopback; overriding --host exposes
+a remote-code-execution surface, and a bearer token alone is not a reason to.
 
 With --session-store on, a session id is a bearer capability: whoever holds one
 can read and continue that conversation. Ids are issued by this server and are
@@ -170,6 +180,7 @@ async function main(): Promise<void> {
       'allow-write': { type: 'string', multiple: true },
       'allow-env': { type: 'string', multiple: true },
       'deny-net': { type: 'boolean' },
+      'auth-token': { type: 'string' },
       version: { type: 'boolean' },
       help: { type: 'boolean', short: 'h' },
     },
@@ -266,6 +277,8 @@ async function main(): Promise<void> {
       defaultLlmKey: process.env.HEDDLE_LLM_DEFAULT_KEY || undefined,
       defaultLlmUrl: values['llm-default-url'],
       stream: boolEnv('HEDDLE_STREAM', process.env.HEDDLE_STREAM),
+      authToken:
+        values['auth-token'] || process.env.HEDDLE_AUTH_TOKEN || undefined,
       sandbox,
     });
   } catch (err) {

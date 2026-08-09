@@ -11,6 +11,7 @@ import {
   type ServerConfig,
   type ServerOptions,
 } from './config.js';
+import { authorized } from './auth.js';
 import { handleCapabilities } from './capabilities.js';
 import { corsHeaders, handlePreflight } from './cors.js';
 import { toErrorResponse, HttpError } from './errors.js';
@@ -189,6 +190,17 @@ async function route(
   const path = url.pathname.replace(TRAILING_SLASHES, '') || '/';
   const headers = corsHeaders(req, config);
   const { gate, lifecycle } = runtime;
+
+  // Before any route: past this line a request executes or reads on the
+  // caller's behalf. CORS preflights were answered above — a browser sends
+  // those without credentials, and refusing one only hides the real error.
+  if (!authorized(req, path, config.authToken)) {
+    throw new HttpError(
+      401,
+      'this server requires a bearer token; pass "Authorization: Bearer <token>"',
+      'Unauthorized',
+    );
+  }
 
   if (method === 'GET' && (path === '/healthz' || path === '/')) {
     sendJson(res, 200, { status: 'ok', version: VERSION }, headers);
