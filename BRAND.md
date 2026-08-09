@@ -97,35 +97,46 @@ marketing site and the restraint of Vercel's AI SDK page — inspiration only,
 nothing copied.
 
 **Loom, literalized (evolution on top of the above).** The warp-thread
-metaphor stopped being a texture reserved for the CTA band and became the
-page's own ground — and a real plain weave, not a repeating stripe of
-vertical lines. `components/WeaveTexture.tsx` draws an actual over/under
-crossing in SVG: two warp columns and two weft rows per tile, with the
-thread on top alternating in a checkerboard the way a real tabby weave
-alternates every row and column. A CSS `repeating-linear-gradient` can only
-draw stripes in one direction; this is why the texture is a component, not a
-token. One instance is mounted once, fixed, in `app/layout.tsx` at
-`variant="faint"` as the page's own ground; Hero, Position and the CTA band
-each mount their own `variant="strong"` instance over their own painted
-surface, and Position/CTA pass `inverse` so the threads read in
-`--border-inverse` rather than `--border-hairline`, matching the rule that
-always-dark surfaces never use the hairline alias. Ink deepened (`--navy-900`
-is `#081b2c`, not upstream's `#0a2540`) for more contrast against paper, and
-shadows tightened from a soft Stripe float into something closer to a printed
-edge — ink-tinted, not generic grey-blue. A fixed, near-invisible grain
-overlay (`components/Grain.tsx`) gives the paper actual tooth. Instrument
-Serif, upstream reserved for the dictionary epigraph alone, now also carries
-two headline moments — Position's "The specification is the program." and the
-CTA's "Thread the loom." — because those two sentences are the closest thing
-the page has to a second pull quote. Beneath the epigraph itself, the flat
-`--gradient-thread` bar was replaced with a small hand-drawn weave: five warp
-threads in the gradient's own five hues, and a weft thread that draws itself
-across them once, on scroll, passing over three and under two — the actual
-mechanism the copy above it describes, not a decorative rule. These are
-deviations from the vendored `ds-heddle` tokens, applied at the site layer in
-`app/globals.css` and `components/` (following the same override pattern
-already used there for `--gradient-warp` and `--border-inverse`), not edits
-to `ds-heddle/` itself.
+metaphor stopped being a texture and became the landing page's actual
+ground: a persistent Three.js loom — `components/weave-world/` — rendered
+behind the whole page and driven by native scroll. `WeaveWorld.tsx` owns the
+canvas, renderer, lights and teardown; `threadField.ts` builds ~54 warp
+threads as real `TubeGeometry` strands (catenary sag, wobble harmonics,
+per-thread hue variation off the five `--gradient-thread` stops, lit so each
+has a shadow side) plus a weft tube revealed by a clipping plane;
+`scrollConductor.ts` turns scroll into a fractional chapter number keyed to
+the **viewport centre** (keyed to the top edge, a dark chapter started
+fading while its own copy was still on screen); `chapters.ts` is the
+keyframe ledger saying what the loom does at each section — including the
+two chapters where the canvas itself turns navy (see Page composition). The
+canvas follows the `html.dark` toggle live via a MutationObserver; the first
+build hardcoded paper and painted the dark theme white.
+
+`components/WeaveTexture.tsx` — the SVG plain weave with the checkerboard
+over/under crossing — is still here, but demoted to the fallback ground: it
+renders unconditionally one layer behind the canvas
+(`components/weave-world/WeaveGround.tsx`, mounted in `app/layout.tsx`), and
+is what no-JS, no-WebGL and `prefers-reduced-motion` users see. No section
+mounts a `variant="strong"` instance any more; the sections stopped painting
+their own woven surfaces when the world became live.
+
+Ink deepened (`--navy-900` is `#081b2c`, not upstream's `#0a2540`) for more
+contrast against paper, and shadows tightened from a soft Stripe float into
+something closer to a printed edge — ink-tinted, not generic grey-blue. A
+fixed, near-invisible grain overlay (`components/Grain.tsx`) gives the paper
+actual tooth. Instrument Serif, upstream reserved for the dictionary
+epigraph alone, now also carries two headline moments — Position's "The
+specification is the program." and the CTA's "Thread the loom." — because
+those two sentences are the closest thing the page has to a second pull
+quote. The small hand-drawn SVG weave that used to sit beneath the epigraph
+is retired: the Definition chapter is now the live loom's own close-up (the
+camera pulls in and the real weft crosses the real warp behind the copy), so
+the 2D miniature had become a duplicate — retiring it also removed the
+landing page's gsap/ScrollTrigger usage. These are deviations from the
+vendored `ds-heddle` tokens, applied at the site layer in `app/globals.css`
+and `components/` (following the same override pattern already used there
+for `--gradient-warp` and `--border-inverse`), not edits to `ds-heddle/`
+itself.
 
 ### Palette
 
@@ -141,14 +152,17 @@ never raw ramp values.
 | `--text-body` | slate-700 `#425466` / `#d4d4d4` | Prose |
 | `--border-hairline` | cloud-200 / `#262626` | Section and list rules |
 
-`--gradient-thread` (the multi-hue ribbon) supplies the five hues the
-Definition weave draws with; it no longer appears as a flat fill or bar
-anywhere. The page's structural motif is `components/WeaveTexture.tsx` (see
-above), not a one-off accent: it sits behind every plain section as a fixed
-`variant="faint"` instance, and Hero, Position and the CTA band each mount
-their own `variant="strong"` instance over their own surface. Max two
-background tints per page beyond that shared woven ground. **Always-dark
-surfaces use
+`--gradient-thread` (the multi-hue ribbon) supplies the five hues the loom
+world's threads are built from (`THREAD_HUES` in
+`components/weave-world/chapters.ts`); it no longer appears as a flat fill
+or bar anywhere. The landing page's structural motif is the live loom
+itself (see above), with `components/WeaveTexture.tsx` as its fallback
+ground; no section paints its own woven surface any more. The world's two
+surface colours track the theme: paper `#f6f9fc` / band `#081b2c` in light,
+`#000000` / `#0f0f0f` in dark — the same values `--surface-page` and
+`--surface-code` resolve to, hardcoded in `chapters.ts` `palette()` because
+a WebGL clear colour cannot read a CSS variable; change them together.
+**Always-dark surfaces use
 `--surface-code`/`--surface-code-alt` (not `--surface-inverse`, which flips to
 white in dark theme).** Shadows (`--shadow-xs` … `--shadow-lg`) are overridden
 at the site layer to be tighter and ink-tinted (`rgba(8,27,44,…)`) rather than
@@ -186,24 +200,36 @@ eyebrows mark the sections: `001 Inventory`, `002 Position`, …
   once in `app/layout.tsx`) sits above everything at ~5% opacity: an inline
   SVG fractal-noise filter, alpha-composited rather than blend-moded, because
   `mix-blend-mode: overlay` does nothing over the dark theme's pure black.
-- A Stripe-style colourful graphic behind the Hero's code-window stack was
-  tried and pulled. Three passes — thin decorative threads, five blurred
-  solid bands, then a real WebGL gradient-mesh shader (simplex noise,
-  heddle's own five `--gradient-thread` hues, a new `three` dependency) —
-  each looked reasonable in the constrained, automated browser tab used to
-  build them, and each looked wrong in a real one: the shader version in
-  particular rendered as a blurry, disconnected blob rather than anything
-  that read as intentional. It is not in `components/` any more and `three`
-  is not a dependency. If this is picked up again, verify it by eye in an
-  actual browser at each step, not by forcing animation state via
-  JavaScript in an automated tab and screenshotting the result — that
-  method is what let three bad versions ship in a row.
+- WebGL on this page has a history. A Stripe-style colourful graphic behind
+  the old hero's code-window stack was tried three times — thin decorative
+  threads, five blurred solid bands, then a gradient-mesh simplex shader —
+  and pulled three times: each looked reasonable in the constrained,
+  automated browser tab used to build it and wrong in a real one (the
+  shader version rendered as a blurry, disconnected blob). The fourth
+  attempt is the one that shipped, as `components/weave-world/`, and it
+  survived because of two changes in kind, not degree: the threads are lit
+  tube *geometry* rather than a full-screen gradient shader, so there is
+  nothing to smear; and every step was verified by eye in a real browser —
+  which is what caught the near-plane smear when the camera dolly crossed
+  the thread field, the dark theme painted white, and a dark chapter fading
+  under its own copy. Keep that verification rule: never judge this canvas
+  by forcing animation state via JavaScript in an automated tab and
+  screenshotting the result — that method is what let three bad versions
+  ship in a row.
 
 ### Motion
 
 Fast and dry — 140–220ms on `--ease-standard`, fades and small translates, no
 bounces. `prefers-reduced-motion` zeroes the duration tokens in
 `ds-heddle/tokens/motion.css`.
+
+The loom world is the one exception to "fast and dry": its camera, light and
+shed interpolate continuously from native scroll (damped for rendering only —
+the exact value drives nothing but pixels), with idle thread sway on top.
+Scroll stays native and reversible: no Lenis, no scroll hijacking, no pinned
+sections. Under `prefers-reduced-motion` the canvas never mounts and the
+static `WeaveTexture` ground shows instead; the same fallback covers no-JS
+and no-WebGL, so the canvas is atmosphere only and no content depends on it.
 
 ### Iconography
 
@@ -231,64 +257,95 @@ lowercase word "heddle" set in Plex Sans Medium, which is all
 
 ## Page composition
 
+The landing page is one continuous walk through the loom world: nine
+full-viewport chapters over the single persistent scene, in the kage manner —
+the world changes state per chapter and the DOM floats over it. Each chapter
+is a `components/landing/Chapter.tsx` wrapper (full-viewport `<section>` with
+the id, centred content, and a full-width vertical scrim band in the
+chapter's own surface colour — never an oval patch behind the copy; that was
+tried and read as a floating blob in a real browser). **Three things are
+ordered by the same list and must change together:** the `<Chapter>` sequence
+in `app/page.tsx`, the keyframes in `components/weave-world/chapters.ts`, and
+`CHAPTERS` in `components/landing/LandingChrome.tsx`.
+
 `app/page.tsx` assembles, in order:
 
-1. **Nav** — sticky, paper-translucent, blurred; text wordmark, Docs / Spec /
-   Playground links, mono theme-toggle button, GitHub
-2. **Hero** — mono eyebrow, display-Light H1, the wedge sentence as lede, dual
-   CTA, then the Humans/Agents install tabs (from `installTabs`). Beside it,
-   the stacked windows: a navy `flow.yaml` editor showing the real Open Agent
-   Specification fragment from `steps[0]`, with the `zsh — heddle` terminal
-   (from `specimenSpread.terminal`) overlapping it. `batteries-included` is one
-   18-character word, so the hero clamp is `34px…54px` with
-   `overflow-wrap: break-word` — check a 375px viewport before changing either.
-3. **Inventory** — 001. The full manifest as a numbered hairline list. **This
-   section is what makes the lead claim falsifiable**, so every line has to
-   name a feature that exists in the README — treat it the way `safeMode` is
-   treated, and delete a line rather than let it drift. It is a list, not a
-   card grid, because the claim is breadth and a reader should be able to
-   count it. Two columns at desktop, one on mobile; the design project's
-   five-item sample was deliberately replaced with the whole manifest. The
+1. **LandingChrome** — the landing's own chrome, replacing the shared sticky
+   Nav *on this page only* (`components/Nav.tsx` still serves /library and
+   the 404): a fixed bar, transparent over the hero and paper-blurred once
+   scrolled, with wordmark, a live mono chapter indicator ("002 · POSITION"),
+   Docs / Library / Playground links, theme toggle and GitHub; plus the
+   right-edge chapter rail — one dot per chapter, active one named and
+   accent-coloured (blurple has contrast on both paper and the navy band,
+   where `--text-strong` vanishes), click to jump. Hidden below 980px; the
+   bar's chapter label carries wayfinding there.
+2. **Hero** (`start`) — two beats in one chapter. First, a full viewport of
+   centred display type: mono eyebrow, display-Light H1, the wedge sentence
+   as lede, dual CTA, the Humans/Agents install tabs (from `installTabs`),
+   and a scroll cue. Then the proof: the navy `flow.yaml` editor showing the
+   real Open Agent Specification fragment from `steps[0]`, with the
+   `zsh — heddle` terminal (from `specimenSpread.terminal`) overlapping it.
+   `batteries-included` is one 18-character word, so the H1 clamp keeps its
+   34px floor with `overflow-wrap: break-word` — check a 375px viewport
+   before changing either.
+3. **Inventory** (`included`) — 001. The full manifest as a numbered hairline
+   list. **This section is what makes the lead claim falsifiable**, so every
+   line has to name a feature that exists in the README — treat it the way
+   `safeMode` is treated, and delete a line rather than let it drift. It is a
+   list, not a card grid, because the claim is breadth and a reader should be
+   able to count it. Two columns at desktop, one on mobile. The
    `notInProject` zeros no longer render here — the what-it-costs half of the
    claim is carried by the hero lede, Position and the CTA line.
-4. **Position** — 002, on the always-dark navy band: the specification is the
-   program, the refusal of the bigger-library trade, and the
-   portability-off-heddle claim, beside a window showing the real
-   `specimenSpread` spec.
-5. **Method** — 003, four hairline-divided moves: Declare, Point, Confine,
-   Serve.
-6. **Runtimes** — 004, on plain paper: the receipt for Position's "same
-   equipment behind a binary" and for Method's Point/Serve moves. Two navy
-   windows side by side, `runtimes.cli` and `runtimes.server` from
-   `lib/constants.ts` — the identical flow, run locally and served over HTTP.
-   Both transcripts are checked against `docs/cli-reference.mdx` and
+4. **Position** (`position`) — 002, the page's first dark moment: the
+   *world's canvas* turns navy for this chapter (the section paints no
+   background of its own), the shed opens — the loom action the brand is
+   named for — and the threads glow. The specification is the program, the
+   refusal of the bigger-library trade, and the portability-off-heddle
+   claim, beside a window showing the real `specimenSpread` spec.
+5. **Method** (`method`) — 003, four hairline-divided moves: Declare, Point,
+   Confine, Serve.
+6. **Runtimes** (`runtimes`) — 004, on paper: the receipt for Position's
+   "same equipment behind a binary" and for Method's Point/Serve moves. Two
+   navy windows side by side, `runtimes.cli` and `runtimes.server` from
+   `lib/constants.ts` — the identical flow, run locally and served over
+   HTTP. Both transcripts are checked against `docs/cli-reference.mdx` and
    `docs/server.mdx`, not written to look plausible; update this section if
    either doc's example commands change.
-7. **Isolation** — 005, the sandboxing claims as four cards, verbatim from
-   `safeMode` (see the security note above). The design's illustrative badges
-   ("default in CI", "no daemon") were claims heddle does not make and must not
-   return.
-8. **Definition** — the dictionary epigraph, in Instrument Serif, over the
-   thread-gradient rule.
-9. **FAQ** — 006, native `<details>`.
-10. **CTA** — the navy band with the warp texture: "Thread the loom.", accent
-    Get started, ghost playground link, the npx command.
-11. **Footer** — brand blurb plus the Project / Source / Standard columns, and
-    a mono bottom bar (heddle.run · "Woven by agents, heddled by humans" ·
-    version). The byline leans on the Definition block above it having
-    already taught the reader what a heddle does.
+7. **Isolation** (`isolation`) — 005, the sandboxing claims as four cards,
+   verbatim from `safeMode` (see the security note above). The design's
+   illustrative badges ("default in CI", "no daemon") were claims heddle
+   does not make and must not return.
+8. **Definition** (`definition`) — the dictionary epigraph, in Instrument
+   Serif, at the loom's close-up: the camera pulls in and the world's weft
+   crosses the warp behind the copy. (The 2D SVG mini-weave this section
+   used to draw is retired — see the loom note above.)
+9. **FAQ** (`faq`) — 006, native `<details>`; the world holds nearly still
+   here so the dense text stays readable.
+10. **CTA** (`begin`) — the finale: the canvas goes navy again, the shed
+    opens widest on the page, and the weft completes its final pass.
+    "Thread the loom.", accent Get started, ghost playground link, the npx
+    command. Like Position, the section paints nothing — the world owns the
+    band.
+11. **Footer** — on its own solid `--surface-page` wrapper so the page ends
+    on a real surface rather than the glowing world; brand blurb plus the
+    Project / Source / Standard columns, and a mono bottom bar (heddle.run ·
+    "Woven by agents, heddled by humans" · version). The byline leans on the
+    Definition block above it having already taught the reader what a heddle
+    does.
 
 The Loom drawing, the bento Features grid and the Spread section from the
-previous (FormFlow) landing page were retired with the redesign — the hero's
-spec-beside-run windows now carry what Spread carried. If a brand drawing
+previous (FormFlow) landing page were retired earlier — the hero's
+spec-beside-run windows carry what Spread carried. If a brand drawing
 returns, it should be built in this system's warp-thread line language.
 
 Copy and data live in `lib/constants.ts`; sections read from it rather than
 hard-coding strings.
 
-The section numbers are contiguous by hand, not computed. Adding or removing a
-section means renumbering the ones after it, and any nav link that points at
-the anchor.
+The section numbers are contiguous by hand, not computed. Adding or removing
+a section means renumbering the ones after it — and keeping the three
+chapter-ordered lists in sync (see above): the scroll conductor counts
+`#main > section` elements, so a chapter added to the page but not to the
+keyframe ledger shifts every world moment after it by one section.
 
 The playground is not composed this way. It is an application: it fills the
 viewport, carries its own bar and status bar instead of the site's nav and

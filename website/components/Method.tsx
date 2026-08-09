@@ -26,7 +26,7 @@ const MOVES = [
 
 export default function Method() {
   return (
-    <section id="method">
+    <div>
       <div
         className="hds-container"
         style={{
@@ -78,6 +78,6 @@ export default function Method() {
           ))}
         </div>
       </div>
-    </section>
+    </div>
   );
 }

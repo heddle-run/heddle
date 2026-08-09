@@ -907,3 +907,117 @@ html.dark {
    that component builds in SVG. Sections painting their own opaque surface
    (Hero, Position, CTA) mount their own instance at full strength over that
    surface instead of relying on the page-level one showing through. */
+
+/* ---- Landing chrome: the kage-style chapter rail and hero scroll cue ----
+   The rail is landing-only (components/landing/LandingChrome.tsx). Dots use
+   the accent for the active chapter — legible on both the paper ground and
+   the navy band chapters, where --text-strong would vanish. Hidden below
+   980px; the fixed bar's chapter label carries wayfinding there. */
+
+.hds-chapter-rail {
+  display: none;
+}
+@media (min-width: 980px) {
+  .hds-chapter-rail {
+    position: fixed;
+    right: 18px;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 40;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+}
+
+.hds-chapter-dot {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  width: 24px;
+  height: 14px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.hds-chapter-dot-mark {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-subtle);
+  opacity: 0.45;
+  transition:
+    transform var(--dur-fast) var(--ease-standard),
+    opacity var(--dur-fast) var(--ease-standard),
+    background var(--dur-fast) var(--ease-standard);
+}
+
+.hds-chapter-dot[data-active] .hds-chapter-dot-mark {
+  background: var(--text-accent);
+  opacity: 1;
+  transform: scale(1.45);
+}
+
+.hds-chapter-dot-label {
+  position: absolute;
+  right: 26px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: var(--ls-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--text-subtle);
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-standard);
+  pointer-events: none;
+}
+
+.hds-chapter-dot:hover .hds-chapter-dot-label,
+.hds-chapter-dot:focus-visible .hds-chapter-dot-label,
+.hds-chapter-dot[data-active] .hds-chapter-dot-label {
+  opacity: 1;
+}
+
+/* The hero's scroll cue: a thin thread that draws itself downward, over and
+   over, the page's first hint that scroll is the shuttle. The global
+   reduced-motion rule zeroes the animation. */
+.hds-scroll-cue {
+  position: absolute;
+  bottom: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: var(--ls-label);
+  text-transform: uppercase;
+  color: var(--text-subtle);
+}
+
+.hds-scroll-cue-line {
+  width: 1px;
+  height: 44px;
+  background: var(--text-subtle);
+  transform-origin: top;
+  animation: hds-cue-draw 2.2s var(--ease-standard) infinite;
+}
+
+@keyframes hds-cue-draw {
+  0% {
+    transform: scaleY(0);
+  }
+  55% {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scaleY(1);
+    opacity: 0;
+  }
+}

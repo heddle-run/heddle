@@ -6,7 +6,7 @@ import {
 } from "next/font/google";
 import { RootProvider } from "fumadocs-ui/provider";
 import Grain from "@/components/Grain";
-import { WeaveTexture } from "@/components/WeaveTexture";
+import { WeaveGround } from "@/components/weave-world/WeaveGround";
 import "./globals.css";
 import "../ds-heddle/styles.css";
 
@@ -80,7 +80,7 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <body>
-        <WeaveTexture variant="faint" style={{ position: "fixed", zIndex: -1 }} />
+        <WeaveGround />
         <RootProvider
           theme={{
             enabled: true,

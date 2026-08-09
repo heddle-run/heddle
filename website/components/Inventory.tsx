@@ -9,7 +9,7 @@ import { manifest } from "@/lib/constants";
    not a card grid, for the same reason. */
 export default function Inventory() {
   return (
-    <section id="included">
+    <div>
       <div
         className="hds-container"
         style={{
@@ -36,6 +36,6 @@ export default function Inventory() {
           ))}
         </div>
       </div>
-    </section>
+    </div>
   );
 }

@@ -95,7 +95,7 @@ function RuntimeWindow({
    plausible. */
 export default function Runtimes() {
   return (
-    <section id="runtimes" style={{ borderTop: "1px solid var(--border-hairline)" }}>
+    <div>
       <div
         className="hds-container"
         style={{
@@ -114,6 +114,6 @@ export default function Runtimes() {
           <RuntimeWindow entry={runtimes.server} index={1} />
         </div>
       </div>
-    </section>
+    </div>
   );
 }

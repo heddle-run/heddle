@@ -9,13 +9,7 @@ import { safeMode } from "@/lib/constants";
    make, so they are not here. */
 export default function Isolation() {
   return (
-    <section
-      id="isolation"
-      style={{
-        borderTop: "1px solid var(--border-hairline)",
-        background: "var(--surface-sunken)",
-      }}
-    >
+    <div>
       <div
         className="hds-container"
         style={{
@@ -56,6 +50,6 @@ export default function Isolation() {
           </Badge>
         </div>
       </div>
-    </section>
+    </div>
   );
 }

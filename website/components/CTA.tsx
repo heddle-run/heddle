@@ -1,20 +1,15 @@
 import { Button, Icon, InstallCommand } from "@/ds-heddle";
-import { WeaveTexture } from "@/components/WeaveTexture";
 import { installTabs, PLAYGROUND_URL } from "@/lib/constants";
 
-/* The close, on the always-dark band with the woven texture. Same surface
-   reasoning as Position: --surface-code stays navy-dark in both themes
-   where --surface-inverse flips. */
+/* The close — the loom's "final weave" chapter. The section paints nothing:
+   the world's canvas goes navy for this whole chapter (chapters.ts keyframe
+   8), the shed opens wide, and the Chapter wrapper's full-width band scrim
+   settles the copy. An earlier pass tried a small radial scrim here instead
+   and it read as a floating oval in a real browser — the fix was making the
+   world own the surface, not patching the DOM. */
 export default function CTA() {
   return (
-    <section
-      style={{
-        position: "relative",
-        background: "var(--surface-code)",
-        borderTop: "1px solid var(--border-hairline)",
-      }}
-    >
-      <WeaveTexture variant="strong" inverse />
+    <div style={{ position: "relative" }}>
       <div
         className="hds-container"
         style={{
@@ -86,6 +81,6 @@ export default function CTA() {
           />
         </div>
       </div>
-    </section>
+    </div>
   );
 }

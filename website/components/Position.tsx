@@ -1,30 +1,23 @@
-import { WeaveTexture } from "@/components/WeaveTexture";
 import { specimenSpread } from "@/lib/constants";
 
-/* 002 — the position, on the always-dark navy band. The window shows the real
-   researcher spec (specimenSpread), not an illustration. Backgrounds use the
-   --surface-code aliases because --surface-inverse flips to white in the dark
-   theme; the code surfaces are the ones that stay navy-dark in both. */
+/* 002 — the position, on the page's first dark moment. The section no longer
+   paints its own navy band: the loom world behind the page goes navy for this
+   chapter (weave-world/chapters.ts, keyframe 2 — the "first shed"), and the
+   Chapter wrapper's band scrim settles the copy on it. Text colours still use
+   the --code/slate aliases that read on navy in both themes. The window shows
+   the real researcher spec (specimenSpread), not an illustration. */
 const SPEC_LINES = specimenSpread.spec.split("\n").slice(0, 14);
 
 export default function Position() {
   return (
-    <section
-      id="position"
-      style={{
-        position: "relative",
-        borderTop: "1px solid var(--border-hairline)",
-        backgroundColor: "var(--surface-code)",
-      }}
-    >
-      <WeaveTexture variant="strong" inverse />
+    <div style={{ position: "relative" }}>
       <div
         className="hds-container hds-position-grid"
         style={{
           position: "relative",
           zIndex: 1,
-          paddingTop: "var(--section-y)",
-          paddingBottom: "var(--section-y)",
+          paddingTop: "var(--section-y-sm)",
+          paddingBottom: "var(--section-y-sm)",
         }}
       >
         <div>
@@ -114,6 +107,6 @@ export default function Position() {
           </pre>
         </div>
       </div>
-    </section>
+    </div>
   );
 }

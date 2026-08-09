@@ -4,10 +4,7 @@ import { faqItems } from "@/lib/constants";
 /* 006 — native <details>, keyboard-accessible without JavaScript. */
 export default function FAQ() {
   return (
-    <section
-      id="faq"
-      style={{ borderTop: "1px solid var(--border-hairline)" }}
-    >
+    <div>
       <div
         className="hds-container"
         style={{
@@ -63,6 +60,6 @@ export default function FAQ() {
           ))}
         </div>
       </div>
-    </section>
+    </div>
   );
 }
