@@ -60,6 +60,42 @@ export default function WeaveWorld() {
     const scene = new THREE.Scene();
     const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -10, 10);
 
+    /* The ground: a fullscreen quad pinned to the far plane, drawing the
+       ivory vertical gradient and crossing to the band colour on the dark
+       chapters — a WebGL clear colour can only be flat. */
+    const bgGeometry = new THREE.PlaneGeometry(2, 2);
+    const bgMaterial = new THREE.ShaderMaterial({
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = vec4(position.xy, 0.9999, 1.0);
+        }`,
+      fragmentShader: `
+        precision highp float;
+        varying vec2 vUv;
+        uniform vec3 uTop;
+        uniform vec3 uBottom;
+        uniform vec3 uBand;
+        uniform float uBandMix;
+        void main() {
+          vec3 c = mix(uBottom, uTop, vUv.y);
+          gl_FragColor = vec4(mix(c, uBand, uBandMix), 1.0);
+        }`,
+      uniforms: {
+        uTop: { value: new THREE.Color("#fefdfa") },
+        uBottom: { value: new THREE.Color("#f7f4ed") },
+        uBand: { value: new THREE.Color("#081b2c") },
+        uBandMix: { value: 0 },
+      },
+      depthTest: false,
+      depthWrite: false,
+    });
+    const bgQuad = new THREE.Mesh(bgGeometry, bgMaterial);
+    bgQuad.frustumCulled = false;
+    bgQuad.renderOrder = -1;
+    scene.add(bgQuad);
+
     const ply = createPly();
     scene.add(ply.group);
     const weft = createWeftRibbon();
@@ -117,10 +153,6 @@ export default function WeaveWorld() {
     let start = last;
     let disposed = false;
 
-    const pageColor = new THREE.Color();
-    const bandColor = new THREE.Color();
-    const bg = new THREE.Color();
-
     function frame(now: number) {
       if (disposed) return;
       const dt = Math.min((now - last) / 1000, 1 / 30);
@@ -131,10 +163,10 @@ export default function WeaveWorld() {
       const world = sampleWorld(conductor.smooth);
       const colors = palette(dark);
 
-      pageColor.set(colors.page);
-      bandColor.set(colors.band);
-      bg.copy(pageColor).lerp(bandColor, world.bandMix);
-      renderer.setClearColor(bg, 1);
+      (bgMaterial.uniforms.uTop.value as THREE.Color).set(colors.pageTop);
+      (bgMaterial.uniforms.uBottom.value as THREE.Color).set(colors.pageBottom);
+      (bgMaterial.uniforms.uBand.value as THREE.Color).set(colors.band);
+      bgMaterial.uniforms.uBandMix.value = world.bandMix;
 
       /* On the light theme's paper the threads deepen for contrast; on the
          navy bands and the whole dark theme they glow instead. */
@@ -167,6 +199,8 @@ export default function WeaveWorld() {
       window.removeEventListener("load", remeasure);
       document.removeEventListener("visibilitychange", onVisibility);
       themeObserver.disconnect();
+      bgGeometry.dispose();
+      bgMaterial.dispose();
       ply.dispose();
       weft.dispose();
       renderer.dispose();

@@ -154,23 +154,27 @@ never raw ramp values.
 
 | Token | Value | Use |
 |---|---|---|
-| `--surface-page` | cloud-50 `#f6f9fc` / black | Page ground |
+| `--surface-page` | warm ivory `#faf7f0` (site override; upstream cloud-50) / black | Page ground |
 | `--navy-900` | `#081b2c` (site override; upstream `#0a2540`) | Headings, code windows, dark bands |
 | `--blurple-500` | `#635bff` | Primary accent, primary buttons |
 | `--cyan-500` | `#00d4ff` | Secondary accent (CTA button on navy) |
 | `--text-body` | slate-700 `#425466` / `#d4d4d4` | Prose |
 | `--border-hairline` | cloud-200 / `#262626` | Section and list rules |
 
-`--gradient-thread` (the multi-hue ribbon) supplies the five hues the loom
-world's threads are built from (`THREAD_HUES` in
-`components/weave-world/chapters.ts`); it no longer appears as a flat fill
-or bar anywhere. The landing page's structural motif is the live loom
-itself (see above), with `components/WeaveTexture.tsx` as its fallback
-ground; no section paints its own woven surface any more. The world's two
-surface colours track the theme: paper `#f6f9fc` / band `#081b2c` in light,
-`#000000` / `#0f0f0f` in dark — the same values `--surface-page` and
-`--surface-code` resolve to, hardcoded in `chapters.ts` `palette()` because
-a WebGL clear colour cannot read a CSS variable; change them together.
+The loom's threads wear the **Meadow** palette — ivory, sage and camel
+linen tones (`PLY_STOPS` in `components/weave-world/threadField.ts`, with a
+soft shading profile tuned for those pastels), picked from a side-by-side
+variants board over an all-`--gradient-thread` spread and a blurple/cyan
+monochrome. The weft is navy ink on the light ground and candlelit gold on
+the dark bands. `--gradient-thread` itself no longer appears anywhere. The
+landing page's structural motif is the live loom (see above), with
+`components/WeaveTexture.tsx` as its fallback ground; no section paints
+its own woven surface any more. The world's surfaces track the theme: in
+light, a vertical warm-ivory gradient `#fefdfa → #f7f4ed` with the navy
+band `#081b2c`; in dark, flat black with the near-black band `#0f0f0f` —
+kept in `chapters.ts` `palette()` because a WebGL ground cannot read a CSS
+variable, and paired with the site-layer `--surface-page: #faf7f0`
+override in `app/globals.css`; change the two files together.
 **Always-dark surfaces use
 `--surface-code`/`--surface-code-alt` (not `--surface-inverse`, which flips to
 white in dark theme).** Shadows (`--shadow-xs` … `--shadow-lg`) are overridden

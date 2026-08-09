@@ -18,22 +18,26 @@
 
 import * as THREE from "three";
 
-/* Three plies in the brand's own cool accents — the blurple and cyan ramps
-   from ds-heddle/tokens/colors.css plus the navy ink — so the loom reads as
-   one silk family beside the rest of the site's Stripe-craft restraint.
-   (An earlier pass spread all five --gradient-thread hues across the plies;
-   the multicolour read louder than the page around it.) No pink — the
-   brand explicitly retired it. */
+/* The Meadow palette, picked from seven candidates on a side-by-side
+   variants board: ivory, sage and camel linen tones, the user's four hues
+   (#F7F4ED · #C7D3C0 · #8FA28A · #C8A96B) as the braid's darkest anchors
+   with lighter derived stops above them. It ships with its own soft
+   shading profile (PLY_DEEPEN / PLY_FLOOR below) — the default fibre
+   shading squares colours on paper and drops edges to 35%, which turned
+   these pastels mossy. */
 const PLY_STOPS: [string, string, string][] = [
-  ["#e4e2ff", "#9f9aff", "#635bff"], // blurple-100 -> blurple-300 -> blurple-500
-  ["#d9f9ff", "#90e0ff", "#00d4ff"], // cyan-100 -> ice blue -> cyan-500
-  ["#7a73ff", "#635bff", "#103654"], // blurple-400 -> blurple-500 -> navy-800
+  ["#FBF9F4", "#D9E2D3", "#A8B8A2"], // ivory -> pale sage -> sage
+  ["#D5DECC", "#A3B49D", "#8FA28A"], // pale sage -> sage -> deep sage
+  ["#FBF7EE", "#DCC291", "#C8A96B"], // ivory -> light camel -> camel
 ];
+const PLY_DEEPEN = 0.12;
+const PLY_FLOOR = 0.58;
 
 /* The weft's two liveries, crossed continuously in update(): navy ink on
-   the paper ground, pale cyan glow on the dark bands and dark theme. */
+   the ivory ground, warm candlelit gold on the dark bands and dark theme —
+   the cyan glow of the earlier palette sat outside Meadow's family. */
 const WEFT_INK: [string, string, string] = ["#133e5c", "#081b2c", "#0e2f4a"];
-const WEFT_GLOW: [string, string, string] = ["#d9f9ff", "#90e0ff", "#45deff"];
+const WEFT_GLOW: [string, string, string] = ["#FDF6E3", "#EAD3A0", "#C8A96B"];
 
 const BEZ_HELPERS = /* glsl */ `
   vec2 bez(vec2 a, vec2 b, vec2 c, vec2 d, float t) {
@@ -137,8 +141,10 @@ const FRAGMENT = /* glsl */ `
   precision highp float;
   uniform float uTime;
   uniform float uGlow;    // dark-band chapters push the thread brighter
-  uniform float uPaper;   // 1 on the light paper ground, 0 on dark grounds
+  uniform float uPaper;   // 1 on the light page ground, 0 on dark grounds
   uniform float uReveal;  // show vT < uReveal; ply strands pin this open
+  uniform float uDeepen;  // how hard the paper ground saturates the colour
+  uniform float uFloor;   // shading floor: higher = softer, lighter fibre
   uniform vec3 uColA;
   uniform vec3 uColB;
   uniform vec3 uColC;
@@ -166,15 +172,18 @@ const FRAGMENT = /* glsl */ `
     col *= 1.0 + 0.10 * f;
 
     float shade = sqrt(max(0.0, 1.0 - vAcross * vAcross));
-    col *= 0.35 + 0.65 * shade;
+    col *= uFloor + (1.0 - uFloor) * shade;
     float sheen = exp(-pow((vAcross + 0.35) * 3.0, 2.0));
     col += sheen * 0.30 * vec3(1.0, 0.97, 0.95) * (1.0 - 0.5 * uPaper);
 
-    col *= 0.68 + 0.32 * smoothstep(-1.0, 1.0, vDepth);
+    /* Far-side depth shadow, scaled by the same softness as the fibre
+       shading so a light profile lightens the whole braid coherently. */
+    float dscale = (1.0 - uFloor) / 0.65;
+    col *= (1.0 - 0.32 * dscale) + 0.32 * dscale * smoothstep(-1.0, 1.0, vDepth);
 
     col *= 0.94 + 0.12 * sin(vT * 16.0 - uTime * 1.3);
 
-    col = mix(col, col * col * 1.25, uPaper * 0.45);
+    col = mix(col, col * col * 1.25, uPaper * uDeepen);
     col *= 1.0 + uGlow * 0.45 * (1.0 - uPaper);
 
     float alpha = smoothstep(1.0, 0.93, abs(vAcross))
@@ -198,6 +207,8 @@ function ribbonMaterial(
       uGlow: { value: 0 },
       uPaper: { value: 1 },
       uReveal: { value: 2 },
+      uDeepen: { value: 0.45 },
+      uFloor: { value: 0.35 },
       uColA: { value: new THREE.Color(stops[0]) },
       uColB: { value: new THREE.Color(stops[1]) },
       uColC: { value: new THREE.Color(stops[2]) },
@@ -243,6 +254,8 @@ export function createPly(): Ply {
       uTwist: { value: 4.6 },
       uOpen: { value: 1 },
       uShift: { value: 0 },
+      uDeepen: { value: PLY_DEEPEN },
+      uFloor: { value: PLY_FLOOR },
     });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.frustumCulled = false;

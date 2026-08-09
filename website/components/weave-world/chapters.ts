@@ -24,10 +24,14 @@
    gives --surface-page and --surface-code, hardcoded here because a WebGL
    clear colour cannot read a CSS variable; change them together. */
 
+/* The light page ground is a soft vertical gradient of warm ivory —
+   lighter tints of #F7F4ED, matching the site-layer --surface-page
+   override in app/globals.css; keep the two in the same family. The dark
+   theme stays flat black with the near-black band. */
 export function palette(dark: boolean) {
   return dark
-    ? { page: "#000000", band: "#0f0f0f" }
-    : { page: "#f6f9fc", band: "#081b2c" };
+    ? { pageTop: "#000000", pageBottom: "#000000", band: "#0f0f0f" }
+    : { pageTop: "#fefdfa", pageBottom: "#f7f4ed", band: "#081b2c" };
 }
 
 type Key = {

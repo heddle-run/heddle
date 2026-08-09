@@ -893,6 +893,15 @@ html.dark {
   --navy-800: #0e2f4a;
   --navy-700: #133e5c;
 
+  /* Warm ivory page ground in place of upstream's cool cloud-50, paired
+     with the loom world's Meadow threads: the canvas paints a vertical
+     gradient of this family (#fefdfa -> #f7f4ed in
+     components/weave-world/chapters.ts palette()), and this token keeps
+     the nav blur, chapter scrims and footer blending into it rather than
+     tinting blue-white over it. The dark theme's override in colors.css
+     still wins there. Change the two files together. */
+  --surface-page: #faf7f0;
+
   /* Crisper, ink-tinted shadows in place of Stripe's soft multi-layer float. */
   --shadow-xs: 0 1px 0 rgba(8, 27, 44, 0.07), 0 0 0 1px rgba(8, 27, 44, 0.08);
   --shadow-sm: 0 1px 2px rgba(8, 27, 44, 0.14), 0 0 0 1px rgba(8, 27, 44, 0.1);
