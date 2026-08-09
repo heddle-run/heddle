@@ -16,7 +16,14 @@ point at a different provider — see [LLM providers](https://heddle.run/docs/ll
 
 ## Running one
 
-Pack it, then run the archive:
+A published entry runs by its bare name, no checkout needed — a name that is
+not a file in the working directory is fetched from this library:
+
+```bash
+heddle run coding-agent    # fetches https://heddle.run/library/coding-agent.heddle
+```
+
+From this repository, pack it yourself and run the archive:
 
 ```bash
 node library/build.mjs coding-agent

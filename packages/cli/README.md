@@ -93,6 +93,16 @@ heddle run agent.heddle
 The bundle carries the spec, the tools, any manifest plugins and mounted files.
 Never credentials, which resolve as `$ENV_VAR` on the machine that runs.
 
+`run` also takes an `https://` address of a bundle, and a bare name is
+shorthand for the [library](https://heddle.run/library)'s copy of that entry —
+ready-made agents, one archive each:
+
+```bash
+npx @heddle-run/cli run coding-agent
+```
+
+A file of the same name in the working directory wins over the shorthand.
+
 ## The rest
 
 Full documentation lives at [heddle.run/docs](https://heddle.run/docs). The

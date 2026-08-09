@@ -54,6 +54,19 @@ A singular flag you pass overrides what the bundle recorded; a repeatable one co
 with it, the bundle's entries first. A `--plugin-config` for a component type the bundle
 also configures replaces that type's settings entirely.
 
+A bundle does not have to be a file you already have. An `https://` address is fetched to
+a temporary file and opened the same way, and a bare name — no dots, no path separators —
+is shorthand for the [library](/library)'s copy of that entry:
+
+```bash
+heddle run https://heddle.run/library/coding-agent.heddle   # fetched, then run as above
+heddle run coding-agent                                     # the same, spelled short
+```
+
+The disk is consulted first, so a file or directory that answers to the name keeps meaning
+itself. And only `.heddle` archives travel by URL: a bare flow file names tools and mounts
+by paths that did not come with it, so the archive is the form worth an address.
+
 ## What is inside
 
 A `.heddle` is a **gzipped tar archive** with a `heddle.json` manifest at its root. No

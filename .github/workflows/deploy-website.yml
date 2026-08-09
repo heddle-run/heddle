@@ -61,8 +61,9 @@ jobs:
       # After the Next build, because `next build` empties out/ first. Each
       # archive lands beside the entry's page — coding-agent/ the page,
       # coding-agent.heddle the bundle — which is what makes the one command
-      # the pages show ("npx @heddle-run/cli run https://heddle.run/library/
-      # <name>.heddle") resolve to a real file.
+      # the pages show ("npx @heddle-run/cli run <name>", which the CLI
+      # expands to https://heddle.run/library/<name>.heddle) resolve to a
+      # real file.
       - name: Pack the library into the export
         run: node library/build.mjs --out website/out/library
 

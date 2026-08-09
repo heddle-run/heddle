@@ -1,4 +1,10 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import {
@@ -55,10 +61,60 @@ export function isRemotePath(path: string): boolean {
   return /^https?:\/\//i.test(path);
 }
 
+/** Where a bare entry name resolves: heddle's own library of ready agents. */
+export const LIBRARY = 'https://heddle.run/library';
+
+/**
+ * A flow argument that reads as a library entry's name rather than a path.
+ *
+ * The shape is a slug: letters, digits, hyphens, underscores. No dots, so it
+ * cannot be a file with an extension, and no separators, so it cannot point
+ * anywhere — which is what keeps a mistyped path a path error instead of a
+ * surprise request to the library.
+ */
+export function isLibraryName(flow: string): boolean {
+  return /^[a-z0-9][a-z0-9_-]*$/i.test(flow);
+}
+
+/** The address of a library entry: one archive per name, beside the index. */
+export function libraryUrl(name: string, library: string = LIBRARY): string {
+  return `${library}/${name}.heddle`;
+}
+
 /** A downloaded archive: where it landed, and how to remove it. */
 export interface FetchedBundle {
   path: string;
   dispose(): void;
+}
+
+/**
+ * The download a flow argument names, fetched — or nothing, for a file here.
+ *
+ * Two spellings reach the network. An https:// address is taken as typed. A
+ * bare name is the library shorthand: `heddle run coding-agent` runs what
+ * `heddle run https://heddle.run/library/coding-agent.heddle` would, with
+ * the part nobody remembers filled in. The disk is consulted first, so a
+ * file or directory that answers to the name keeps meaning itself — a
+ * shorthand allowed to shadow the working directory would let the library
+ * quietly replace a file the caller can see.
+ */
+export async function fetchRemoteBundle(
+  flow: string,
+  library: string = LIBRARY,
+): Promise<FetchedBundle | undefined> {
+  if (isRemotePath(flow)) return downloadBundle(flow);
+  if (!isLibraryName(flow) || existsSync(flow)) return undefined;
+
+  const url = libraryUrl(flow, library);
+  // Said before the request rather than after: this is the moment a word
+  // becomes a network address, and if the fetch hangs, this line names what
+  // it is waiting on.
+  console.error(`Library: ${url}`);
+  return downloadBundle(url, {
+    notFound:
+      `"${flow}" is not a file here, and the library has no entry by that ` +
+      `name — ${url} answered 404. What it does have is at ${library}.`,
+  });
 }
 
 /**
@@ -68,8 +124,16 @@ export interface FetchedBundle {
  * fetched, because a flow names tools and mounts by path and none of those
  * paths came with it — the archive is the form that carries everything, which
  * is why it is the form worth an address.
+ *
+ * `messages.notFound` replaces the report for a 404, for a caller who knows
+ * what absence means there — a library name has a better story to tell than a
+ * status line. Every other status stays the status line, because for those the
+ * server's word is the whole of what is known.
  */
-export async function downloadBundle(url: string): Promise<FetchedBundle> {
+export async function downloadBundle(
+  url: string,
+  messages: { notFound?: string } = {},
+): Promise<FetchedBundle> {
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -91,7 +155,9 @@ export async function downloadBundle(url: string): Promise<FetchedBundle> {
     const response = await fetch(url);
     if (!response.ok) {
       throw new BundleError(
-        `${url} answered ${response.status} ${response.statusText}`,
+        response.status === 404 && messages.notFound
+          ? messages.notFound
+          : `${url} answered ${response.status} ${response.statusText}`,
       );
     }
     const path = join(dir, basename(parsed.pathname));

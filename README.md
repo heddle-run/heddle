@@ -32,7 +32,14 @@ it is not published to npm. See [vendor/agentspec/VENDOR.md](vendor/agentspec/VE
 
 ## Installation
 
-There is nothing to install. `npx` fetches the CLI and runs it:
+There is nothing to install. `npx` fetches the CLI and runs it — here running a
+finished agent from the [library](https://heddle.run/library) by its bare name:
+
+```bash
+npx @heddle-run/cli run coding-agent
+```
+
+Or your own flow:
 
 ```bash
 npx @heddle-run/cli run flow.json --tools-dir tools --input '{"query": "hello"}'
@@ -553,7 +560,9 @@ heddle run library/dist/coding-agent.heddle
 ```
 
 Browsable at [heddle.run/library](https://heddle.run/library), and CI packs every
-entry, so a listing there is a bundle that builds.
+entry, so a listing there is a bundle that builds. A listing is also one command:
+`heddle run coding-agent` fetches the library's published archive when no file
+of that name is here.
 
 ## LLM configuration
 
