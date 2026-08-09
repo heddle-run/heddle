@@ -124,6 +124,9 @@ export default function Hero() {
             Open source · Runs on your computer
           </motion.div>
 
+          {/* `batteries-included` is one 18-character word, so the H1 keeps
+              its 34px floor with break-word — check a 375px viewport before
+              changing either. */}
           <motion.h1
             {...enter(0.08)}
             style={{
@@ -133,9 +136,10 @@ export default function Hero() {
               letterSpacing: "var(--ls-display)",
               color: "var(--text-strong)",
               margin: 0,
+              overflowWrap: "break-word",
             }}
           >
-            Write down a job. Let it run.
+            A batteries-included declarative agent runtime.
           </motion.h1>
 
           <motion.p

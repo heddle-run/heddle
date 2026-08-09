@@ -42,8 +42,11 @@ landing page's comparison class is therefore doing the job by hand, a chat
 window, or a fixed-rule Zapier flow — **not** other agent frameworks. Its
 rules: at most one unexplained term per screen; outcome-first headings;
 examples before features; prerequisites, cost and data-handling stated
-plainly; the beta version visible in the hero. The hero says "Write down a
-job. Let it run."
+plainly; the beta version visible in the hero. The H1 keeps the descriptor —
+"A batteries-included declarative agent runtime." was chosen deliberately in
+2026-08 and reconfirmed after a retarget experiment briefly replaced it — and
+the lede beneath it is the descriptor's plain-language translation, which is
+what carries the page for the non-developer reader.
 
 **The claim for developers still exists — it just moved.** heddle is a
 batteries-included declarative agent runtime, and both halves of that
@@ -316,8 +319,8 @@ in `app/page.tsx`, the keyframes in `components/weave-world/chapters.ts`, and
    where `--text-strong` vanishes), click to jump. Hidden below 980px; the
    bar's chapter label carries wayfinding there.
 2. **Hero** (`start`) — the two-column composition, one viewport over the
-   loom: copy on the left (mono eyebrow, the display-Light "Write down a
-   job. Let it run.", a plain-language lede, playground-first dual CTA, the
+   loom: copy on the left (mono eyebrow, the display-Light descriptor H1
+   with its plain-language lede beneath it, playground-first dual CTA, the
    Humans/Agents install tabs from `installTabs` — Humans runs a finished
    library bundle from its published URL — and the beta marker, above the
    fold on purpose), and on the right the navy `flow.yaml` editor showing
