@@ -200,10 +200,16 @@ function ribbonMaterial(
       ...extra,
     },
     side: THREE.DoubleSide,
-    transparent: true,
+    /* Not blended: the ribbons depth-write so they can occlude each other,
+       and a blended soft edge composites against whatever drew first —
+       over the paper ground that left a white fringe wherever one thread
+       edged across another. Alpha-to-coverage hands the fragment alpha to
+       MSAA instead (the renderer requests antialias), so edges stay soft
+       with no blend-order artifact. */
+    transparent: false,
+    alphaToCoverage: true,
     depthTest: true,
     depthWrite: true,
-    alphaTest: 0.4,
   });
 }
 
