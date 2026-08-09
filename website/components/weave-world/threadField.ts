@@ -18,12 +18,16 @@
 
 import * as THREE from "three";
 
-/* Three plies, five brand hues (--gradient-thread's stops) spread across
-   them. No pink — the brand explicitly retired it. */
+/* Three plies in the brand's own cool accents — the blurple and cyan ramps
+   from ds-heddle/tokens/colors.css plus the navy ink — so the loom reads as
+   one silk family beside the rest of the site's Stripe-craft restraint.
+   (An earlier pass spread all five --gradient-thread hues across the plies;
+   the multicolour read louder than the page around it.) No pink — the
+   brand explicitly retired it. */
 const PLY_STOPS: [string, string, string][] = [
-  ["#d8e6ff", "#90e0ff", "#a960ee"], // pale blue -> cyan -> purple
-  ["#ffe08a", "#ffcb57", "#ff8a00"], // pale gold -> gold -> orange
-  ["#ff5c4d", "#ff333d", "#a960ee"], // ember -> red -> purple
+  ["#e4e2ff", "#9f9aff", "#635bff"], // blurple-100 -> blurple-300 -> blurple-500
+  ["#d9f9ff", "#90e0ff", "#00d4ff"], // cyan-100 -> ice blue -> cyan-500
+  ["#7a73ff", "#635bff", "#103654"], // blurple-400 -> blurple-500 -> navy-800
 ];
 
 /* The weft's two liveries, crossed continuously in update(): navy ink on
