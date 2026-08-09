@@ -24,7 +24,7 @@ export default function UseCases() {
           number="001"
           eyebrow="What you can build"
           title="Jobs it already does."
-          lede="Four agents from the library. Each one is a text file you can open, read and change, and each runs with one command."
+          lede="A sample of the ready-made agents in the library, which keeps growing. Each one is a text file you can open, read and change, and each runs with one command."
         />
         <div className="hds-inventory-list" style={{ marginTop: 36 }}>
           {useCases.map((item, i) => (
