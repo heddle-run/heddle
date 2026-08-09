@@ -8,6 +8,7 @@ What is in this directory:
 | File | What it is |
 |---|---|
 | [docker.md](docker.md) | Running heddle in a container: both images, chat mode, local models, file ownership, `--safe` inside a container, the server image. |
+| [macos-app-design.md](macos-app-design.md) | Design notes for a native macOS menu bar app that runs agents without the terminal. A roadmap, not a manual. |
 | [plugin-system-design.md](plugin-system-design.md) | Internal design notes for the plugin system. A roadmap, not a manual. |
 | [session-persistence-design.md](session-persistence-design.md) | Internal design notes for sessions and durable runs. A roadmap, not a manual. |
 
