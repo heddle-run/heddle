@@ -18,6 +18,8 @@
     { "binary": "bash" }
   ],
   "interactive": true,
+  "session": true,
+  "maxToolRounds": "unlimited",
   "input": {
     "task": "Run the tests, find out why one fails, and fix the code with apply_patch. Keep the change minimal, then run the tests again to prove it.",
     "cwd": ".",

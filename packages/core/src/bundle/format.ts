@@ -63,6 +63,23 @@ export interface BundleManifest {
    */
   interactive?: boolean;
   /**
+   * Keep every run of this bundle in a conversation on disk.
+   *
+   * A proposal like the rest: `heddle run` opens a session unless the caller
+   * named their own with `--session` or turned it off with `--no-session`. The
+   * bundle author asks for it because the agent wants it — a coding agent's
+   * approvals wait in a session, and its runs are worth resuming.
+   */
+  session?: boolean;
+  /**
+   * A default `--max-tool-rounds`: a whole number, or a word meaning no cap.
+   *
+   * The recorded value the run uses when the caller passes no
+   * `--max-tool-rounds` of their own. Stored as written so a bundle can say
+   * `"unlimited"` as plainly as the flag does; the same parser reads both.
+   */
+  maxToolRounds?: number | string;
+  /**
    * What the machine running this has to already have — checked before a run
    * starts, never acted on. A declaration, like everything else here: heddle
    * looks, reports what is missing, and installs nothing.
@@ -105,6 +122,8 @@ export function validateBundleManifest(raw: unknown): BundleManifest {
     mounts: asMounts(manifest.mounts),
     input: asOptionalObject(manifest.input, 'input'),
     interactive: manifest.interactive === true ? true : undefined,
+    session: manifest.session === true ? true : undefined,
+    maxToolRounds: asMaxToolRounds(manifest.maxToolRounds),
     // `requires` arrived after format 1 and did *not* bump it, deliberately.
     // Everything above reads the fields it knows and ignores the rest, so an
     // older heddle opening a bundle that declares requirements skips the check
@@ -213,6 +232,26 @@ function asOptionalObject(
 ): Record<string, unknown> | undefined {
   if (value === undefined) return undefined;
   return asObject(value, `${BUNDLE_MANIFEST} "${field}" must be a JSON object`);
+}
+
+/**
+ * A recorded `maxToolRounds`: a whole number of 1 or more, or a word.
+ *
+ * The word is left for `--max-tool-rounds` to interpret at run time, the same
+ * parser the flag uses — so what a bundle may say and what the flag may say
+ * stay one vocabulary. Only the shape is checked here: a number has to be a
+ * real ceiling, and a string has to be something rather than empty.
+ */
+function asMaxToolRounds(value: unknown): number | string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value === 'number') {
+    if (!Number.isInteger(value) || value < 1) {
+      fail(`${BUNDLE_MANIFEST} "maxToolRounds" must be a whole number of 1 or more`);
+    }
+    return value;
+  }
+  if (typeof value === 'string' && value.trim().length > 0) return value;
+  fail(`${BUNDLE_MANIFEST} "maxToolRounds" must be a number or a word like "unlimited"`);
 }
 
 function asObject(value: unknown, message: string): Record<string, unknown> {

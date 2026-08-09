@@ -43,13 +43,22 @@ heddle run library/dist/coding-agent.heddle
 ```
 
 At a terminal that opens a conversation, the way Codex itself opens one: type
-a task, watch the loop run, type the next thing. The bundle records
-`interactive`, so `heddle run` at a TTY goes straight to the chat UI — add
-`--session` if you want the conversation kept and resumable. Piped, scripted,
-or given an explicit `--input`, the same bundle runs once instead, so CI never
-blocks on a UI; the recorded default task asks it to find and fix the failing
-test. Watch it do the Codex loop either way: `update_plan`, run the tests,
-read the failure, one `apply_patch`, tests again, a short final answer.
+a task, watch the loop run, type the next thing. The bundle records the three
+things that make it behave like Codex out of the box, so `heddle run <bundle>`
+needs no flags:
+
+- `interactive` — at a TTY it goes straight to the chat UI.
+- `session` — every run is kept on disk, so approvals have somewhere to wait
+  and the conversation resumes. `--no-session` opts out (for CI); a named
+  `--session <id>` continues a specific one.
+- `maxToolRounds: unlimited` — no round cap, like Codex; the loop ends when the
+  model stops calling tools. `--max-tool-rounds <n>` puts a ceiling back.
+
+Piped, scripted, or given an explicit `--input`, the same bundle runs once
+instead of opening the chat, so CI never blocks on a UI; the recorded default
+task asks it to find and fix the failing test. Watch it do the Codex loop
+either way: `update_plan`, run the tests, read the failure, one `apply_patch`,
+tests again, a short final answer.
 
 From source while editing:
 

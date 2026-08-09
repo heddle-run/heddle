@@ -32,6 +32,8 @@ interface BundleOptions {
   input?: string;
   requires?: string;
   interactive?: boolean;
+  session?: boolean;
+  maxToolRounds?: string;
   output?: string;
 }
 
@@ -86,6 +88,16 @@ export const bundleCommand = new Command('bundle')
       '--input still run once',
   )
   .option(
+    '--session',
+    'Record that every run should open a session on disk. "heddle run" opens ' +
+      'one unless the caller passes --session or --no-session of their own',
+  )
+  .option(
+    '--max-tool-rounds <n>',
+    'Record a default --max-tool-rounds: a whole number, or "unlimited". The ' +
+      'run uses it when the caller passes no --max-tool-rounds',
+  )
+  .option(
     '-o, --output <file>',
     `Where to write the bundle (default: <flow name>${BUNDLE_EXTENSION})`,
   )
@@ -122,11 +134,27 @@ export const bundleCommand = new Command('bundle')
       // sent the bundle.
       requires: readRequiresOption(options.requires),
       interactive: options.interactive,
+      session: options.session,
+      maxToolRounds: parseMaxToolRounds(options.maxToolRounds),
     };
 
     const outPath = options.output ?? defaultOutput(flow.name, flowPath);
     report(packBundle(plan, outPath), plan);
   });
+
+/**
+ * A recorded `--max-tool-rounds`, kept as the number or the word it names.
+ *
+ * A digit string becomes a number so `heddle.json` reads `40`, not `"40"`; a
+ * word (`unlimited`) is left as text for the run-time parser to interpret, the
+ * same one `heddle run --max-tool-rounds` uses. The manifest validator has the
+ * final say on what is a legal value.
+ */
+function parseMaxToolRounds(raw: string | undefined): number | string | undefined {
+  if (raw === undefined) return undefined;
+  const trimmed = raw.trim();
+  return /^\d+$/.test(trimmed) ? Number(trimmed) : trimmed;
+}
 
 /**
  * The refusals that need no file read at all.

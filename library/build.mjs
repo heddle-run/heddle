@@ -118,6 +118,10 @@ function packArgs({ dir, manifest }, outPath) {
   }
 
   if (manifest.interactive) args.push('--interactive');
+  if (manifest.session) args.push('--session');
+  if (manifest.maxToolRounds !== undefined) {
+    args.push('--max-tool-rounds', String(manifest.maxToolRounds));
+  }
 
   args.push('--input', JSON.stringify(manifest.input));
   args.push('-o', outPath);

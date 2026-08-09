@@ -56,6 +56,10 @@ export interface LibraryEntry {
   requires: Requirement[];
   /** The bundle opens the chat UI when run at a terminal. */
   interactive: boolean;
+  /** The bundle keeps every run in a session on disk. */
+  session: boolean;
+  /** A recorded default --max-tool-rounds, if the bundle set one. */
+  maxToolRounds?: number | string;
   /** Every file the entry ships, relative to its directory. */
   files: string[];
   /** Tool executables, by the name a spec refers to them by. */
@@ -109,6 +113,8 @@ function read(name: string): LibraryEntry | null {
     input: manifest.input ?? {},
     requires: parseRequirements(manifest.requires),
     interactive: manifest.interactive === true,
+    session: manifest.session === true,
+    maxToolRounds: manifest.maxToolRounds,
     files,
     tools,
     spec: existsSync(specPath) ? readFileSync(specPath, "utf8") : "",

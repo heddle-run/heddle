@@ -223,6 +223,34 @@ describe('packing and extracting', () => {
     ).toBeUndefined();
   });
 
+  it('round-trips the session and max-tool-rounds defaults', () => {
+    const out = join(dir, 'defaults.heddle');
+    packBundle(plan({ session: true, maxToolRounds: 'unlimited' }), out);
+    const manifest = extractBundle(out, join(dir, 'defaults-x'));
+    expect(manifest.session).toBe(true);
+    expect(manifest.maxToolRounds).toBe('unlimited');
+
+    const numeric = join(dir, 'numeric.heddle');
+    packBundle(plan({ maxToolRounds: 40 }), numeric);
+    expect(extractBundle(numeric, join(dir, 'numeric-x')).maxToolRounds).toBe(40);
+
+    const plain = join(dir, 'plain2.heddle');
+    packBundle(plan(), plain);
+    const bare = extractBundle(plain, join(dir, 'plain2-x'));
+    expect(bare.session).toBeUndefined();
+    expect(bare.maxToolRounds).toBeUndefined();
+  });
+
+  it('refuses reading a max-tool-rounds that is not a real ceiling', () => {
+    // The read is where the shape is enforced, so a hand-written bundle with a
+    // nonsense value fails on the machine that runs it rather than silently.
+    const written = join(dir, 'bad.heddle');
+    packBundle(plan({ maxToolRounds: -3 }), written);
+    expect(() => extractBundle(written, join(dir, 'bad-x'))).toThrow(
+      /maxToolRounds/,
+    );
+  });
+
   it('round-trips a full bundle: flow, tools, plugin directory, mounts', () => {
     const toolsDir = join(dir, 'tools');
     mkdirSync(toolsDir);

@@ -11,7 +11,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Command } from 'commander';
 import { bundleCommand } from '../bundle.js';
-import { openBundle, type OpenedBundle } from '../bundles.js';
+import { mergeBundleOptions, openBundle, type OpenedBundle } from '../bundles.js';
 import { honourBundleChat, runCommand } from '../run.js';
 import { validateCommand } from '../validate.js';
 
@@ -195,6 +195,47 @@ describe('a bundle that recorded --interactive', () => {
     const noBundle = emptyOptions();
     honourBundleChat(noBundle, undefined, true);
     expect(noBundle.interactive).toBeUndefined();
+  });
+});
+
+describe('a bundle that recorded session and max-tool-rounds', () => {
+  it('carries both from pack through open', async () => {
+    const { out } = await pack('--session', '--max-tool-rounds', 'unlimited');
+    const bundle = openBundle(out);
+    try {
+      expect(bundle.session).toBe(true);
+      expect(bundle.maxToolRounds).toBe('unlimited');
+    } finally {
+      bundle.dispose();
+    }
+  });
+
+  it('proposes them into a run, and the caller overrides', () => {
+    type Merged = Parameters<typeof mergeBundleOptions>[0];
+    const bundle = {
+      name: 'demo',
+      plugins: [],
+      pluginConfig: [],
+      session: true,
+      maxToolRounds: 'unlimited',
+    } as unknown as OpenedBundle;
+
+    // Nothing typed: the bundle's defaults land.
+    const bare: Merged = {};
+    mergeBundleOptions(bare, bundle);
+    expect(bare.session).toBe(true);
+    expect(bare.maxToolRounds).toBe('unlimited');
+
+    // A caller's own flags win: a named session, and a numeric ceiling.
+    const typed: Merged = { session: 'my-session', maxToolRounds: '25' };
+    mergeBundleOptions(typed, bundle);
+    expect(typed.session).toBe('my-session');
+    expect(typed.maxToolRounds).toBe('25');
+
+    // --no-session (session === false) is a decision, not an absence.
+    const optedOut: Merged = { session: false };
+    mergeBundleOptions(optedOut, bundle);
+    expect(optedOut.session).toBe(false);
   });
 });
 

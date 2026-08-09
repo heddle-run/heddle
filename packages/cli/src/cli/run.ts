@@ -100,6 +100,10 @@ export const runCommand = new Command('run')
       'before it. With no id a new session is created and its id printed; ' +
       'with one, that session continues',
   )
+  .option(
+    '--no-session',
+    'Run without a session, even if the bundle records that it wants one',
+  )
   .option('--session-dir <dir>', 'Where sessions are kept')
   .option(
     '--durable',

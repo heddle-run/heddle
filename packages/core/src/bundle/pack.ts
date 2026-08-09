@@ -36,6 +36,10 @@ export interface BundlePlan {
   requires?: Requirement[];
   /** Record that this bundle would rather open a conversation than run once. */
   interactive?: boolean;
+  /** Record that every run of this bundle should open a session on disk. */
+  session?: boolean;
+  /** A recorded default `--max-tool-rounds`: a number, or a word like "unlimited". */
+  maxToolRounds?: number | string;
 }
 
 export interface PackedBundle {
@@ -90,6 +94,8 @@ export function packBundle(plan: BundlePlan, outPath: string): PackedBundle {
     // rather than an empty list somebody has to interpret.
     requires: plan.requires?.length ? plan.requires : undefined,
     interactive: plan.interactive ? true : undefined,
+    session: plan.session ? true : undefined,
+    maxToolRounds: plan.maxToolRounds,
   };
 
   entries.unshift({

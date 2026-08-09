@@ -35,6 +35,10 @@ export interface OpenedBundle {
   input?: string;
   /** The bundle recorded that it would rather open a conversation. */
   interactive?: boolean;
+  /** The bundle recorded that every run should open a session. */
+  session?: boolean;
+  /** The recorded default `--max-tool-rounds`, as a flag string. */
+  maxToolRounds?: string;
   /**
    * What the bundle says this machine must already have. Unlike everything
    * above it is not a flag's worth of defaults — no flag grants a requirement,
@@ -133,6 +137,11 @@ export function openBundle(archivePath: string): OpenedBundle {
           ? undefined
           : JSON.stringify(manifest.input),
       interactive: manifest.interactive,
+      session: manifest.session,
+      maxToolRounds:
+        manifest.maxToolRounds === undefined
+          ? undefined
+          : String(manifest.maxToolRounds),
       requires: manifest.requires ?? [],
       dispose,
     };
@@ -186,6 +195,8 @@ interface BundleAwareOptions {
   plugin?: string[];
   pluginConfig?: string[];
   input?: string;
+  session?: string | boolean;
+  maxToolRounds?: string;
 }
 
 /**
@@ -202,6 +213,11 @@ export function mergeBundleOptions(
 ): void {
   options.toolsDir ??= bundle.toolsDir;
   options.input ??= bundle.input;
+  options.maxToolRounds ??= bundle.maxToolRounds;
+  // A bundle asking for a session proposes a fresh one (`true`). The caller's
+  // `--session <id>`, bare `--session`, or `--no-session` all land first and
+  // win, since each leaves `options.session` defined before this runs.
+  if (bundle.session && options.session === undefined) options.session = true;
   options.plugin = [...bundle.plugins, ...(options.plugin ?? [])];
 
   const overridden = new Set(
