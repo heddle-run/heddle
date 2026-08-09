@@ -1,0 +1,17 @@
+{
+  "shell_command": {
+    "command": "echo workspace: && pwd && ls -la",
+    "workdir": "."
+  },
+  "apply_patch": {
+    "input": "*** Begin Patch\n*** Add File: probe.txt\n+written by the probe\n*** End Patch"
+  },
+  "update_plan": {
+    "explanation": "Probing the plan tool",
+    "plan": [
+      { "step": "Understand the task", "status": "in_progress" },
+      { "step": "Make the change", "status": "pending" },
+      { "step": "Verify with tests", "status": "pending" }
+    ]
+  }
+}
