@@ -52,12 +52,14 @@ function yamlLine(line: string): ReactNode {
   return <span style={{ color: "var(--code-fg)" }}>{line}</span>;
 }
 
-/* The opening chapter: one full viewport of centered display type over the
-   live loom, then the proof — the spec window with the terminal overlapping
-   it — as a second beat further down the same chapter. The old side-by-side
-   hero grid is gone; the world is the composition now, and the copy floats
-   on it the way kage floats its chapter cards over the temple. Copy is
-   unchanged and still comes from lib/constants.ts. */
+/* The opening chapter, back in the original two-column composition: copy on
+   the left, the spec window with the terminal overlapping it on the right,
+   one viewport, over the live loom. The windows sit where the braid sweeps,
+   which is the point — navy panes over the threads, the same layering the
+   old painted hero had. Copy is unchanged and still comes from
+   lib/constants.ts. `batteries-included` is one 18-character word, so the
+   H1 keeps its 34px floor with break-word — check a 375px viewport before
+   changing either. */
 export default function Hero() {
   const [tabId, setTabId] = useState(installTabs[0].id);
   const tab = installTabs.find((t) => t.id === tabId) ?? installTabs[0];
@@ -73,180 +75,169 @@ export default function Hero() {
         };
 
   return (
-    <div>
-      {/* Beat one: the statement, a full viewport. */}
+    <div
+      style={{
+        minHeight: "calc(100svh - 96px)",
+        display: "flex",
+        alignItems: "center",
+        position: "relative",
+        paddingBottom: 48,
+      }}
+    >
+      {/* The copy column's scrim: a soft radial pool, not an oval patch on a
+          band — the braid lives on the right, so the left needs only a
+          whisper of ground for the lede and install note. */}
       <div
+        aria-hidden="true"
         style={{
-          minHeight: "calc(100svh - 96px)",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          textAlign: "center",
-          position: "relative",
-          padding: "60px 24px 72px",
+          position: "absolute",
+          inset: "0 30% 0 0",
+          pointerEvents: "none",
+          background:
+            "radial-gradient(ellipse at 35% 45%, color-mix(in srgb, var(--surface-page) 85%, transparent) 0%, color-mix(in srgb, var(--surface-page) 55%, transparent) 55%, transparent 80%)",
         }}
+      />
+
+      <div
+        className="hds-container hds-hero-grid"
+        style={{ position: "relative", zIndex: 1, width: "100%" }}
       >
-        {/* The copy's own scrim: full-width soft band, not an oval patch. */}
-        <div
-          aria-hidden="true"
-          style={{
-            position: "absolute",
-            inset: "6% 0",
-            pointerEvents: "none",
-            background:
-              "linear-gradient(180deg, transparent 0%, color-mix(in srgb, var(--surface-page) 88%, transparent) 18%, color-mix(in srgb, var(--surface-page) 88%, transparent) 82%, transparent 100%)",
-          }}
-        />
-
-        <motion.div
-          {...enter(0)}
-          style={{
-            position: "relative",
-            fontFamily: "var(--font-mono)",
-            fontSize: 11,
-            letterSpacing: "var(--ls-label)",
-            textTransform: "uppercase",
-            color: "var(--text-accent)",
-            marginBottom: 24,
-          }}
-        >
-          Declarative YAML · MIT
-        </motion.div>
-
-        <motion.h1
-          {...enter(0.08)}
-          style={{
-            position: "relative",
-            fontSize: "clamp(34px, 6.4vw, 72px)",
-            fontWeight: "var(--fw-light)",
-            lineHeight: 1.05,
-            letterSpacing: "var(--ls-display)",
-            color: "var(--text-strong)",
-            margin: 0,
-            maxWidth: "16ch",
-            overflowWrap: "break-word",
-          }}
-        >
-          A batteries-included declarative agent runtime.
-        </motion.h1>
-
-        <motion.p
-          {...enter(0.16)}
-          style={{
-            position: "relative",
-            fontSize: "var(--fs-body-lg)",
-            color: "var(--text-muted)",
-            lineHeight: 1.6,
-            maxWidth: "52ch",
-            margin: "22px 0 0",
-          }}
-        >
-          Declare the agent once, in YAML. The loop, the sandbox, the retries
-          and the server live in the runtime, not in your codebase.
-        </motion.p>
-
-        <motion.div
-          {...enter(0.24)}
-          style={{
-            position: "relative",
-            display: "flex",
-            gap: 12,
-            marginTop: 30,
-            alignItems: "center",
-            justifyContent: "center",
-            flexWrap: "wrap",
-          }}
-        >
-          <Button
-            as="a"
-            href="/docs"
-            size="lg"
-            iconRight={<Icon name="arrowRight" size={16} />}
-          >
-            Read the docs
-          </Button>
-          <Button
-            as="a"
-            href={GITHUB_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            size="lg"
-            variant="secondary"
-            iconLeft={<Icon name="github" size={16} />}
-          >
-            Star on GitHub
-          </Button>
-        </motion.div>
-
-        <motion.div
-          {...enter(0.32)}
-          style={{ position: "relative", marginTop: 30, width: "100%", maxWidth: 560 }}
-        >
-          <div
-            role="tablist"
-            aria-label="Install commands"
+        <div>
+          <motion.div
+            {...enter(0)}
             style={{
-              display: "flex",
-              gap: 4,
-              marginBottom: 10,
-              justifyContent: "center",
+              fontFamily: "var(--font-mono)",
+              fontSize: 11,
+              letterSpacing: "var(--ls-label)",
+              textTransform: "uppercase",
+              color: "var(--text-accent)",
+              marginBottom: 20,
             }}
           >
-            {installTabs.map((t) => {
-              const active = t.id === tabId;
-              return (
-                <button
-                  key={t.id}
-                  role="tab"
-                  aria-selected={active}
-                  onClick={() => setTabId(t.id)}
-                  style={{
-                    height: 30,
-                    padding: "0 12px",
-                    cursor: "pointer",
-                    fontFamily: "var(--font-mono)",
-                    fontSize: 12,
-                    letterSpacing: "0.04em",
-                    borderRadius: "var(--radius-control)",
-                    border: `1px solid ${active ? "var(--border-default)" : "transparent"}`,
-                    background: active ? "var(--surface-raised)" : "transparent",
-                    color: active ? "var(--text-strong)" : "var(--text-subtle)",
-                    transition: "var(--transition-control)",
-                  }}
-                >
-                  {t.label}
-                </button>
-              );
-            })}
-          </div>
+            Declarative YAML · MIT
+          </motion.div>
 
-          <div className="hds-install" style={{ display: "grid", gap: 8 }}>
-            {tab.commands.map((command) => (
-              <InstallCommand key={command.cmd} command={command.cmd} />
-            ))}
-          </div>
-
-          <div
-            style={{ fontSize: 12.5, color: "var(--text-subtle)", marginTop: 8 }}
+          <motion.h1
+            {...enter(0.08)}
+            style={{
+              fontSize: "clamp(34px, 5.2vw, 54px)",
+              fontWeight: "var(--fw-light)",
+              lineHeight: 1.06,
+              letterSpacing: "var(--ls-display)",
+              color: "var(--text-strong)",
+              margin: 0,
+              overflowWrap: "break-word",
+            }}
           >
-            {tab.note}
-          </div>
-        </motion.div>
+            A batteries-included declarative agent runtime.
+          </motion.h1>
 
-        <div className="hds-scroll-cue" aria-hidden="true">
-          <span>Scroll</span>
-          <span className="hds-scroll-cue-line" />
+          <motion.p
+            {...enter(0.16)}
+            style={{
+              fontSize: "var(--fs-body-lg)",
+              color: "var(--text-muted)",
+              lineHeight: 1.6,
+              maxWidth: "46ch",
+              margin: "20px 0 0",
+            }}
+          >
+            Declare the agent once, in YAML. The loop, the sandbox, the retries
+            and the server live in the runtime, not in your codebase.
+          </motion.p>
+
+          <motion.div
+            {...enter(0.24)}
+            style={{
+              display: "flex",
+              gap: 12,
+              marginTop: 28,
+              alignItems: "center",
+              flexWrap: "wrap",
+            }}
+          >
+            <Button
+              as="a"
+              href="/docs"
+              size="lg"
+              iconRight={<Icon name="arrowRight" size={16} />}
+            >
+              Read the docs
+            </Button>
+            <Button
+              as="a"
+              href={GITHUB_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              size="lg"
+              variant="secondary"
+              iconLeft={<Icon name="github" size={16} />}
+            >
+              Star on GitHub
+            </Button>
+          </motion.div>
+
+          <motion.div {...enter(0.32)} style={{ marginTop: 26, maxWidth: 560 }}>
+            <div
+              role="tablist"
+              aria-label="Install commands"
+              style={{ display: "flex", gap: 4, marginBottom: 10 }}
+            >
+              {installTabs.map((t) => {
+                const active = t.id === tabId;
+                return (
+                  <button
+                    key={t.id}
+                    role="tab"
+                    aria-selected={active}
+                    onClick={() => setTabId(t.id)}
+                    style={{
+                      height: 30,
+                      padding: "0 12px",
+                      cursor: "pointer",
+                      fontFamily: "var(--font-mono)",
+                      fontSize: 12,
+                      letterSpacing: "0.04em",
+                      borderRadius: "var(--radius-control)",
+                      border: `1px solid ${active ? "var(--border-default)" : "transparent"}`,
+                      background: active
+                        ? "var(--surface-raised)"
+                        : "transparent",
+                      color: active
+                        ? "var(--text-strong)"
+                        : "var(--text-subtle)",
+                      transition: "var(--transition-control)",
+                    }}
+                  >
+                    {t.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="hds-install" style={{ display: "grid", gap: 8 }}>
+              {tab.commands.map((command) => (
+                <InstallCommand key={command.cmd} command={command.cmd} />
+              ))}
+            </div>
+
+            <div
+              style={{
+                fontSize: 12.5,
+                color: "var(--text-subtle)",
+                marginTop: 8,
+              }}
+            >
+              {tab.note}
+            </div>
+          </motion.div>
         </div>
-      </div>
 
-      {/* Beat two: the proof. The same spec-beside-run pairing the brand
-          brief requires the hero to carry, restaged as its own moment. */}
-      <div
-        className="hds-container"
-        style={{ maxWidth: 780, paddingBottom: 48 }}
-      >
-        <div className="hds-hero-windows" style={{ position: "relative" }}>
+        <motion.div
+          {...enter(0.2)}
+          className="hds-hero-windows"
+          style={{ position: "relative" }}
+        >
           <div
             style={{
               background: "var(--surface-code)",
@@ -286,7 +277,11 @@ export default function Hero() {
                 tools/
               </span>
               <span
-                style={{ padding: "11px 20px", fontSize: 12.5, color: "var(--slate-400)" }}
+                style={{
+                  padding: "11px 20px",
+                  fontSize: 12.5,
+                  color: "var(--slate-400)",
+                }}
               >
                 README
               </span>
@@ -304,11 +299,10 @@ export default function Hero() {
                   key={i}
                   style={{ whiteSpace: "pre" }}
                   initial={reduce ? false : { opacity: 0, x: -6 }}
-                  whileInView={{ opacity: 1, x: 0 }}
-                  viewport={{ once: true, amount: 0.2 }}
+                  animate={{ opacity: 1, x: 0 }}
                   transition={{
                     duration: 0.3,
-                    delay: 0.1 + i * 0.035,
+                    delay: 0.3 + i * 0.035,
                     ease: [0.2, 0, 0.2, 1],
                   }}
                 >
@@ -338,7 +332,12 @@ export default function Hero() {
               }}
             />
           </div>
-        </div>
+        </motion.div>
+      </div>
+
+      <div className="hds-scroll-cue" aria-hidden="true">
+        <span>Scroll</span>
+        <span className="hds-scroll-cue-line" />
       </div>
     </div>
   );

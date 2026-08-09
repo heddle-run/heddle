@@ -310,15 +310,17 @@ in `app/page.tsx`, the keyframes in `components/weave-world/chapters.ts`, and
    accent-coloured (blurple has contrast on both paper and the navy band,
    where `--text-strong` vanishes), click to jump. Hidden below 980px; the
    bar's chapter label carries wayfinding there.
-2. **Hero** (`start`) — two beats in one chapter. First, a full viewport of
-   centred display type: mono eyebrow, display-Light H1, the wedge sentence
-   as lede, dual CTA, the Humans/Agents install tabs (from `installTabs`),
-   and a scroll cue. Then the proof: the navy `flow.yaml` editor showing the
-   real Open Agent Specification fragment from `steps[0]`, with the
-   `zsh — heddle` terminal (from `specimenSpread.terminal`) overlapping it.
-   `batteries-included` is one 18-character word, so the H1 clamp keeps its
-   34px floor with `overflow-wrap: break-word` — check a 375px viewport
-   before changing either.
+2. **Hero** (`start`) — the original two-column composition, one viewport
+   over the loom: copy on the left (mono eyebrow, display-Light H1, the
+   wedge sentence as lede, dual CTA, the Humans/Agents install tabs from
+   `installTabs`, a soft radial scrim pooled behind them), and on the right
+   the navy `flow.yaml` editor showing the real Open Agent Specification
+   fragment from `steps[0]`, with the `zsh — heddle` terminal (from
+   `specimenSpread.terminal`) overlapping it — the windows sit over the
+   braid's sweep, the same layering the old painted hero had. A scroll cue
+   sits bottom-centre. `batteries-included` is one 18-character word, so
+   the H1 clamp keeps its 34px floor with `overflow-wrap: break-word` —
+   check a 375px viewport before changing either.
 3. **Inventory** (`included`) — 001. The full manifest as a numbered hairline
    list. **This section is what makes the lead claim falsifiable**, so every
    line has to name a feature that exists in the README — treat it the way
