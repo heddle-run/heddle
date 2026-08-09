@@ -211,6 +211,18 @@ describe('packing and extracting', () => {
     };
   }
 
+  it('round-trips the interactive proposal, and omits it when absent', () => {
+    const chatty = join(dir, 'chatty.heddle');
+    packBundle(plan({ interactive: true }), chatty);
+    expect(extractBundle(chatty, join(dir, 'chatty-x')).interactive).toBe(true);
+
+    const plain = join(dir, 'plain.heddle');
+    packBundle(plan(), plain);
+    expect(
+      extractBundle(plain, join(dir, 'plain-x')).interactive,
+    ).toBeUndefined();
+  });
+
   it('round-trips a full bundle: flow, tools, plugin directory, mounts', () => {
     const toolsDir = join(dir, 'tools');
     mkdirSync(toolsDir);

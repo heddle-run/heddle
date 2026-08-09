@@ -240,6 +240,9 @@ export const runCommand = new Command('run')
       const bundle = isBundlePath(archivePath)
         ? openBundle(archivePath)
         : undefined;
+      // Before the merge writes the bundle's recorded input into `options`,
+      // while `--input` still means only what the caller themselves typed.
+      honourBundleChat(options, bundle);
       if (bundle) mergeBundleOptions(options, bundle);
 
       try {
@@ -742,6 +745,44 @@ function applyMaxToolRounds(
     throw new Error('--max-tool-rounds must be a whole number of 1 or more');
   }
   opts.maxToolRounds = rounds;
+}
+
+/**
+ * Open the chat UI for a bundle that recorded `interactive` — when nothing
+ * the caller typed says otherwise.
+ *
+ * The bundle proposes, the command line disposes, and so does the terminal:
+ * an explicit `--input` is an instruction to run that task once, an encoder
+ * owns stdout, a resume is answering a suspended run, `-i` already decided,
+ * and a pipe has nobody at the keyboard. Every override is silent except the
+ * pipe, which gets one line saying why the chat-first bundle ran once —
+ * that fallback is the one that would otherwise read as the bundle being
+ * broken in CI logs.
+ *
+ * Called before `mergeBundleOptions`, so `options.input` here is only ever
+ * the caller's own; the bundle's recorded input is the chat's loss, not its
+ * veto.
+ */
+export function honourBundleChat(
+  options: RunOptions,
+  bundle: OpenedBundle | undefined,
+  tty = process.stdin.isTTY === true && process.stdout.isTTY === true,
+): void {
+  if (!bundle?.interactive) return;
+  if (options.interactive !== undefined) return;
+  if (options.input !== undefined) return;
+  if (options.protocol !== undefined) return;
+  if (options.resume || options.answer !== undefined) return;
+
+  if (!tty) {
+    console.error(
+      `"${bundle.name}" opens a chat when run at a terminal. No terminal ` +
+        `here, so it runs its recorded input once instead.`,
+    );
+    return;
+  }
+
+  options.interactive = true;
 }
 
 function parseInputs(input: string | undefined): Record<string, unknown> {

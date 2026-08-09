@@ -33,6 +33,8 @@ export interface OpenedBundle {
   mounts: Mount[];
   /** The recorded default input, as `--input` JSON. */
   input?: string;
+  /** The bundle recorded that it would rather open a conversation. */
+  interactive?: boolean;
   /**
    * What the bundle says this machine must already have. Unlike everything
    * above it is not a flag's worth of defaults — no flag grants a requirement,
@@ -130,6 +132,7 @@ export function openBundle(archivePath: string): OpenedBundle {
         manifest.input === undefined
           ? undefined
           : JSON.stringify(manifest.input),
+      interactive: manifest.interactive,
       requires: manifest.requires ?? [],
       dispose,
     };

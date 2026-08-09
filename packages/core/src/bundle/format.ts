@@ -53,6 +53,16 @@ export interface BundleManifest {
   /** Default `--input`, overridable at run time. */
   input?: Record<string, unknown>;
   /**
+   * The bundle would rather open a conversation than run once.
+   *
+   * A proposal, exactly like `input`: `heddle run` honours it only at a real
+   * terminal with nothing overriding it — an explicit `--input`, an encoder,
+   * a resume — and everything else runs the recorded input once, so scripts
+   * and CI never block on a UI. Like `requires`, the field arrived without a
+   * format bump: an older heddle ignores it and behaves as it always did.
+   */
+  interactive?: boolean;
+  /**
    * What the machine running this has to already have — checked before a run
    * starts, never acted on. A declaration, like everything else here: heddle
    * looks, reports what is missing, and installs nothing.
@@ -94,6 +104,7 @@ export function validateBundleManifest(raw: unknown): BundleManifest {
     pluginConfig: asPluginConfig(manifest.pluginConfig),
     mounts: asMounts(manifest.mounts),
     input: asOptionalObject(manifest.input, 'input'),
+    interactive: manifest.interactive === true ? true : undefined,
     // `requires` arrived after format 1 and did *not* bump it, deliberately.
     // Everything above reads the fields it knows and ignores the rest, so an
     // older heddle opening a bundle that declares requirements skips the check

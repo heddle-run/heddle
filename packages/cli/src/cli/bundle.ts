@@ -31,6 +31,7 @@ interface BundleOptions {
   mount: string[];
   input?: string;
   requires?: string;
+  interactive?: boolean;
   output?: string;
 }
 
@@ -79,6 +80,12 @@ export const bundleCommand = new Command('bundle')
       'run starts and reported all at once; never installed, fetched or run',
   )
   .option(
+    '--interactive',
+    'Record that this bundle would rather open the chat UI than run once. ' +
+      '"heddle run" honours it at a terminal; scripts, pipes and an explicit ' +
+      '--input still run once',
+  )
+  .option(
     '-o, --output <file>',
     `Where to write the bundle (default: <flow name>${BUNDLE_EXTENSION})`,
   )
@@ -114,6 +121,7 @@ export const bundleCommand = new Command('bundle')
       // is caught on the machine that can fix it instead of the one that was
       // sent the bundle.
       requires: readRequiresOption(options.requires),
+      interactive: options.interactive,
     };
 
     const outPath = options.output ?? defaultOutput(flow.name, flowPath);

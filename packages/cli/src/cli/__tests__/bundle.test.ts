@@ -11,7 +11,8 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Command } from 'commander';
 import { bundleCommand } from '../bundle.js';
-import { runCommand } from '../run.js';
+import { openBundle, type OpenedBundle } from '../bundles.js';
+import { honourBundleChat, runCommand } from '../run.js';
 import { validateCommand } from '../validate.js';
 
 const repoRoot = join(import.meta.dirname, '../../../../../');
@@ -118,6 +119,82 @@ describe('heddle bundle', () => {
     await expect(invoke(bundleCommand, [out])).rejects.toThrow(
       /already a bundle/,
     );
+  });
+});
+
+describe('a bundle that recorded --interactive', () => {
+  it('carries the proposal from pack through open', async () => {
+    const { out } = await pack('--interactive');
+    const bundle = openBundle(out);
+    try {
+      expect(bundle.interactive).toBe(true);
+    } finally {
+      bundle.dispose();
+    }
+  });
+
+  it('a bundle packed without it proposes nothing', async () => {
+    const { out } = await pack();
+    const opened = openBundle(out);
+    try {
+      expect(opened.interactive).toBeUndefined();
+    } finally {
+      opened.dispose();
+    }
+  });
+
+  type Options = Parameters<typeof honourBundleChat>[0];
+  const emptyOptions = (over: Partial<Options> = {}): Options => ({
+    allowRead: [],
+    allowWrite: [],
+    allowEnv: [],
+    mount: [],
+    ...over,
+  });
+
+  it('opens the chat at a terminal, and only there', () => {
+    const bundle = { name: 'demo', interactive: true } as OpenedBundle;
+
+    const atTerminal = emptyOptions();
+    honourBundleChat(atTerminal, bundle, true);
+    expect(atTerminal.interactive).toBe(true);
+
+    const piped = emptyOptions();
+    const stderr = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      honourBundleChat(piped, bundle, false);
+      expect(piped.interactive).toBeUndefined();
+      expect(stderr).toHaveBeenCalledWith(
+        expect.stringContaining('runs its recorded input once'),
+      );
+    } finally {
+      stderr.mockRestore();
+    }
+  });
+
+  it('yields to everything the caller typed', () => {
+    const bundle = { name: 'demo', interactive: true } as OpenedBundle;
+
+    const cases: Options[] = [
+      emptyOptions({ input: '{"query":"typed"}' }),
+      emptyOptions({ protocol: 'ag-ui' }),
+      emptyOptions({ resume: true }),
+      emptyOptions({ answer: '{"approved":true}' }),
+      emptyOptions({ interactive: false }),
+    ];
+    for (const options of cases) {
+      const before = { ...options };
+      honourBundleChat(options, bundle, true);
+      expect(options).toEqual(before);
+    }
+
+    const plainBundle = emptyOptions();
+    honourBundleChat(plainBundle, { name: 'demo' } as OpenedBundle, true);
+    expect(plainBundle.interactive).toBeUndefined();
+
+    const noBundle = emptyOptions();
+    honourBundleChat(noBundle, undefined, true);
+    expect(noBundle.interactive).toBeUndefined();
   });
 });
 

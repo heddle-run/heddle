@@ -54,6 +54,8 @@ export interface LibraryEntry {
   mounts: string[];
   input: Record<string, unknown>;
   requires: Requirement[];
+  /** The bundle opens the chat UI when run at a terminal. */
+  interactive: boolean;
   /** Every file the entry ships, relative to its directory. */
   files: string[];
   /** Tool executables, by the name a spec refers to them by. */
@@ -106,6 +108,7 @@ function read(name: string): LibraryEntry | null {
     mounts: manifest.mounts ?? [],
     input: manifest.input ?? {},
     requires: parseRequirements(manifest.requires),
+    interactive: manifest.interactive === true,
     files,
     tools,
     spec: existsSync(specPath) ? readFileSync(specPath, "utf8") : "",

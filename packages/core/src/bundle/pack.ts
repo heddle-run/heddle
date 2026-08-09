@@ -34,6 +34,8 @@ export interface BundlePlan {
   input?: Record<string, unknown>;
   /** Already through `parseRequirements`, so every predicate is readable. */
   requires?: Requirement[];
+  /** Record that this bundle would rather open a conversation than run once. */
+  interactive?: boolean;
 }
 
 export interface PackedBundle {
@@ -87,6 +89,7 @@ export function packBundle(plan: BundlePlan, outPath: string): PackedBundle {
     // Only when there are any, so a bundle that needs nothing carries no key
     // rather than an empty list somebody has to interpret.
     requires: plan.requires?.length ? plan.requires : undefined,
+    interactive: plan.interactive ? true : undefined,
   };
 
   entries.unshift({

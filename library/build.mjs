@@ -117,6 +117,8 @@ function packArgs({ dir, manifest }, outPath) {
     args.push('--requires', JSON.stringify(manifest.requires));
   }
 
+  if (manifest.interactive) args.push('--interactive');
+
   args.push('--input', JSON.stringify(manifest.input));
   args.push('-o', outPath);
 

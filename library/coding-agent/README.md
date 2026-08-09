@@ -42,9 +42,14 @@ node library/build.mjs coding-agent
 heddle run library/dist/coding-agent.heddle
 ```
 
-The default task asks it to find and fix the failing test. Watch it do the
-Codex loop: `update_plan`, run the tests, read the failure, one `apply_patch`,
-tests again, a short final answer.
+At a terminal that opens a conversation, the way Codex itself opens one: type
+a task, watch the loop run, type the next thing. The bundle records
+`interactive`, so `heddle run` at a TTY goes straight to the chat UI — add
+`--session` if you want the conversation kept and resumable. Piped, scripted,
+or given an explicit `--input`, the same bundle runs once instead, so CI never
+blocks on a UI; the recorded default task asks it to find and fix the failing
+test. Watch it do the Codex loop either way: `update_plan`, run the tests,
+read the failure, one `apply_patch`, tests again, a short final answer.
 
 From source while editing:
 
