@@ -36,14 +36,9 @@ const links = [
 
 export default function LandingChrome() {
   const [active, setActive] = useState(0);
-  const [scrolled, setScrolled] = useState(false);
   const reduce = useReducedMotion();
 
   useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 32);
-    onScroll();
-    window.addEventListener("scroll", onScroll, { passive: true });
-
     const observer = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
@@ -61,7 +56,6 @@ export default function LandingChrome() {
       if (el) observer.observe(el);
     }
     return () => {
-      window.removeEventListener("scroll", onScroll);
       observer.disconnect();
     };
   }, []);
@@ -75,6 +69,10 @@ export default function LandingChrome() {
 
   return (
     <>
+      {/* The glass bar is always on — it started transparent over the hero
+          and blurred in after 32px of scroll, but the braid sweeps under
+          the bar from the first frame, so the hero state read as floating
+          links on busy threads. */}
       <header
         style={{
           position: "fixed",
@@ -82,16 +80,10 @@ export default function LandingChrome() {
           left: 0,
           right: 0,
           zIndex: 40,
-          background: scrolled
-            ? "color-mix(in srgb, var(--surface-page) 80%, transparent)"
-            : "transparent",
-          backdropFilter: scrolled ? "blur(12px)" : "none",
-          WebkitBackdropFilter: scrolled ? "blur(12px)" : "none",
-          borderBottom: scrolled
-            ? "1px solid var(--border-hairline)"
-            : "1px solid transparent",
-          transition:
-            "background var(--dur-normal) var(--ease-standard), border-color var(--dur-normal) var(--ease-standard)",
+          background: "color-mix(in srgb, var(--surface-page) 80%, transparent)",
+          backdropFilter: "blur(12px)",
+          WebkitBackdropFilter: "blur(12px)",
+          borderBottom: "1px solid var(--border-hairline)",
         }}
       >
         <div
