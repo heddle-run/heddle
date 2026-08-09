@@ -77,11 +77,15 @@ export default function Hero() {
   return (
     <div
       style={{
-        minHeight: "calc(100svh - 96px)",
+        /* One viewport minus the fixed bar's 60px (main's paddingTop);
+           the Chapter wrapper adds nothing for the hero, so this is the
+           whole stage and the content centres in it without a dead band
+           on top. */
+        minHeight: "calc(100svh - 60px)",
         display: "flex",
         alignItems: "center",
         position: "relative",
-        paddingBottom: 48,
+        paddingBottom: 56,
       }}
     >
       {/* The copy column's scrim: a soft radial pool, not an oval patch on a

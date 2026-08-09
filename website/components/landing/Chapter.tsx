@@ -37,7 +37,10 @@ export default function Chapter({
         display: "flex",
         flexDirection: "column",
         justifyContent: "center",
-        padding: "clamp(48px, 8vh, 96px) 0",
+        /* surface="none" is the hero, which sizes and centres its own
+           viewport — wrapper padding on top of that double-stacks past
+           100svh and opens a dead band above the content. */
+        padding: surface === "none" ? 0 : "clamp(48px, 8vh, 96px) 0",
         scrollMarginTop: 60,
       }}
     >
