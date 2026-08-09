@@ -18,7 +18,7 @@ owns that job:
 
 | In Codex | Here |
 |---|---|
-| The turn loop: model → tool calls → outputs → model, until a plain answer | heddle's `AgentNode` loop, which works the same way. Codex has no round cap; heddle's default is 10 model responses per node — pass `--max-tool-rounds 24` for real tasks, and the prompt tells the model to batch |
+| The turn loop: model → tool calls → outputs → model, until a plain answer | heddle's `AgentNode` loop, which works the same way. Codex has no round cap; heddle's default is 10 model responses per node — pass `--max-tool-rounds 24`, or `--max-tool-rounds unlimited` to match Codex and run until the model answers |
 | Base instructions (`models-manager/prompt.md`) | The agent's `system_prompt`, ported near-verbatim, plus Codex's `apply_patch` instructions appendix |
 | Session prefix: AGENTS.md fragment + `<environment_context>` + permissions instructions | The `context` ToolNode runs `environment_context` before the agent; its three fragments arrive with the first message, in Codex's exact wrapper formats |
 | `shell_command` — a shell string, `workdir`, `timeout_ms` (default 10000, timeout ⇒ exit 124), `sandbox_permissions` / `justification` / `prefix_rule` | `tools/shell_command.py`, same schema, same `Exit code: / Wall time: / Output:` block, same middle-truncation at 10 000 bytes |
@@ -85,7 +85,9 @@ heddle run library/dist/coding-agent.heddle \
 
 `--max-tool-rounds` matters on real work: the default budget is 10 model
 responses per agent node, and an agent that explores before it edits can spend
-that before it gets to say what it did. Codex itself has no such cap.
+that before it gets to say what it did. Codex itself has no such cap — pass
+`--max-tool-rounds unlimited` for the same, and the loop ends only when the
+model stops calling tools (or you press Ctrl+C).
 
 The run copies the repository into its workspace, works on the copy, and on a
 `:rw` mount copies changed and new files back when it ends. Two things to

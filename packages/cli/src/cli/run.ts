@@ -145,7 +145,8 @@ export const runCommand = new Command('run')
   .option(
     '--max-tool-rounds <n>',
     'Most model responses one agent node may use, the answer included ' +
-      '(default 10). Raise it for an agent whose tool loop is legitimately long.',
+      '(default 10). Raise it for an agent whose tool loop is legitimately ' +
+      'long, or "unlimited" to run until the model stops calling tools.',
   )
   .option(
     '--no-stream',
@@ -734,15 +735,28 @@ function applyMaxNodeAttempts(
   opts.maxNodeAttempts = attempts;
 }
 
-function applyMaxToolRounds(
+/** The words `--max-tool-rounds` accepts for "no ceiling at all". */
+const UNLIMITED_ROUNDS = new Set(['unlimited', 'none', 'infinite', 'inf']);
+
+export function applyMaxToolRounds(
   opts: RunnerOptions,
   requested: string | undefined,
 ): void {
   if (requested === undefined) return;
 
+  if (UNLIMITED_ROUNDS.has(requested.trim().toLowerCase())) {
+    // No ceiling: the agent loop then ends only when the model stops calling
+    // tools and answers. A runaway model runs until it does, or until Ctrl+C —
+    // which is the trade the operator asked for by naming it.
+    opts.maxToolRounds = Infinity;
+    return;
+  }
+
   const rounds = Number(requested);
   if (!Number.isInteger(rounds) || rounds < 1) {
-    throw new Error('--max-tool-rounds must be a whole number of 1 or more');
+    throw new Error(
+      '--max-tool-rounds must be a whole number of 1 or more, or "unlimited"',
+    );
   }
   opts.maxToolRounds = rounds;
 }

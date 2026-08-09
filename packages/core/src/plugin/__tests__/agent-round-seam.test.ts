@@ -132,6 +132,18 @@ describe('before a round', () => {
     await expect(roomy.execute()).resolves.toBeDefined();
   });
 
+  it('an unlimited ceiling runs as long as the model keeps calling tools', async () => {
+    // Far past any default: with no ceiling the loop ends only when the model
+    // stops asking for tools, not when a counter runs out.
+    const long = agentWith(
+      undefined,
+      loopingProvider(40).provider,
+      undefined,
+      { maxToolRounds: Infinity },
+    );
+    await expect(long.execute()).resolves.toBeDefined();
+  });
+
   it('a lowered ceiling fails with its own number, not the default', async () => {
     const agent = agentWith(
       undefined,
