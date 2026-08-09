@@ -60,6 +60,8 @@ Options:
                          $HEDDLE_SESSION_DIR, then ~/.heddle/sessions)
   --max-node-attempts <n> How many times one arrival at a node may be attempted
                          when installed middleware asks to retry it
+  --max-tool-rounds <n>  Most model responses one agent node may use, the
+                         answer included (default 10)
   --max-iterations <n>   Maximum node executions per run
   --timeout <ms>         Wall-clock budget for a single run
   --plugin-timeout <ms>  Budget for a single call into a plugin process
@@ -146,6 +148,7 @@ async function main(): Promise<void> {
       'session-store': { type: 'string' },
       'session-dir': { type: 'string' },
       'max-node-attempts': { type: 'string' },
+      'max-tool-rounds': { type: 'string' },
       'max-iterations': { type: 'string' },
       timeout: { type: 'string' },
       'plugin-timeout': { type: 'string' },
@@ -244,6 +247,10 @@ async function main(): Promise<void> {
       maxNodeAttempts: toPositiveInt(
         values['max-node-attempts'],
         '--max-node-attempts',
+      ),
+      maxToolRounds: toPositiveInt(
+        values['max-tool-rounds'],
+        '--max-tool-rounds',
       ),
       maxIterations: toInt(values['max-iterations'], '--max-iterations'),
       timeout: toInt(values.timeout, '--timeout'),

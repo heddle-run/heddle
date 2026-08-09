@@ -43,9 +43,11 @@ export function agentWith(
   chain: MiddlewareChain | undefined,
   provider: Provider,
   toolImpl: () => Record<string, unknown> = () => ({ ok: true }),
+  extraDeps: Partial<Dependencies> = {},
 ): { execute: () => Promise<State>; events: Event[] } {
   const events: Event[] = [];
   const deps: Dependencies = {
+    ...extraDeps,
     eventHandler: (e) => events.push(e),
     middleware: chain,
     createProvider: () => provider,

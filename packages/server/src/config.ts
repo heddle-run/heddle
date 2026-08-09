@@ -99,6 +99,13 @@ export interface ServerConfig {
    * A caller who could raise it could make the server spend its own budget.
    */
   maxNodeAttempts: number;
+  /**
+   * The most model responses one agent node may use, the answer included.
+   *
+   * Server-side for the same reason `maxNodeAttempts` is: a caller who could
+   * raise it could make the server spend its own budget.
+   */
+  maxToolRounds: number;
   defaultLlmKey?: string;
   defaultLlmUrl?: string;
   stream: boolean;
@@ -165,6 +172,8 @@ export function resolveConfig(options: ServerOptions = {}): ServerConfig {
     sessionStoreName: options.sessionStoreName,
     maxNodeAttempts:
       options.maxNodeAttempts ?? DEFAULT_RUNNER_OPTIONS.maxNodeAttempts,
+    maxToolRounds:
+      options.maxToolRounds ?? DEFAULT_RUNNER_OPTIONS.maxToolRounds,
     defaultLlmKey: options.defaultLlmKey,
     defaultLlmUrl: options.defaultLlmUrl,
     stream: options.stream ?? true,

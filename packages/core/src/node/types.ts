@@ -27,6 +27,12 @@ export interface Dependencies {
   toolRegistry?: Registry;
   plugins?: PluginRegistry;
   eventHandler?: EventHandler;
+  /**
+   * `RunnerOptions.maxToolRounds`, carried here because the agent's tool loop
+   * has only its `Dependencies` — the same reason `middleware` rides twice.
+   * Absent means the engine default of 10.
+   */
+  maxToolRounds?: number;
   allowEnvRefs?: boolean;
   defaultLlmKey?: string;
   defaultLlmUrl?: string;

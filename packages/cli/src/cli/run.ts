@@ -73,6 +73,7 @@ interface RunOptions extends SandboxOptions, WorkspaceOptions, SessionFlags {
   discoverTools?: boolean;
   pluginConfig?: string[];
   maxNodeAttempts?: string;
+  maxToolRounds?: string;
   stream?: boolean;
   protocol?: string;
   format?: string;
@@ -140,6 +141,11 @@ export const runCommand = new Command('run')
   .option(
     '--max-node-attempts <n>',
     'How many times one arrival at a node may be attempted when middleware retries',
+  )
+  .option(
+    '--max-tool-rounds <n>',
+    'Most model responses one agent node may use, the answer included ' +
+      '(default 10). Raise it for an agent whose tool loop is legitimately long.',
   )
   .option(
     '--no-stream',
@@ -303,6 +309,7 @@ async function runFlow(
     !interactive && encoder === undefined,
   );
   applyMaxNodeAttempts(runnerOpts, options.maxNodeAttempts);
+  applyMaxToolRounds(runnerOpts, options.maxToolRounds);
 
   const deps: Dependencies = {
     toolExecutor: new SubprocessExecutor({
@@ -314,6 +321,7 @@ async function runFlow(
     plugins,
     eventHandler: (event: Event) => runnerOpts.eventHandler?.(event),
     stream: options.stream,
+    maxToolRounds: runnerOpts.maxToolRounds,
   };
 
   runnerOpts.middleware = MiddlewareChain.build(
@@ -721,6 +729,19 @@ function applyMaxNodeAttempts(
     throw new Error('--max-node-attempts must be a whole number of 1 or more');
   }
   opts.maxNodeAttempts = attempts;
+}
+
+function applyMaxToolRounds(
+  opts: RunnerOptions,
+  requested: string | undefined,
+): void {
+  if (requested === undefined) return;
+
+  const rounds = Number(requested);
+  if (!Number.isInteger(rounds) || rounds < 1) {
+    throw new Error('--max-tool-rounds must be a whole number of 1 or more');
+  }
+  opts.maxToolRounds = rounds;
 }
 
 function parseInputs(input: string | undefined): Record<string, unknown> {

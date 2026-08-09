@@ -60,6 +60,17 @@ export interface RunnerOptions {
   verbose: boolean;
   eventHandler?: EventHandler;
   maxNodeAttempts: number;
+  /**
+   * The most model responses one AgentNode execution may use, the answering
+   * round included.
+   *
+   * This is the operator's ceiling, not a middleware's: an `agentRound` policy
+   * can only tighten whatever stands here. Ten is right for flows whose agent
+   * steps are errands; an agent that explores before it edits — a coding
+   * agent reading a repository, say — legitimately spends more, and the
+   * operator raising this is the intended way to let it.
+   */
+  maxToolRounds: number;
   middleware?: MiddlewareChain;
   /**
    * Somewhere to write this run down, if it has anywhere.
@@ -93,4 +104,5 @@ export const DEFAULT_RUNNER_OPTIONS: Readonly<RunnerOptions> = {
   timeout: FIVE_MINUTES_IN_MS,
   verbose: false,
   maxNodeAttempts: 3,
+  maxToolRounds: 10,
 };

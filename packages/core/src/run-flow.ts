@@ -94,6 +94,7 @@ export async function runFlow(options: RunFlowOptions): Promise<State> {
       plugins: registry,
       eventHandler: onEvent,
       middleware: runnerOpts.middleware,
+      maxToolRounds: runnerOpts.maxToolRounds,
     };
 
     const graph = compile(parsed, deps);

@@ -44,6 +44,7 @@ heddle-server --tools-dir ./tools
 | `--plugin-config <type=json>` | none | Settings for an installed middleware, as `<ComponentType>=<json>` or `<ComponentType>=@file`. Repeatable. |
 | `--discover-tools` | off | Let an installed plugin declaring `discoverTools` be started so heddle can ask what tools it has. Never available to a submitted plugin. |
 | `--max-node-attempts <n>` | `3` | How many times one arrival at a node may be attempted when installed middleware asks to retry it. |
+| `--max-tool-rounds <n>` | `10` | Most model responses one agent node may use, the answer included. |
 | `--session-store <kind>` | off | Keep conversations across requests. `file` is built in; any other name is a `store` component from an installed plugin. Off means a request naming a session is refused and this server stays stateless. |
 | `--session-dir <dir>` | `~/.heddle/sessions` | Where the `file` store keeps sessions. Also `$HEDDLE_SESSION_DIR`. Requires `--session-store file`. |
 | `--max-iterations <n>` | `50` | Maximum node executions per run. |

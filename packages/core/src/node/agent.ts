@@ -132,7 +132,7 @@ export class AgentExecutor implements NodeExecutor {
     // Counted from 1 because the number is part of the `agentRound` seam's
     // contract, and a policy capping three rounds should not have to know that
     // the third one is numbered 2.
-    for (let round = opened.round; round <= MAX_TOOL_ROUNDS; round++) {
+    for (let round = opened.round; round <= this.maxToolRounds(); round++) {
       const gate = await this.beforeRound(signal, round);
       if (gate.action === 'reject') {
         throw new RunError(
@@ -182,8 +182,21 @@ export class AgentExecutor implements NodeExecutor {
     }
 
     throw new RunError(
-      `AgentNode "${this.node.name}" exceeded max tool rounds (${MAX_TOOL_ROUNDS})`,
+      `AgentNode "${this.node.name}" exceeded max tool rounds ` +
+        `(${this.maxToolRounds()}). The ceiling is the operator's: raise it ` +
+        `with --max-tool-rounds if this agent's work is legitimately long.`,
     );
+  }
+
+  /**
+   * The round ceiling this run set, with the engine's 10 as the fallback.
+   *
+   * Floored at 1 because a ceiling of 0 is not a tighter budget, it is an
+   * agent that cannot answer at all — and that misconfiguration should read
+   * as "one round", not as an unconditional failure dressed up as policy.
+   */
+  private maxToolRounds(): number {
+    return Math.max(1, this.deps.maxToolRounds ?? MAX_TOOL_ROUNDS);
   }
 
   /**
@@ -557,8 +570,9 @@ export class AgentExecutor implements NodeExecutor {
    * rewrites anything. A round is one model call plus the tool calls it asked
    * for, and the two seams inside it already own what is sent and what runs —
    * so the one thing left for this one to say is that there should not be
-   * another. `MAX_TOOL_ROUNDS` is the engine's ceiling and an operator cannot
-   * move it; this is how they get a lower one.
+   * another. The ceiling itself belongs to the operator (`maxToolRounds`,
+   * default 10); a middleware only ever gets a lower one, because a ceiling a
+   * middleware can raise is not a ceiling.
    */
   private async beforeRound(
     signal: AbortSignal | undefined,
@@ -571,8 +585,9 @@ export class AgentExecutor implements NodeExecutor {
       'agentRound',
       { nodeName: this.node.name, nodeType: 'AgentNode' },
       // `maxRounds` because a policy tightening a ceiling has to be told which
-      // one it is tightening, or it hardcodes 10 and drifts when that changes.
-      { round, maxRounds: MAX_TOOL_ROUNDS },
+      // one it is tightening, or it hardcodes 10 and drifts when the operator
+      // moves it.
+      { round, maxRounds: this.maxToolRounds() },
       signal,
       this.deps.eventHandler,
     );

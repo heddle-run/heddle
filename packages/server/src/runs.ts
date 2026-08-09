@@ -99,6 +99,8 @@ const SERVER_SIDE_FIELDS = [
   'plugin_config',
   'maxNodeAttempts',
   'max_node_attempts',
+  'maxToolRounds',
+  'max_tool_rounds',
 ];
 
 const IGNORE_EVENTS = (): void => {};
@@ -544,6 +546,7 @@ function runnerOptions(
     verbose: false,
     eventHandler,
     maxNodeAttempts: config.maxNodeAttempts,
+    maxToolRounds: config.maxToolRounds,
     middleware,
     checkpoints: checkpointsFor(plan),
     durable: plan.body.durable === true || plan.body.resume === true,

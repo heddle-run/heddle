@@ -94,6 +94,57 @@ describe('before a round', () => {
     expect(seen).toEqual({ round: 1, maxRounds: 10 });
   });
 
+  it("is told the operator's ceiling when one was set", async () => {
+    let seen: unknown;
+    const agent = agentWith(
+      chainOf(policy({ agentRound: ['before'] }, {
+        before: ({ input }: { input: Record<string, unknown> }) => {
+          seen ??= input;
+          return { action: 'proceed' };
+        },
+      })),
+      loopingProvider(1).provider,
+      undefined,
+      { maxToolRounds: 24 },
+    );
+
+    await agent.execute();
+
+    expect(seen).toEqual({ round: 1, maxRounds: 24 });
+  });
+
+  it("a raised ceiling lets a run finish that the default would stop", async () => {
+    // Twelve tool rounds plus the answering round: dead under the default 10.
+    const twelve = agentWith(
+      undefined,
+      loopingProvider(12).provider,
+    );
+    await expect(twelve.execute()).rejects.toThrow(
+      /exceeded max tool rounds \(10\)/,
+    );
+
+    const roomy = agentWith(
+      undefined,
+      loopingProvider(12).provider,
+      undefined,
+      { maxToolRounds: 15 },
+    );
+    await expect(roomy.execute()).resolves.toBeDefined();
+  });
+
+  it('a lowered ceiling fails with its own number, not the default', async () => {
+    const agent = agentWith(
+      undefined,
+      loopingProvider(5).provider,
+      undefined,
+      { maxToolRounds: 2 },
+    );
+
+    await expect(agent.execute()).rejects.toThrow(
+      /exceeded max tool rounds \(2\)/,
+    );
+  });
+
   it('refuses the first round before any model call is made', async () => {
     const { provider, calls } = loopingProvider(2);
     const agent = agentWith(
