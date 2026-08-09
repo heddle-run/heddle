@@ -1,137 +1,214 @@
-/* The loom's geometry, second pass. The first pass drew the threads as
-   LineSegments2 fat-lines — constant pixel width, no shading — and in a
-   real browser they read as a plot grid, not fibre. These are actual tubes:
-   each warp thread is a TubeGeometry around a CatmullRom path with a slight
-   catenary bow and two sine harmonics of wobble, lit by the scene's key
-   light with a per-thread MeshStandardMaterial, so a thread has a lit side,
-   a shadow side and a highlight the way a strand of silk does.
+/* The loom's geometry, third pass. The first drew flat fat-lines (read as a
+   plot grid); the second drew ~54 lit tubes (read as a thread *field*). This
+   is a ply: three thick yarn ribbons twisting around one shared cubic-bezier
+   spine that sweeps diagonally across the frame — each thread a GPU ribbon
+   whose vertex shader orbits it around the spine and whose fragment shader
+   draws spun-fiber striations, cylindrical shading, a silky off-centre
+   sheen, and depth-shadow on the far side of the twist, so crossings occlude
+   like a real braid.
 
-   The shed — the loom action the brand is named for — is done the way a
-   real heddle does it: alternate threads pull apart in *depth* (z), not
-   sideways, opening a gap the weft passes through. The weft is a thicker
-   horizontal tube revealed left-to-right by a clipping plane, which needs
-   renderer.localClippingEnabled = true (WeaveWorld sets it). */
+   Scroll reaches the shader through two uniforms: uShift advances the
+   braid's twist as the page moves, and uOpen scales the orbit radius — the
+   shed, literally: at 1 the ply lies closed; opened, the three strands
+   separate and the weft tube (z = 0, between the front and back of the
+   orbit) passes through the gap. The weft is revealed by a clipping plane,
+   which needs renderer.localClippingEnabled = true (WeaveWorld sets it).
+
+   Positions are in the reference design space of the orthographic cover box
+   in WeaveWorld (roughly x ∈ [-1, 2], y ∈ [-1.6, 1.6]), not the old
+   perspective-world units. */
 
 import * as THREE from "three";
-import { THREAD_HUES } from "./chapters";
 
-export const X_SPAN = 10;
-export const Y_SPAN = 13;
-
-const DEPTH_BANDS = [
-  { z: -2, count: 16, radius: 0.055, sway: 1 },
-  { z: -9, count: 18, radius: 0.04, sway: 0.7 },
-  { z: -18, count: 20, radius: 0.028, sway: 0.45 },
+/* Three plies, five brand hues (--gradient-thread's stops) spread across
+   them; each thread drifts along its own length. No pink — the brand
+   explicitly retired it. */
+const PLY_STOPS: [string, string, string][] = [
+  ["#d8e6ff", "#90e0ff", "#a960ee"], // pale blue -> cyan -> purple
+  ["#ffe08a", "#ffcb57", "#ff8a00"], // pale gold -> gold -> orange
+  ["#ff5c4d", "#ff333d", "#a960ee"], // ember -> red -> purple
 ];
 
-type WarpThread = {
-  mesh: THREE.Mesh;
-  material: THREE.MeshStandardMaterial;
-  baseX: number;
-  baseZ: number;
-  parity: number;
-  phase: number;
-  sway: number;
-  color: THREE.Color;
-};
+const VERTEX = /* glsl */ `
+  uniform float uTime;
+  uniform float uPhase;   // where this thread sits in the ply
+  uniform float uRadius;  // base orbit radius around the shared spine
+  uniform float uThick;   // thread thickness
+  uniform float uTwist;
+  uniform float uOpen;    // shed: orbit-radius multiplier from scroll
+  uniform float uShift;   // twist advance from scroll
+  varying float vT;       // along the thread
+  varying float vAcross;  // across the thread, -1..1
+  varying float vDepth;   // front/back of the orbit, for shading
 
-function threadPath(bow: number, wobble: number, seed: number): THREE.CatmullRomCurve3 {
-  const points: THREE.Vector3[] = [];
-  const STEPS = 16;
-  for (let i = 0; i <= STEPS; i++) {
-    const t = i / STEPS;
-    const y = Y_SPAN - t * Y_SPAN * 2;
-    const x =
-      Math.sin(t * Math.PI) * bow +
-      Math.sin(t * Math.PI * 3 + seed) * wobble +
-      Math.sin(t * Math.PI * 7 + seed * 2.7) * wobble * 0.4;
-    const z = Math.cos(t * Math.PI * 2 + seed) * wobble * 0.6;
-    points.push(new THREE.Vector3(x, y, z));
+  vec2 bez(vec2 a, vec2 b, vec2 c, vec2 d, float t) {
+    float s = 1.0 - t;
+    return s*s*s*a + 3.0*s*s*t*b + 3.0*s*t*t*c + t*t*t*d;
   }
-  return new THREE.CatmullRomCurve3(points);
-}
+  vec2 bezTan(vec2 a, vec2 b, vec2 c, vec2 d, float t) {
+    float s = 1.0 - t;
+    return 3.0*s*s*(b-a) + 6.0*s*t*(c-b) + 3.0*t*t*(d-c);
+  }
 
-export type WarpField = {
+  void main() {
+    float t = uv.x;
+    float across = uv.y * 2.0 - 1.0;
+
+    // Shared spine: enters off the top, bows left, exits bottom-right.
+    vec2 P0 = vec2( 0.18,  1.60);
+    vec2 P1 = vec2(-0.50,  0.50 + 0.05 * sin(uTime * 0.37));
+    vec2 P2 = vec2( 1.65, -0.05 + 0.06 * sin(uTime * 0.29 + 2.1));
+    vec2 P3 = vec2( 0.68, -1.60);
+
+    vec2 pos = bez(P0, P1, P2, P3, t);
+    vec2 tang = normalize(bezTan(P0, P1, P2, P3, t));
+    vec2 nor = vec2(-tang.y, tang.x);
+
+    // The threads ply around each other along the spine; the whole twist
+    // sways gently, and scroll advances it through uShift.
+    float theta = t * uTwist + uPhase + uShift
+                + 0.30 * sin(uTime * 0.20)
+                + 0.06 * sin(t * 9.0 + uTime * 0.8);
+    float c = cos(theta);
+    float s = sin(theta);
+
+    // A touch of breathing keeps the braid supple; uOpen is the shed.
+    float r = uRadius * uOpen
+            * (1.0 + 0.10 * sin(t * 5.0 + uTime * 0.5 + uPhase));
+
+    pos += nor * (r * c + across * uThick * 0.5);
+
+    vT = t;
+    vAcross = across;
+    vDepth = s;
+    // Depth from the orbit so crossings occlude like a real braid — and so
+    // the weft tube at z = 0 threads between the front and back strands.
+    gl_Position = projectionMatrix * modelViewMatrix
+                * vec4(pos, s * uRadius * uOpen, 1.0);
+  }
+`;
+
+const FRAGMENT = /* glsl */ `
+  precision highp float;
+  uniform float uTime;
+  uniform float uGlow;   // dark-band chapters push the thread brighter
+  uniform float uPaper;  // 1 on the light paper ground, 0 on dark grounds
+  uniform vec3 uColA;
+  uniform vec3 uColB;
+  uniform vec3 uColC;
+  varying float vT;
+  varying float vAcross;
+  varying float vDepth;
+
+  float hash(vec2 p) {
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+  }
+  float noise(vec2 p) {
+    vec2 i = floor(p), f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(hash(i), hash(i + vec2(1,0)), u.x),
+               mix(hash(i + vec2(0,1)), hash(i + vec2(1,1)), u.x), u.y);
+  }
+
+  void main() {
+    // Color drifts along the length of the thread.
+    vec3 col = mix(mix(uColA, uColB, smoothstep(0.0, 0.45, vT)),
+                   uColC, smoothstep(0.45, 1.0, vT));
+
+    // Spun-fiber striations spiralling around the yarn.
+    float spiral = vAcross * 34.0 + vT * 150.0;
+    float f = sin(spiral + noise(vec2(vT * 40.0, vAcross * 5.0)) * 2.5);
+    f *= 0.7 + 0.3 * noise(vec2(vT * 80.0, vAcross * 10.0));
+    col *= 1.0 + 0.10 * f;
+
+    // Cylindrical shading with a silky highlight off-center.
+    float shade = sqrt(max(0.0, 1.0 - vAcross * vAcross));
+    col *= 0.35 + 0.65 * shade;
+    float sheen = exp(-pow((vAcross + 0.35) * 3.0, 2.0));
+    col += sheen * 0.30 * vec3(1.0, 0.97, 0.95) * (1.0 - 0.5 * uPaper);
+
+    // Threads on the far side of the ply sit in soft shadow.
+    col *= 0.68 + 0.32 * smoothstep(-1.0, 1.0, vDepth);
+
+    // Soft glints travelling down the thread.
+    col *= 0.94 + 0.12 * sin(vT * 16.0 - uTime * 1.3);
+
+    // Pastel stops wash out on white paper, so deepen there; on the navy
+    // bands and the dark theme, glow instead.
+    col = mix(col, col * col * 1.25, uPaper * 0.45);
+    col *= 1.0 + uGlow * 0.45 * (1.0 - uPaper);
+
+    // Round profile; fade the tips off-screen.
+    float alpha = smoothstep(1.0, 0.93, abs(vAcross))
+                * smoothstep(0.0, 0.05, vT) * smoothstep(1.0, 0.95, vT);
+
+    gl_FragColor = vec4(col, alpha);
+  }
+`;
+
+export type Ply = {
   group: THREE.Group;
-  update(time: number, shed: number, emissive: number): void;
+  update(
+    time: number,
+    open: number,
+    glow: number,
+    paper: number,
+    shift: number,
+  ): void;
   dispose(): void;
 };
 
-export function createWarpField(): WarpField {
+export function createPly(): Ply {
   const group = new THREE.Group();
-  const threads: WarpThread[] = [];
-  let rand = 1;
-  const random = () => {
-    /* Deterministic LCG so the loom is identical on every load. */
-    rand = (rand * 48271) % 2147483647;
-    return rand / 2147483647;
-  };
+  const geometries: THREE.PlaneGeometry[] = [];
+  const materials: THREE.ShaderMaterial[] = [];
 
-  DEPTH_BANDS.forEach((band, bandIndex) => {
-    for (let i = 0; i < band.count; i++) {
-      const t = i / (band.count - 1);
-      const baseX = -X_SPAN + t * X_SPAN * 2 + (random() - 0.5) * 0.35;
-      const hue = THREAD_HUES[(i + bandIndex * 2) % THREAD_HUES.length];
-      const color = new THREE.Color(hue);
-      color.offsetHSL(0, (random() - 0.5) * 0.08, (random() - 0.5) * 0.09);
-
-      const bow = (random() - 0.5) * 0.5;
-      const wobble = 0.06 + random() * 0.1;
-      const curve = threadPath(bow, wobble, random() * Math.PI * 2);
-      const geometry = new THREE.TubeGeometry(
-        curve,
-        40,
-        band.radius * (0.85 + random() * 0.3),
-        6,
-        false,
-      );
-      const material = new THREE.MeshStandardMaterial({
-        color,
-        roughness: 0.55,
-        metalness: 0.1,
-        emissive: color,
-        emissiveIntensity: 0.1,
-      });
-      const mesh = new THREE.Mesh(geometry, material);
-      mesh.position.set(baseX, 0, band.z);
-      group.add(mesh);
-
-      threads.push({
-        mesh,
-        material,
-        baseX,
-        baseZ: band.z,
-        parity: i % 2 === 0 ? 1 : -1,
-        phase: random() * Math.PI * 2,
-        sway: band.sway,
-        color,
-      });
-    }
+  PLY_STOPS.forEach((stops, index) => {
+    const geometry = new THREE.PlaneGeometry(1, 1, 500, 16);
+    const material = new THREE.ShaderMaterial({
+      vertexShader: VERTEX,
+      fragmentShader: FRAGMENT,
+      uniforms: {
+        uTime: { value: 0 },
+        uPhase: { value: (index * Math.PI * 2) / 3 },
+        uRadius: { value: 0.17 },
+        uThick: { value: 0.15 },
+        uTwist: { value: 4.6 },
+        uOpen: { value: 1 },
+        uShift: { value: 0 },
+        uGlow: { value: 0 },
+        uPaper: { value: 1 },
+        uColA: { value: new THREE.Color(stops[0]) },
+        uColB: { value: new THREE.Color(stops[1]) },
+        uColC: { value: new THREE.Color(stops[2]) },
+      },
+      side: THREE.DoubleSide,
+      transparent: true,
+      depthTest: true,
+      depthWrite: true,
+      alphaTest: 0.4,
+    });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.frustumCulled = false;
+    group.add(mesh);
+    geometries.push(geometry);
+    materials.push(material);
   });
 
   return {
     group,
-    update(time: number, shed: number, emissive: number) {
-      for (const thread of threads) {
-        /* The shed: alternate threads separate in depth, the way a heddle
-           actually lifts every other warp end. A little x drift keeps the
-           opening from reading as two flat walls. */
-        thread.mesh.position.z =
-          thread.baseZ + thread.parity * shed * 1.6;
-        thread.mesh.position.x =
-          thread.baseX +
-          thread.parity * shed * 0.18 +
-          Math.sin(time * 0.4 + thread.phase) * 0.09 * thread.sway;
-        thread.mesh.rotation.z =
-          Math.sin(time * 0.3 + thread.phase * 1.3) * 0.012 * thread.sway;
-        thread.material.emissiveIntensity = 0.08 + emissive * 0.55;
+    update(time, open, glow, paper, shift) {
+      for (const material of materials) {
+        material.uniforms.uTime.value = time;
+        material.uniforms.uOpen.value = open;
+        material.uniforms.uGlow.value = glow;
+        material.uniforms.uPaper.value = paper;
+        material.uniforms.uShift.value = shift;
       }
     },
     dispose() {
-      for (const thread of threads) {
-        thread.mesh.geometry.dispose();
-        thread.material.dispose();
-      }
+      geometries.forEach((g) => g.dispose());
+      materials.forEach((m) => m.dispose());
     },
   };
 }
@@ -143,20 +220,24 @@ export type WeftLine = {
 };
 
 export function createWeftLine(): WeftLine {
+  const X_FROM = -1.2;
+  const X_TO = 2.2;
   const points: THREE.Vector3[] = [];
-  const STEPS = 40;
+  const STEPS = 48;
   for (let i = 0; i <= STEPS; i++) {
     const t = i / STEPS;
-    const x = -X_SPAN + t * X_SPAN * 2;
-    /* A weft thread sags between passes and rides over/under the shed. */
-    const y = Math.sin(t * Math.PI) * -0.35 + Math.sin(t * Math.PI * 5) * 0.16;
-    const z = -5.5 + Math.sin(t * Math.PI * 2.5) * 0.4;
-    points.push(new THREE.Vector3(x, y, z));
+    const x = X_FROM + t * (X_TO - X_FROM);
+    /* A slight counter-diagonal against the spine, with sag between passes.
+       z = 0 puts it exactly between the ply's front and back strands, so an
+       open shed lets it through and a closed one weaves over it. */
+    const y = 0.3 - t * 0.5 + Math.sin(t * Math.PI) * -0.06
+            + Math.sin(t * Math.PI * 5) * 0.02;
+    points.push(new THREE.Vector3(x, y, 0));
   }
   const curve = new THREE.CatmullRomCurve3(points);
-  const geometry = new THREE.TubeGeometry(curve, 80, 0.075, 7, false);
+  const geometry = new THREE.TubeGeometry(curve, 96, 0.016, 7, false);
 
-  const clip = new THREE.Plane(new THREE.Vector3(-1, 0, 0), -X_SPAN);
+  const clip = new THREE.Plane(new THREE.Vector3(-1, 0, 0), X_FROM);
   const material = new THREE.MeshStandardMaterial({
     color: 0x081b2c,
     roughness: 0.45,
@@ -169,10 +250,9 @@ export function createWeftLine(): WeftLine {
 
   return {
     mesh,
-    update(reveal: number, color: THREE.ColorRepresentation, glow: number) {
+    update(reveal, color, glow) {
       const r = Math.min(Math.max(reveal, 0), 1);
-      /* plane x <= constant is kept; sweep the constant across the span */
-      clip.constant = -X_SPAN + r * X_SPAN * 2.05;
+      clip.constant = X_FROM + r * (X_TO - X_FROM) * 1.02;
       mesh.visible = r > 0.005;
       material.color.set(color);
       material.emissive.set(color);

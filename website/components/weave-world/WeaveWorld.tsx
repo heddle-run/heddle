@@ -3,23 +3,28 @@
 /* The persistent 3D loom. One renderer, one scene, mounted once for the
    whole page and driven purely by native scroll — scrollConductor.ts turns
    scrollY into a fractional chapter number, chapters.ts says what the loom
-   is doing at that number, threadField.ts owns the geometry. Never mounted
-   under prefers-reduced-motion or without WebGL: the SVG WeaveTexture in
+   is doing at that number, threadField.ts owns the geometry: a three-thread
+   ply on a shared spine, plus the weft tube. Never mounted under
+   prefers-reduced-motion or without WebGL: the SVG WeaveTexture in
    WeaveGround.tsx is the ground in those cases, so the page never depends
    on this canvas for content, only atmosphere.
 
-   Verified by eye in a real browser, not by scripted screenshots — the
-   camera dolly is clamped so it can never cross the nearest thread band
-   (crossing the near plane smears geometry across the screen; caught live
-   in phase one), and the canvas repaints the page ground per theme (phase
-   one hardcoded paper and lit the dark theme white). */
+   The camera is a fixed orthographic cover box around the braid's design
+   space (the reference frame threadField.ts positions in); scroll drives
+   the braid's twist, shed and weft through uniforms rather than moving a
+   camera. The previous perspective build's dolly is what smeared geometry
+   across the near plane — a whole class of bug this removes.
+
+   Verified by eye in a real browser, not by scripted screenshots. The
+   canvas repaints the page ground per theme (the first build hardcoded
+   paper and lit the dark theme white). */
 
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { useReducedMotion } from "motion/react";
 import { ScrollConductor } from "./scrollConductor";
 import { sampleWorld, palette } from "./chapters";
-import { createWarpField, createWeftLine } from "./threadField";
+import { createPly, createWeftLine } from "./threadField";
 
 function supportsWebGL(): boolean {
   try {
@@ -54,28 +59,18 @@ export default function WeaveWorld() {
     renderer.localClippingEnabled = true;
 
     const scene = new THREE.Scene();
-    const fog = new THREE.FogExp2(0xf6f9fc, 0.02);
-    scene.fog = fog;
+    const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -10, 10);
 
-    const camera = new THREE.PerspectiveCamera(
-      44,
-      mount.clientWidth / Math.max(mount.clientHeight, 1),
-      0.1,
-      120,
-    );
-    camera.position.set(0, 0, 8);
-
+    /* Only the weft's MeshStandardMaterial uses these; the ply threads are
+       ShaderMaterial and light themselves. */
     const key = new THREE.DirectionalLight(0xffffff, 1);
-    key.position.set(5, 7, 6);
+    key.position.set(2, 3, 4);
     scene.add(key);
-    const fill = new THREE.DirectionalLight(0xdbe6ff, 0.3);
-    fill.position.set(-6, -3, 4);
-    scene.add(fill);
-    const ambient = new THREE.AmbientLight(0xffffff, 0.7);
+    const ambient = new THREE.AmbientLight(0xffffff, 0.6);
     scene.add(ambient);
 
-    const warp = createWarpField();
-    scene.add(warp.group);
+    const ply = createPly();
+    scene.add(ply.group);
     const weft = createWeftLine();
     scene.add(weft.mesh);
 
@@ -96,7 +91,19 @@ export default function WeaveWorld() {
       const width = mount!.clientWidth || window.innerWidth;
       const height = mount!.clientHeight || window.innerHeight;
       renderer.setSize(width, height, false);
-      camera.aspect = width / Math.max(height, 1);
+      /* Cover box around the middle of the braid's sweep — the design
+         space threadField.ts positions in. Tall viewports keep the design
+         height and widen; wide viewports keep the width and grow taller. */
+      const aspect = width / Math.max(height, 1);
+      const cx = 0.52;
+      const cy = 0.02;
+      const designHalfH = 0.72;
+      const designHalfW = 0.95;
+      const halfH = Math.max(designHalfH, designHalfW / aspect);
+      camera.top = cy + halfH;
+      camera.bottom = cy - halfH;
+      camera.left = cx - halfH * aspect;
+      camera.right = cx + halfH * aspect;
       camera.updateProjectionMatrix();
     }
     setSize();
@@ -127,7 +134,6 @@ export default function WeaveWorld() {
       const time = (now - start) / 1000;
 
       conductor.update(dt);
-      const isMobile = window.innerWidth < 760;
       const world = sampleWorld(conductor.smooth);
       const colors = palette(dark);
 
@@ -135,34 +141,19 @@ export default function WeaveWorld() {
       bandColor.set(colors.band);
       bg.copy(pageColor).lerp(bandColor, world.bandMix);
       renderer.setClearColor(bg, 1);
-      fog.color.copy(bg);
-      fog.density = world.fog;
 
-      key.intensity = world.key;
-      ambient.intensity = world.ambient;
+      /* On the light theme's paper the threads deepen for contrast; on the
+         navy bands and the whole dark theme they glow instead. */
+      const paper = dark ? 0 : 1 - world.bandMix;
+      const glow = dark ? 0.35 + world.glow * 0.65 : world.glow;
+      ply.update(time, 1 + world.shed * 1.6, glow, paper, world.drift);
 
-      /* In the dark theme the threads carry the image on a near-black
-         ground, so their glow floor rises. */
-      const emissive = dark
-        ? 0.35 + world.emissive * 0.65
-        : world.emissive;
-      warp.update(time, world.shed, emissive);
-
-      /* The weft reads as ink on paper and as light on the dark bands. */
       const inkOnBand = world.bandMix > 0.5 || dark;
       weft.update(
         world.weft,
         inkOnBand ? 0x90e0ff : 0x081b2c,
         inkOnBand ? 0.9 : 0.1,
       );
-
-      camera.fov = isMobile ? world.fovMobile : world.fov;
-      /* cameraZ spans 0..31 over the page; scaled and clamped so the camera
-         stays well in front of the nearest band at z=-2 — it ends at z=+3.7. */
-      camera.position.z = Math.max(8 - world.cameraZ * 0.14, 3.5);
-      camera.position.y = Math.sin(conductor.smooth * 0.7) * 0.4;
-      camera.lookAt(0, 0, camera.position.z - 10);
-      camera.updateProjectionMatrix();
 
       renderer.render(scene, camera);
       raf = requestAnimationFrame(frame);
@@ -188,7 +179,7 @@ export default function WeaveWorld() {
       window.removeEventListener("load", remeasure);
       document.removeEventListener("visibilitychange", onVisibility);
       themeObserver.disconnect();
-      warp.dispose();
+      ply.dispose();
       weft.dispose();
       renderer.dispose();
       mount.removeChild(canvas);

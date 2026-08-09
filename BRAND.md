@@ -100,14 +100,23 @@ nothing copied.
 metaphor stopped being a texture and became the landing page's actual
 ground: a persistent Three.js loom — `components/weave-world/` — rendered
 behind the whole page and driven by native scroll. `WeaveWorld.tsx` owns the
-canvas, renderer, lights and teardown; `threadField.ts` builds ~54 warp
-threads as real `TubeGeometry` strands (catenary sag, wobble harmonics,
-per-thread hue variation off the five `--gradient-thread` stops, lit so each
-has a shadow side) plus a weft tube revealed by a clipping plane;
-`scrollConductor.ts` turns scroll into a fractional chapter number keyed to
-the **viewport centre** (keyed to the top edge, a dark chapter started
-fading while its own copy was still on screen); `chapters.ts` is the
-keyframe ledger saying what the loom does at each section — including the
+canvas, renderer and teardown, framing a fixed orthographic cover box (no
+camera travel — a perspective dolly in an earlier build smeared geometry
+across the near plane); `threadField.ts` builds the loom as a **ply of
+three thick yarn ribbons** twisting around one shared cubic-bezier spine
+that sweeps diagonally across the frame — each a GPU ribbon whose vertex
+shader orbits it around the spine and whose fragment shader draws
+spun-fiber striations, cylindrical shading, a silky sheen and depth-shadow
+on the far side of the twist, so crossings occlude like a real braid. The
+five `--gradient-thread` hues are spread across the three plies' colour
+stops (no pink — retired with FormFlow). Scroll reaches the shader as two
+uniforms: twist advance, and the **shed** — the orbit radius, so the ply
+literally opens on the dark chapters and the weft tube (revealed by a
+clipping plane at z = 0, between the front and back strands) passes through
+the gap. `scrollConductor.ts` turns scroll into a fractional chapter number
+keyed to the **viewport centre** (keyed to the top edge, a dark chapter
+started fading while its own copy was still on screen); `chapters.ts` is
+the keyframe ledger — drift, shed, weft, glow per section — including the
 two chapters where the canvas itself turns navy (see Page composition). The
 canvas follows the `html.dark` toggle live via a MutationObserver; the first
 build hardcoded paper and painted the dark theme white.
@@ -207,15 +216,16 @@ eyebrows mark the sections: `001 Inventory`, `002 Position`, …
   automated browser tab used to build it and wrong in a real one (the
   shader version rendered as a blurry, disconnected blob). The fourth
   attempt is the one that shipped, as `components/weave-world/`, and it
-  survived because of two changes in kind, not degree: the threads are lit
-  tube *geometry* rather than a full-screen gradient shader, so there is
-  nothing to smear; and every step was verified by eye in a real browser —
-  which is what caught the near-plane smear when the camera dolly crossed
-  the thread field, the dark theme painted white, and a dark chapter fading
-  under its own copy. Keep that verification rule: never judge this canvas
-  by forcing animation state via JavaScript in an automated tab and
-  screenshotting the result — that method is what let three bad versions
-  ship in a row.
+  survived because of two changes in kind, not degree: the shader draws
+  *threads* — bounded ribbons with fibre, shading and occlusion — rather
+  than a full-screen gradient wash, so there is nothing to smear; and every
+  step was verified by eye in a real browser — which is what caught a
+  camera dolly smearing geometry across the near plane (the camera is now a
+  fixed orthographic frame), the dark theme painted white, and a dark
+  chapter fading under its own copy. Keep that verification rule: never
+  judge this canvas by forcing animation state via JavaScript in an
+  automated tab and screenshotting the result — that method is what let
+  three bad versions ship in a row.
 
 ### Motion
 

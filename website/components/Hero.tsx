@@ -92,10 +92,10 @@ export default function Hero() {
           aria-hidden="true"
           style={{
             position: "absolute",
-            inset: "10% 0",
+            inset: "6% 0",
             pointerEvents: "none",
             background:
-              "linear-gradient(180deg, transparent 0%, color-mix(in srgb, var(--surface-page) 78%, transparent) 22%, color-mix(in srgb, var(--surface-page) 78%, transparent) 78%, transparent 100%)",
+              "linear-gradient(180deg, transparent 0%, color-mix(in srgb, var(--surface-page) 88%, transparent) 18%, color-mix(in srgb, var(--surface-page) 88%, transparent) 82%, transparent 100%)",
           }}
         />
 
