@@ -21,7 +21,14 @@ point at a different provider — see [LLM providers](https://heddle.run/docs/ll
 
 ## Running one
 
-Pack it, then run the archive:
+A published entry runs by its bare name, no checkout needed — a name that is
+not a file in the working directory is fetched from this library:
+
+```bash
+heddle run docs-qa    # fetches https://heddle.run/library/docs-qa.heddle
+```
+
+From this repository, pack it yourself and run the archive:
 
 ```bash
 node library/build.mjs docs-qa

@@ -556,7 +556,9 @@ heddle run library/dist/docs-qa.heddle
 ```
 
 Browsable at [heddle.run/library](https://heddle.run/library), and CI packs every
-entry, so a listing there is a bundle that builds.
+entry, so a listing there is a bundle that builds. A listing is also one command:
+`heddle run meeting-notes` fetches the library's published archive when no file
+of that name is here.
 
 ## LLM configuration
 

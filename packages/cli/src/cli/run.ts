@@ -45,8 +45,7 @@ import {
   type WorkspaceOptions,
 } from '@heddle-run/core';
 import {
-  downloadBundle,
-  isRemotePath,
+  fetchRemoteBundle,
   mergeBundleOptions,
   openBundle,
   type OpenedBundle,
@@ -84,7 +83,9 @@ export const runCommand = new Command('run')
   .argument(
     '<flow>',
     'Path to flow JSON or YAML file, a .heddle bundle made by ' +
-      '"heddle bundle", or an https:// address of one',
+      '"heddle bundle", an https:// address of one, or a bare name from ' +
+      'the library — "heddle run meeting-notes" runs ' +
+      'https://heddle.run/library/meeting-notes.heddle',
   )
   .option('--tools-dir <dir>', 'Directory containing tool executables')
   .option('--input <json>', 'Input JSON object')
@@ -229,12 +230,12 @@ export const runCommand = new Command('run')
     const verbose = command.parent?.opts().verbose ?? false;
 
     // A URL is a download first and a bundle second: fetched to a temporary
-    // file, then opened exactly as a local archive would be. The download is
-    // disposed of unconditionally below — extraction has happened by then, so
-    // even an interactive run, which keeps its extraction, is done with it.
-    const fetched = isRemotePath(flowPath)
-      ? await downloadBundle(flowPath)
-      : undefined;
+    // file, then opened exactly as a local archive would be. A bare name no
+    // file here answers to is a URL as well — the library entry it names.
+    // The download is disposed of unconditionally below — extraction has
+    // happened by then, so even an interactive run, which keeps its
+    // extraction, is done with it.
+    const fetched = await fetchRemoteBundle(flowPath);
     const archivePath = fetched?.path ?? flowPath;
 
     let interactive = false;
