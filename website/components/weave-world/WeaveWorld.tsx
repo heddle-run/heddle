@@ -24,7 +24,7 @@ import * as THREE from "three";
 import { useReducedMotion } from "motion/react";
 import { ScrollConductor } from "./scrollConductor";
 import { sampleWorld, palette } from "./chapters";
-import { createPly, createWeftLine } from "./threadField";
+import { createPly, createWeftRibbon } from "./threadField";
 
 function supportsWebGL(): boolean {
   try {
@@ -56,22 +56,13 @@ export default function WeaveWorld() {
 
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
-    renderer.localClippingEnabled = true;
 
     const scene = new THREE.Scene();
     const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -10, 10);
 
-    /* Only the weft's MeshStandardMaterial uses these; the ply threads are
-       ShaderMaterial and light themselves. */
-    const key = new THREE.DirectionalLight(0xffffff, 1);
-    key.position.set(2, 3, 4);
-    scene.add(key);
-    const ambient = new THREE.AmbientLight(0xffffff, 0.6);
-    scene.add(ambient);
-
     const ply = createPly();
     scene.add(ply.group);
-    const weft = createWeftLine();
+    const weft = createWeftRibbon();
     scene.add(weft.mesh);
 
     /* Theme: the canvas paints the page ground, so it must follow the
@@ -91,11 +82,14 @@ export default function WeaveWorld() {
       const width = mount!.clientWidth || window.innerWidth;
       const height = mount!.clientHeight || window.innerHeight;
       renderer.setSize(width, height, false);
-      /* Cover box around the middle of the braid's sweep — the design
-         space threadField.ts positions in. Tall viewports keep the design
-         height and widen; wide viewports keep the width and grow taller. */
+      /* Cover box over the design space threadField.ts positions in. The
+         braid's sweep centres near x = 0.5, so a box centred left of it
+         (cx = 0) puts the braid on the right side of the frame, clear of
+         the centred copy; the weft enters across the emptier left. Tall
+         viewports keep the design height and widen; wide viewports keep
+         the width and grow taller. */
       const aspect = width / Math.max(height, 1);
-      const cx = 0.52;
+      const cx = 0;
       const cy = 0.02;
       const designHalfH = 0.72;
       const designHalfW = 0.95;
@@ -147,13 +141,7 @@ export default function WeaveWorld() {
       const paper = dark ? 0 : 1 - world.bandMix;
       const glow = dark ? 0.35 + world.glow * 0.65 : world.glow;
       ply.update(time, 1 + world.shed * 1.6, glow, paper, world.drift);
-
-      const inkOnBand = world.bandMix > 0.5 || dark;
-      weft.update(
-        world.weft,
-        inkOnBand ? 0x90e0ff : 0x081b2c,
-        inkOnBand ? 0.9 : 0.1,
-      );
+      weft.update(time, world.weft, Math.max(world.bandMix, dark ? 1 : 0), paper);
 
       renderer.render(scene, camera);
       raf = requestAnimationFrame(frame);
