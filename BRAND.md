@@ -186,72 +186,18 @@ eyebrows mark the sections: `001 Inventory`, `002 Position`, …
   once in `app/layout.tsx`) sits above everything at ~5% opacity: an inline
   SVG fractal-noise filter, alpha-composited rather than blend-moded, because
   `mix-blend-mode: overlay` does nothing over the dark theme's pure black.
-- The Hero's code-window stack is framed by `components/HeroWeave.tsx`: a
-  real WebGL gradient-mesh shader, not an approximation of one. Two SVG
-  passes came before it — thin decorative threads, then five blurred solid
-  bands — and both stayed too close to this system's usual crisp-vector,
-  no-blur line language to read as Stripe's actual hero graphic rather than
-  decoration behind the windows. A blur only smooths *fixed* overlaps; it
-  can't flow the way a noise field does, and it risks a visible edge
-  wherever the blur falls off. `three` is a new dependency for exactly this
-  one component (it costs the homepage's First Load JS roughly 130 kB —
-  worth knowing before reaching for it anywhere else on the site) and
-  nowhere else on the page: a full-screen WebGL plane runs a fragment
-  shader with a 3D simplex noise field (the standard Ashima Arts
-  `snoise(vec3)`, inlined verbatim), warping its own UVs and mixing
-  heddle's own five `--gradient-thread` hues as solid `vec3` uniforms —
-  heddle's own colours, Stripe's own rendering technique, not a copy of
-  either alone.
-
-  The shader fills its container edge-to-edge with a soft feather (fast on
-  the top edge, slow on the bottom — see below); the *shape* comes entirely
-  from the wrapping `<div>`'s own bounds, not from any mask drawn inside the
-  shader. That div sits behind `.hds-hero-windows` at `z-index: -1` (that
-  div needs `position: relative` for the canvas's containing block, but
-  deliberately no `z-index` of its own, so the negative z-index resolves
-  against the outer `.hds-hero-grid` wrapper — which does have one — rather
-  than creating a stacking context that would let it paint over the left
-  column's text). Its `left: 0` pins it to the code-window column's own
-  left edge for exactly that reason: sizing it by a percentage width wide
-  enough to bleed off the viewport's right edge (as the SVG version did)
-  also drags the left edge deep into the copy column once the box is that
-  large, and there is no shader-side fix for that — only the container's
-  own bounds prevent it.
-
-  It bleeds up behind the sticky nav — Stripe's own graphic runs the full
-  height of the page, nav included — so `Nav`'s translucent
-  `backdrop-filter` picks up a soft glow of it, muted by that backdrop's own
-  85%-opaque paper colour rather than by anything in the shader; the
-  fragment shader's alpha is already at full strength well before reaching
-  the nav's vertical position (the top-edge feather is intentionally the
-  fast one, `smoothstep(0.0, 0.03, ...)`, for exactly this reason — don't
-  widen it without re-checking the glow). That bleed is why the Hero
-  `<section>` itself no longer sets `overflow: hidden`: removing it is what
-  lets the canvas escape upward past the section's own top edge. `html` and
-  `body` both carry `overflow-x: hidden` (`globals.css`) as the actual
-  backstop against a page scrollbar; both, not just one, because on the
-  first pass at this bleed, `body`'s alone left the horizontal overshoot
-  capable of being scrolled into by `scrollLeft`/`scrollTo`, even though
-  wheel and trackpad respected it — `html`'s own `overflow-x: hidden` is
-  what closes that off for good.
-
-  The escape is one-directional on purpose — the wrapping div sets
-  `top: -220` (past the nav) but `bottom: 0` (flush with Hero's own bottom)
-  with its own `overflow: hidden`, so the canvas bleeds up into the nav but
-  stops cleanly at Hero's bottom edge rather than spilling into Inventory
-  below. That same div's `right` (currently `-600`) has to clear the
-  *viewport's* right edge, not just `.hds-hero-windows`'s: sized too small,
-  the div's own `overflow: hidden` clips the canvas at its own right edge,
-  well short of the viewport, and it reads as cropped rather than bleeding
-  off-screen.
-
-  Motion here has no draw-in to speak of — a shader has no path length to
-  measure — so the canvas just fades in over its first second and the noise
-  field runs continuously from `t = 0`, never settling the way the rest of
-  this page's motion does once drawn. Reduced motion skips WebGL
-  altogether: no canvas, no render loop, just a static CSS
-  `linear-gradient` in the same five hues, masked to a soft diagonal band
-  with `mask-image`, on the wrapping div itself.
+- A Stripe-style colourful graphic behind the Hero's code-window stack was
+  tried and pulled. Three passes — thin decorative threads, five blurred
+  solid bands, then a real WebGL gradient-mesh shader (simplex noise,
+  heddle's own five `--gradient-thread` hues, a new `three` dependency) —
+  each looked reasonable in the constrained, automated browser tab used to
+  build them, and each looked wrong in a real one: the shader version in
+  particular rendered as a blurry, disconnected blob rather than anything
+  that read as intentional. It is not in `components/` any more and `three`
+  is not a dependency. If this is picked up again, verify it by eye in an
+  actual browser at each step, not by forcing animation state via
+  JavaScript in an automated tab and screenshotting the result — that
+  method is what let three bad versions ship in a row.
 
 ### Motion
 
@@ -440,11 +386,8 @@ needs it · fumadocs for `/docs`, remapped onto the system's tokens in
 
 `gsap` and `motion` (`motion/react`) drive the landing page's animation —
 scroll reveals, the hero terminal's typed draw-in, the woven-thread motifs.
-`three` is a further, heavier dependency scoped to exactly one component,
-`components/HeroWeave.tsx`'s WebGL gradient-mesh shader; it is not a
-general-purpose addition to the stack, and reaching for it anywhere else on
-the site should be a deliberate choice, not a default, given what it costs
-the homepage's First Load JS (see that component's note in Motion, above).
+`three` was added and removed for a hero graphic that didn't work out (see
+the note in Motion, above) — it is not a dependency of this site.
 
 Layout helpers in `globals.css` are prefixed `hds-` and exist only for what
 inline styles cannot express — media queries, `::placeholder`,
