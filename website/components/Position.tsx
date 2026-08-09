@@ -26,8 +26,10 @@ export default function Position() {
         <div>
           <div
             style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 11,
+              fontFamily: "var(--font-label)",
+              fontWeight: "var(--fw-medium)",
+              fontVariantNumeric: "tabular-nums",
+              fontSize: "var(--fs-label)",
               letterSpacing: "var(--ls-label)",
               textTransform: "uppercase",
               display: "flex",

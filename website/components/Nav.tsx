@@ -35,9 +35,11 @@ export default function Nav() {
           href="/"
           aria-label="heddle — home"
           style={{
+            fontFamily: "var(--font-mono)",
             fontWeight: "var(--fw-medium)",
             fontSize: 17,
-            letterSpacing: "-0.02em",
+            letterSpacing: "0.02em",
+            textTransform: "lowercase",
             color: "var(--text-strong)",
             textDecoration: "none",
           }}

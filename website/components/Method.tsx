@@ -29,7 +29,8 @@ export default function Method() {
             <Reveal key={move.title} index={i}>
               <div
                 style={{
-                  fontFamily: "var(--font-mono)",
+                  fontFamily: "var(--font-label)",
+                  fontVariantNumeric: "tabular-nums",
                   fontSize: 12,
                   color: "var(--text-accent)",
                 }}
@@ -49,7 +50,7 @@ export default function Method() {
               </div>
               <p
                 style={{
-                  fontSize: 14,
+                  fontSize: 15.5,
                   color: "var(--text-muted)",
                   lineHeight: 1.6,
                   margin: "6px 0 0",

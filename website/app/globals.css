@@ -949,6 +949,107 @@ html.dark {
   --cyan-100: #f3e9d7;
 }
 
+/* ── The type system: three roles, assigned by rule ───────────────────────
+   The Humans/Agents toggle, made typography. Structural (Archivo) is the
+   page's own furniture — headings, nav, buttons, labels, numerals. Human
+   (Newsreader) is anything a person wrote for another person — prose,
+   ledes, the FAQ — and it is the default: body text is prose unless an
+   element claims otherwise. Machine (Commit Mono) appears ONLY where text
+   is genuinely machine-read or machine-written — commands, filenames,
+   flags, YAML, transcripts — which also makes it louder where it does
+   appear. Families load in app/layout.tsx (next/font, self-hosted);
+   overridden here rather than in the vendored tokens, following the
+   pattern above. The two vendored component edits this system needs are
+   recorded in ds-heddle/DEVIATIONS.md §4. */
+:root {
+  --font-sans:
+    var(--font-archivo), "Helvetica Neue", ui-sans-serif, sans-serif;
+  --font-serif: var(--font-newsreader), Georgia, serif;
+  --font-mono:
+    var(--font-commit), ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-body: var(--font-serif);
+  --font-label: var(--font-sans);
+
+  /* The scale: ratio 1.25 between bounds. The hero H1 keeps its 34px
+     floor — `batteries-included` measures wider than a 375px viewport at
+     the recommended 44px floor, so that number is non-negotiable (see
+     Hero.tsx). */
+  --fs-h1: clamp(2rem, 4vw, 2.75rem);
+  --fs-body-lg: 1.375rem; /* lead paragraphs — 22px */
+  --fs-body: 1.1875rem; /* prose — 19px */
+  --fs-label: 12px;
+  --fs-code: 15px;
+  --lh-heading: 1.15;
+  --lh-body: 1.6;
+  --lh-code: 1.45;
+  --ls-display: -0.02em;
+  --ls-heading: -0.015em;
+  --ls-body: 0;
+  --ls-label: 0.08em;
+  --ls-mono: 0;
+
+  /* Headlines at 500, not lighter and not bolder: the voice is terse and
+     certain, and bold display makes it shout. --fw-light is the slot every
+     display heading reads, so the whole tier moves in one token. */
+  --fw-light: 500;
+}
+
+/* Structural elements claim Archivo explicitly; everything else inherits
+   the prose serif from body. DS controls (Button, Input, Select) already
+   set var(--font-sans) themselves. */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+header,
+.hds-chapter-rail,
+footer nav {
+  font-family: var(--font-sans);
+}
+
+/* Machine text is exact, so no ligatures anywhere code is set: `!==` as a
+   single glyph is a nicety for a programmer and an unfamiliar symbol with
+   no meaning for this page's reader. Prose keeps its standard ligatures —
+   fi/fl belong in a serif. */
+pre,
+code,
+kbd,
+samp {
+  font-variant-ligatures: none;
+}
+
+/* Inline machine text inside prose and headlines: mono sits optically
+   smaller than the serif at the same nominal size, so it drops to 0.92em,
+   takes a quiet tint rather than a border, and inherits the leading so a
+   flag inside a headline cannot break the line. */
+:not(pre) > code {
+  font-size: 0.92em;
+  letter-spacing: -0.005em;
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  background: color-mix(in srgb, currentColor 8%, transparent);
+  line-height: inherit;
+}
+
+/* Tabular figures where numerals align vertically: the chapter rail and
+   the scroll cue here; the section numbers and list indexes carry theirs
+   inline (DEVIATIONS.md §4). */
+.hds-chapter-rail,
+.hds-scroll-cue {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Light-on-dark correction: serif hairlines thicken optically on the navy
+   bands, so prose there sheds ~50 units of weight and gains a whisper of
+   tracking. Newsreader is variable — 350 is a real weight, not a
+   synthesised one. */
+.hds-band-copy p {
+  font-weight: 350;
+  letter-spacing: 0.005em;
+}
+
 /* The page's own ground is a real plain weave now — components/WeaveTexture.tsx,
    mounted once as a fixed backdrop in app/layout.tsx — rather than a flat
    repeating-linear-gradient of vertical lines. A CSS gradient can only draw
@@ -1013,7 +1114,7 @@ html.dark {
 .hds-chapter-dot-label {
   position: absolute;
   right: 26px;
-  font-family: var(--font-mono);
+  font-family: var(--font-label);
   font-size: 10px;
   letter-spacing: var(--ls-label);
   text-transform: uppercase;
@@ -1042,7 +1143,7 @@ html.dark {
   flex-direction: column;
   align-items: center;
   gap: 10px;
-  font-family: var(--font-mono);
+  font-family: var(--font-label);
   font-size: 10px;
   letter-spacing: var(--ls-label);
   text-transform: uppercase;

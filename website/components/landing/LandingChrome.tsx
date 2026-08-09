@@ -94,9 +94,11 @@ export default function LandingChrome() {
             href="/"
             aria-label="heddle — home"
             style={{
+              fontFamily: "var(--font-mono)",
               fontWeight: "var(--fw-medium)",
               fontSize: 17,
-              letterSpacing: "-0.02em",
+              letterSpacing: "0.02em",
+              textTransform: "lowercase",
               color: "var(--text-strong)",
               textDecoration: "none",
             }}
@@ -107,7 +109,8 @@ export default function LandingChrome() {
           <span
             className="hds-nav-links"
             style={{
-              fontFamily: "var(--font-mono)",
+              fontFamily: "var(--font-label)",
+              fontVariantNumeric: "tabular-nums",
               fontSize: 10.5,
               letterSpacing: "var(--ls-label)",
               textTransform: "uppercase",

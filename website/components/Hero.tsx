@@ -108,8 +108,9 @@ export default function Hero() {
           <motion.div
             {...enter(0)}
             style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 11,
+              fontFamily: "var(--font-label)",
+              fontWeight: "var(--fw-medium)",
+              fontSize: "var(--fs-label)",
               letterSpacing: "var(--ls-label)",
               textTransform: "uppercase",
               color: "var(--text-accent)",
@@ -127,7 +128,7 @@ export default function Hero() {
             style={{
               fontSize: "clamp(34px, 5.2vw, 54px)",
               fontWeight: "var(--fw-light)",
-              lineHeight: 1.06,
+              lineHeight: 1.05,
               letterSpacing: "var(--ls-display)",
               color: "var(--text-strong)",
               margin: 0,
@@ -193,7 +194,8 @@ export default function Hero() {
                       height: 30,
                       padding: "0 12px",
                       cursor: "pointer",
-                      fontFamily: "var(--font-mono)",
+                      fontFamily: "var(--font-label)",
+                      fontWeight: "var(--fw-medium)",
                       fontSize: 12,
                       letterSpacing: "0.04em",
                       borderRadius: "var(--radius-control)",
@@ -221,7 +223,7 @@ export default function Hero() {
 
             <div
               style={{
-                fontSize: 12.5,
+                fontSize: 13.5,
                 color: "var(--text-subtle)",
                 marginTop: 8,
               }}
@@ -234,7 +236,7 @@ export default function Hero() {
                 who read this here does not. */}
             <div
               style={{
-                fontSize: 12.5,
+                fontSize: 13.5,
                 color: "var(--text-subtle)",
                 marginTop: 12,
               }}

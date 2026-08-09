@@ -47,7 +47,7 @@ export default function FAQ() {
               </summary>
               <p
                 style={{
-                  fontSize: 14.5,
+                  fontSize: 18,
                   color: "var(--text-muted)",
                   lineHeight: "var(--lh-body)",
                   margin: "0 0 18px",

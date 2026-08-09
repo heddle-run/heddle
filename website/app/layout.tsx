@@ -1,9 +1,6 @@
 import type { Metadata } from "next";
-import {
-  IBM_Plex_Mono,
-  IBM_Plex_Sans,
-  Instrument_Serif,
-} from "next/font/google";
+import { Archivo, Gentium_Plus, Newsreader } from "next/font/google";
+import localFont from "next/font/local";
 import { RootProvider } from "fumadocs-ui/provider";
 import Grain from "@/components/Grain";
 import { WeaveTexture } from "@/components/WeaveTexture";
@@ -16,28 +13,57 @@ import { WeaveTexture } from "@/components/WeaveTexture";
 import "../ds-heddle/styles.css";
 import "./globals.css";
 
-/* The three Heddle families, self-hosted through next/font — see
-   ds-heddle/DEVIATIONS.md §2. */
-const plexSans = IBM_Plex_Sans({
+/* The type system, self-hosted through next/font — see
+   ds-heddle/DEVIATIONS.md §2 and §4. Three roles, assigned by rule:
+   structural (Archivo — the page's own furniture), human (Newsreader —
+   anything a person wrote for another person), machine (Commit Mono —
+   anything the computer reads or writes). Gentium Plus exists for exactly
+   one line: the dictionary block's IPA pronunciation, whose phonetic
+   glyphs the other faces cannot promise.
+
+   All variable files. Archivo carries its width axis so long declarative
+   headlines can compress optically rather than wrap; Newsreader carries
+   optical sizes and a true italic. Commit Mono is not on Google Fonts, so
+   its latin woff2s (from @fontsource/commit-mono 5.3.0, SIL OFL) are
+   vendored in website/fonts/ and loaded with next/font/local. */
+const archivo = Archivo({
   subsets: ["latin"],
-  weight: ["300", "400", "500", "600"],
-  variable: "--font-plex-sans",
+  variable: "--font-archivo",
   display: "swap",
+  axes: ["wdth"],
 });
 
-const plexMono = IBM_Plex_Mono({
+const newsreader = Newsreader({
   subsets: ["latin"],
-  weight: ["400", "500"],
-  variable: "--font-plex-mono",
-  display: "swap",
-});
-
-const instrumentSerif = Instrument_Serif({
-  subsets: ["latin"],
-  weight: "400",
   style: ["normal", "italic"],
-  variable: "--font-instrument",
+  variable: "--font-newsreader",
   display: "swap",
+  axes: ["opsz"],
+});
+
+const commitMono = localFont({
+  src: [
+    {
+      path: "../fonts/commit-mono-latin-400-normal.woff2",
+      weight: "400",
+      style: "normal",
+    },
+    {
+      path: "../fonts/commit-mono-latin-500-normal.woff2",
+      weight: "500",
+      style: "normal",
+    },
+  ],
+  variable: "--font-commit",
+  display: "swap",
+});
+
+const gentiumPlus = Gentium_Plus({
+  subsets: ["latin", "latin-ext"],
+  weight: "400",
+  variable: "--font-gentium",
+  display: "swap",
+  preload: false,
 });
 
 export const metadata: Metadata = {
@@ -82,7 +108,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${plexSans.variable} ${plexMono.variable} ${instrumentSerif.variable}`}
+      className={`${archivo.variable} ${newsreader.variable} ${commitMono.variable} ${gentiumPlus.variable}`}
       suppressHydrationWarning
     >
       <body>

@@ -33,8 +33,9 @@ function RuntimeWindow({
     <Reveal index={index}>
       <div
         style={{
-          fontFamily: "var(--font-mono)",
-          fontSize: 11,
+          fontFamily: "var(--font-label)",
+          fontWeight: "var(--fw-medium)",
+          fontSize: "var(--fs-label)",
           letterSpacing: "var(--ls-label)",
           textTransform: "uppercase",
           color: "var(--text-accent)",
@@ -76,7 +77,7 @@ function RuntimeWindow({
       </div>
       <p
         style={{
-          fontSize: 13.5,
+          fontSize: 15.5,
           color: "var(--text-muted)",
           lineHeight: 1.6,
           margin: "10px 0 0",
@@ -116,7 +117,7 @@ export default function Runtimes() {
         </div>
         <p
           style={{
-            fontSize: 13.5,
+            fontSize: 16,
             color: "var(--text-muted)",
             lineHeight: 1.62,
             margin: "28px 0 0",

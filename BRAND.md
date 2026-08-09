@@ -141,8 +141,8 @@ Ink deepened (`--navy-900` is `#081b2c`, not upstream's `#0a2540`) for more
 contrast against paper, and shadows tightened from a soft Stripe float into
 something closer to a printed edge — ink-tinted, not generic grey-blue. A
 fixed, near-invisible grain overlay (`components/Grain.tsx`) gives the paper
-actual tooth. Instrument Serif, upstream reserved for the dictionary
-epigraph alone, now also carries two headline moments — How-it-works' "The
+actual tooth. The editorial serif, upstream reserved for the dictionary
+epigraph alone, also carries two headline moments — How-it-works' "The
 whole thing is one file you can read." and the CTA's "Thread the loom." — because
 those two sentences are the closest thing the page has to a second pull
 quote. The small hand-drawn SVG weave that used to sit beneath the epigraph
@@ -208,18 +208,49 @@ upstream's softer, bluer-grey Stripe float.
 
 ### Type
 
-**IBM Plex Sans** (300/400/500/600) for UI and display — display sizes set
-Light with `--ls-display` tracking; **IBM Plex Mono** (400/500) for code,
-commands, numbered eyebrows, stats and uppercase labels at `--ls-label`;
-**Instrument Serif** for editorial moments — the dictionary definition and pull
-quotes, and now also two headline moments on the always-dark bands, italic:
-How-it-works' "The whole thing is one file you can read." and the CTA's
-"Thread the loom." Both are the closest thing the page has to a second pull
-quote, which is the bar for reaching for the serif outside the epigraph — it
-does not belong on the numbered section headings, which stay Plex Sans
-Light. All three load through `next/font/google` in `app/layout.tsx`
-(deviation §2). Headings are sentence case and end in periods. Numbered mono
-eyebrows mark the sections: `001 What you can build`, `002 How it works`, …
+Three roles, assigned by rule rather than by feel — the Humans/Agents
+toggle, made typography (adopted August 2026 from a typography
+recommendation the user supplied; the Plex/Instrument set it replaced is in
+the git history):
+
+- **Structural — Archivo** (variable, with its width axis): headings, nav,
+  buttons, labels, eyebrows, numerals — the page's own furniture. Display
+  headings sit at **500** (`--fw-light` carries 500 now — terse and
+  certain, not shouting) with `--ls-display` −0.02em.
+- **Human — Newsreader** (variable, optical sizes, true italic): prose,
+  ledes, the FAQ — anything a person wrote for another person. It is the
+  default: `--font-body` is the serif, and body text is prose unless an
+  element claims otherwise. The serif moments that used to be Instrument
+  Serif (the dictionary epigraph, How-it-works' "The whole thing is one
+  file you can read.", the CTA's "Thread the loom.") are Newsreader italic
+  now. On the dark bands prose sheds ~50 units of weight and gains
+  +0.005em tracking (`.hds-band-copy p`) — serif hairlines thicken
+  optically in light-on-dark.
+- **Machine — Commit Mono** (400/500, SIL OFL, vendored in
+  `website/fonts/` from @fontsource): **only** where text is genuinely
+  machine-read or machine-written — commands, filenames, flags, YAML,
+  transcripts. The discipline is what makes it loud where it appears.
+  Ligatures are off in code (`!==` as one glyph means nothing to this
+  page's reader) and on in prose. Inline code in prose or headings sits at
+  0.92em with inherited leading and a quiet tint.
+- **Gentium Plus** exists for one line: the dictionary block's IPA
+  pronunciation, whose phonetic glyphs the other faces cannot promise.
+
+All load self-hosted through `next/font` in `app/layout.tsx` (deviations
+§2 and §4 — §4 also records the three vendored component edits the role
+system needed). Scale and families are overridden in `app/globals.css`'s
+type-system block, not in the vendored tokens: section heads
+`clamp(2rem, 4vw, 2.75rem)`, lead paragraphs 22px, prose 19px, labels 12px
+caps at +0.08em, code 15px/1.45. The hero H1 keeps its 34px floor —
+`batteries-included` measures wider than a 375px viewport below it.
+Headings are sentence case and end in periods. Numbered eyebrows still
+mark the sections (`001 What you can build`, `002 How it works`, …) — in
+Archivo with tabular figures, no longer in the mono.
+
+The wordmark is the lowercase word "heddle" set in the machine face at
++0.02em, `text-transform: lowercase` guarding the casing — the one place
+mono is furniture, on purpose: the mark reads as something the machine
+would type.
 
 ### Geometry and depth
 
@@ -280,7 +311,7 @@ tree, the sun and moon) lives in `components/Glyph.tsx`: lucide paths on the
 same 24 grid at the same stroke, indistinguishable beside it. Reach for `Icon`
 first. Mono glyphs are legitimate icons in this brand: `⚙` for tool calls, `$`
 prompts, `01`–`04` step numerals. There is no logo; the wordmark is the
-lowercase word "heddle" set in Plex Sans Medium, which is all
+lowercase word "heddle" set in the machine face (see Type), which is all
 `components/Wordmark.tsx` renders. No emoji, ever.
 
 ### Accessibility
@@ -367,10 +398,11 @@ in `app/page.tsx`, the keyframes in `components/weave-world/chapters.ts`, and
    mechanisms (see the security note above) — translate language, never
    claims. The design's illustrative badges ("default in CI", "no daemon")
    were claims heddle does not make and must not return.
-8. **Definition** (`definition`) — the dictionary epigraph, in Instrument
-   Serif, at the loom's close-up: the camera pulls in and the world's weft
-   crosses the warp behind the copy. (The 2D SVG mini-weave this section
-   used to draw is retired — see the loom note above.)
+8. **Definition** (`definition`) — the dictionary epigraph, in the
+   editorial serif, at the loom's close-up: the camera pulls in and the
+   world's weft crosses the warp behind the copy. The pronunciation span
+   alone is Gentium Plus, for its phonetic glyphs. (The 2D SVG mini-weave
+   this section used to draw is retired — see the loom note above.)
 9. **FAQ** (`faq`) — 006, native `<details>`; the world holds nearly still
    here so the dense text stays readable. The questions are this reader's,
    in their order: do I need to program, what does it cost, where does my

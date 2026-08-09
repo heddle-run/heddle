@@ -26,7 +26,16 @@ export default function Definition() {
         }}
       >
         {definition.word}{" "}
-        <span style={{ color: "var(--text-subtle)", fontSize: 24 }}>
+        {/* The one line on the site with phonetic glyphs. Newsreader does
+            not promise IPA coverage, so this span alone is set in Gentium
+            Plus — a fallback mid-word would break the page's best moment. */}
+        <span
+          style={{
+            fontFamily: "var(--font-gentium), var(--font-serif)",
+            color: "var(--text-subtle)",
+            fontSize: 24,
+          }}
+        >
           {definition.pronunciation}
         </span>{" "}
         <em style={{ fontSize: 24 }}>{definition.partOfSpeech}</em>

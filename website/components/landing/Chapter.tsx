@@ -55,7 +55,15 @@ export default function Chapter({
           }}
         />
       )}
-      <div style={{ position: "relative", width: "100%" }}>{children}</div>
+      {/* Band chapters carry a class so the type layer can apply the
+          light-on-dark correction: serif prose sheds ~50 units of weight
+          and gains a whisper of tracking (globals.css, type system). */}
+      <div
+        className={surface === "band" ? "hds-band-copy" : undefined}
+        style={{ position: "relative", width: "100%" }}
+      >
+        {children}
+      </div>
     </section>
   );
 }

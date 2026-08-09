@@ -50,3 +50,28 @@ against is the hand-rolled `index.d.ts`. The landing ui-kit and page template
 were used as the reference for `components/*.tsx` and are kept in
 `website/.ds-import/`
 (git-ignored).
+
+## 4. The three-role type system (Archivo / Newsreader / Commit Mono)
+
+The site retyped in August 2026: structural text in Archivo, human prose in
+Newsreader, machine text in Commit Mono, with Gentium Plus carried for the
+one IPA line in the dictionary block. The families and every scale token are
+overridden at the site layer (`app/globals.css`, type-system block) and
+loaded in `app/layout.tsx` — the vendored tokens are untouched. Three
+component edits were needed because they hardcode `var(--font-mono)` on
+text that is furniture rather than machine text, which the role system
+forbids:
+
+- `marketing/SectionHeading.jsx` — the number/eyebrow row reads
+  `var(--font-label)` (an alias upstream already ships), gains
+  `--fw-medium` and tabular figures.
+- `marketing/FeatureListItem.jsx` — the index reads `var(--font-label)`
+  with tabular figures; the title claims `var(--font-sans)` explicitly
+  (body text is the prose serif now, and list titles are furniture); the
+  body bumps 14.5 → 16 for the serif.
+- `core/Card.jsx` — the root reads `var(--font-body)` instead of
+  `var(--font-sans)` so card copy is prose; the title claims
+  `var(--font-sans)`; the eyebrow reads `var(--font-label)`; the body
+  bumps 14 → 15.
+
+Upstream merges should re-apply exactly those substitutions.

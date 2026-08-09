@@ -50,8 +50,11 @@ export default function Footer() {
         <div className="hds-footer-brand">
           <div
             style={{
+              fontFamily: "var(--font-mono)",
               fontWeight: "var(--fw-medium)",
               fontSize: 16,
+              letterSpacing: "0.02em",
+              textTransform: "lowercase",
               color: "var(--text-strong)",
             }}
           >
@@ -127,8 +130,9 @@ export default function Footer() {
           style={{
             paddingTop: 16,
             paddingBottom: 16,
-            fontFamily: "var(--font-mono)",
-            fontSize: 11.5,
+            fontFamily: "var(--font-label)",
+            fontSize: 12,
+            letterSpacing: "0.02em",
             color: "var(--text-subtle)",
             display: "flex",
             justifyContent: "space-between",

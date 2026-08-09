@@ -50,7 +50,7 @@ export default function UseCases() {
         </div>
         <p
           style={{
-            fontSize: 14.5,
+            fontSize: 16,
             color: "var(--text-muted)",
             lineHeight: 1.62,
             margin: "24px 0 0",
