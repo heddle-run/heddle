@@ -516,7 +516,7 @@ body {
 }
 @media (min-width: 820px) {
   .hds-footer-grid {
-    grid-template-columns: minmax(0, 1.4fr) repeat(3, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1.6fr) repeat(2, minmax(0, 1fr));
   }
 }
 .hds-footer-brand {

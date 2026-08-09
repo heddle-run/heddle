@@ -4,7 +4,6 @@ import {
   GITHUB_URL,
   NPM_URL,
   PLAYGROUND_URL,
-  VERSION,
 } from "@/lib/constants";
 
 const columns = [
@@ -29,16 +28,6 @@ const columns = [
       {
         label: "Examples",
         href: `${GITHUB_URL}/tree/main/examples`,
-        external: true,
-      },
-    ],
-  },
-  {
-    title: "Legal",
-    links: [
-      {
-        label: "MIT licence",
-        href: `${GITHUB_URL}/blob/main/LICENSE`,
         external: true,
       },
     ],
@@ -149,7 +138,6 @@ export default function Footer() {
         >
           <span>heddle.run</span>
           <span>Woven by agents, heddled by humans</span>
-          <span>v{VERSION}</span>
         </div>
       </div>
     </footer>
