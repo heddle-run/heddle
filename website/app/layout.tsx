@@ -43,11 +43,11 @@ const instrumentSerif = Instrument_Serif({
 export const metadata: Metadata = {
   metadataBase: new URL("https://heddle.run"),
   title: {
-    default: "heddle — A batteries-included declarative agent runtime",
+    default: "heddle — Write down a job. Let it run.",
     template: "%s — heddle",
   },
   description:
-    "A batteries-included declarative agent runtime. The tool-calling loop, OS-level sandbox, HTTP server, guardrails and retry policies ship with heddle, and none of them enter your codebase. Declare the flow as an Open Agent Specification document in YAML or JSON, wire tools in any language, and run it from the CLI or behind an HTTP server.",
+    "heddle runs multi-step AI jobs described in a plain text file: read these files, decide what matters, write the summary. One free, open-source program on your own computer — with an OS-enforced sandbox, sessions, and the same file runnable behind a server. Flows are Open Agent Specification documents, portable to any conforming runtime.",
   keywords: [
     "heddle",
     "declarative agent runtime",
@@ -65,9 +65,9 @@ export const metadata: Metadata = {
     "llm",
   ],
   openGraph: {
-    title: "heddle — A batteries-included declarative agent runtime",
+    title: "heddle — Write down a job. Let it run.",
     description:
-      "Sandbox, HTTP server, guardrails, retries and streaming already in the runtime, and none of it in your codebase. Declare the agent as a document and point heddle at it.",
+      "Multi-step AI jobs described in a plain text file, run by one free program on your own computer. Sandbox, sessions and a server included; the file is an open format you are not locked into.",
     url: "https://heddle.run",
     siteName: "heddle",
     type: "website",

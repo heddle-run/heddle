@@ -541,14 +541,25 @@ body {
   transition: transform var(--dur-fast) var(--ease-standard);
 }
 
-/* InstallCommand is vendored; these two rules stretch it to the column and pin
-   its copy button to the right edge without touching the component. */
+/* InstallCommand is vendored; these rules stretch it to the column, pin its
+   copy button to the right edge, and let a long command (the library-bundle
+   URL) wrap onto a second line at narrow widths — all without touching the
+   component. The fixed 44px height becomes a minimum so the pill can grow. */
 .hds-install > div {
   display: flex;
   width: 100%;
+  height: auto;
+  min-height: 44px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+.hds-install > div > span + span {
+  overflow-wrap: anywhere;
+  min-width: 0;
 }
 .hds-install > div > button {
   margin-left: auto;
+  flex-shrink: 0;
 }
 
 /* ── The playground ───────────────────────────────────────────────────────

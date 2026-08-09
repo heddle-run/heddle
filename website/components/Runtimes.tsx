@@ -88,11 +88,12 @@ function RuntimeWindow({
   );
 }
 
-/* 004 — the receipt for Position's "same equipment behind a binary" and
-   Method's Point/Serve moves: the identical flow, run locally and served
-   over HTTP, side by side. Both transcripts are checked against
+/* 004 — where it runs: the identical flow, run locally and served over
+   HTTP, side by side. Both transcripts are checked against
    docs/cli-reference.mdx and docs/server.mdx rather than written to look
-   plausible. */
+   plausible. The closing warning is the DEPLOYMENT.md claim (binds to
+   127.0.0.1, no authentication of its own) in plain language — the kind of
+   sentence that earns a cautious reader's trust, so it stays. */
 export default function Runtimes() {
   return (
     <div>
@@ -105,14 +106,28 @@ export default function Runtimes() {
       >
         <SectionHeading
           number="004"
-          eyebrow="Runtimes"
-          title="One document, two runtimes."
-          lede="heddle run on your machine and heddle-server over HTTP are the same engine reading the same file. Moving from a laptop to a service is a deployment, not a rewrite."
+          eyebrow="Where it runs"
+          title="Your computer first. A server when you need one."
+          lede="heddle runs on your machine. When you want the same job running without you — every morning, or for your team — the identical file runs behind a server. Nothing about the file changes."
         />
         <div className="hds-runtimes-grid" style={{ marginTop: 36 }}>
           <RuntimeWindow entry={runtimes.cli} index={0} />
           <RuntimeWindow entry={runtimes.server} index={1} />
         </div>
+        <p
+          style={{
+            fontSize: 13.5,
+            color: "var(--text-muted)",
+            lineHeight: 1.62,
+            margin: "28px 0 0",
+            maxWidth: "62ch",
+          }}
+        >
+          One caution, stated plainly: the server answers only your own machine
+          by default and has no login of its own. Do not put it on the open
+          internet without someone technical setting up access control in front
+          of it first.
+        </p>
       </div>
     </div>
   );

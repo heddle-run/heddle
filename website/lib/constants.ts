@@ -27,22 +27,30 @@ export const AGENT_SPEC_URL = "https://oracle.github.io/agent-spec/";
 export const VERSION = "0.2.0-beta.1";
 
 /* Two audiences arrive wanting different first commands, and the difference is
-   not cosmetic: a person wants to run a flow, an agent wants to be taught how to
-   write one. npx leads the human tab because it is the claim rather than an
-   option — the runtime stays outside the project. `npm install -g` and Homebrew
-   are in the docs; a landing page owes each visitor one command, not four.
+   not cosmetic: a person wants to see a job run, an agent wants to be taught
+   how to write one. The human command runs a finished library agent straight
+   from its published address — the same command the library page prints —
+   because for a reader who does not program, one command that produces a
+   result is worth more than any install instruction. `npm install -g` and
+   Homebrew are in the docs; a landing page owes each visitor one command,
+   not four.
 
    Every command here is a run, not an install. That is the point. */
 export const installTabs = [
   {
     id: "humans",
-    label: "Humans",
-    note: "Point it at a document. Nothing enters your project.",
-    commands: [{ label: "npx", cmd: "npx @heddle-run/cli run flow.json" }],
+    label: "For you",
+    note: "A finished agent from the library, run from its address. Nothing is installed into anything.",
+    commands: [
+      {
+        label: "npx",
+        cmd: "npx @heddle-run/cli run https://heddle.run/library/meeting-notes.heddle",
+      },
+    ],
   },
   {
     id: "agents",
-    label: "Agents",
+    label: "For your coding agent",
     note: "Teaches your coding agent to write, validate and run a heddle agent.",
     commands: [{ label: "skill", cmd: "npx skills add heddle-run/heddle" }],
   },
@@ -55,165 +63,62 @@ export const definition = {
   body: "The part of a loom that lifts individual warp threads to form the shed — the opening through which the weft passes. It decides, thread by thread, what the pattern becomes.",
 };
 
-/* The inventory that makes "batteries included" a countable claim rather than
-   an adjective. Every line here is a feature heddle actually ships — check it
-   against the README before adding one, the same way safeMode is checked
-   against packages/core/src/sandbox/. */
-export const manifest = [
+/* 001 — what you can build. Four agents from the library, each one real:
+   the slug is the directory under library/ and the page at /library/<slug>,
+   and every detail line is checked against that entry's README. A reader who
+   opens the linked flow file learns more than any paragraph here can teach,
+   so the links are the point — never let a use case stand without a flow
+   that exists. */
+export const useCases = [
   {
-    icon: "bot",
-    title: "Tool-calling loop",
-    detail: "Up to ten rounds per agent, every call traced.",
+    slug: "meeting-notes",
+    title: "The meeting write-up",
+    detail:
+      "Hand it a raw transcript. It writes up the decisions, the action items and the open questions — and sticks to what was actually said.",
   },
   {
-    icon: "circle-check-big",
-    title: "Pre-flight validation",
-    detail: "Spec, graph and reachability checked before a token is spent.",
+    slug: "csv-analyst",
+    title: "The spreadsheet question",
+    detail:
+      "Point it at a folder of CSV exports and ask in English. It works out the query, runs it, and answers with the numbers and the query it ran, so you can check it.",
   },
   {
-    icon: "shield",
-    title: "OS-level sandbox",
-    detail: "bubblewrap on Linux, seatbelt on macOS, under --safe.",
+    slug: "issue-triage",
+    title: "Inbox triage",
+    detail:
+      "Give it a bug report or a support message. It sorts it into bug, feature or question, and drafts the kind of reply each one needs.",
   },
   {
-    icon: "network",
-    title: "HTTP server",
-    detail: "heddle-server streams execution events over SSE.",
-  },
-  {
-    icon: "list-checks",
-    title: "Guardrails",
-    detail: "Pre- and post-model transforms; a rejected prompt costs nothing.",
-  },
-  {
-    icon: "repeat",
-    title: "Policies",
-    detail: "Retry, approval gates and rate limits, installed at the seams.",
-  },
-  {
-    icon: "git-branch",
-    title: "Branching",
-    detail: "Conditional routing, checked for reachability before it runs.",
-  },
-  {
-    icon: "terminal",
-    title: "Any-language tools",
-    detail: "A JSON-speaking executable. Bash, Python, Go, Node.",
-  },
-  {
-    icon: "shuffle",
-    title: "Provider swap",
-    detail: "OpenAI, vLLM, Ollama, or any OpenAI-compatible endpoint.",
-  },
-  {
-    icon: "message-square",
-    title: "Sessions",
-    detail: "Conversations kept across runs, on the CLI and over HTTP.",
-  },
-  {
-    icon: "plug",
-    title: "Pluggable storage",
-    detail: "Sessions on disk by default, or in a store a plugin provides.",
-  },
-  {
-    icon: "rotate-ccw",
-    title: "Durable runs",
-    detail: "--durable checkpoints each node; --resume continues from it.",
-  },
-  {
-    icon: "square-check",
-    title: "Human in the loop",
-    detail: "A run can stop for a person and carry on when they answer.",
-  },
-  {
-    icon: "webhook",
-    title: "Protocol encoders",
-    detail: "Render the server's event stream as AG-UI, chosen per request.",
-  },
-  {
-    icon: "package",
-    title: "Scaffolding",
-    detail: "heddle init writes a flow and a working tool to run.",
-  },
-  {
-    icon: "layers",
-    title: "Per-agent workspace",
-    detail: "One directory an agent's tools share; --mount seeds it.",
+    slug: "docs-qa",
+    title: "The document check",
+    detail:
+      "Ask a question about a folder of documents. It answers and cites the file and the line the answer came from.",
   },
 ];
 
-/* The other half of the claim: what the batteries cost you. Everything a
-   library would have added to the project, at zero. */
-export const notInProject = [
-  { value: "0", label: "Packages in your lockfile" },
-  { value: "0", label: "Classes to subclass" },
-  { value: "0", label: "Lines of glue code" },
-  { value: "0", label: "Accounts or gateways" },
-];
-
-export const steps = [
+/* 003 — the path from interested to running, stated literally. The claims
+   are checked against docs/getting-started.mdx: Node 18+, a provider key
+   (or Ollama), heddle init, heddle run. */
+export const firstRun = [
   {
-    number: "01",
-    title: "Declare",
-    description:
-      "Describe the flow in YAML or JSON using the Open Agent Specification. Nodes, control flow, data flow. Nothing else.",
-    code: `# flow.yaml
-component_type: Flow
-name: research-flow
-start_node:
-  $component_ref: start
-nodes:
-  - $component_ref: start
-  - $component_ref: agent
-  - $component_ref: end
-control_flow_connections:
-  - component_type: ControlFlowEdge
-    name: start_to_agent
-    from_node: { $component_ref: start }
-    to_node: { $component_ref: agent }
-  # ... agent -> end
-$referenced_components:
-  start:
-    component_type: StartNode
-    id: start
-    name: start
-    outputs:
-      - { title: query, type: string }
-  # ... agent, end`,
+    title: "Check you have Node",
+    detail:
+      "Type node --version in a terminal. A number, 18 or higher, means you are set; if not, installing it takes two minutes.",
   },
   {
-    number: "02",
-    title: "Wire",
-    description:
-      "Tools are ordinary executables. JSON in on stdin, JSON out on stdout. Bash, Python, Go. No SDK, no bindings.",
-    code: `#!/usr/bin/env python3
-import sys, json
-
-args = json.load(sys.stdin)
-query = args.get("query", "")
-
-results = search(query)
-
-json.dump({
-  "results": results
-}, sys.stdout)`,
+    title: "Get a model key",
+    detail:
+      "An API key from OpenAI or a compatible provider — or install Ollama if you would rather nothing left your machine.",
   },
   {
-    number: "03",
-    title: "Run",
-    description:
-      "One command locally, or the same document behind heddle-server over HTTP. Either way the whole graph is checked before a single token is spent.",
-    code: `$ heddle run flow.yaml \\
-    --tools-dir ./tools \\
-    --input '{"query": "shed"}'
-
-[researcher] ⚙ Web Search shed weaving
-[researcher] ⚙ Web Search warp heddle
-
-{
-  "query": "shed",
-  "result": "The shed is the..."
-}`,
+    title: "Start from something that works",
+    detail:
+      "heddle init writes a working flow and a working tool into a folder. Or take a finished agent from the library and open its file.",
+  },
+  {
+    title: "Run it, change a line, run it again",
+    detail:
+      "heddle run does the rest, printing each step as it happens. You will spend your time editing the instructions, not the structure.",
   },
 ];
 
@@ -233,7 +138,7 @@ export const runtimes = {
   "query": "hello",
   "result": "..."
 }`,
-    caption: "One process. Nothing installed but the binary.",
+    caption: "On your machine: one program, printing each step as it runs.",
   },
   server: {
     label: "Server",
@@ -246,217 +151,172 @@ $ curl -sX POST localhost:4319/v1/runs \\
          "inputs": {"query": "hello"}}'
 
 {"flow":"flow","state":{"result":"..."}}`,
-    caption: "The same engine, over HTTP, streamed as it runs.",
+    caption:
+      "On a server: the same file, unchanged, doing the job without you.",
   },
 };
 
-/* The manifest lists what is included; this goes deep on the handful that are
-   hard to copy. Every other batteries-included runtime is a library, so its
-   batteries arrive as dependencies — that difference leads. */
-export const features = [
-  {
-    icon: "package",
-    hue: "var(--brand-pink)",
-    title: "The batteries stay outside your codebase",
-    description:
-      "Included usually means installed. A framework that ships a sandbox, a server and a retry policy ships them into your project, and every one becomes an import, a version to pin and an abstraction to work around. heddle is a runtime, not a library: the same equipment sits behind a binary you point at a document. Nothing enters your lockfile, so nothing has to be migrated when the framework changes its mind.",
-  },
-  {
-    icon: "circle-check-big",
-    hue: "var(--hue-purple)",
-    title: "Checked before it costs anything",
-    description:
-      "Parse, validate, compile, validate again. Every node has to be reachable and every edge has to be well-formed before the first request leaves your machine. A malformed flow fails in milliseconds instead of halfway through a paid run.",
-  },
-  {
-    icon: "shield",
-    hue: "var(--hue-blue)",
-    title: "A boundary the kernel enforces",
-    description:
-      "Every agent gets a workspace: one directory its tools share, so they can hand each other files. --safe turns its edges into a kernel boundary. No $HOME, nothing writable outside it, and only the environment variables you name. Ask for a backend the machine cannot provide and the run fails outright; it will not quietly carry on unconfined.",
-  },
-  {
-    icon: "network",
-    hue: "var(--hue-emerald)",
-    title: "One document, two runtimes",
-    description:
-      "heddle run on your machine and heddle-server over HTTP are the same engine reading the same file. Moving from a laptop to a service is a deployment, not a rewrite.",
-  },
-  {
-    icon: "git-branch",
-    hue: "var(--hue-amber)",
-    title: "Portable off heddle",
-    description:
-      "The document is an Open Agent Specification flow. Oracle publishes that format; this project did not invent it. So a flow written for heddle runs on any other conforming runtime, which makes leaving cheap and staying a choice.",
-  },
-  {
-    icon: "blocks",
-    hue: "var(--hue-rose)",
-    title: "Extended without a fork",
-    description:
-      "Plugins add component types, transforms, wire-protocol encoders and run middleware from outside the engine. They are named on the command line, never inside a flow, so sharing a spec can never execute code.",
-  },
-];
-
+/* 005 — the sandboxing claims, in the order a cautious reader asks them:
+   what can it touch, what can it not, what about a file someone sent me,
+   and what happens when the protection is missing. The mechanisms are the
+   same falsifiable ones as ever — checked against packages/core/src/sandbox/
+   and packages/server/DEPLOYMENT.md; translate the language, never the
+   claims. Mechanisms, not adjectives. */
 export const safeMode = {
   flag: "--safe",
   points: [
     {
-      icon: "shield",
-      hue: "var(--brand-pink)",
-      title: "Tools run confined",
+      icon: "layers",
+      hue: "var(--hue-emerald)",
+      title: "What it can touch",
       description:
-        "A tool subprocess gets no $HOME, sees only the environment variables --allow-env names, and can write nowhere but its own workspace. bubblewrap on Linux, seatbelt on macOS.",
+        "Each agent works inside one folder — its workspace — for the length of the run. Its tools read and write there and hand each other files there. --mount is how you place your own files in it before the run starts.",
     },
     {
-      icon: "boxes",
-      hue: "var(--hue-purple)",
-      title: "Plugins run out of process",
+      icon: "shield",
+      hue: "var(--hue-blue)",
+      title: "What it cannot",
       description:
-        "A plugin never shares the runtime's heap, globals or environment. It speaks JSON-Lines over stdio from its own process, and is killed when the run ends.",
+        "Under --safe a tool gets no home folder, can write nowhere outside its workspace, and sees only the environment variables you name with --allow-env. The box is enforced by the operating system itself — bubblewrap on Linux, seatbelt on macOS — not by heddle asking nicely.",
     },
     {
       icon: "file-code",
-      hue: "var(--hue-blue)",
-      title: "The spec is data, not code",
+      hue: "var(--hue-purple)",
+      title: "A flow file cannot hide code",
       description:
-        "A flow is parsed, never evaluated. When a caller supplies the spec, a $VAR reference into the host environment is refused; heddle will not read its own environment on a stranger's behalf. Running your own spec locally, it still resolves.",
+        "A flow is a list of instructions heddle reads, never a program it executes — so a file someone sends you cannot smuggle code in. And when a caller supplies the spec, a $VAR reference into your environment is refused; heddle will not read its own environment on a stranger's behalf. Running your own spec locally, it still resolves.",
     },
     {
       icon: "circle-check-big",
-      hue: "var(--hue-emerald)",
+      hue: "var(--hue-amber)",
       title: "It never degrades quietly",
       description:
-        "Ask for a sandbox backend that is not available and the run fails. There is no path on which --safe silently falls back to an unconfined process.",
+        "Ask for the sandbox on a machine that cannot provide it and the run stops. There is no path on which --safe silently carries on unprotected.",
     },
   ],
 };
 
+/* The specimen the hero and How-it-works windows show: the csv-analyst
+   entry from library/, not an illustration. The spec is an excerpt of
+   library/csv-analyst/spec.yaml with the graph plumbing elided and the
+   instruction — the interesting part — kept; "…" marks every cut. The
+   transcript's figures are computed from the entry's own sample data
+   (orders.csv), so the answer shown is the true one. Check both against
+   the library entry before changing either.
+
+   The rule for samples on this page: never elide the instruction, elide
+   the plumbing. A reader who can see one line of English they could
+   imagine changing has learned what no paragraph teaches. */
 export const specimenSpread = {
   spec: `component_type: Flow
-name: research-assistant
-start_node:
-  $component_ref: start
-nodes:
-  - $component_ref: start
-  - $component_ref: researcher
-  - $component_ref: end
-control_flow_connections:
-  - component_type: ControlFlowEdge
-    name: start_to_researcher
-    from_node: { $component_ref: start }
-    to_node: { $component_ref: researcher }
-  # ... researcher -> end
+name: csv-analyst
+# start ── analyst ── end; graph elided
 $referenced_components:
-  start:
-    component_type: StartNode
-    id: start
-    name: start
-    outputs:
-      - { title: query, type: string }
-  researcher:
+  analyst:
     component_type: AgentNode
-    id: researcher
-    name: researcher
+    name: analyst
     agent:
       component_type: Agent
-      name: research-agent
       system_prompt: |
-        Answer the question. Use
-        web_search when you need
-        current information.
+        You answer questions about a
+        set of CSV files by querying
+        them. Call describe_data
+        first, every time. Write one
+        SELECT and call run_sql.
+        Every figure must come from
+        a row run_sql returned; if
+        the data cannot answer, say
+        so — do not estimate.
       llm_config:
         component_type: OpenAiConfig
-        name: openai
-        model_id: gpt-4o
+        model_id: gpt-4o-mini
       tools:
-        - { component_type: ServerTool, name: web_search }
-  # ... end`,
+        - { component_type: ServerTool, name: describe_data }
+        - { component_type: ServerTool, name: run_sql }`,
   terminal: [
-    { kind: "prompt", text: "heddle run flow.yaml --tools-dir ./tools \\" },
-    { kind: "cont", text: "  --input '{\"query\": \"what is a shed?\"}'" },
+    { kind: "prompt", text: "heddle run csv-analyst.heddle" },
     { kind: "blank", text: "" },
     { kind: "muted", text: "  spec      valid" },
     { kind: "muted", text: "  graph     3 nodes, 2 edges, reachable" },
     { kind: "blank", text: "" },
-    { kind: "tool", text: "[researcher] ⚙ Web Search shed weaving" },
-    { kind: "tool", text: "[researcher] ⚙ Web Search warp heddle" },
+    { kind: "tool", text: "[analyst] ⚙ describe_data" },
+    { kind: "tool", text: "[analyst] ⚙ run_sql SELECT region, SUM(…" },
     { kind: "blank", text: "" },
     { kind: "out", text: "{" },
-    { kind: "out", text: '  "query": "what is a shed?",' },
-    {
-      kind: "out",
-      text: '  "result": "The shed is the triangular opening',
-    },
-    { kind: "out", text: '    formed when heddles raise warp threads."' },
+    { kind: "out", text: '  "question": "Which region had the highest' },
+    { kind: "out", text: '    revenue after discounts, and what' },
+    { kind: "out", text: '    was the gross margin on it?",' },
+    { kind: "out", text: '  "result": "North: 7,485.75 after discounts,' },
+    { kind: "out", text: '    at a 48.8% gross margin. …"' },
     { kind: "out", text: "}" },
   ],
 };
 
+/* The FAQ, ordered by what a technically confident non-developer actually
+   asks, and in their vocabulary. The framework comparisons (LangGraph,
+   CrewAI, Docker Agent, ADK) moved to the compare view of the playground —
+   a reader who has heard of those tools finds them there; a reader who has
+   not lost nothing. The security answers keep the same falsifiable
+   mechanisms as safeMode — translate wording, never claims. */
 export const faqItems = [
   {
     question: "What is heddle?",
     answer:
-      "A batteries-included declarative agent runtime. You declare a multi-step flow in YAML or JSON using the Open Agent Specification, and heddle parses it, validates it, compiles it into an executable graph and runs it, either from the CLI on your machine or behind an HTTP server. The tool-calling loop, the sandbox, the guardrails, the retry policies and the event stream come with it.",
+      "A free, open-source program that runs multi-step AI jobs described in a plain text file. You write down the steps and the instructions; heddle reads the file, checks it, and carries the job out with the AI model you chose — using tools, repeatedly, until the job is done. It runs on your own computer, and the same file can later run on a server.",
   },
   {
-    question: "What does batteries-included actually mean here?",
+    question: "Do I need to know how to program?",
     answer:
-      "That the equipment an agent needs in production is already in the runtime instead of being left to you: a tool-calling loop, pre-flight graph validation, an OS-level sandbox, a per-agent workspace, an HTTP server with event streaming, guardrail transforms, retry and approval policies, branching, sessions that outlive the process, durable runs you can resume, a way to stop for a human, wire-protocol encoders and project scaffolding. The manifest on this page lists them, and every one is a feature you can check against the README. None of it is a claim about quality.",
+      "Not to run an agent, and not to own one. The library agents run as they are, and the file that defines a job is a list of steps and instructions in English — editing it is closer to editing a settings file than to writing software. Code enters in one place: a tool is a short script, so a job that needs a tool heddle does not already have needs you, or a colleague, to write one. That split works in practice — the person who understands the job owns the file, and a developer supplies a tool on the day one is missing.",
   },
   {
-    question: "How is this different from other agent frameworks?",
+    question: "What does it cost to run?",
     answer:
-      "Frameworks like LangGraph, CrewAI and Mastra are libraries: you install them, import them, and assemble the graph in Python or TypeScript, so your agent is code that depends on their abstractions. When one of them says batteries-included, the batteries arrive as dependencies. heddle inverts that. The flow is a document you write, and heddle is a runtime you point at it. Nothing enters your dependency tree, no class needs subclassing, and because the document conforms to a published specification heddle does not own, the same flow runs on any other compliant runtime.",
+      "heddle itself is free: open source under the MIT licence, no account, no paid tier. The AI model is the running cost. Hosted models charge per use — the library agents run on gpt-4o-mini as written, where a typical short run costs a fraction of a cent, and a pass over many long documents costs more. A local model through Ollama costs nothing but electricity. Either way a mistaken file is rejected before anything is spent: heddle checks the whole flow before the first request leaves your machine.",
   },
   {
-    question: "How is this different from other declarative agent runtimes?",
+    question: "Where does my data go?",
     answer:
-      "Declarative agents in YAML are no longer unusual. Docker Agent, Microsoft's declarative workflows and Google's ADK all offer a version of it, and that is good for everyone writing agents. Two things separate heddle. The format is the Open Agent Specification. Oracle publishes it and heddle only implements it, so a flow is portable to any conforming runtime instead of to one vendor's product. And the sandbox is a kernel boundary on your own machine, bubblewrap or seatbelt, rather than a container or a hosted execution service, with a documented refusal to degrade into an unconfined run.",
+      "heddle has no backend, no gateway and no account — nothing you run passes through servers of ours. Your flow sends what you point it at, the files it reads and the questions you ask, to the model provider the file names, and a tool reaches only what it was written to reach. Point the flow at Ollama and the model runs on your own machine too.",
   },
   {
-    question: "Can an agent hold a conversation, or wait for a person?",
+    question: "What happens when it gets something wrong?",
     answer:
-      "Both, and they are the same mechanism. --session keeps a run in a conversation on disk and hands the agent the turns before it; the same session works over HTTP, so a chat on your laptop and one behind the server are the same thing. On top of that, --durable writes the run down at each step so it can be resumed if the process dies, and a policy can suspend a run to wait on a person: the run stops, the question is stored, and answering it continues from where it stopped without re-running the model call or the tools that already ran. Sessions live on disk by default; a plugin can put them in a database instead, which is what more than one replica needs.",
+      "You can see everything and redo anything. A run prints each step as it happens, and a conversation's transcript is kept on your disk, where heddle sessions show prints exactly what was said and which tools ran. A flow can be written to stop and ask a person before anything that matters. And a run started with --durable writes its progress down at every step, so a failure resumes from where it stopped rather than starting the job over.",
   },
   {
-    question: "Can I run it as a service?",
+    question: "How is this different from Zapier or n8n?",
     answer:
-      "Yes. heddle-server exposes the same engine over HTTP and streams execution events as the run happens. It is what the playground on this site talks to. It binds to 127.0.0.1 by default and ships no authentication of its own, so put an authenticating proxy in front of it before exposing it to anything you do not control.",
+      "Those run fixed rules: when this happens, do that, with every branch decided in advance. heddle runs jobs that need reading and judgement — sort these, flag what looks off, draft a reply, stop and ask when unsure — over messy input like transcripts, documents and exports. It is also a program on your computer rather than a hosted subscription: there is no account, and your data goes to the model you chose rather than through a platform.",
+  },
+  {
+    question: "Can I use the connectors I already have, like MCP?",
+    answer:
+      "Not yet. Tools in heddle are ordinary programs on your machine, and the library agents come with the tools they need. heddle's plugin system is built so that an MCP connector can slot in, but heddle does not ship one today.",
   },
   {
     question: "What stops a tool from doing whatever it likes?",
     answer:
-      "Run with --safe. Tool scripts are then executed inside a kernel-level sandbox, bubblewrap on Linux and seatbelt on macOS, with no $HOME, no writes outside the run workspace, and an environment cut down to the variables you name with --allow-env. Plugins are confined differently, by construction: they run in their own process and never see the runtime's memory or environment. If you ask for a sandbox backend the machine cannot provide, the run fails rather than quietly continuing unconfined.",
+      "Run with --safe. Every tool then runs inside a box the operating system itself enforces — bubblewrap on Linux, seatbelt on macOS — with no home folder, nowhere to write outside the run's own workspace folder, and only the environment variables you name with --allow-env. Plugins are confined by construction: one runs in its own separate process and never sees heddle's memory or your environment. And if the machine cannot provide the box, the run stops rather than quietly carrying on unprotected.",
   },
   {
-    question: "What is the Open Agent Specification?",
+    question: "Can it hold a conversation, or wait for a person?",
     answer:
-      "A portable, standardised format for defining agent workflows, published by Oracle. heddle implements it, which means the flows you write here are not locked to this runtime. They run on any compliant one.",
+      "Both, and they are the same mechanism. --session keeps a conversation across runs — the agent is handed the turns before it — and the same session works on your machine or over the server. A flow can also stop mid-run to wait for a person: the run pauses, the question is stored, and answering it continues the job from where it stopped without redoing the work already done.",
   },
   {
-    question: "Which LLM providers are supported?",
+    question: "Which AI models can it use?",
     answer:
-      "OpenAI, vLLM, Ollama, and any OpenAI-compatible endpoint, out of the box. Changing provider is a few lines in the spec; the flow itself does not change.",
-  },
-  {
-    question: "Where do tools write, and how do they pass files to each other?",
-    answer:
-      "Each agent execution gets a workspace: one directory its tools share, and the working directory each of them starts in. Write a CSV in one call and run a script over it in the next; a different agent in the same flow sees an empty one, and it is removed when the agent finishes. Tools are also reachable by name from inside it, so a tool can run a peer. To put your own files there before the run starts, use --mount. It is read-only by default; add :rw to have whatever the run changed copied back out. --workspace keeps each workspace on disk afterwards instead of discarding it.",
-  },
-  {
-    question: "How do I write a tool?",
-    answer:
-      "Write an executable that reads a JSON object from stdin and writes a JSON object to stdout. Bash, Python, Go, Node, anything that runs. Mark it executable, drop it in your tools directory, and reference it by name from the spec.",
-  },
-  {
-    question: "Is heddle free?",
-    answer:
-      "Yes. heddle is open source under the MIT licence, and free to use in personal and commercial work alike.",
+      "OpenAI, vLLM, Ollama, and any service that speaks the OpenAI API. Changing model is a few lines in the file; the job itself does not change.",
   },
   {
     question: "Does it work offline?",
     answer:
       "heddle itself runs entirely on your machine: no backend, no gateway, no account. If your flow calls a hosted model you will need a connection for those requests; point it at Ollama or vLLM and the whole thing runs offline.",
+  },
+  {
+    question: "What is the Open Agent Specification?",
+    answer:
+      "The published, open format heddle's files are written in. Oracle publishes it; this project only implements it. Other conforming runtimes read the same files, so the agents you write are not locked to heddle — if this project disappeared tomorrow, your files would still run somewhere else.",
   },
 ];

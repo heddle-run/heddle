@@ -33,27 +33,32 @@ exclamation marks, no "blazing fast", no emoji. State what the thing does and
 stop. British-leaning spelling in prose ("licence", "standardised"); American
 in code and identifiers.
 
-**The claim that leads.** heddle is a batteries-included declarative agent
-runtime: the tool-calling loop, the sandbox, the HTTP server, the guardrails
-and the retry policies ship with it rather than being left to the reader.
+**The audience the landing page addresses.** Technically confident
+non-developers: IT and ops people, analysts, automation builders who have hit
+the ceiling of Zapier or n8n, serious hobbyists. They can open a terminal,
+paste a command and edit a YAML file; they do not write programs, have not
+heard of LangGraph, and do not experience dependency trees as pain. The
+landing page's comparison class is therefore doing the job by hand, a chat
+window, or a fixed-rule Zapier flow — **not** other agent frameworks. Its
+rules: at most one unexplained term per screen; outcome-first headings;
+examples before features; prerequisites, cost and data-handling stated
+plainly; the beta version visible in the hero. The hero says "Write down a
+job. Let it run."
 
-**The claim that must follow it immediately.** Both halves of that descriptor
-are contested. "Declarative agent runtime" is what Docker Agent, Microsoft's
-declarative workflows, Snap's Agent Format and Google's ADK all say; "batteries
-included" is LangChain deepagents' actual subtitle and is claimed by Mastra,
-AgentStart, the Microsoft Agent Framework and OpenClaw. So the descriptor
-alone places heddle in a crowded room saying the same sentence as everyone
-else, and it must never be left to stand on its own.
-
-What separates heddle is that **every other batteries-included runtime is a
-library, so its batteries arrive inside your codebase.** More complete means
-more imported, pinned, upgraded and worked around. heddle is a runtime you
-point at a document, so the same equipment costs the project nothing — zero
-packages in the lockfile, zero classes to subclass, zero lines of glue. Say
-this in the next breath after the descriptor, every time. The supporting
-claims, in order: the flow is a portable Open Agent Specification document that
-runs on any conforming runtime, and one document runs two ways, `heddle run` or
-`heddle-server`, with no rewrite between them.
+**The claim for developers still exists — it just moved.** heddle is a
+batteries-included declarative agent runtime, and both halves of that
+descriptor are contested ("declarative agent runtime" is what Docker Agent,
+Microsoft's declarative workflows and Google's ADK all say; "batteries
+included" is LangChain deepagents' actual subtitle). What separates heddle is
+that **every other batteries-included runtime is a library, so its batteries
+arrive inside your codebase**; heddle is a runtime you point at a document,
+so the same equipment costs the project nothing. That argument now lives in
+the docs (getting-started keeps it) and in the playground's compare view —
+wherever it appears, never let the descriptor stand without the
+runtime-vs-library wedge in the next breath. On the landing page the same
+facts surface in this reader's terms: "nothing is installed into anything",
+"the file is an open format you are not locked into", "your computer first,
+a server when you need one".
 
 **Security copy is load-bearing.** The site makes falsifiable claims about
 sandboxing. They live in `safeMode` in `lib/constants.ts` and are checked
@@ -134,8 +139,8 @@ contrast against paper, and shadows tightened from a soft Stripe float into
 something closer to a printed edge — ink-tinted, not generic grey-blue. A
 fixed, near-invisible grain overlay (`components/Grain.tsx`) gives the paper
 actual tooth. Instrument Serif, upstream reserved for the dictionary
-epigraph alone, now also carries two headline moments — Position's "The
-specification is the program." and the CTA's "Thread the loom." — because
+epigraph alone, now also carries two headline moments — How-it-works' "The
+whole thing is one file you can read." and the CTA's "Thread the loom." — because
 those two sentences are the closest thing the page has to a second pull
 quote. The small hand-drawn SVG weave that used to sit beneath the epigraph
 is retired: the Definition chapter is now the live loom's own close-up (the
@@ -205,13 +210,13 @@ Light with `--ls-display` tracking; **IBM Plex Mono** (400/500) for code,
 commands, numbered eyebrows, stats and uppercase labels at `--ls-label`;
 **Instrument Serif** for editorial moments — the dictionary definition and pull
 quotes, and now also two headline moments on the always-dark bands, italic:
-Position's "The specification is the program." and the CTA's "Thread the
-loom." Both are the closest thing the page has to a second pull quote, which
-is the bar for reaching for the serif outside the epigraph — it does not
-belong on the numbered section headings, which stay Plex Sans Light. All
-three load through `next/font/google` in `app/layout.tsx`
+How-it-works' "The whole thing is one file you can read." and the CTA's
+"Thread the loom." Both are the closest thing the page has to a second pull
+quote, which is the bar for reaching for the serif outside the epigraph — it
+does not belong on the numbered section headings, which stay Plex Sans
+Light. All three load through `next/font/google` in `app/layout.tsx`
 (deviation §2). Headings are sentence case and end in periods. Numbered mono
-eyebrows mark the sections: `001 Inventory`, `002 Position`, …
+eyebrows mark the sections: `001 What you can build`, `002 How it works`, …
 
 ### Geometry and depth
 
@@ -310,55 +315,72 @@ in `app/page.tsx`, the keyframes in `components/weave-world/chapters.ts`, and
    accent-coloured (blurple has contrast on both paper and the navy band,
    where `--text-strong` vanishes), click to jump. Hidden below 980px; the
    bar's chapter label carries wayfinding there.
-2. **Hero** (`start`) — the original two-column composition, one viewport
-   over the loom: copy on the left (mono eyebrow, display-Light H1, the
-   wedge sentence as lede, dual CTA, the Humans/Agents install tabs from
-   `installTabs`, a soft radial scrim pooled behind them), and on the right
-   the navy `flow.yaml` editor showing the real Open Agent Specification
-   fragment from `steps[0]`, with the `zsh — heddle` terminal (from
-   `specimenSpread.terminal`) overlapping it — the windows sit over the
-   braid's sweep, the same layering the old painted hero had. A scroll cue
-   sits bottom-centre. `batteries-included` is one 18-character word, so
-   the H1 clamp keeps its 34px floor with `overflow-wrap: break-word` —
-   check a 375px viewport before changing either.
-3. **Inventory** (`included`) — 001. The full manifest as a numbered hairline
-   list. **This section is what makes the lead claim falsifiable**, so every
-   line has to name a feature that exists in the README — treat it the way
-   `safeMode` is treated, and delete a line rather than let it drift. It is a
-   list, not a card grid, because the claim is breadth and a reader should be
-   able to count it. Two columns at desktop, one on mobile. The
-   `notInProject` zeros no longer render here — the what-it-costs half of the
-   claim is carried by the hero lede, Position and the CTA line.
-4. **Position** (`position`) — 002, the page's first dark moment: the
+2. **Hero** (`start`) — the two-column composition, one viewport over the
+   loom: copy on the left (mono eyebrow, the display-Light "Write down a
+   job. Let it run.", a plain-language lede, playground-first dual CTA, the
+   labelled install tabs from `installTabs` — "For you" runs a finished
+   library bundle from its published URL — and the beta marker, above the
+   fold on purpose), and on the right the navy `flow.yaml` editor showing
+   the csv-analyst excerpt from `specimenSpread`, cut where the instruction
+   finishes a sentence, with the `zsh — heddle` terminal overlapping it —
+   command, tools, true answer. **The sample rule for this audience: never
+   elide the instruction, elide the plumbing.** The specimen is the real
+   `library/csv-analyst` entry and its transcript figures are computed from
+   that entry's own sample data — check both against the library before
+   changing either. A scroll cue sits bottom-centre.
+3. **What you can build** (`included`) — 001. Three-to-five recognisable
+   jobs from `useCases` in `lib/constants.ts`, each a real library entry
+   whose "Read the flow" link opens `/library/<slug>`. **The highest-value
+   section for this audience** — a reader who can open the file that
+   produces the meeting write-up has learned more than the rest of the page
+   teaches. Never let a use case stand without a flow that exists; check
+   each detail line against that entry's README. It stays a hairline list,
+   not a card grid.
+4. **How it works** (`position`) — 002, the page's first dark moment: the
    *world's canvas* turns navy for this chapter (the section paints no
    background of its own), the shed opens — the loom action the brand is
-   named for — and the threads glow. The specification is the program, the
-   refusal of the bigger-library trade, and the portability-off-heddle
-   claim, beside a window showing the real `specimenSpread` spec.
-5. **Method** (`method`) — 003, four hairline-divided moves: Declare, Point,
-   Confine, Serve.
-6. **Runtimes** (`runtimes`) — 004, on paper: the receipt for Position's
-   "same equipment behind a binary" and for Method's Point/Serve moves. Two
-   navy windows side by side, `runtimes.cli` and `runtimes.server` from
-   `lib/constants.ts` — the identical flow, run locally and served over
-   HTTP. Both transcripts are checked against `docs/cli-reference.mdx` and
-   `docs/server.mdx`, not written to look plausible; update this section if
-   either doc's example commands change.
-7. **Isolation** (`isolation`) — 005, the sandboxing claims as four cards,
-   verbatim from `safeMode` (see the security note above). The design's
-   illustrative badges ("default in CI", "no daemon") were claims heddle
-   does not make and must not return.
+   named for — and the threads glow. "The whole thing is one file you can
+   read.", the config-file analogy (docker-compose, GitHub Actions, Home
+   Assistant), and the open-format reassurance with the Open Agent
+   Specification linked inline, beside the full `specimenSpread` spec with
+   the English instruction in full view.
+5. **First run** (`method`) — 003, "About ten minutes to your first
+   result.": four hairline-divided literal steps from `firstRun` (Node 18+,
+   a model key or Ollama, `heddle init` or a library entry, run it) —
+   checked against `docs/getting-started.mdx`. A prerequisite the landing
+   page omits is a reader who arrives at the docs feeling misled.
+6. **Where it runs** (`runtimes`) — 004, on paper: your computer first, a
+   server when you need one. Two navy windows side by side, `runtimes.cli`
+   and `runtimes.server` from `lib/constants.ts` — the identical flow, run
+   locally and served over HTTP. Both transcripts are checked against
+   `docs/cli-reference.mdx` and `docs/server.mdx`, not written to look
+   plausible; update this section if either doc's example commands change.
+   Closes with the no-login server warning in plain words — that sentence
+   earns a cautious reader's trust, keep it.
+7. **Safety** (`isolation`) — 005, "What it can and cannot touch.": the
+   sandboxing claims as four cards, verbatim from `safeMode`, ordered by
+   the reader's actual questions (can touch / cannot / a shared file cannot
+   hide code / never degrades quietly). Plain words, same falsifiable
+   mechanisms (see the security note above) — translate language, never
+   claims. The design's illustrative badges ("default in CI", "no daemon")
+   were claims heddle does not make and must not return.
 8. **Definition** (`definition`) — the dictionary epigraph, in Instrument
    Serif, at the loom's close-up: the camera pulls in and the world's weft
    crosses the warp behind the copy. (The 2D SVG mini-weave this section
    used to draw is retired — see the loom note above.)
 9. **FAQ** (`faq`) — 006, native `<details>`; the world holds nearly still
-   here so the dense text stays readable.
+   here so the dense text stays readable. The questions are this reader's,
+   in their order: do I need to program, what does it cost, where does my
+   data go, what happens when it is wrong, how is it different from Zapier
+   or n8n, can I use MCP connectors (honestly: not yet). The framework
+   comparisons (LangGraph, Docker Agent, ADK) live in the playground's
+   compare view, not here — a reader who has not heard of them loses
+   nothing.
 10. **CTA** (`begin`) — the finale: the canvas goes navy again, the shed
     opens widest on the page, and the weft completes its final pass.
-    "Thread the loom.", accent Get started, ghost playground link, the npx
-    command. Like Position, the section paints nothing — the world owns the
-    band.
+    "Thread the loom.", "One program. One file. Ten minutes.", accent Get
+    started, ghost playground link, the npx command. Like the 002 band, the
+    section paints nothing — the world owns the band.
 11. **Footer** — on its own solid `--surface-page` wrapper so the page ends
     on a real surface rather than the glowing world; brand blurb plus the
     Project / Source / Standard columns, and a mono bottom bar (heddle.run ·

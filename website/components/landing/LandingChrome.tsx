@@ -18,11 +18,11 @@ import { GITHUB_URL, PLAYGROUND_URL } from "@/lib/constants";
 
 export const CHAPTERS = [
   { id: "start", label: "Loom" },
-  { id: "included", label: "001 · Inventory" },
-  { id: "position", label: "002 · Position" },
-  { id: "method", label: "003 · Method" },
-  { id: "runtimes", label: "004 · Runtimes" },
-  { id: "isolation", label: "005 · Isolation" },
+  { id: "included", label: "001 · What you can build" },
+  { id: "position", label: "002 · How it works" },
+  { id: "method", label: "003 · First run" },
+  { id: "runtimes", label: "004 · Where it runs" },
+  { id: "isolation", label: "005 · Safety" },
   { id: "definition", label: "Definition" },
   { id: "faq", label: "006 · Questions" },
   { id: "begin", label: "Thread the loom" },

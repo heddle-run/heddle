@@ -1,29 +1,12 @@
 import { SectionHeading } from "@/ds-heddle";
 import { Reveal } from "@/components/motion/Reveal";
+import { firstRun } from "@/lib/constants";
 
-/* 003 — the method grid. Four moves from the design template; the copy states
-   commands and flags that exist (heddle run, --safe, heddle-server). */
-const MOVES = [
-  {
-    title: "Declare",
-    detail: "One document describes the model, the tools and the limits.",
-  },
-  {
-    title: "Point",
-    detail: "heddle run flow.yaml. No project scaffold, no dependency tree.",
-  },
-  {
-    title: "Confine",
-    detail:
-      "--safe drops every tool into an OS sandbox before it can touch anything.",
-  },
-  {
-    title: "Serve",
-    detail:
-      "heddle-server exposes the identical spec over HTTP with streaming.",
-  },
-];
-
+/* 003 — the path from interested to running, stated literally: what you
+   need installed, what it costs to find out, how long it takes. The steps
+   live in lib/constants.ts and are checked against
+   docs/getting-started.mdx — a prerequisite the landing page omits is a
+   reader who arrives at the docs feeling misled. */
 export default function Method() {
   return (
     <div>
@@ -37,12 +20,12 @@ export default function Method() {
         <SectionHeading
           align="center"
           number="003"
-          eyebrow="Method"
-          title="Three moves, then it runs."
-          lede="The fourth is optional, and it is the one everyone reaches for by Friday."
+          eyebrow="First run"
+          title="About ten minutes to your first result."
+          lede="What you need, in order. Most of it you may already have."
         />
         <div className="hds-method-grid">
-          {MOVES.map((move, i) => (
+          {firstRun.map((move, i) => (
             <Reveal key={move.title} index={i}>
               <div
                 style={{

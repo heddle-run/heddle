@@ -2,11 +2,13 @@ import { Badge, Card, SectionHeading } from "@/ds-heddle";
 import { Reveal } from "@/components/motion/Reveal";
 import { safeMode } from "@/lib/constants";
 
-/* 005 — the sandboxing claims. Copy comes verbatim from safeMode in
+/* 005 — the safety section, written to the question this page's reader is
+   actually asking: "I am about to let an AI run things on my computer —
+   what can it break?" Copy comes verbatim from safeMode in
    lib/constants.ts, which is checked against packages/core/src/sandbox/ and
-   packages/server/DEPLOYMENT.md — mechanisms, not adjectives. The design's
-   sample badges ("default in CI", "no daemon") were claims heddle does not
-   make, so they are not here. */
+   packages/server/DEPLOYMENT.md — mechanisms, not adjectives, in plain
+   words. The design's sample badges ("default in CI", "no daemon") were
+   claims heddle does not make, so they are not here. */
 export default function Isolation() {
   return (
     <div>
@@ -27,14 +29,16 @@ export default function Isolation() {
         >
           <SectionHeading
             number="005"
-            eyebrow="Isolation"
-            title={
+            eyebrow="Safety"
+            title="What it can and cannot touch."
+            lede={
               <>
-                Under <code style={{ fontSize: "0.85em" }}>{safeMode.flag}</code>
-                , tools run confined, or they do not run at all.
+                You are letting an AI run things on your computer. Add{" "}
+                <code style={{ fontSize: "0.9em" }}>{safeMode.flag}</code> and
+                every tool runs inside a box the operating system enforces —
+                here is what that means, mechanism by mechanism.
               </>
             }
-            lede="What the flag means, mechanism by mechanism."
           />
         </div>
         <div className="hds-isolation-grid">

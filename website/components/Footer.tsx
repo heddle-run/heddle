@@ -79,8 +79,8 @@ export default function Footer() {
               maxWidth: "32ch",
             }}
           >
-            A batteries-included declarative agent runtime. Open source and
-            entirely local.
+            Multi-step AI agents, described in one readable file and run by one
+            program. Open source and entirely local.
           </p>
         </div>
 

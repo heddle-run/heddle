@@ -39,7 +39,7 @@ export default function CTA() {
             margin: "14px 0 0",
           }}
         >
-          One binary. One document. No lockfile entry.
+          One program. One file. Ten minutes.
         </p>
         <div
           style={{
@@ -72,8 +72,11 @@ export default function CTA() {
             Open the playground
           </Button>
         </div>
+        {/* hds-install so the long library-bundle command wraps at narrow
+            widths instead of overflowing the viewport, same as the hero. */}
         <div
-          style={{ marginTop: 24, display: "flex", justifyContent: "center" }}
+          className="hds-install"
+          style={{ marginTop: 24, maxWidth: 640, marginInline: "auto" }}
         >
           <InstallCommand
             command={installTabs[0].commands[0].cmd}

@@ -2,7 +2,7 @@ import LandingChrome from "@/components/landing/LandingChrome";
 import Chapter from "@/components/landing/Chapter";
 import { WeaveGround } from "@/components/weave-world/WeaveGround";
 import Hero from "@/components/Hero";
-import Inventory from "@/components/Inventory";
+import UseCases from "@/components/UseCases";
 import Position from "@/components/Position";
 import Method from "@/components/Method";
 import Runtimes from "@/components/Runtimes";
@@ -38,7 +38,7 @@ export default function Home() {
           <Hero />
         </Chapter>
         <Chapter id="included">
-          <Inventory />
+          <UseCases />
         </Chapter>
         <Chapter id="position" surface="band">
           <Position />

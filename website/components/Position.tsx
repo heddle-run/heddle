@@ -1,12 +1,15 @@
-import { specimenSpread } from "@/lib/constants";
+import { AGENT_SPEC_URL, specimenSpread } from "@/lib/constants";
 
-/* 002 — the position, on the page's first dark moment. The section no longer
-   paints its own navy band: the loom world behind the page goes navy for this
+/* 002 — how it works, on the page's first dark moment. The section paints no
+   navy band of its own: the loom world behind the page goes navy for this
    chapter (weave-world/chapters.ts, keyframe 2 — the "first shed"), and the
    Chapter wrapper's band scrim settles the copy on it. Text colours still use
-   the --code/slate aliases that read on navy in both themes. The window shows
-   the real researcher spec (specimenSpread), not an illustration. */
-const SPEC_LINES = specimenSpread.spec.split("\n").slice(0, 14);
+   the --code/slate aliases that read on navy in both themes.
+
+   The window shows the whole specimen — a real library flow with its English
+   instruction in full view. For this page's reader, the file being readable
+   IS the argument, so the sample must never elide the instruction. */
+const SPEC_LINES = specimenSpread.spec.split("\n");
 
 export default function Position() {
   return (
@@ -32,7 +35,7 @@ export default function Position() {
             }}
           >
             <span style={{ color: "var(--slate-400)" }}>002</span>
-            <span style={{ color: "var(--blurple-300)" }}>Position</span>
+            <span style={{ color: "var(--blurple-300)" }}>How it works</span>
           </div>
           <h2
             style={{
@@ -44,7 +47,7 @@ export default function Position() {
               margin: "14px 0 0",
             }}
           >
-            The specification is the program.
+            The whole thing is one file you can read.
           </h2>
           <p
             style={{
@@ -54,10 +57,11 @@ export default function Position() {
               margin: "14px 0 0",
             }}
           >
-            Your agent is a document, not framework code. Batteries included
-            usually means a bigger library in your lockfile; heddle refuses the
-            trade, and the same equipment sits behind a binary you point at the
-            document.
+            A heddle flow is a text file that names the steps, the instructions
+            and the tools — the same species of file as a docker-compose file,
+            a GitHub Actions workflow or a Home Assistant automation. If you
+            have edited one of those, you can edit this. Open it, change a
+            line, run it again.
           </p>
           <p
             style={{
@@ -67,10 +71,21 @@ export default function Position() {
               margin: "14px 0 0",
             }}
           >
-            And the document is an Open Agent Specification flow. Oracle
-            publishes that format; this project did not invent it. So it runs on
-            any other conforming runtime, which makes leaving cheap and staying
-            a choice.
+            The format is not ours. It is the{" "}
+            <a
+              href={AGENT_SPEC_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                color: "var(--cyan-500)",
+                textDecoration: "underline",
+                textUnderlineOffset: 3,
+              }}
+            >
+              Open Agent Specification
+            </a>
+            , published by Oracle, and other runtimes read it too. If heddle
+            disappeared tomorrow, your files would still work somewhere else.
           </p>
         </div>
 

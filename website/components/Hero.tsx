@@ -4,25 +4,37 @@ import { useState, type ReactNode } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import { Button, Icon, InstallCommand } from "@/ds-heddle";
 import { AnimatedTerminal } from "@/components/AnimatedTerminal";
-import { GITHUB_URL, installTabs, specimenSpread, steps } from "@/lib/constants";
+import {
+  installTabs,
+  PLAYGROUND_URL,
+  specimenSpread,
+  VERSION,
+} from "@/lib/constants";
 
-/* The spec in the window is the real Open Agent Specification fragment from
-   the Declare step — the design template drew a simplified YAML here, and the
-   brand rule is that spec snippets are checkable, not illustrative. */
-const SPEC_LINES = steps[0].code.split("\n").slice(1, 15);
+/* The spec in the window is the csv-analyst excerpt from specimenSpread —
+   a real library entry, cut where the instruction finishes a sentence. The
+   rule for this window: the English instruction is the part that must be
+   visible; the graph plumbing is what gets elided. */
+const SPEC_LINES = specimenSpread.spec.split("\n").slice(0, 15);
 
-/* The run beside it is the specimen run log, trimmed to the window. */
-const TERMINAL_LINES = specimenSpread.terminal.slice(0, 9).map((line) => ({
-  text: line.text,
-  kind:
-    line.kind === "prompt"
-      ? ("prompt" as const)
-      : line.kind === "muted"
-        ? ("dim" as const)
-        : line.kind === "tool"
-          ? ("tool" as const)
-          : undefined,
-}));
+/* The run beside it: command, the tools working, and the true answer. The
+   validation lines and the question echo are dropped here to keep the
+   window short — the terminal overlaps the spec window, and every extra
+   line hides another line of the instruction, which is the thing this
+   window exists to show. */
+const TERMINAL_LINES = [0, 1, 5, 6, 7, 8, 12, 13, 14]
+  .map((i) => specimenSpread.terminal[i])
+  .map((line) => ({
+    text: line.text,
+    kind:
+      line.kind === "prompt"
+        ? ("prompt" as const)
+        : line.kind === "muted"
+          ? ("dim" as const)
+          : line.kind === "tool"
+            ? ("tool" as const)
+            : undefined,
+  }));
 
 /* Minimal YAML colouring in the template's key/value scheme. */
 function yamlLine(line: string): ReactNode {
@@ -52,14 +64,15 @@ function yamlLine(line: string): ReactNode {
   return <span style={{ color: "var(--code-fg)" }}>{line}</span>;
 }
 
-/* The opening chapter, back in the original two-column composition: copy on
-   the left, the spec window with the terminal overlapping it on the right,
-   one viewport, over the live loom. The windows sit where the braid sweeps,
-   which is the point — navy panes over the threads, the same layering the
-   old painted hero had. Copy is unchanged and still comes from
-   lib/constants.ts. `batteries-included` is one 18-character word, so the
-   H1 keeps its 34px floor with break-word — check a 375px viewport before
-   changing either. */
+/* The opening chapter, in the two-column composition: copy on the left, the
+   spec window with the terminal overlapping it on the right, one viewport,
+   over the live loom. The windows sit where the braid sweeps, which is the
+   point — navy panes over the threads.
+
+   The copy addresses a technically confident non-developer: plain-language
+   definition, a concrete job, one command, and the beta stated openly. The
+   playground leads the CTAs because for this reader seeing it work is worth
+   more than any paragraph; GitHub stays in the chrome bar and the footer. */
 export default function Hero() {
   const [tabId, setTabId] = useState(installTabs[0].id);
   const tab = installTabs.find((t) => t.id === tabId) ?? installTabs[0];
@@ -108,7 +121,7 @@ export default function Hero() {
               marginBottom: 20,
             }}
           >
-            Declarative YAML · MIT
+            Open source · Runs on your computer
           </motion.div>
 
           <motion.h1
@@ -120,10 +133,9 @@ export default function Hero() {
               letterSpacing: "var(--ls-display)",
               color: "var(--text-strong)",
               margin: 0,
-              overflowWrap: "break-word",
             }}
           >
-            A batteries-included declarative agent runtime.
+            Write down a job. Let it run.
           </motion.h1>
 
           <motion.p
@@ -136,8 +148,9 @@ export default function Hero() {
               margin: "20px 0 0",
             }}
           >
-            Declare the agent once, in YAML. The loop, the sandbox, the retries
-            and the server live in the runtime, not in your codebase.
+            heddle runs multi-step AI jobs described in a plain text file —
+            read these files, decide what matters, write the summary. No
+            programming to start: one program, on your own computer.
           </motion.p>
 
           <motion.div
@@ -152,22 +165,14 @@ export default function Hero() {
           >
             <Button
               as="a"
-              href="/docs"
+              href={PLAYGROUND_URL}
               size="lg"
               iconRight={<Icon name="arrowRight" size={16} />}
             >
-              Read the docs
+              Try one in your browser
             </Button>
-            <Button
-              as="a"
-              href={GITHUB_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              size="lg"
-              variant="secondary"
-              iconLeft={<Icon name="github" size={16} />}
-            >
-              Star on GitHub
+            <Button as="a" href="/docs" size="lg" variant="secondary">
+              Read the guide
             </Button>
           </motion.div>
 
@@ -223,6 +228,20 @@ export default function Hero() {
               }}
             >
               {tab.note}
+            </div>
+
+            {/* The maturity marker, above the fold on purpose: a reader who
+                finds the beta in the footer after their first bug feels
+                misled; one who read it here does not. */}
+            <div
+              style={{
+                fontSize: 12.5,
+                color: "var(--text-subtle)",
+                marginTop: 12,
+              }}
+            >
+              Free, MIT-licensed. Early release (v{VERSION}) — expect rough
+              edges.
             </div>
           </motion.div>
         </div>
