@@ -26,23 +26,23 @@ export const NPM_URL = "https://www.npmjs.com/package/@heddle-run/cli";
 
 /* Two audiences arrive wanting different first commands, and the difference is
    not cosmetic: a person wants to see a job run, an agent wants to be taught
-   how to write one. The human command runs a finished library agent straight
-   from its published address — the same command the library page prints —
-   because for a reader who does not program, one command that produces a
-   result is worth more than any install instruction. `npm install -g` and
-   Homebrew are in the docs; a landing page owes each visitor one command,
-   not four.
+   how to write one. The human command runs a finished library agent by its
+   bare name — the CLI expands it to the entry's published address, and it is
+   the same command the library page prints — because for a reader who does
+   not program, one command that produces a result is worth more than any
+   install instruction. `npm install -g` and Homebrew are in the docs; a
+   landing page owes each visitor one command, not four.
 
    Every command here is a run, not an install. That is the point. */
 export const installTabs = [
   {
     id: "humans",
     label: "Humans",
-    note: "A finished agent from the library, run from its address. Nothing is installed into anything.",
+    note: "A finished agent from the library, run by its name. Nothing is installed into anything.",
     commands: [
       {
         label: "npx",
-        cmd: "npx @heddle-run/cli run https://heddle.run/library/meeting-notes.heddle",
+        cmd: "npx @heddle-run/cli run meeting-notes",
       },
     ],
   },

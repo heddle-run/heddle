@@ -4,7 +4,7 @@ import Nav from "@/components/Nav";
 import Footer from "@/components/Footer";
 import { CodeBlock, SectionHeading } from "@/ds-heddle";
 import LibraryTag from "@/components/LibraryTag";
-import { GITHUB_URL, SITE_URL } from "@/lib/constants";
+import { GITHUB_URL } from "@/lib/constants";
 import { libraryEntries, requirementNames } from "@/lib/library";
 
 export const metadata: Metadata = {
@@ -182,13 +182,13 @@ export default function LibraryPage() {
             <SectionHeading
               eyebrow="Using one"
               title="One command."
-              lede="Every entry is packed and published at its own address — a single archive carrying the flow, its tools and whatever data it reads. npx fetches heddle, the address fetches the agent, and nothing is installed."
+              lede="Every entry is packed and published at its own address — a single archive carrying the flow, its tools and whatever data it reads. npx fetches heddle, the bare name fetches the agent, and nothing is installed."
             />
 
             <div style={{ marginTop: 32, maxWidth: 760 }}>
               <CodeBlock
                 filename="terminal"
-                code={`npx @heddle-run/cli run ${SITE_URL}/library/meeting-notes.heddle`}
+                code={`npx @heddle-run/cli run meeting-notes`}
               />
             </div>
 

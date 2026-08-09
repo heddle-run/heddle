@@ -32,7 +32,14 @@ it is not published to npm. See [vendor/agentspec/VENDOR.md](vendor/agentspec/VE
 
 ## Installation
 
-There is nothing to install. `npx` fetches the CLI and runs it:
+There is nothing to install. `npx` fetches the CLI and runs it — here running a
+finished agent from the [library](https://heddle.run/library) by its bare name:
+
+```bash
+npx @heddle-run/cli run meeting-notes
+```
+
+Or your own flow:
 
 ```bash
 npx @heddle-run/cli run flow.json --tools-dir tools --input '{"query": "hello"}'

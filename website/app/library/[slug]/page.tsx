@@ -6,7 +6,7 @@ import Nav from "@/components/Nav";
 import Footer from "@/components/Footer";
 import { CodeBlock, SectionHeading } from "@/ds-heddle";
 import LibraryTag from "@/components/LibraryTag";
-import { GITHUB_URL, SITE_URL } from "@/lib/constants";
+import { GITHUB_URL } from "@/lib/constants";
 import {
   libraryEntries,
   libraryEntry,
@@ -206,7 +206,7 @@ export default async function LibraryEntryPage({ params }: Params) {
                   <h2 style={{ ...label, marginBottom: 14 }}>Run it</h2>
                   <CodeBlock
                     filename="terminal"
-                    code={`npx @heddle-run/cli run ${SITE_URL}/library/${entry.name}.heddle`}
+                    code={`npx @heddle-run/cli run ${entry.name}`}
                   />
                   <p
                     style={{
@@ -216,11 +216,12 @@ export default async function LibraryEntryPage({ params }: Params) {
                       color: "var(--text-muted)",
                     }}
                   >
-                    One command, pasted into a terminal. It fetches heddle and
-                    the agent — flow, tools and sample data travel inside the
-                    bundle, along with a default input — and asks for anything
-                    still missing, like your model key, before it starts.
-                    Nothing is installed.
+                    One command, pasted into a terminal. The bare name is this
+                    entry&apos;s published address, and fetching it fetches the
+                    agent — flow, tools and sample data travel inside the
+                    bundle, along with a default input. heddle asks for
+                    anything still missing, like your model key, before it
+                    starts. Nothing is installed.
                   </p>
                 </div>
 
