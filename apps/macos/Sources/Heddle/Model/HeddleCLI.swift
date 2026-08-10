@@ -69,6 +69,39 @@ struct HeddleCLI {
         return pathLookup("node", environment: environment)
     }
 
+    /// Run an auxiliary heddle command (`sessions ls`, `sessions rm`, …) and
+    /// hand back what it said. For the short administrative commands only —
+    /// runs go through `RunStore`, which streams.
+    func output(_ arguments: [String]) async -> (stdout: String, stderr: String, exit: Int32) {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: invocation[0])
+        process.arguments = Array(invocation.dropFirst()) + arguments
+
+        let stdout = Pipe()
+        let stderr = Pipe()
+        process.standardOutput = stdout
+        process.standardError = stderr
+        process.standardInput = FileHandle.nullDevice
+
+        return await withCheckedContinuation { continuation in
+            process.terminationHandler = { finished in
+                let out = stdout.fileHandleForReading.readDataToEndOfFile()
+                let err = stderr.fileHandleForReading.readDataToEndOfFile()
+                continuation.resume(returning: (
+                    String(data: out, encoding: .utf8) ?? "",
+                    String(data: err, encoding: .utf8) ?? "",
+                    finished.terminationStatus
+                ))
+            }
+            do {
+                try process.run()
+            } catch {
+                process.terminationHandler = nil
+                continuation.resume(returning: ("", error.localizedDescription, -1))
+            }
+        }
+    }
+
     /// A plain PATH walk, because the app may not have a login shell's PATH.
     private static func pathLookup(_ name: String, environment: [String: String]) -> String? {
         let path = environment["PATH"] ?? "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin"

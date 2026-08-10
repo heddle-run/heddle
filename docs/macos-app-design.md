@@ -265,10 +265,24 @@ drop target; it would take a custom `NSStatusItem`, and Finder double-click
 covers the path meanwhile. Still open: signed/notarized DMG (needs a
 Developer ID, an account decision rather than code).
 
-**M3 — conversations.** Chat window for `interactive` bundles (one
-`--session` turn per message); Sessions window (list, resume, delete) over
-`heddle sessions`; suspended-run answering (`--resume --answer`) with
-notification actions.
+**M3 — conversations. ✅ Built.** Chat window for `interactive` bundles: one
+`heddle run --session <id>` spawn per message against an app-minted id (the
+store honours caller-chosen ids), the assistant's reply rendered by the
+repo's own rule (`answerOf`: `result` when a string, the output otherwise),
+conversations surviving window closes through the session on disk.
+Suspensions: the `suspended` frame becomes a `.suspended` record status, the
+menu grows a "needs your answer" item, a notification fires, and the ask
+renders in place — question, quick Approve/Deny for the `{"approved": …}`
+shape, a JSON field for every other — resuming on the same record with
+`--resume --answer`, transcript appended across the resume. The resume
+repeats the original spawn's plugin flags, because the middleware that asked
+must be loaded again to consume the answer (`ctx.answered`). Sessions
+window over `heddle sessions ls/show/rm`: list, transcript, delete. Proven
+end-to-end by `SuspensionRoundtripTests`: a `node`-seam middleware suspends
+a model-free Start→Tool→End flow, the answer resumes it, the flow finishes.
+Not carried over from the sketch: notification *action buttons* (answering
+from the notification itself) — answering lives in the windows; revisit if
+reaching for the window proves to be friction.
 
 **M4 — reach.** `heddle://` scheme and Shortcuts actions; library gallery;
 Sparkle updates; Homebrew cask.

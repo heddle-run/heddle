@@ -33,6 +33,9 @@ private struct RunTranscript: View {
                         ForEach(run.items) { item in
                             TranscriptRow(item: item)
                         }
+                        if let suspension = run.suspension {
+                            AskCard(ask: suspension) { runs.answer(run, with: $0) }
+                        }
                         if let state = run.finalState {
                             ResultBox(state: state)
                         }
@@ -57,6 +60,9 @@ private struct RunTranscript: View {
             case .succeeded:
                 Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
                 Text("Finished")
+            case .suspended:
+                Image(systemName: "hand.raised.fill").foregroundStyle(.orange)
+                Text("Waiting on your answer")
             case .failed(let message):
                 Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
                 Text(message).lineLimit(2)

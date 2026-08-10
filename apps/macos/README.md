@@ -26,6 +26,13 @@ to run — no terminal. Design notes and roadmap live in
   secure field per missing API key that saves to the Keychain — injected
   into each run's environment, written nowhere else. Run stays disabled
   until every declared key is held.
+- Bundles with `interactive: true` open a chat window — one `heddle run
+  --session` per message, so the conversation lives on disk and survives
+  the window. Runs a middleware stops for approval show up in the menu
+  ("needs your answer"), notify, and render the ask in place with
+  Approve/Deny (or a JSON answer); the same run then resumes and finishes.
+- Sessions… lists what `heddle sessions` knows — the same store the CLI
+  reads — with transcripts and delete.
 
 ## Make the .app
 

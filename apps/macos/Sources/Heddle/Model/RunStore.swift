@@ -9,27 +9,47 @@ final class RunRecord: Identifiable {
         case running
         case succeeded
         case failed(String)
+        /// Stopped for a person; the session holds the open turn.
+        case suspended(Suspension)
     }
 
     let id = UUID()
-    let agentName: String
+    let agent: Agent
+    /// Set when this run belongs to a conversation on disk — always set for
+    /// chat turns, and minted on demand the moment a run suspends is not
+    /// possible, so any agent that *could* suspend should be given one.
+    let sessionID: String?
+    /// Flags every spawn of this record repeats — a resume needs the same
+    /// plugins loaded as the run that suspended, or nothing is there to
+    /// consume the answer. Bundles carry theirs inside the archive; these
+    /// are for bare flows (and tests) that take them from the command line.
+    let extraArguments: [String]
     let startedAt = Date()
     var endedAt: Date?
     var status: Status = .running
     var items: [TranscriptItem] = []
     var finalState: JSONValue?
 
-    init(agentName: String) {
-        self.agentName = agentName
+    init(agent: Agent, sessionID: String?, extraArguments: [String] = []) {
+        self.agent = agent
+        self.sessionID = sessionID
+        self.extraArguments = extraArguments
     }
 
+    var agentName: String { agent.name }
     var isRunning: Bool { status == .running }
+
+    var suspension: Suspension? {
+        if case .suspended(let suspension) = status { return suspension }
+        return nil
+    }
 
     /// The one line the menu and the notification lead with.
     var summary: String {
         switch status {
         case .running: return "Running…"
         case .failed(let message): return message
+        case .suspended(let suspension): return suspension.question
         case .succeeded:
             if let object = finalState?.objectValue, let first = object.values.first,
                object.count == 1
@@ -54,24 +74,83 @@ final class RunStore {
     @ObservationIgnored
     private var processes: [UUID: Process] = [:]
 
+    /// One-shot continuations, keyed by record — how a chat turn learns its
+    /// run settled. Distinct from `onFinish`, which is the app-wide observer
+    /// (notifications) and sees every run.
+    @ObservationIgnored
+    private var completions: [UUID: (RunRecord) -> Void] = [:]
+
     var onFinish: ((RunRecord) -> Void)?
 
     var running: [RunRecord] { runs.filter(\.isRunning) }
     var finished: [RunRecord] { runs.filter { !$0.isRunning } }
+    var needingAnswer: [RunRecord] { runs.filter { $0.suspension != nil } }
+
+    /// Called once when the record leaves `.running`, after status is set.
+    func onCompletion(of record: RunRecord, perform: @escaping (RunRecord) -> Void) {
+        if record.isRunning {
+            completions[record.id] = perform
+        } else {
+            perform(record)
+        }
+    }
 
     @discardableResult
-    func start(agent: Agent, input: [String: JSONValue]? = nil) -> RunRecord {
-        let record = RunRecord(agentName: agent.name)
+    func start(
+        agent: Agent,
+        input: [String: JSONValue]? = nil,
+        session: String? = nil,
+        resume: Bool = false,
+        answer: JSONValue? = nil,
+        extraArguments: [String] = []
+    ) -> RunRecord {
+        let record = RunRecord(
+            agent: agent, sessionID: session, extraArguments: extraArguments
+        )
         runs.insert(record, at: 0)
+        run(record: record, input: input, resume: resume, answer: answer)
+        return record
+    }
+
+    /// Continue a suspended run with what the person said, on the same
+    /// record: the transcript grows, the status returns to running — the GUI
+    /// twin of `heddle run --session <id> --resume --answer '<json>'`.
+    func answer(_ record: RunRecord, with answer: JSONValue) {
+        guard record.suspension != nil, record.sessionID != nil else { return }
+        record.status = .running
+        record.endedAt = nil
+        run(record: record, input: nil, resume: true, answer: answer)
+    }
+
+    private func run(
+        record: RunRecord,
+        input: [String: JSONValue]?,
+        resume: Bool,
+        answer: JSONValue?
+    ) {
+        let agent = record.agent
 
         guard let cli = HeddleCLI.locate() else {
             record.status = .failed(HeddleCLI.LocateError.notFound.localizedDescription)
             record.endedAt = Date()
-            return record
+            return
         }
 
         var arguments = Array(cli.invocation.dropFirst())
         arguments += ["run", agent.url.path, "--protocol", "heddle", "--no-ask-env"]
+        arguments += record.extraArguments
+        if let session = record.sessionID {
+            arguments += ["--session", session]
+        }
+        if resume {
+            arguments += ["--resume"]
+        }
+        if let answer,
+           let data = try? JSONEncoder().encode(answer),
+           let json = String(data: data, encoding: .utf8)
+        {
+            arguments += ["--answer", json]
+        }
         if let input, !input.isEmpty,
            let data = try? JSONEncoder().encode(JSONValue.object(input)),
            let json = String(data: data, encoding: .utf8)
@@ -97,6 +176,9 @@ final class RunStore {
         process.standardInput = FileHandle.nullDevice
 
         let recordID = record.id
+        // A resume keeps its record: what streamed before the suspension
+        // stays, and this spawn's frames append after it.
+        let baseItems = record.items
         var reducer = FrameReducer()
         var buffer = Data()
         var stderrTail = Data()
@@ -115,7 +197,7 @@ final class RunStore {
                         reducer.consume(line: Substring(text))
                     }
                 }
-                self?.apply(reducer, to: recordID)
+                self?.apply(reducer, to: recordID, over: baseItems)
             }
         }
 
@@ -149,6 +231,7 @@ final class RunStore {
                 self?.finish(
                     recordID,
                     reducer: reducer,
+                    over: baseItems,
                     exitStatus: status,
                     stderr: String(data: stderrTail, encoding: .utf8) ?? ""
                 )
@@ -162,7 +245,6 @@ final class RunStore {
             record.status = .failed("could not start heddle: \(error.localizedDescription)")
             record.endedAt = Date()
         }
-        return record
     }
 
     func cancel(_ record: RunRecord) {
@@ -177,26 +259,33 @@ final class RunStore {
         runs.first { $0.id == id }
     }
 
-    private func apply(_ reducer: FrameReducer, to id: UUID) {
+    private func apply(_ reducer: FrameReducer, to id: UUID, over base: [TranscriptItem]) {
         guard let record = record(id) else { return }
-        record.items = reducer.items
+        record.items = base + reducer.items
     }
 
     private func finish(
         _ id: UUID,
         reducer: FrameReducer,
+        over base: [TranscriptItem],
         exitStatus: Int32,
         stderr: String
     ) {
         processes[id] = nil
         guard let record = record(id) else { return }
 
-        record.items = reducer.items
+        record.items = base + reducer.items
         record.finalState = reducer.finalState
         record.endedAt = Date()
 
         if exitStatus == 0 {
-            record.status = .succeeded
+            // Exit 0 covers both endings; the frames say which one this was
+            // (`run.ts` writes the `suspended` frame and returns).
+            if let suspension = reducer.suspension {
+                record.status = .suspended(suspension)
+            } else {
+                record.status = .succeeded
+            }
         } else {
             // The CLI's last words beat an exit code: its errors go to stderr
             // (`heddle.ts` prints `err.message`), events' to the reducer.
@@ -206,6 +295,8 @@ final class RunStore {
                 ?? "heddle exited with status \(exitStatus)"
             record.status = .failed(lastWords)
         }
+
         onFinish?(record)
+        completions.removeValue(forKey: id)?(record)
     }
 }

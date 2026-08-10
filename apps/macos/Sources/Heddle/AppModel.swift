@@ -18,18 +18,22 @@ final class AppModel {
         runs.onFinish = { [notifier] run in notifier.runFinished(run) }
     }
 
-    /// The click policy, shared by the menu and Finder opens: a bundle
-    /// recording input (or a bare flow, whose needs nobody recorded) gets
-    /// the form, as does anything whose declared requirements do not hold —
-    /// the form is where the asking happens. Everything else runs on the
-    /// click itself.
+    /// The click policy, shared by the menu and Finder opens.
+    ///
+    /// An `interactive` bundle opens its conversation — that is what the
+    /// author recorded the flag to mean. Otherwise: a bundle recording input
+    /// (or a bare flow, whose needs nobody recorded) gets the form, as does
+    /// anything whose declared requirements do not hold — the form is where
+    /// the asking happens. Everything else runs on the click itself.
     func launch(_ agent: Agent) {
-        let needsForm =
-            agent.defaultInput?.isEmpty == false
-            || agent.kind == .flow
-            || Preflight.check(agent.requires).contains { !$0.holds }
+        let unmet = Preflight.check(agent.requires).contains { !$0.holds }
 
-        if needsForm {
+        if agent.interactive && !unmet {
+            WindowPresenter.shared.showChat(for: agent, agents: agents, runs: runs)
+            return
+        }
+
+        if agent.defaultInput?.isEmpty == false || agent.kind == .flow || unmet {
             WindowPresenter.shared.showLaunch(for: agent, agents: agents, runs: runs)
         } else {
             let record = runs.start(agent: agent)

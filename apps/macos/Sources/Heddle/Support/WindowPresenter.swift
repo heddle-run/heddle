@@ -17,6 +17,11 @@ final class WindowPresenter {
     /// existing window rather than stacking a duplicate.
     private var windows: [String: NSWindow] = [:]
 
+    /// Conversations outlive their windows: closing a chat and clicking the
+    /// agent again continues where it left off, for the app's lifetime. The
+    /// session on disk is what makes that cheap to honour.
+    private var chats: [String: ChatController] = [:]
+
     func showRun(_ runID: UUID, agents: AgentStore, runs: RunStore) {
         show(
             id: "run-\(runID.uuidString)",
@@ -35,12 +40,42 @@ final class WindowPresenter {
             title: agent.name,
             size: NSSize(width: 460, height: 240)
         ) {
-            LaunchView(agentID: agent.id) { [weak self] record in
+            LaunchView(agentID: agent.id) { [weak self] outcome in
                 self?.close(id: "launch-\(agent.id)")
-                self?.showRun(record.id, agents: agents, runs: runs)
+                switch outcome {
+                case .run(let record):
+                    self?.showRun(record.id, agents: agents, runs: runs)
+                case .chat(let agent):
+                    self?.showChat(for: agent, agents: agents, runs: runs)
+                }
             }
             .environment(agents)
             .environment(runs)
+        }
+    }
+
+    func showChat(for agent: Agent, agents: AgentStore, runs: RunStore) {
+        let controller = chats[agent.id] ?? ChatController(agent: agent, runs: runs)
+        chats[agent.id] = controller
+
+        show(
+            id: "chat-\(agent.id)",
+            title: agent.name,
+            size: NSSize(width: 480, height: 440)
+        ) {
+            ChatView(controller: controller)
+                .environment(agents)
+                .environment(runs)
+        }
+    }
+
+    func showSessions() {
+        show(
+            id: "sessions",
+            title: "Sessions",
+            size: NSSize(width: 560, height: 400)
+        ) {
+            SessionsView()
         }
     }
 

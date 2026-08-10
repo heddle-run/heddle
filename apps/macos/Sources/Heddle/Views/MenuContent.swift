@@ -16,6 +16,9 @@ struct MenuContent: View {
         Button("Open Agents Folder") {
             NSWorkspace.shared.open(agents.directory)
         }
+        Button("Sessions…") {
+            WindowPresenter.shared.showSessions()
+        }
         SettingsLink {
             Text("Settings…")
         }
@@ -39,6 +42,9 @@ struct MenuContent: View {
 
     @ViewBuilder
     private var activitySection: some View {
+        ForEach(runs.needingAnswer) { run in
+            Button("⚠️ \(run.agentName) — needs your answer") { open(run) }
+        }
         ForEach(runs.running) { run in
             Button("⏳ \(run.agentName)") { open(run) }
         }
@@ -60,6 +66,7 @@ struct MenuContent: View {
         case .running: return "⏳"
         case .succeeded: return "✓"
         case .failed: return "✕"
+        case .suspended: return "⚠️"
         }
     }
 

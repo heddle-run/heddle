@@ -6,12 +6,20 @@ import SwiftUI
 /// exactly what `heddle run` would use unprompted) and for bare flows, which
 /// get the CLI's default `query` field. Agents recording no input skip this
 /// window entirely — the menu runs them directly.
+/// What pressing Run on the form amounts to.
+enum LaunchOutcome {
+    case run(RunRecord)
+    /// An `interactive` agent that reached the form for its preflight:
+    /// with the keys now held, Run opens the conversation instead.
+    case chat(Agent)
+}
+
 struct LaunchView: View {
     @Environment(AgentStore.self) private var agents
     @Environment(RunStore.self) private var runs
 
     let agentID: Agent.ID?
-    let onRun: (RunRecord) -> Void
+    let onRun: (LaunchOutcome) -> Void
 
     @State private var fields: [InputField] = []
     @State private var checks: [CheckedRequirement] = []
@@ -85,7 +93,11 @@ struct LaunchView: View {
     }
 
     private func run(_ agent: Agent) {
-        onRun(runs.start(agent: agent, input: InputField.input(from: fields)))
+        if agent.interactive {
+            onRun(.chat(agent))
+        } else {
+            onRun(.run(runs.start(agent: agent, input: InputField.input(from: fields))))
+        }
     }
 }
 

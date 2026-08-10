@@ -31,6 +31,9 @@ final class Notifier {
         case .failed(let message):
             content.title = "\(run.agentName) failed"
             content.body = String(message.prefix(200))
+        case .suspended(let suspension):
+            content.title = "\(run.agentName) needs your answer"
+            content.body = String(suspension.question.prefix(200))
         case .running:
             return
         }

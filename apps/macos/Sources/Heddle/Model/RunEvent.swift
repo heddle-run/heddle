@@ -31,6 +31,21 @@ struct TranscriptItem: Identifiable, Equatable {
     }
 }
 
+/// What a `suspended` frame carries: the run stopped for a person.
+///
+/// The CLI writes it to the stream and exits 0 — the turn stays open in the
+/// session, and `--resume --answer '<json>'` continues it
+/// (`reportSuspension`, `packages/cli/src/cli/run.ts`).
+struct Suspension: Equatable {
+    let session: String
+    let by: String
+    let ask: JSONValue
+
+    var question: String {
+        ask.objectValue?["question"]?.stringValue ?? by + " is asking"
+    }
+}
+
 /// Folds the frame stream into a transcript and a final state.
 ///
 /// Kept apart from the process plumbing so it is testable with strings: feed
@@ -40,6 +55,7 @@ struct FrameReducer {
     private(set) var items: [TranscriptItem] = []
     private(set) var finalState: JSONValue?
     private(set) var failure: String?
+    private(set) var suspension: Suspension?
 
     private var streamingNode: String?
     private static let decoder = JSONDecoder()
@@ -94,6 +110,16 @@ struct FrameReducer {
         case "flow_complete":
             streamingNode = nil
             finalState = data["state"].map(withoutReserved)
+
+        case "suspended":
+            streamingNode = nil
+            let suspended = Suspension(
+                session: data["session"]?.stringValue ?? "",
+                by: data["by"]?.stringValue ?? "middleware",
+                ask: data["ask"] ?? .null
+            )
+            suspension = suspended
+            items.append(TranscriptItem(kind: .note, text: "Stopped: \(suspended.question)"))
 
         default:
             break
