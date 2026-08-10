@@ -284,8 +284,16 @@ Not carried over from the sketch: notification *action buttons* (answering
 from the notification itself) — answering lives in the windows; revisit if
 reaching for the window proves to be friction.
 
-**M4 — reach.** `heddle://` scheme and Shortcuts actions; library gallery;
-Sparkle updates; Homebrew cask.
+**M4 — reach. Partially built; the rest is a release decision.** Landed:
+the `heddle://` scheme — `heddle://run?agent=<name>[&input=<json>]` runs an
+agent already in the menu, with input running immediately and without it
+taking the normal click path. A URL is a remote control, not an installer:
+it cannot name a path, only an installed agent, so a web page cannot make
+the app run whatever it likes. Still open, and gated on accounts rather
+than code: Developer ID signing + notarized DMG, Sparkle (wants the signed
+appcast infrastructure), the Homebrew cask (wants a released artifact),
+Shortcuts App Intents (worth doing once the scheme has users), and the
+library gallery.
 
 ## Open questions
 

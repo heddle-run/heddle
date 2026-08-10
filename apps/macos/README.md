@@ -33,6 +33,10 @@ to run — no terminal. Design notes and roadmap live in
   Approve/Deny (or a JSON answer); the same run then resumes and finishes.
 - Sessions… lists what `heddle sessions` knows — the same store the CLI
   reads — with transcripts and delete.
+- A `heddle://` scheme for Shortcuts, Raycast and scripts:
+  `open "heddle://run?agent=Meeting%20Notes"` takes the agent's normal
+  click path; add `&input=<url-encoded JSON object>` to run immediately
+  with that input. Only agents already in the menu can be named.
 
 ## Make the .app
 

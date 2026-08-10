@@ -50,6 +50,40 @@ final class AppModel {
             launch(agent)
         }
     }
+
+    /// A `heddle://` URL — Shortcuts, Raycast, a script.
+    ///
+    /// The named agent must already be in the menu: a URL is a remote
+    /// control, not an installer, and letting one name an arbitrary path
+    /// would make every web page a launcher for whatever it likes.
+    func openURL(_ url: URL) {
+        guard case .run(let name, let input)? = AppURL.parse(url) else {
+            complain("Nothing handles \(url.absoluteString)")
+            return
+        }
+
+        guard let agent = agents.agents.first(where: {
+            $0.name.localizedCaseInsensitiveCompare(name) == .orderedSame
+        }) else {
+            complain("No agent named \"\(name)\" in the agents folder")
+            return
+        }
+
+        if let input {
+            let record = runs.start(agent: agent, input: input)
+            WindowPresenter.shared.showRun(record.id, agents: agents, runs: runs)
+        } else {
+            launch(agent)
+        }
+    }
+
+    private func complain(_ message: String) {
+        let alert = NSAlert()
+        alert.messageText = "Heddle"
+        alert.informativeText = message
+        NSApp.activate(ignoringOtherApps: true)
+        alert.runModal()
+    }
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -57,7 +91,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         AppModel.shared.notifier.requestAuthorization()
     }
 
+    /// Both arrivals land here: file opens and `heddle://` URLs.
     func application(_ application: NSApplication, open urls: [URL]) {
-        AppModel.shared.openFiles(urls)
+        let (schemed, files) = urls.reduce(into: ([URL](), [URL]())) { split, url in
+            if url.scheme?.lowercased() == AppURL.scheme {
+                split.0.append(url)
+            } else {
+                split.1.append(url)
+            }
+        }
+        AppModel.shared.openFiles(files)
+        for url in schemed {
+            AppModel.shared.openURL(url)
+        }
     }
 }

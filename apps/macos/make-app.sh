@@ -90,6 +90,17 @@ cat > "$APP/Contents/Info.plist" <<PLIST
             </dict>
         </dict>
     </array>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>run.heddle.app.url</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>heddle</string>
+            </array>
+        </dict>
+    </array>
     <key>CFBundleDocumentTypes</key>
     <array>
         <dict>
