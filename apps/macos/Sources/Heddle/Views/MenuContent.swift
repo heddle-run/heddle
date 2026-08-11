@@ -13,6 +13,9 @@ struct MenuContent: View {
         activitySection
         Divider()
         Button("Add Agent…", action: addAgent)
+        Button("Add Agent from URL…") {
+            WindowPresenter.shared.showAddByURL(agents: agents, runs: runs)
+        }
         Button("Open Agents Folder") {
             NSWorkspace.shared.open(agents.directory)
         }

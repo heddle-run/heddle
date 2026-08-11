@@ -69,6 +69,20 @@ final class WindowPresenter {
         }
     }
 
+    func showAddByURL(agents: AgentStore, runs: RunStore) {
+        show(
+            id: "add-by-url",
+            title: "Add Agent from URL",
+            size: NSSize(width: 460, height: 140)
+        ) {
+            AddAgentView { [weak self] _ in
+                self?.close(id: "add-by-url")
+            }
+            .environment(agents)
+            .environment(runs)
+        }
+    }
+
     func showSessions() {
         show(
             id: "sessions",

@@ -37,6 +37,13 @@ to run — no terminal. Design notes and roadmap live in
   `open "heddle://run?agent=Meeting%20Notes"` takes the agent's normal
   click path; add `&input=<url-encoded JSON object>` to run immediately
   with that input. Only agents already in the menu can be named.
+- Approvals answer from the notification itself when the ask follows the
+  `{"approved": …}` convention — Approve/Deny buttons resume the run
+  without opening a window; any other reply shape opens the window.
+- "Add Agent from URL…" installs a `.heddle` someone sent as a link: the
+  archive's manifest is read before it joins the folder, and only http(s)
+  addresses naming a bundle are accepted — the CLI's own rule for remote
+  paths.
 
 ## Make the .app
 

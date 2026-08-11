@@ -291,9 +291,13 @@ taking the normal click path. A URL is a remote control, not an installer:
 it cannot name a path, only an installed agent, so a web page cannot make
 the app run whatever it likes. Still open, and gated on accounts rather
 than code: Developer ID signing + notarized DMG, Sparkle (wants the signed
-appcast infrastructure), the Homebrew cask (wants a released artifact),
-Shortcuts App Intents (worth doing once the scheme has users), and the
-library gallery.
+appcast infrastructure), the Homebrew cask (wants a released artifact), and
+the library gallery. Shortcuts App Intents are gated on a build decision
+instead: `Metadata.appintents` is produced by Xcode's build system
+(`appintentsmetadataprocessor`), which `swift build` never runs, so intents
+compiled into this SPM-built app would be invisible to Shortcuts — dead
+code until make-app.sh moves to an `xcodebuild`-driven build. Shortcuts
+drives the `heddle://` scheme through its Open URL action meanwhile.
 
 ## Open questions
 

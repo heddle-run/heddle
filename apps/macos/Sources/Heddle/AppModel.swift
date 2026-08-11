@@ -16,6 +16,22 @@ final class AppModel {
 
     private init() {
         runs.onFinish = { [notifier] run in notifier.runFinished(run) }
+        notifier.onAction = { [weak self] runID, verdict in
+            self?.notificationActed(runID, verdict)
+        }
+    }
+
+    private func notificationActed(_ runID: UUID, _ verdict: NotificationVerdict) {
+        guard let record = runs.runs.first(where: { $0.id == runID }) else { return }
+
+        switch verdict {
+        case .approve where record.suspension != nil:
+            runs.answer(record, with: .object(["approved": .bool(true)]))
+        case .deny where record.suspension != nil:
+            runs.answer(record, with: .object(["approved": .bool(false)]))
+        default:
+            WindowPresenter.shared.showRun(record.id, agents: agents, runs: runs)
+        }
     }
 
     /// The click policy, shared by the menu and Finder opens.

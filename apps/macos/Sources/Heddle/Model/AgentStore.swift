@@ -87,6 +87,55 @@ final class AgentStore {
         rescan()
     }
 
+    /// Download a `.heddle` address into the folder — the same rule the CLI
+    /// applies to a remote path (`bundles.ts`): http(s), and only bundles,
+    /// because a flow file depends on tools and mounts beside it and a
+    /// download has no beside. The archive is opened for its manifest before
+    /// it lands, so a URL serving something else never joins the menu.
+    func install(fromRemote address: String) async throws -> Agent {
+        guard let url = URL(string: address.trimmingCharacters(in: .whitespaces)),
+              let scheme = url.scheme?.lowercased(), ["http", "https"].contains(scheme)
+        else {
+            throw installError("that is not an http(s) address")
+        }
+        guard url.path.lowercased().hasSuffix(".heddle") else {
+            throw installError(
+                "only .heddle bundles install from a URL — bundle a flow first "
+                    + "with \"heddle bundle\""
+            )
+        }
+
+        let (temporary, response) = try await URLSession.shared.download(from: url)
+        defer { try? FileManager.default.removeItem(at: temporary) }
+
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            throw installError("the server answered \(http.statusCode)")
+        }
+        guard (try? AgentLoading.bundleManifest(at: temporary)) != nil else {
+            throw installError("what that URL serves is not a readable .heddle bundle")
+        }
+
+        let name = url.lastPathComponent.isEmpty ? "agent.heddle" : url.lastPathComponent
+        let destination = directory.appendingPathComponent(name)
+        if FileManager.default.fileExists(atPath: destination.path) {
+            try FileManager.default.removeItem(at: destination)
+        }
+        try FileManager.default.moveItem(at: temporary, to: destination)
+        rescan()
+
+        guard let agent = AgentLoading.agent(at: destination) else {
+            throw installError("the downloaded bundle would not load")
+        }
+        return agent
+    }
+
+    private func installError(_ message: String) -> Error {
+        NSError(
+            domain: "run.heddle.app", code: 1,
+            userInfo: [NSLocalizedDescriptionKey: message]
+        )
+    }
+
     private func ensureDirectory() {
         try? FileManager.default.createDirectory(
             at: directory,
