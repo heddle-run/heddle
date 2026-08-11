@@ -11,8 +11,8 @@ Any client that can reach it can run every executable in the configured tools
 directory, with the server process's full environment, API keys included.
 It is a remote-code-execution surface by design, in the same way a shell is.
 
-There is no authentication, no authorization, and no rate limiting. Nothing in
-this package checks *who* is calling.
+By default there is no authentication, no authorization, and no rate limiting.
+Nothing in this package checks *who* is calling.
 
 What protects you is the bind address. The server listens on `127.0.0.1` by
 default, so only processes on the same host can reach it. **Do not change that
@@ -20,7 +20,14 @@ unless you have put something in front of it**, whether an authenticating revers
 proxy, an SSH tunnel, or a network you fully control. Passing `--host` makes the
 server print a warning at startup for exactly this reason.
 
-If you need authentication, terminate it in front of this service.
+`--auth-token` narrows *which* local processes: with it set, every request must
+carry the token as `Authorization: Bearer <token>` or is refused with a 401
+(health probes stay open). That is one shared secret, not accounts — it exists
+so a desktop front end that spawned its own loopback server answers only to
+itself, not to every process on the machine. It is not rate limiting, not
+per-caller authorization, and not a reason to bind beyond loopback.
+
+If you need real authentication, terminate it in front of this service.
 
 ## Install
 
@@ -68,6 +75,7 @@ heddle-server --tools-dir ./tools
 | `--allow-write <path>` | none | Write access for sandboxed tools. Repeatable. |
 | `--allow-env <name>` | none | Environment variable to forward into the sandbox. Repeatable. |
 | `--deny-net` | off | Block network access for sandboxed tools. |
+| `--auth-token <token>` | none | Refuse any request not carrying `Authorization: Bearer <token>`; health probes stay open. Prefer `$HEDDLE_AUTH_TOKEN`, which stays out of `ps` output. One shared secret for a local front end holding its own loopback server — not accounts, and not a reason to bind beyond loopback. |
 | `--version` | — | Print the server version and exit. |
 
 | Environment variable | Default | Meaning |

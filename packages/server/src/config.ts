@@ -124,6 +124,19 @@ export interface ServerConfig {
   maxRequestCodeBytes: number;
   maxConcurrentRuns: number;
   drainTimeout: number;
+  /**
+   * A shared bearer token every request must present, when set.
+   *
+   * Absent by default, and absence changes nothing: the server stays the
+   * unauthenticated loopback service it has always been, protected by its
+   * bind address or by whatever the operator terminated in front of it. The
+   * token exists for the local-front-end case — a desktop app spawning this
+   * server on loopback wants the port it opened to answer only to itself,
+   * not to every process on the machine. It is a shared secret, not accounts:
+   * one token, and whoever holds it is the operator. See `auth.ts` for what
+   * stays open (health probes) and how the comparison is made.
+   */
+  authToken?: string;
 }
 
 export type ServerOptions = Partial<ServerConfig>;
@@ -186,6 +199,7 @@ export function resolveConfig(options: ServerOptions = {}): ServerConfig {
     maxConcurrentRuns:
       options.maxConcurrentRuns ?? DEFAULT_MAX_CONCURRENT_RUNS,
     drainTimeout: options.drainTimeout ?? DEFAULT_DRAIN_TIMEOUT,
+    authToken: options.authToken,
   };
 }
 
