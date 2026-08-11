@@ -1,0 +1,66 @@
+# XcodeGen manifest — `xcodegen generate` writes Heddle.xcodeproj, which is
+# not checked in. The macOS app gets away with bare SwiftPM; an iOS app
+# bundle does not build without Xcode's build system, so the project file is
+# generated rather than maintained.
+name: Heddle
+options:
+  bundleIdPrefix: run.heddle
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.10"
+    MARKETING_VERSION: "0.2.0"
+    CURRENT_PROJECT_VERSION: "1"
+
+targets:
+  Heddle:
+    type: application
+    platform: iOS
+    sources:
+      - Sources/Heddle
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: run.heddle.ios
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        SUPPORTS_MACCATALYST: NO
+        TARGETED_DEVICE_FAMILY: "1,2"
+    info:
+      path: Info.plist
+      properties:
+        CFBundleDisplayName: Heddle
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        # heddle-server speaks plain HTTP — loopback by default, a LAN
+        # address when the phone is not the simulator. There is no TLS story
+        # server-side yet, so ATS is opened up rather than half-opened.
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+        NSLocalNetworkUsageDescription: >-
+          Heddle connects to your heddle-server to run agents.
+
+  HeddleTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - Tests/HeddleTests
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+    dependencies:
+      - target: Heddle
+
+schemes:
+  Heddle:
+    build:
+      targets:
+        Heddle: all
+        HeddleTests: [test]
+    test:
+      targets:
+        - HeddleTests
