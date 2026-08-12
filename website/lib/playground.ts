@@ -1524,154 +1524,97 @@ const SKILLS: Example = {
   title: "An agent with skills",
   blurb:
     "Procedures the model loads only when it decides it needs them. The index is always in context; a body costs a tool call.",
-  flow: `component_type: Flow
+  flow: `weave: 1
 name: skills
-start_node: { $component_ref: start }
 
-nodes:
-  - $component_ref: start
-  - $component_ref: assistant
-  - $component_ref: end
+inputs:
+  task: string
 
-control_flow_connections:
-  - component_type: ControlFlowEdge
-    name: start_to_assistant
-    from_node: { $component_ref: start }
-    to_node: { $component_ref: assistant }
-  - component_type: ControlFlowEdge
-    name: assistant_to_end
-    from_node: { $component_ref: assistant }
-    to_node: { $component_ref: end }
-
-$referenced_components:
-  start:
-    component_type: StartNode
-    id: start
-    name: start
+# All five tools are submitted scripts with no manifest behind them, so each
+# declares its own shape here. The first two are the whole of the skills
+# mechanism: one lists what is in skills/, the other reads one file out of it.
+# Neither knows anything about skills that the directory does not tell it.
+tools:
+  list_skills:
+    description: >-
+      List every skill: its name and one line on when it applies. Call this
+      first.
     outputs:
-      - title: task
-        type: string
+      skills: string
 
-  assistant:
-    component_type: AgentNode
-    id: assistant
-    name: assistant
-    agent:
-      component_type: Agent
-      id: inner
-      name: assistant
+  read_skill:
+    description: >-
+      Return the full text of one skill, by the name list_skills gave.
+    inputs:
+      name: string
+    outputs:
+      body: string
 
-      # The contract, and the only place it is stated. A model that is not told
-      # to look will not look, and a skill nobody reads is a file.
-      system_prompt: |
-        You have skills: short written procedures for jobs like this one. Their
-        text is not in this prompt. list_skills returns every skill's name and
-        description; read_skill returns one body.
+  # write_file and bash together are a shell: whatever the model can write it
+  # can then run. Here that is a throwaway workspace the sandbox deletes when
+  # the agent finishes. Where it would not be, the gate is the toolCall seam --
+  # examples/policies/ ships an ApprovalGate that reads the arguments the model
+  # chose and refuses the call before it is made.
+  write_file:
+    description: >-
+      Write a file in the workspace. The path is relative to it, and a path
+      that climbs out is refused.
+    inputs:
+      path: string
+      content: string
+    outputs:
+      result: string
 
-        Call list_skills first, on every task, before anything else. If a
-        description covers the task, read that skill and follow it exactly: it
-        says how the job is done here, and that outranks how you would otherwise
-        do it. If none covers it, say so in one line and work the task out
-        yourself.
+  read_file:
+    description: Read a file from the workspace, by a path relative to it.
+    inputs:
+      path: string
+    outputs:
+      content: string
 
-        write_file and read_file take a path relative to the workspace. bash
-        runs a command there, with python3 and node on PATH. Each bash call is a
-        fresh shell, so cd does not carry to the next one, and a command is
-        killed after 20 seconds. Read exit_code every time.
+  bash:
+    description: >-
+      Run a shell command in the workspace and return its stdout, stderr and
+      exit code. Each call is a fresh shell and commands are killed after 20
+      seconds.
+    inputs:
+      command: string
+    outputs:
+      stdout: string
+      stderr: string
+      exit_code: integer
 
-        Finish with a short answer that names the skill you followed.
+agent:
+  # No api_key and no url, so the engine supplies the free model it was
+  # configured with -- see the agent example for why that pair is
+  # all-or-nothing.
+  model:
+    provider: openai
+    model: openrouter/free
 
-      # No api_key and no url, so the engine supplies the free model it was
-      # configured with -- see the agent example for why that pair is
-      # all-or-nothing.
-      llm_config:
-        component_type: OpenAiConfig
-        id: llm
-        name: model
-        model_id: openrouter/free
+  # The contract, and the only place it is stated. A model that is not told
+  # to look will not look, and a skill nobody reads is a file.
+  prompt: |
+    You have skills: short written procedures for jobs like this one. Their
+    text is not in this prompt. list_skills returns every skill's name and
+    description; read_skill returns one body.
 
-      tools:
-        # All five are submitted scripts with no manifest behind them, so each
-        # declares its own shape here. These first two are the whole of the
-        # skills mechanism: one lists what is in skills/, the other reads one
-        # file out of it. Neither knows anything about skills that the
-        # directory does not tell it.
-        - component_type: ServerTool
-          id: list_skills_tool
-          name: list_skills
-          description: >-
-            List every skill: its name and one line on when it applies. Call
-            this first.
-          outputs:
-            - title: skills
-              type: string
+    Call list_skills first, on every task, before anything else. If a
+    description covers the task, read that skill and follow it exactly: it
+    says how the job is done here, and that outranks how you would otherwise
+    do it. If none covers it, say so in one line and work the task out
+    yourself.
 
-        - component_type: ServerTool
-          id: read_skill_tool
-          name: read_skill
-          description: >-
-            Return the full text of one skill, by the name list_skills gave.
-          inputs:
-            - title: name
-              type: string
-          outputs:
-            - title: body
-              type: string
+    write_file and read_file take a path relative to the workspace. bash
+    runs a command there, with python3 and node on PATH. Each bash call is a
+    fresh shell, so cd does not carry to the next one, and a command is
+    killed after 20 seconds. Read exit_code every time.
 
-        # write_file and bash together are a shell: whatever the model can write
-        # it can then run. Here that is a throwaway workspace the sandbox
-        # deletes when the agent finishes. Where it would not be, the gate is
-        # the toolCall seam -- examples/policies/ ships an ApprovalGate that
-        # reads the arguments the model chose and refuses the call before it is
-        # made.
-        - component_type: ServerTool
-          id: write_file_tool
-          name: write_file
-          description: >-
-            Write a file in the workspace. The path is relative to it, and a
-            path that climbs out is refused.
-          inputs:
-            - title: path
-              type: string
-            - title: content
-              type: string
-          outputs:
-            - title: result
-              type: string
+    Finish with a short answer that names the skill you followed.
 
-        - component_type: ServerTool
-          id: read_file_tool
-          name: read_file
-          description: Read a file from the workspace, by a path relative to it.
-          inputs:
-            - title: path
-              type: string
-          outputs:
-            - title: content
-              type: string
+    The task: {{inputs.task}}
 
-        - component_type: ServerTool
-          id: bash_tool
-          name: bash
-          description: >-
-            Run a shell command in the workspace and return its stdout, stderr
-            and exit code. Each call is a fresh shell and commands are killed
-            after 20 seconds.
-          inputs:
-            - title: command
-              type: string
-          outputs:
-            - title: stdout
-              type: string
-            - title: stderr
-              type: string
-            - title: exit_code
-              type: integer
-
-  end:
-    component_type: EndNode
-    id: end
-    name: end
+  tools: [list_skills, read_skill, write_file, read_file, bash]
 `,
   inputs: `{
   "task": "Total these expenses by category and say which category cost the most.\\n\\ndate,category,amount\\n2026-03-02,travel,412.50\\n2026-03-04,meals,38.20\\n2026-03-09,travel,96.00\\n2026-03-11,software,240.00\\n2026-03-18,meals,52.75"

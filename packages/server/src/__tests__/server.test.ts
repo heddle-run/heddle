@@ -8,74 +8,21 @@ import { isPubliclyBound } from '../config.js';
 
 function simpleFlow(): Record<string, unknown> {
   return {
-    component_type: 'Flow',
+    weave: 1,
     name: 'test-flow',
-    start_node: { $component_ref: 'start' },
-    nodes: [{ $component_ref: 'start' }, { $component_ref: 'end' }],
-    control_flow_connections: [
-      {
-        component_type: 'ControlFlowEdge',
-        name: 'start_to_end',
-        from_node: { $component_ref: 'start' },
-        to_node: { $component_ref: 'end' },
-      },
-    ],
-    $referenced_components: {
-      start: {
-        component_type: 'StartNode',
-        id: 'start',
-        name: 'start',
-        outputs: [{ title: 'query', type: 'string' }],
-      },
-      end: { component_type: 'EndNode', id: 'end', name: 'end' },
-    },
+    inputs: { query: 'string' },
+    steps: [{ name: 'route', switch: '{{inputs.query}}', else: 'done' }],
   };
 }
 
 function agentFlow(): Record<string, unknown> {
   return {
-    component_type: 'Flow',
+    weave: 1,
     name: 'agent-flow',
-    start_node: { $component_ref: 'start' },
-    nodes: [
-      { $component_ref: 'start' },
-      { $component_ref: 'agent' },
-      { $component_ref: 'end' },
-    ],
-    control_flow_connections: [
-      {
-        component_type: 'ControlFlowEdge',
-        name: 'start_to_agent',
-        from_node: { $component_ref: 'start' },
-        to_node: { $component_ref: 'agent' },
-      },
-      {
-        component_type: 'ControlFlowEdge',
-        name: 'agent_to_end',
-        from_node: { $component_ref: 'agent' },
-        to_node: { $component_ref: 'end' },
-      },
-    ],
-    $referenced_components: {
-      start: { component_type: 'StartNode', id: 'start', name: 'start' },
-      agent: {
-        component_type: 'AgentNode',
-        id: 'agent',
-        name: 'agent',
-        agent: {
-          component_type: 'Agent',
-          id: 'inner-agent',
-          name: 'inner-agent',
-          system_prompt: 'be helpful',
-          llm_config: {
-            component_type: 'OpenAiConfig',
-            id: 'llm',
-            name: 'openai',
-            model_id: 'gpt-4o',
-          },
-        },
-      },
-      end: { component_type: 'EndNode', id: 'end', name: 'end' },
+    inputs: { query: 'string' },
+    agent: {
+      model: { provider: 'openai', model: 'gpt-4o' },
+      prompt: 'be helpful: {{inputs.query}}',
     },
   };
 }
@@ -130,37 +77,25 @@ describe('POST /v1/validate', () => {
     expect(await res.json()).toMatchObject({
       valid: true,
       flow: 'test-flow',
-      startNode: 'start',
+      startNode: 'inputs',
       nodes: [
-        { name: 'start', type: 'StartNode' },
-        { name: 'end', type: 'EndNode' },
+        { name: 'inputs', type: 'start' },
+        { name: 'route', type: 'switch' },
+        { name: 'done', type: 'outcome' },
       ],
     });
   });
 
   it('accepts a flow submitted as YAML text', async () => {
     const yaml = [
-      'component_type: Flow',
+      'weave: 1',
       'name: yaml-flow',
-      'start_node:',
-      '  $component_ref: start',
-      'nodes:',
-      '  - $component_ref: start',
-      '  - $component_ref: end',
-      'control_flow_connections:',
-      '  - component_type: ControlFlowEdge',
-      '    name: start_to_end',
-      '    from_node: { $component_ref: start }',
-      '    to_node: { $component_ref: end }',
-      '$referenced_components:',
-      '  start:',
-      '    component_type: StartNode',
-      '    id: start',
-      '    name: start',
-      '  end:',
-      '    component_type: EndNode',
-      '    id: end',
-      '    name: end',
+      'inputs:',
+      '  query: string',
+      'steps:',
+      '  - name: route',
+      "    switch: '{{inputs.query}}'",
+      '    else: done',
     ].join('\n');
 
     const res = await post('/v1/validate', { flow: yaml });
@@ -209,10 +144,9 @@ describe('POST /v1/validate', () => {
     }
   });
 
-  it('reports a structured error for a flow with no start node', async () => {
+  it('reports a structured error for a flow that routes nowhere', async () => {
     const broken = simpleFlow();
-    (broken as { $referenced_components: Record<string, { component_type: string }> })
-      .$referenced_components.start.component_type = 'EndNode';
+    (broken.steps as Array<Record<string, unknown>>)[0].else = 'nowhere';
 
     const res = await post('/v1/validate', { flow: broken });
     expect(res.status).toBe(400);
@@ -238,7 +172,7 @@ describe('POST /v1/runs', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
       flow: 'test-flow',
-      state: { query: 'hello' },
+      state: { query: 'hello', outcome: 'done' },
     });
   });
 
@@ -277,6 +211,8 @@ describe('POST /v1/runs?stream=true', () => {
 
     expect(events).toEqual([
       'flow_start',
+      'node_start',
+      'node_complete',
       'node_start',
       'node_complete',
       'node_start',

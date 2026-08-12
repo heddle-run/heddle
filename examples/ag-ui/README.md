@@ -14,7 +14,7 @@ commented in `encoder.mjs` where they happen.
 |------|------------|
 | `encoder.json` | Declares the encoder: its `protocol` name and the `contentType` it produces |
 | `encoder.mjs` | The rendering: `encode(event)` per run event, `finish()` at the end |
-| `flow.json` | A minimal flow, so there is a lifecycle to render |
+| `flow.json` | A minimal flow — one `switch` step, no model, no tools — so there is a lifecycle to render |
 
 ## How an encoder is selected
 
@@ -28,7 +28,7 @@ POST /v1/runs?stream=true&protocol=ag-ui
 That is the honest owner. Two clients hitting the same flow can legitimately want
 different renderings of it, and neither the flow's author nor the person running
 the server is in a position to know which. A spec that names `AgUiEncoder` as a
-`component_type` is refused, saying so.
+`use:` step is refused, saying so.
 
 `heddle`, or saying nothing at all, gets heddle's own frames, which are now one
 encoder among however many are loaded rather than a privileged path beside them.
@@ -47,12 +47,15 @@ heddle run examples/ag-ui/flow.json --plugin ./examples/ag-ui/encoder.json --pro
 
 ```
 {"data":{"type":"RUN_STARTED","threadId":"5d4ed795-86dc-4b50-a1ea-a08e1cd2b3f8","runId":"5d4ed795-86dc-4b50-a1ea-a08e1cd2b3f8"}}
-{"data":{"type":"STEP_STARTED","stepName":"start"}}
-{"data":{"type":"STEP_FINISHED","stepName":"start"}}
+{"data":{"type":"STEP_STARTED","stepName":"inputs"}}
+{"data":{"type":"STEP_FINISHED","stepName":"inputs"}}
 {"data":{"type":"STATE_SNAPSHOT","snapshot":{"query":"hello"}}}
-{"data":{"type":"STEP_STARTED","stepName":"end"}}
-{"data":{"type":"STEP_FINISHED","stepName":"end"}}
+{"data":{"type":"STEP_STARTED","stepName":"inspect"}}
+{"data":{"type":"STEP_FINISHED","stepName":"inspect"}}
 {"data":{"type":"STATE_SNAPSHOT","snapshot":{"query":"hello"}}}
+{"data":{"type":"STEP_STARTED","stepName":"done"}}
+{"data":{"type":"STEP_FINISHED","stepName":"done"}}
+{"data":{"type":"STATE_SNAPSHOT","snapshot":{"query":"hello","outcome":"done"}}}
 {"data":{"type":"RUN_FINISHED","threadId":"5d4ed795-86dc-4b50-a1ea-a08e1cd2b3f8","runId":"5d4ed795-86dc-4b50-a1ea-a08e1cd2b3f8"}}
 ```
 
@@ -83,17 +86,23 @@ jq -n --arg source "$(cat examples/ag-ui/encoder.mjs)" --argjson manifest "$(cat
 ```
 data: {"type":"RUN_STARTED","threadId":"…","runId":"…"}
 
-data: {"type":"STEP_STARTED","stepName":"start"}
+data: {"type":"STEP_STARTED","stepName":"inputs"}
 
-data: {"type":"STEP_FINISHED","stepName":"start"}
+data: {"type":"STEP_FINISHED","stepName":"inputs"}
+
+data: {"type":"STATE_SNAPSHOT","snapshot":{"query":"hello"}}
+
+data: {"type":"STEP_STARTED","stepName":"inspect"}
+
+data: {"type":"STEP_FINISHED","stepName":"inspect"}
 
 data: {"type":"STATE_SNAPSHOT","snapshot":{"query":"hello"}}
 
-data: {"type":"STEP_STARTED","stepName":"end"}
+data: {"type":"STEP_STARTED","stepName":"done"}
 
-data: {"type":"STEP_FINISHED","stepName":"end"}
+data: {"type":"STEP_FINISHED","stepName":"done"}
 
-data: {"type":"STATE_SNAPSHOT","snapshot":{"query":"hello"}}
+data: {"type":"STATE_SNAPSHOT","snapshot":{"query":"hello","outcome":"done"}}
 
 data: {"type":"RUN_FINISHED","threadId":"…","runId":"…"}
 ```
@@ -109,7 +118,7 @@ CLI is the same thing a line at a time:
 
 ```
 {"event":"flow_start","data":{"type":"flow_start"}}
-{"event":"node_start","data":{"type":"node_start","nodeName":"start","nodeType":"StartNode","attempt":1,"state":{"query":"hello"}}}
+{"event":"node_start","data":{"type":"node_start","nodeName":"inputs","nodeType":"start","attempt":1,"state":{"query":"hello"}}}
 ```
 
 ## What an encoder gets, and what it cannot do
@@ -159,5 +168,6 @@ encoder author will have to make:
   `node_complete.state` is only that node's own output, and the runner merges it in
   one line later. So the encoder accumulates the run state itself; sending a node's
   output as a snapshot would delete what earlier nodes put there. The flow above
-  hides this, because `StartNode` and `EndNode` compile to a passthrough whose
-  output already *is* the merged state.
+  nearly hides this, because the synthetic `inputs` node passes the whole input
+  through and the `switch` writes nothing — the outcome node's payload is the
+  first output that is less than the accumulated state.

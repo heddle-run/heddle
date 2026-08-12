@@ -1,200 +1,134 @@
-component_type: Flow
-agentspec_version: 26.2.0
-id: 7c9e4b21-3f6a-4d08-9b52-8e1d0a7f4c33
-name: coding-agent-flow
-description: A coding agent orchestrated the way OpenAI's Codex CLI orchestrates its own — the same session prefix, the same tools, the same loop.
-metadata: {}
-inputs: []
-outputs: []
-start_node:
-  $component_ref: n_start
-nodes:
-  - $component_ref: n_start
-  - $component_ref: n_context
-  - $component_ref: n_coder
-  - $component_ref: n_end
-control_flow_connections:
-  - component_type: ControlFlowEdge
-    id: e_start_context
-    name: start_to_context
-    metadata: {}
-    from_node: { $component_ref: n_start }
-    from_branch: null
-    to_node: { $component_ref: n_context }
-  - component_type: ControlFlowEdge
-    id: e_context_coder
-    name: context_to_coder
-    metadata: {}
-    from_node: { $component_ref: n_context }
-    from_branch: null
-    to_node: { $component_ref: n_coder }
-  - component_type: ControlFlowEdge
-    id: e_coder_end
-    name: coder_to_end
-    metadata: {}
-    from_node: { $component_ref: n_coder }
-    from_branch: null
-    to_node: { $component_ref: n_end }
-data_flow_connections:
-  - component_type: DataFlowEdge
-    id: d_start_cwd
-    name: start_cwd_to_context
-    metadata: {}
-    source_node: { $component_ref: n_start }
-    source_output: cwd
-    destination_node: { $component_ref: n_context }
-    destination_input: cwd
-  - component_type: DataFlowEdge
-    id: d_start_approval
-    name: start_approval_to_context
-    metadata: {}
-    source_node: { $component_ref: n_start }
-    source_output: approval_policy
-    destination_node: { $component_ref: n_context }
-    destination_input: approval_policy
-  - component_type: DataFlowEdge
-    id: d_start_sandbox
-    name: start_sandbox_to_context
-    metadata: {}
-    source_node: { $component_ref: n_start }
-    source_output: sandbox_mode
-    destination_node: { $component_ref: n_context }
-    destination_input: sandbox_mode
-  - component_type: DataFlowEdge
-    id: d_start_task
-    name: start_task_to_coder
-    metadata: {}
-    source_node: { $component_ref: n_start }
-    source_output: task
-    destination_node: { $component_ref: n_coder }
-    destination_input: task
-  - component_type: DataFlowEdge
-    id: d_context_env
-    name: context_env_to_coder
-    metadata: {}
-    source_node: { $component_ref: n_context }
-    source_output: environment_context
-    destination_node: { $component_ref: n_coder }
-    destination_input: environment_context
-  - component_type: DataFlowEdge
-    id: d_context_agents
-    name: context_agents_to_coder
-    metadata: {}
-    source_node: { $component_ref: n_context }
-    source_output: agents_md
-    destination_node: { $component_ref: n_coder }
-    destination_input: agents_md
-  - component_type: DataFlowEdge
-    id: d_context_permissions
-    name: context_permissions_to_coder
-    metadata: {}
-    source_node: { $component_ref: n_context }
-    source_output: permissions
-    destination_node: { $component_ref: n_coder }
-    destination_input: permissions
-  - component_type: DataFlowEdge
-    id: d_coder_end
-    name: coder_result_to_end
-    metadata: {}
-    source_node: { $component_ref: n_coder }
-    source_output: result
-    destination_node: { $component_ref: n_end }
-    destination_input: result
-$referenced_components:
-  n_start:
-    component_type: StartNode
-    id: n_start
-    name: start
-    metadata: {}
-    inputs: []
-    outputs:
-      - { title: task, type: string }
-      - { title: cwd, type: string }
-      - { title: approval_policy, type: string }
-      - { title: sandbox_mode, type: string }
-    branches: [next]
+# coding-agent — the Codex CLI loop, as a Weave flow.
+#
+#   context (tool) ──> coder (agent) ──> done
+#
+# `context` builds what Codex assembles before the first model call; `coder`
+# is the Codex agent loop with its three tools and its default prompt.
+weave: 1
+name: coding-agent
+description: >
+  A coding agent orchestrated the way OpenAI's Codex CLI orchestrates its own —
+  the same session prefix, the same tools, the same loop.
 
-  n_context:
-    component_type: ToolNode
-    id: n_context
-    name: context
-    metadata: {}
-    inputs:
-      - { title: cwd, type: string }
-      - { title: approval_policy, type: string }
-      - { title: sandbox_mode, type: string }
-    outputs:
-      - { title: environment_context, type: string }
-      - { title: agents_md, type: string }
-      - { title: permissions, type: string }
-    branches: [next]
-    tool:
-      component_type: ServerTool
-      id: t_context
-      name: environment_context
-      description: >
-        Builds the context Codex assembles before the first model call: the
-        <environment_context> block (cwd, shell, date, timezone), the
-        AGENTS.md instructions fragment discovered from the project root down
-        to cwd, and the permissions instructions rendered from the sandbox
-        mode and approval policy.
-      metadata: {}
-      inputs:
-        - title: cwd
-          type: string
-          default: "."
-        - title: approval_policy
-          type: string
-          default: on-request
-        - title: sandbox_mode
-          type: string
-          default: workspace-write
-        - title: network_access
-          type: string
-          default: restricted
-      outputs:
-        - { title: environment_context, type: string }
-        - { title: agents_md, type: string }
-        - { title: permissions, type: string }
+inputs:
+  # The chat UI binds each typed message to the first input: the task.
+  task: string
+  cwd: { type: string, default: "." }
+  approval_policy: { type: string, default: on-request }
+  sandbox_mode: { type: string, default: workspace-write }
 
-  n_coder:
-    component_type: AgentNode
-    id: n_coder
-    name: coder
-    metadata: {}
+models:
+  gpt:
+    provider: openai
+    model: gpt-4o-mini
+    api_key: $OPENAI_API_KEY
+
+tools:
+  environment_context:
+    description: >
+      Builds the context Codex assembles before the first model call: the
+      <environment_context> block (cwd, shell, date, timezone), the
+      AGENTS.md instructions fragment discovered from the project root down
+      to cwd, and the permissions instructions rendered from the sandbox
+      mode and approval policy.
     inputs:
-      - { title: task, type: string }
-      - { title: environment_context, type: string }
-      - { title: agents_md, type: string }
-      - { title: permissions, type: string }
+      cwd: { type: string, default: "." }
+      approval_policy: { type: string, default: on-request }
+      sandbox_mode: { type: string, default: workspace-write }
+      network_access: { type: string, default: restricted }
     outputs:
-      - { title: result, type: string }
-    branches: [next]
+      environment_context: string
+      agents_md: string
+      permissions: string
+
+  shell_command:
+    description: |-
+      Runs a shell command and returns its output.
+      - Always set the `workdir` param when using the shell_command function. Do not use `cd` unless absolutely necessary.
+    inputs:
+      command:
+        type: string
+        description: Shell script to run in the user's default shell.
+      workdir:
+        type: string
+        description: Working directory for the command. Defaults to the turn cwd.
+        default: "."
+      timeout_ms:
+        type: integer
+        description: Maximum command runtime. Defaults to 10000 ms.
+        default: 10000
+      sandbox_permissions:
+        type: string
+        description: >-
+          Per-command sandbox override: "use_default" or "require_escalated".
+          Defaults to `use_default`; use `require_escalated` for unsandboxed
+          execution.
+        default: use_default
+      justification:
+        type: string
+        description: User-facing approval question for `require_escalated`; omit otherwise.
+        default: ""
+      prefix_rule:
+        type: array
+        items: { type: string }
+        description: 'Reusable approval prefix for `command`, only with `sandbox_permissions: "require_escalated"`; for example ["git", "pull"].'
+        default: []
+    outputs:
+      output: string
+      error: string
+
+  apply_patch:
+    description: >-
+      The `apply_patch` tool can be used to edit files. Pass the entire patch,
+      from "*** Begin Patch" to "*** End Patch", as the `input` string — do
+      not wrap it in anything else.
+    inputs:
+      input:
+        type: string
+        description: The entire patch document, starting with "*** Begin Patch" and ending with "*** End Patch".
+    outputs:
+      output: string
+      error: string
+
+  update_plan:
+    description: |-
+      Updates the task plan.
+      Provide an optional explanation and a list of plan items, each with a step and status.
+      At most one step can be in_progress at a time.
+    inputs:
+      explanation:
+        type: string
+        description: Optional explanation for this plan update.
+        default: ""
+      plan:
+        type: array
+        description: The list of steps
+        items:
+          type: object
+          fields:
+            step:
+              type: string
+              description: Task step text.
+            status:
+              type: string
+              description: 'Step status: one of "pending", "in_progress", "completed".'
+    outputs:
+      output: string
+      error: string
+
+steps:
+  - name: context
+    tool: environment_context
+    with:
+      cwd: '{{inputs.cwd}}'
+      approval_policy: '{{inputs.approval_policy}}'
+      sandbox_mode: '{{inputs.sandbox_mode}}'
+
+  - name: coder
     agent:
-      component_type: Agent
-      id: a_coder
-      name: codex-style-coder
-      description: >
-        The Codex CLI agent loop in heddle: base instructions ported from
-        Codex's default prompt, its shell_command / apply_patch / update_plan
-        tools with Codex's schemas, working until the task is resolved.
-      metadata: {}
-      inputs:
-        - { title: task, type: string }
-        - { title: environment_context, type: string }
-        - { title: agents_md, type: string }
-        - { title: permissions, type: string }
-      outputs:
-        - { title: result, type: string }
-      llm_config:
-        component_type: OpenAiConfig
-        id: llm_coder
-        name: openai-model
-        metadata: {}
-        model_id: gpt-4o-mini
-        api_key: $OPENAI_API_KEY
-        api_type: chat_completions
-      system_prompt: |
+      model: gpt
+      tools: [shell_command, apply_patch, update_plan]
+      prompt: |
         You are a coding agent running in heddle, orchestrated the way OpenAI's
         open-source Codex CLI orchestrates its agent. You are expected to be
         precise, safe, and helpful.
@@ -378,94 +312,17 @@ $referenced_components:
         - You must include a header with your intended action (Add/Delete/Update)
         - You must prefix new lines with `+` even when creating a new file
         - File references can only be relative, NEVER ABSOLUTE.
-      tools:
-        - component_type: ServerTool
-          id: t_shell
-          name: shell_command
-          description: |-
-            Runs a shell command and returns its output.
-            - Always set the `workdir` param when using the shell_command function. Do not use `cd` unless absolutely necessary.
-          metadata: {}
-          inputs:
-            - title: command
-              type: string
-              description: Shell script to run in the user's default shell.
-            - title: workdir
-              type: string
-              description: Working directory for the command. Defaults to the turn cwd.
-              default: "."
-            - title: timeout_ms
-              type: integer
-              description: Maximum command runtime. Defaults to 10000 ms.
-              default: 10000
-            - title: sandbox_permissions
-              type: string
-              enum: [use_default, require_escalated]
-              description: Per-command sandbox override. Defaults to `use_default`; use `require_escalated` for unsandboxed execution.
-              default: use_default
-            - title: justification
-              type: string
-              description: User-facing approval question for `require_escalated`; omit otherwise.
-              default: ""
-            - title: prefix_rule
-              type: array
-              items: { type: string }
-              description: 'Reusable approval prefix for `command`, only with `sandbox_permissions: "require_escalated"`; for example ["git", "pull"].'
-              default: []
-          outputs:
-            - { title: output, type: string }
-            - { title: error, type: string }
-        - component_type: ServerTool
-          id: t_apply_patch
-          name: apply_patch
-          description: The `apply_patch` tool can be used to edit files. Pass the entire patch, from "*** Begin Patch" to "*** End Patch", as the `input` string — do not wrap it in anything else.
-          metadata: {}
-          inputs:
-            - title: input
-              type: string
-              description: The entire patch document, starting with "*** Begin Patch" and ending with "*** End Patch".
-          outputs:
-            - { title: output, type: string }
-            - { title: error, type: string }
-        - component_type: ServerTool
-          id: t_update_plan
-          name: update_plan
-          description: |-
-            Updates the task plan.
-            Provide an optional explanation and a list of plan items, each with a step and status.
-            At most one step can be in_progress at a time.
-          metadata: {}
-          inputs:
-            - title: explanation
-              type: string
-              description: Optional explanation for this plan update.
-              default: ""
-            - title: plan
-              type: array
-              description: The list of steps
-              items:
-                type: object
-                properties:
-                  step:
-                    type: string
-                    description: Task step text.
-                  status:
-                    type: string
-                    enum: [pending, in_progress, completed]
-                    description: Step status.
-                required: [step, status]
-                additionalProperties: false
-          outputs:
-            - { title: output, type: string }
-            - { title: error, type: string }
 
-  n_end:
-    component_type: EndNode
-    id: n_end
-    name: end
-    metadata: {}
-    inputs:
-      - { title: result, type: string }
-    outputs: []
-    branches: []
-    branch_name: next
+        {{context.permissions}}
+
+        {{context.environment_context}}
+
+        # AGENTS.md instructions
+
+        {{context.agents_md}}
+
+        Task: {{inputs.task}}
+
+outcomes:
+  done:
+    result: '{{coder.result}}'

@@ -1,123 +1,26 @@
-component_type: Flow
-agentspec_version: 26.2.0
-id: testwriter-flow-0001
-name: test-writer-flow
-description: Sub-agent flow that generates comprehensive test cases for code.
-metadata: {}
-inputs: []
-outputs: []
-start_node:
-  $component_ref: testwriter-start-0001
-nodes:
-  - $component_ref: testwriter-start-0001
-  - $component_ref: testwriter-agent-node-0001
-  - $component_ref: testwriter-end-0001
-control_flow_connections:
-  - component_type: ControlFlowEdge
-    id: testwriter-edge-start
-    name: start_to_testwriter
-    metadata: {}
-    from_node:
-      $component_ref: testwriter-start-0001
-    from_branch: null
-    to_node:
-      $component_ref: testwriter-agent-node-0001
-  - component_type: ControlFlowEdge
-    id: testwriter-edge-end
-    name: testwriter_to_end
-    metadata: {}
-    from_node:
-      $component_ref: testwriter-agent-node-0001
-    from_branch: null
-    to_node:
-      $component_ref: testwriter-end-0001
-data_flow_connections:
-  - component_type: DataFlowEdge
-    id: testwriter-data-start
-    name: task_to_testwriter
-    metadata: {}
-    source_node:
-      $component_ref: testwriter-start-0001
-    source_output: task
-    destination_node:
-      $component_ref: testwriter-agent-node-0001
-    destination_input: task
-  - component_type: DataFlowEdge
-    id: testwriter-data-end
-    name: testwriter_result_to_end
-    metadata: {}
-    source_node:
-      $component_ref: testwriter-agent-node-0001
-    source_output: result
-    destination_node:
-      $component_ref: testwriter-end-0001
-    destination_input: result
-$referenced_components:
-  testwriter-start-0001:
-    component_type: StartNode
-    id: testwriter-start-0001
-    name: start
-    metadata: {}
-    inputs: []
-    outputs:
-      - title: task
-        type: string
-    branches:
-      - next
-  testwriter-agent-node-0001:
-    component_type: AgentNode
-    id: testwriter-agent-node-0001
-    name: test-writer
-    metadata: {}
-    inputs:
-      - title: task
-        type: string
-    outputs:
-      - title: result
-        type: string
-    branches:
-      - next
-    agent:
-      component_type: Agent
-      id: testwriter-agent-0001
-      name: test-writer
-      description: Generates comprehensive test cases for code
-      metadata: {}
-      inputs:
-        - title: task
-          type: string
-      outputs:
-        - title: result
-          type: string
-      llm_config:
-        component_type: OpenAiConfig
-        id: testwriter-llm-0001
-        name: openai-gpt4o
-        metadata: {}
-        model_id: gpt-4o
-        api_key: $OPENAI_API_KEY
-        api_type: chat_completions
-      system_prompt: |
-        You are a test writer. Given a description of code and its context, generate comprehensive test cases.
+# A standalone one-agent document: top-level `agent:` is sugar for a
+# single-step flow. `delegate_task.sh` runs it as an independent heddle run.
+weave: 1
+name: test-writer
+description: Sub-agent that generates comprehensive test cases for code.
 
-        Your tests should cover:
-        1. **Happy path** — normal expected usage
-        2. **Edge cases** — boundary values, empty inputs, large inputs
-        3. **Error cases** — invalid inputs, missing data, network failures
-        4. **Integration** — interactions between components
+inputs:
+  task: string
 
-        Output the complete test code ready to be saved to a file. Match the testing framework and style conventions of the project.
+agent:
+  model:
+    provider: openai
+    model: gpt-4o
+    api_key: $OPENAI_API_KEY
+  prompt: |
+    You are a test writer. Given a description of code and its context, generate comprehensive test cases.
 
-        Task: {{task}}
-      tools: []
-  testwriter-end-0001:
-    component_type: EndNode
-    id: testwriter-end-0001
-    name: end
-    metadata: {}
-    inputs:
-      - title: result
-        type: string
-    outputs: []
-    branches: []
-    branch_name: next
+    Your tests should cover:
+    1. **Happy path** — normal expected usage
+    2. **Edge cases** — boundary values, empty inputs, large inputs
+    3. **Error cases** — invalid inputs, missing data, network failures
+    4. **Integration** — interactions between components
+
+    Output the complete test code ready to be saved to a file. Match the testing framework and style conventions of the project.
+
+    Task: {{inputs.task}}

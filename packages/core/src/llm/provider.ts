@@ -1,9 +1,9 @@
-import { isBuiltinComponentType } from 'agentspec';
-import type { LLMConfig } from '../spec/types.js';
+import { BUILTIN_PROVIDERS, type ModelSpec } from '../spec/types.js';
 import type { ChatRequest, Provider } from './types.js';
 import type { Dependencies } from '../node/types.js';
 import type { PluginRegistry } from '../plugin/registry.js';
 import type { PluginComponent } from '../plugin/types.js';
+import { pluginComponentOf } from '../spec/resolve.js';
 import { OpenAIProvider } from './openai.js';
 import { LLMError } from '../errors.js';
 import { isSet } from '../internal/util.js';
@@ -14,13 +14,6 @@ import {
   type EgressPolicy,
 } from './egress.js';
 
-const OPENAI_COMPATIBLE_TYPES = new Set([
-  'OpenAiConfig',
-  'OpenAiCompatibleConfig',
-  'VllmConfig',
-  'OllamaConfig',
-]);
-
 type Generation = Pick<ChatRequest, 'temperature' | 'maxTokens' | 'topP'>;
 
 const GENERATION_KEYS: Array<[keyof Generation, string]> = [
@@ -28,6 +21,9 @@ const GENERATION_KEYS: Array<[keyof Generation, string]> = [
   ['maxTokens', 'max_tokens'],
   ['topP', 'top_p'],
 ];
+
+/** Where an `ollama` model with no `url` is reached. */
+const OLLAMA_URL = 'http://localhost:11434/v1';
 
 export interface ProviderOptions {
   allowEnvRefs?: boolean;
@@ -43,24 +39,20 @@ export interface ProviderOptions {
   egress?: EgressPolicy;
 }
 
-export function isBuiltinConfigType(componentType: string): boolean {
-  return OPENAI_COMPATIBLE_TYPES.has(componentType);
+export function isBuiltinProvider(provider: string): boolean {
+  return BUILTIN_PROVIDERS.includes(provider);
 }
 
-export function providerFor(config: LLMConfig, deps: Dependencies): Provider {
-  const componentType = config.componentType;
-
-  if (componentType && !isBuiltinConfigType(componentType)) {
-    assertNotUnbuildableSdkType(componentType);
-
+export function providerFor(model: ModelSpec, deps: Dependencies): Provider {
+  if (!isBuiltinProvider(model.provider)) {
     const registry = deps.plugins;
     if (registry) {
-      return pluginProvider(componentType, config, registry, deps);
+      return pluginProvider(model, registry, deps);
     }
   }
 
   const build = deps.createProvider ?? createProvider;
-  return build(config, {
+  return build(model, {
     allowEnvRefs: deps.allowEnvRefs,
     defaultKey: deps.defaultLlmKey,
     defaultUrl: deps.defaultLlmUrl,
@@ -69,14 +61,13 @@ export function providerFor(config: LLMConfig, deps: Dependencies): Provider {
 }
 
 export function createProvider(
-  config: LLMConfig,
+  model: ModelSpec,
   options: ProviderOptions = {},
 ): Provider {
-  const configType = config.componentType ?? 'OpenAiConfig';
-  if (!OPENAI_COMPATIBLE_TYPES.has(configType)) {
+  if (!isBuiltinProvider(model.provider)) {
     throw new LLMError(
-      `unsupported config type "${configType}". ` +
-        `Supported: ${supportedTypes()}`,
+      `unsupported provider "${model.provider}". ` +
+        `Builtin: ${BUILTIN_PROVIDERS.join(', ')}.`,
     );
   }
 
@@ -87,98 +78,102 @@ export function createProvider(
   } = {};
 
   // Under a policy, every request this client makes refuses a redirect — not
-  // only the ones naming a url. An operator's default endpoint can be redirected
-  // too, and the caller chose the spec that reached it.
+  // only the ones naming a url. An operator's default endpoint can be
+  // redirected too, and the caller chose the spec that reached it.
   if (options.egress) {
-    clientOptions.fetch = redirectRefusingFetch(`llm_config "${configType}"`);
+    clientOptions.fetch = redirectRefusingFetch(
+      `provider "${model.provider}"`,
+    );
   }
 
-  if (config.apiKey) {
+  if (model.api_key) {
     clientOptions.apiKey = resolveEnvVar(
-      config.apiKey,
+      model.api_key,
       options.allowEnvRefs ?? true,
     );
   }
-  if (config.url) {
+
+  const url = model.url ?? implicitUrl(model.provider);
+  if (url) {
     // Before it becomes a base URL, because after that it is a connection this
     // process makes from wherever this process sits.
-    assertEgressAllowed(
-      config.url,
-      options.egress,
-      `llm_config "${configType}"`,
-    );
-    clientOptions.baseURL = config.url;
+    assertEgressAllowed(url, options.egress, `provider "${model.provider}"`);
+    clientOptions.baseURL = url;
   }
-  applyDefaultCredential(clientOptions, config, options);
+  if (model.provider === 'ollama' && !clientOptions.apiKey) {
+    // Ollama ignores the key but the client insists on one.
+    clientOptions.apiKey = 'ollama';
+  }
+  applyDefaultCredential(clientOptions, model, options);
 
   return new OpenAIProvider(clientOptions);
 }
 
-export function generationParams(config: LLMConfig): Generation {
-  const raw = config.defaultGenerationParameters;
+function implicitUrl(provider: string): string | undefined {
+  return provider === 'ollama' ? OLLAMA_URL : undefined;
+}
+
+export function generationParams(model: ModelSpec): Generation {
+  const raw = model.params;
   if (!raw) return {};
 
   const params: Generation = {};
-  for (const [camelCase, snakeCase] of GENERATION_KEYS) {
-    const written = isSet(raw[camelCase]) ? camelCase : snakeCase;
-    const value = raw[written];
+  for (const [requestKey, paramKey] of GENERATION_KEYS) {
+    const value = raw[paramKey];
     if (!isSet(value)) continue;
 
     if (typeof value !== 'number' || !Number.isFinite(value)) {
-      throw new LLMError(nonNumericGenerationMessage(written, value));
+      throw new LLMError(nonNumericGenerationMessage(paramKey, value));
     }
-    params[camelCase] = value;
+    params[requestKey] = value;
   }
   return params;
 }
 
 function pluginProvider(
-  componentType: string,
-  config: LLMConfig,
+  model: ModelSpec,
   registry: PluginRegistry,
   deps: Dependencies,
 ): Provider {
-  const definition = registry.providerDef(componentType);
+  const definition = registry.providerDef(model.provider);
   if (definition) {
-    return definition.createProvider(
-      config as unknown as PluginComponent,
-      deps,
-    );
+    return definition.createProvider(providerComponent(model), deps);
   }
 
-  const kind = registry.kindOf(componentType);
+  const kind = registry.kindOf(model.provider);
   if (kind) {
-    throw new LLMError(wrongPluginKindMessage(componentType, kind));
+    throw new LLMError(wrongPluginKindMessage(model.provider, kind));
   }
 
-  throw new LLMError(unsupportedConfigTypeMessage(componentType, registry));
+  throw new LLMError(unsupportedProviderMessage(model.provider, registry));
 }
 
-function assertNotUnbuildableSdkType(componentType: string): void {
-  if (!isBuiltinComponentType(componentType)) return;
+/** The shape a plugin provider is handed: the model entry, as a component. */
+function providerComponent(model: ModelSpec): PluginComponent {
+  const config: Record<string, unknown> = {
+    model: model.model,
+    ...model.extra,
+  };
+  if (model.url !== undefined) config.url = model.url;
+  if (model.api_key !== undefined) config.api_key = model.api_key;
+  if (model.params !== undefined) config.params = model.params;
 
-  throw new LLMError(
-    `llm_config has type "${componentType}", which Agent Spec defines but heddle ` +
-      `has no client for. heddle speaks: ${supportedTypes()}. ` +
-      `No plugin can supply it either — a plugin may not claim a builtin component ` +
-      `type — so this flow needs one of those, or an endpoint reached through ` +
-      `OpenAiCompatibleConfig.`,
-  );
+  return pluginComponentOf(model.provider, model.provider, config);
 }
 
 function applyDefaultCredential(
   clientOptions: { apiKey?: string; baseURL?: string },
-  config: LLMConfig,
+  model: ModelSpec,
   options: ProviderOptions,
 ): void {
   const { defaultUrl, defaultKey } = options;
-  if (!defaultKey || config.apiKey) return;
+  if (!defaultKey || clientOptions.apiKey) return;
 
-  if (config.url) {
+  if (model.url) {
     throw new LLMError(
-      `this llm_config sets "url" but no "api_key". The server's own credential ` +
-        `is only used with its own endpoint, so a flow that chooses where to send ` +
-        `requests has to supply the key for them.`,
+      `this model sets "url" but no "api_key". The server's own credential ` +
+        `is only used with its own endpoint, so a flow that chooses where to ` +
+        `send requests has to supply the key for them.`,
     );
   }
 
@@ -197,50 +192,45 @@ function resolveEnvVar(value: string, allowEnvRefs: boolean): string {
   const resolved = process.env[key];
   if (!resolved) {
     throw new LLMError(
-      `environment variable "${key}" is not set (referenced as "${value}" in spec)`,
+      `environment variable "${key}" is not set (referenced as "${value}" in the document)`,
     );
   }
   return resolved;
 }
 
-
-function supportedTypes(): string {
-  return [...OPENAI_COMPATIBLE_TYPES].join(', ');
-}
-
 function refusedEnvRefMessage(value: string): string {
   return (
     `"${value}" refers to an environment variable. This server does not resolve ` +
-    `those for specs it did not write — the reference is not limited to model ` +
-    `keys, and the same spec chooses where the value would be sent. Put the ` +
-    `credential in the spec, or omit it and use whatever this server provides. ` +
-    `Running the spec yourself, ${value} resolves normally.`
+    `those for documents it did not write — the reference is not limited to model ` +
+    `keys, and the same document chooses where the value would be sent. Put the ` +
+    `credential in the document, or omit it and use whatever this server provides. ` +
+    `Running the document yourself, ${value} resolves normally.`
   );
 }
 
 function nonNumericGenerationMessage(key: string, value: unknown): string {
   return (
-    `default_generation_parameters.${key} is ${JSON.stringify(value)}, which is ` +
-    `not a number. These are sent to the model as written, so a string here ` +
-    `is either rejected by the endpoint or silently ignored by it.`
+    `params.${key} is ${JSON.stringify(value)}, which is not a number. ` +
+    `These are sent to the model as written, so a string here is either ` +
+    `rejected by the endpoint or silently ignored by it.`
   );
 }
 
-function wrongPluginKindMessage(componentType: string, kind: string): string {
+function wrongPluginKindMessage(provider: string, kind: string): string {
   return (
-    `llm_config has type "${componentType}", which a plugin provides as a ` +
-    `${kind} rather than a provider. Only a "provider" component supplies a ` +
-    `model endpoint; a ${kind} is written somewhere else in the spec.`
+    `the provider "${provider}" is provided by a plugin as a ${kind} rather ` +
+    `than a provider. Only a "provider" component supplies a model endpoint; ` +
+    `a ${kind} is written somewhere else in the document.`
   );
 }
 
-function unsupportedConfigTypeMessage(
-  componentType: string,
+function unsupportedProviderMessage(
+  provider: string,
   registry: PluginRegistry,
 ): string {
   return (
-    `unsupported config type "${componentType}". Builtin: ` +
-    `${supportedTypes()}.\n` +
+    `unsupported provider "${provider}". Builtin: ` +
+    `${BUILTIN_PROVIDERS.join(', ')}.\n` +
     `  Loaded plugins: ${registry.describe()}\n` +
     `  If it comes from a plugin, load it with: --plugin <module>`
   );

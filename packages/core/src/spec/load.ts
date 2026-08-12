@@ -1,7 +1,5 @@
 import { readFileSync } from 'node:fs';
-import type { ComponentBase } from 'agentspec';
-import { parseFlowWith, parseComponentWith } from './parser.js';
-import { validateFlow } from './validate.js';
+import { parseFlowWith } from './parser.js';
 import type { ParsedFlow } from './types.js';
 import {
   inputFormatByName,
@@ -19,16 +17,15 @@ export interface LoadOptions {
 }
 
 /**
- * Read a flow document from disk, parse it, and check it holds together.
+ * Read a Weave document from disk, parse it, and check it holds together.
  *
  * The format comes from the extension unless `options.format` names one —
  * `.yaml`/`.yml` is YAML, an extension a plugin's format claims is that
- * format, anything else is JSON — and what comes back has already passed
- * {@link validateFlow}, so a loaded flow is one whose edges all name nodes it
- * has. Pass the registry when the document uses plugin-provided component
- * types; without it, those fail to parse as unknown types. What this does
- * *not* check is anything that needs the compiled graph — reachability, dead
- * branches — which is `validate`'s half, after `compile`.
+ * format, anything else is JSON. What comes back has passed both passes
+ * (`parse` and `resolve`), so a loaded flow is one that compiles: every
+ * target lands, every reference has a producer, every plugin type is
+ * provided. Pass the registry when the document uses plugin components;
+ * without it, those fail as unknown types.
  */
 export function loadFlow(
   flowPath: string,
@@ -36,25 +33,7 @@ export function loadFlow(
   options?: LoadOptions,
 ): ParsedFlow {
   const data = readFileSync(flowPath, 'utf-8');
-  const flow = parseFlowWith(formatFor(flowPath, registry, options), data, registry);
-
-  validateFlow(flow);
-  return flow;
-}
-
-/**
- * `loadFlow` for a file whose top-level component could be anything — an
- * Agent, a Flow, a bare config. It answers "what is in this file" rather than
- * "give me something runnable", so unlike {@link loadFlow} it validates
- * nothing beyond the parse; a caller wanting a runnable flow uses `loadFlow`.
- */
-export function loadComponent(
-  filePath: string,
-  registry?: PluginRegistry,
-  options?: LoadOptions,
-): ComponentBase {
-  const data = readFileSync(filePath, 'utf-8');
-  return parseComponentWith(formatFor(filePath, registry, options), data, registry);
+  return parseFlowWith(formatFor(flowPath, registry, options), data, registry);
 }
 
 function formatFor(

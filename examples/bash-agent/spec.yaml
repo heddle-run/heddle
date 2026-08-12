@@ -1,103 +1,51 @@
-component_type: Flow
-agentspec_version: 26.2.0
-id: 6f1a0c92-7d3b-4d51-9f8e-2c4b7a91e0d3
-name: bash-agent-flow
-description: An agent whose only tool is a shell. Python and Node.js are on PATH inside the sandbox, so it can reach for a real language when the shell runs out.
-metadata: {}
-inputs: []
-outputs: []
-start_node:
-  $component_ref: start-node-0001
-nodes:
-  - $component_ref: start-node-0001
-  - $component_ref: shell-node-0001
-  - $component_ref: end-node-0001
-control_flow_connections:
-  - component_type: ControlFlowEdge
-    id: edge-start-shell
-    name: start_to_shell
-    metadata: {}
-    from_node:
-      $component_ref: start-node-0001
-    from_branch: null
-    to_node:
-      $component_ref: shell-node-0001
-  - component_type: ControlFlowEdge
-    id: edge-shell-end
-    name: shell_to_end
-    metadata: {}
-    from_node:
-      $component_ref: shell-node-0001
-    from_branch: null
-    to_node:
-      $component_ref: end-node-0001
-data_flow_connections:
-  - component_type: DataFlowEdge
-    id: data-start-shell
-    name: start_task_to_shell
-    metadata: {}
-    source_node:
-      $component_ref: start-node-0001
-    source_output: task
-    destination_node:
-      $component_ref: shell-node-0001
-    destination_input: task
-  - component_type: DataFlowEdge
-    id: data-shell-end
-    name: shell_result_to_end
-    metadata: {}
-    source_node:
-      $component_ref: shell-node-0001
-    source_output: result
-    destination_node:
-      $component_ref: end-node-0001
-    destination_input: result
-$referenced_components:
-  start-node-0001:
-    component_type: StartNode
-    id: start-node-0001
-    name: start
-    metadata: {}
-    inputs: []
-    outputs:
-      - title: task
-        type: string
-    branches:
-      - next
-  shell-node-0001:
-    component_type: AgentNode
-    id: shell-node-0001
-    name: shell
-    metadata: {}
+weave: 1
+name: bash-agent
+description: >
+  An agent whose only tool is a shell. Python and Node.js are on PATH inside
+  the sandbox, so it can reach for a real language when the shell runs out.
+
+inputs:
+  task: string
+
+tools:
+  bash:
+    description: >-
+      Run a shell command and return its stdout, stderr, and exit code. Runs
+      in $HEDDLE_WORKSPACE unless working_directory is given. python3 and node
+      are on PATH. Each call is a fresh shell, stdin is closed, and commands
+      are killed after timeout seconds (default and maximum 25).
     inputs:
-      - title: task
-        type: string
+      command: string
+      working_directory: { type: string, default: "" }
+      timeout: { type: integer, default: 25 }
     outputs:
-      - title: result
-        type: string
-    branches:
-      - next
+      stdout: string
+      stderr: string
+      exit_code: integer
+  present_file:
+    description: >-
+      Copy a file out of the workspace to a directory the user keeps, and
+      return the path it now lives at. The workspace is deleted when the run
+      ends, so this is the only way a file you produced reaches the user.
+      Optionally rename it with name. Returns an error field when the copy
+      could not be made.
+    inputs:
+      path: string
+      name: { type: string, default: "" }
+    outputs:
+      path: string
+      bytes: integer
+      error: string
+
+steps:
+  - name: shell
     agent:
-      component_type: Agent
-      id: shell-agent-0001
-      name: bash-agent
-      description: An agent with a single shell tool, backed by a sandbox that has Python and Node.js
-      metadata: {}
-      inputs:
-        - title: task
-          type: string
-      outputs:
-        - title: result
-          type: string
-      llm_config:
-        component_type: OpenAiConfig
-        id: openai-config-0001
-        name: openai-gpt4o
-        metadata: {}
-        model_id: gpt-4o
+      model:
+        provider: openai
+        model: gpt-4o
         api_key: $OPENAI_API_KEY
-        api_type: chat_completions
-      system_prompt: |
+      tools: [bash, present_file]
+      prompt: |
         You are a shell agent. Your main tool is `bash`: it runs a command through a
         real shell and hands back stdout, stderr, and the exit code. Anything you can
         express as a command, you can do. `present_file` is the second tool, and the
@@ -160,52 +108,4 @@ $referenced_components:
         - Finish with a short answer in plain prose: what you ran, what came back,
           what it means. Do not dump raw output the user did not ask for.
 
-        The user's request is: {{task}}
-      tools:
-        - component_type: ServerTool
-          id: tool-bash
-          name: bash
-          description: "Run a shell command and return its stdout, stderr, and exit code. Runs in $HEDDLE_WORKSPACE unless working_directory is given. python3 and node are on PATH. Each call is a fresh shell, stdin is closed, and commands are killed after timeout seconds (default and maximum 25)."
-          metadata: {}
-          inputs:
-            - title: command
-              type: string
-            - title: working_directory
-              type: string
-            - title: timeout
-              type: integer
-          outputs:
-            - title: stdout
-              type: string
-            - title: stderr
-              type: string
-            - title: exit_code
-              type: integer
-        - component_type: ServerTool
-          id: tool-present-file
-          name: present_file
-          description: "Copy a file out of the workspace to a directory the user keeps, and return the path it now lives at. The workspace is deleted when the run ends, so this is the only way a file you produced reaches the user. Optionally rename it with name. Returns an error field when the copy could not be made."
-          metadata: {}
-          inputs:
-            - title: path
-              type: string
-            - title: name
-              type: string
-          outputs:
-            - title: path
-              type: string
-            - title: bytes
-              type: integer
-            - title: error
-              type: string
-  end-node-0001:
-    component_type: EndNode
-    id: end-node-0001
-    name: end
-    metadata: {}
-    inputs:
-      - title: result
-        type: string
-    outputs: []
-    branches: []
-    branch_name: next
+        The user's request is: {{inputs.task}}

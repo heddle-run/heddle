@@ -1,4 +1,3 @@
-import { snakeToCamel } from 'agentspec';
 import { messageOf, PluginError } from '../errors.js';
 import type { Dependencies } from '../node/types.js';
 import type { EventHandler } from '../runner/events.js';
@@ -405,7 +404,7 @@ export function checkMiddlewareConfig(
   );
 
   for (const { def } of defs) {
-    def.validateConfig?.(normalize(ownConfig(config, def.componentType)));
+    def.validateConfig?.(ownConfig(config, def.componentType));
   }
 }
 
@@ -415,7 +414,7 @@ function buildEntry(
   deps: Dependencies,
 ): Entry {
   const where = `middleware "${def.componentType}" (plugin "${plugin}")`;
-  const own = normalize(ownConfig(config, def.componentType));
+  const own = ownConfig(config, def.componentType);
 
   const seams = readSubscription(where, def.seams);
   def.validateConfig?.(own);
@@ -461,24 +460,6 @@ function checkUnclaimed(
     if (claimed.has(componentType)) continue;
     throw new PluginError(unclaimedConfigMessage(componentType, provided));
   }
-}
-
-function normalize(config: Record<string, unknown>): Record<string, unknown> {
-  const raw = config.llm_config;
-  if (raw === undefined || config.llmConfig !== undefined) return config;
-
-  return { ...config, llmConfig: camelize(raw) };
-}
-
-function camelize(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(camelize);
-  if (typeof value !== 'object' || value === null) return value;
-
-  const camelized: Record<string, unknown> = {};
-  for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
-    camelized[snakeToCamel(key)] = camelize(nested);
-  }
-  return camelized;
 }
 
 function clampDelay(

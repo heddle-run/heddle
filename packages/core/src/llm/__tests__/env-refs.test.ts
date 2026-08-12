@@ -1,46 +1,33 @@
 import { describe, it, expect } from 'vitest';
 import { collectEnvRefs, envRefKey, isEnvRef } from '../env-refs.js';
-import { parseFlow } from '../../spec/parser.js';
-import type { AnyNode, ParsedFlow } from '../../spec/types.js';
+import { parseFlowYaml } from '../../spec/parser.js';
+import type { ModelSpec, ParsedFlow, Step } from '../../spec/types.js';
 
-/** A flow that only `collectEnvRefs` will read, so only its nodes are real. */
-function flowOf(...parsedNodes: unknown[]): ParsedFlow {
-  return { parsedNodes: parsedNodes as AnyNode[] } as ParsedFlow;
-}
-
-function llmNode(apiKey: unknown): unknown {
+/** A flow that only `collectEnvRefs` will read, so only steps and models are real. */
+function flowOf(
+  steps: unknown[],
+  models: Record<string, ModelSpec> = {},
+): ParsedFlow {
   return {
-    componentType: 'LlmNode',
-    name: 'draft',
-    promptTemplate: 'hi',
-    llmConfig: { componentType: 'OpenAiConfig', modelId: 'gpt-4o-mini', apiKey },
+    name: 'test',
+    inputs: {},
+    models,
+    tools: {},
+    steps: steps as Step[],
+    outcomes: [],
+    requires: {},
+    meta: {},
   };
 }
 
-const START = {
-  component_type: 'StartNode',
-  id: 's',
-  name: 'start',
-  outputs: [{ title: 'query', type: 'string' }],
-  branches: ['next'],
-};
+function model(apiKey?: unknown): ModelSpec {
+  const spec: ModelSpec = { provider: 'openai', model: 'gpt-4o-mini', extra: {} };
+  if (apiKey !== undefined) spec.api_key = apiKey as string;
+  return spec;
+}
 
-const END = {
-  component_type: 'EndNode',
-  id: 'e',
-  name: 'end',
-  inputs: [{ title: 'result', type: 'string' }],
-  branches: [],
-};
-
-function edge(name: string, from: string, to: string): unknown {
-  return {
-    component_type: 'ControlFlowEdge',
-    name,
-    from_node: { $component_ref: from },
-    from_branch: null,
-    to_node: { $component_ref: to },
-  };
+function llmStep(apiKey: unknown, prompt = 'hi'): unknown {
+  return { kind: 'llm', name: 'draft', model: model(apiKey), prompt };
 }
 
 describe('what a value with a $ means', () => {
@@ -55,110 +42,94 @@ describe('what a value with a $ means', () => {
 });
 
 describe('the variables a flow names', () => {
-  it('finds the one an LlmNode reads', () => {
-    expect(collectEnvRefs(flowOf(llmNode('$OPENAI_API_KEY')))).toEqual([
+  it('finds the one an llm step reads', () => {
+    expect(collectEnvRefs(flowOf([llmStep('$OPENAI_API_KEY')]))).toEqual([
       'OPENAI_API_KEY',
     ]);
   });
 
   it('finds the one an agent reads, two levels down', () => {
-    const node = {
-      componentType: 'AgentNode',
+    const step = {
+      kind: 'agent',
       name: 'coder',
       agent: {
-        componentType: 'Agent',
-        name: 'coder',
-        llmConfig: { modelId: 'gpt-4o', apiKey: '$OPENAI_API_KEY' },
+        model: model('$OPENAI_API_KEY'),
+        prompt: 'code it',
+        tools: [],
+        transforms: [],
       },
     };
 
-    expect(collectEnvRefs(flowOf(node))).toEqual(['OPENAI_API_KEY']);
+    expect(collectEnvRefs(flowOf([step]))).toEqual(['OPENAI_API_KEY']);
   });
 
-  it('finds one a plugin node put somewhere heddle has no type for', () => {
-    const node = {
-      componentType: 'ResearchNode',
+  it('finds one a plugin step put somewhere heddle has no type for', () => {
+    const step = {
+      kind: 'use',
       name: 'research',
-      models: [{ llm_config: { model_id: 'm', api_key: '$TAVILY_API_KEY' } }],
+      use: 'ResearchNode',
+      config: { models: [{ model: 'm', api_key: '$TAVILY_API_KEY' }] },
     };
 
-    expect(collectEnvRefs(flowOf(node))).toEqual(['TAVILY_API_KEY']);
+    expect(collectEnvRefs(flowOf([step]))).toEqual(['TAVILY_API_KEY']);
   });
 
-  it('names each variable once, however many configs read it', () => {
+  it('finds one in the models map, even before any step names it', () => {
+    expect(collectEnvRefs(flowOf([], { fast: model('$OPENAI_API_KEY') }))).toEqual([
+      'OPENAI_API_KEY',
+    ]);
+  });
+
+  it('names each variable once, however many models read it', () => {
     expect(
       collectEnvRefs(
-        flowOf(llmNode('$OPENAI_API_KEY'), llmNode('$OPENAI_API_KEY')),
+        flowOf([llmStep('$OPENAI_API_KEY'), llmStep('$OPENAI_API_KEY')]),
       ),
     ).toEqual(['OPENAI_API_KEY']);
   });
 
   it('is empty for a key the spec carries literally', () => {
-    expect(collectEnvRefs(flowOf(llmNode('sk-literal')))).toEqual([]);
+    expect(collectEnvRefs(flowOf([llmStep('sk-literal')]))).toEqual([]);
   });
 
   it('ignores a $ that is not a credential, so prompts stay prompts', () => {
-    const node = {
-      componentType: 'LlmNode',
-      name: 'draft',
-      promptTemplate: 'Is $PATH under $20?',
-      llmConfig: { modelId: 'gpt-4o-mini' },
-    };
-
-    expect(collectEnvRefs(flowOf(node))).toEqual([]);
+    expect(
+      collectEnvRefs(flowOf([llmStep(undefined, 'Is $PATH under $20?')])),
+    ).toEqual([]);
   });
 
   it('ignores a bare $, which names nothing that could be answered', () => {
-    expect(collectEnvRefs(flowOf(llmNode('$')))).toEqual([]);
+    expect(collectEnvRefs(flowOf([llmStep('$')]))).toEqual([]);
   });
 
   it('terminates on a document that refers to itself', () => {
-    const node: Record<string, unknown> = llmNode('$OPENAI_API_KEY') as Record<
+    const step: Record<string, unknown> = llmStep('$OPENAI_API_KEY') as Record<
       string,
       unknown
     >;
-    node.self = node;
+    step.self = step;
 
-    expect(collectEnvRefs(flowOf(node))).toEqual(['OPENAI_API_KEY']);
+    expect(collectEnvRefs(flowOf([step]))).toEqual(['OPENAI_API_KEY']);
   });
 
-  it('reads a real document, whose keys the SDK renamed on the way in', () => {
-    const document = {
-      component_type: 'Flow',
-      agentspec_version: '26.2.0',
-      name: 'test-flow',
-      start_node: { $component_ref: 's' },
-      nodes: [
-        { $component_ref: 's' },
-        { $component_ref: 'draft' },
-        { $component_ref: 'e' },
-      ],
-      control_flow_connections: [
-        edge('s_to_draft', 's', 'draft'),
-        edge('draft_to_e', 'draft', 'e'),
-      ],
-      $referenced_components: {
-        s: START,
-        e: END,
-        draft: {
-          component_type: 'LlmNode',
-          id: 'draft',
-          name: 'draft',
-          prompt_template: 'Summarise: {{query}}',
-          llm_config: {
-            component_type: 'OpenAiConfig',
-            name: 'gpt',
-            model_id: 'gpt-4o-mini',
-            api_key: '$OPENAI_API_KEY',
-          },
-          outputs: [{ title: 'generated_text', type: 'string' }],
-          branches: ['next'],
-        },
-      },
-    };
+  it('reads a real document, straight through the parser', () => {
+    const document = `
+weave: 1
+name: test-flow
+inputs:
+  query: string
+models:
+  gpt:
+    provider: openai
+    model: gpt-4o-mini
+    api_key: $OPENAI_API_KEY
+steps:
+  - name: draft
+    llm:
+      model: gpt
+      prompt: 'Summarise: {{inputs.query}}'
+`;
 
-    expect(collectEnvRefs(parseFlow(JSON.stringify(document)))).toEqual([
-      'OPENAI_API_KEY',
-    ]);
+    expect(collectEnvRefs(parseFlowYaml(document))).toEqual(['OPENAI_API_KEY']);
   });
 });

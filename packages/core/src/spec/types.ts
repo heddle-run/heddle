@@ -1,182 +1,202 @@
-import type { Property } from 'agentspec';
-import type { JsonSchema } from '../llm/types.js';
+/**
+ * The Weave document, parsed: what a `weave.yaml` says, in the shape the rest
+ * of heddle consumes.
+ *
+ * Everything here is data that survived validation — names resolved, templates
+ * checked, unknown keys refused — so a `ParsedFlow` in hand is one that
+ * compiles. The wire format is snake_case and so are these fields: one
+ * vocabulary, no case mapping between the file and the code.
+ * `docs/weave-spec-design.md` is the format's design; `parse.ts` and
+ * `resolve.ts` are the two passes that build this.
+ */
 
-export type { Property } from 'agentspec';
+/** The format version this build of heddle reads. */
+export const WEAVE_VERSION = 1;
 
-export function propertyTitle(property: Property): string {
-  return property.title ?? '';
-}
+export type FieldType =
+  | 'string'
+  | 'integer'
+  | 'number'
+  | 'boolean'
+  | 'array'
+  | 'object';
 
-export interface LLMConfig {
-  componentType?: string;
-  /**
-   * What the spec called this configuration.
-   *
-   * Declared because a spec carries one and something reads it: a plugin
-   * provider is handed the config as a `PluginComponent`, whose `name` heddle
-   * quotes back in every error about that provider. It was absent here for as
-   * long as tests went untypechecked, so the cast in `pluginProvider` was
-   * carrying a field the type said did not exist.
-   */
-  name?: string;
-  modelId: string;
-  url?: string;
-  apiKey?: string;
-  defaultGenerationParameters?: JsonSchema;
-}
-
-export interface ToolSpec {
-  componentType: string;
-  name: string;
+/**
+ * One field in a schema map — the longhand form. The shorthand (`alert:
+ * string`) normalizes to this at parse.
+ */
+export interface FieldSchema {
+  type: FieldType;
   description?: string;
-  inputs?: Property[];
-  outputs?: Property[];
-}
-
-export interface Agent {
-  componentType: string;
-  name: string;
-  description?: string;
-  systemPrompt?: string;
-  llmConfig?: LLMConfig;
-  tools?: ToolSpec[];
-  inputs?: Property[];
-  outputs?: Property[];
-  humanInTheLoop?: boolean;
-  transforms?: TransformSpec[];
-}
-
-export interface TransformSpec {
-  componentType: string;
-  name: string;
-  id?: string;
-}
-
-export interface ControlFlowEdge {
-  fromNode: string;
-  fromBranch?: string;
-  toNode: string;
-}
-
-export interface DataFlowEdge {
-  sourceNode: string;
-  sourceOutput: string;
-  destinationNode: string;
-  destinationInput: string;
+  /** A default makes the field optional; without one it is required. */
+  default?: unknown;
+  /** Element schema, when `type` is `array`. */
+  items?: FieldSchema;
+  /** Field schemas, when `type` is `object`. */
+  fields?: SchemaMap;
 }
 
 /**
- * What a node says it can route on.
- *
- * Every node in an Agent Spec document carries this — the SDK's node schema
- * gives it a default of `[]` — and it is the only place a document says which
- * branch labels on a node's outgoing edges are real. `validate` reads it to
- * catch an edge labelled with a branch its source never selects, which a run
- * meets as a node it cannot leave. It was absent from these interfaces for as
- * long as nothing read it.
+ * Everywhere the format wants a schema — flow `inputs`, tool `inputs` and
+ * `outputs`, an agent's `output` — it is this: field name to schema.
  */
-interface Branched {
-  branches?: string[];
+export type SchemaMap = Record<string, FieldSchema>;
+
+/** The providers heddle has a client for. Anything else comes from a plugin. */
+export const BUILTIN_PROVIDERS: readonly string[] = [
+  'openai',
+  'openai-compatible',
+  'ollama',
+  'vllm',
+];
+
+/**
+ * A model configuration: an entry under `models`, or the same shape inline
+ * where a model is expected.
+ */
+export interface ModelSpec {
+  /** A builtin provider name, or a plugin-registered provider type. */
+  provider: string;
+  /** The model id the endpoint knows: `gpt-4o-mini`, `qwen2.5:7b`. */
+  model: string;
+  url?: string;
+  /** A literal, or a `$VAR` reference resolved from the environment. */
+  api_key?: string;
+  /** Generation parameters, passed through: `temperature`, `max_tokens`, `top_p`. */
+  params?: Record<string, unknown>;
+  /**
+   * Whatever else the entry carried — meaningful only to a plugin provider,
+   * refused by the builtins.
+   */
+  extra: Record<string, unknown>;
 }
 
-export interface StartNode extends Branched {
-  componentType: 'StartNode';
+export interface ToolSpec {
   name: string;
-  inputs?: Property[];
-  outputs?: Property[];
+  description?: string;
+  inputs: SchemaMap;
+  outputs: SchemaMap;
 }
 
-export interface EndNode extends Branched {
-  componentType: 'EndNode';
+/** A plugin transform on an agent: `use:` names the type, the rest is config. */
+export interface TransformSpec {
+  use: string;
+  config: Record<string, unknown>;
+}
+
+export interface AgentSpec {
+  model: ModelSpec;
+  /** The system prompt. `{{inputs.x}}` / `{{step.key}}` templates resolve per run. */
+  prompt: string;
+  /** Names into the document's `tools` map. */
+  tools: ToolSpec[];
+  transforms: TransformSpec[];
+  /**
+   * Structured output: when declared, the model is held to a JSON object with
+   * exactly these keys, and the step writes them instead of `result`.
+   */
+  output?: SchemaMap;
+  max_tool_rounds?: number;
+}
+
+interface StepBase {
   name: string;
-  branchName?: string;
-  inputs?: Property[];
-  outputs?: Property[];
+  /** Where control goes next: a later step or an outcome. Absent = fall through. */
+  then?: string;
 }
 
-export interface AgentNode extends Branched {
-  componentType: 'AgentNode';
+export interface AgentStep extends StepBase {
+  kind: 'agent';
+  agent: AgentSpec;
+}
+
+/** A single completion, no tools. Writes `text`. */
+export interface LlmStep extends StepBase {
+  kind: 'llm';
+  model: ModelSpec;
+  prompt: string;
+}
+
+/** A direct tool invocation. Writes the tool's declared outputs — checked. */
+export interface ToolStep extends StepBase {
+  kind: 'tool';
+  tool: ToolSpec;
+  /** The call's arguments; string values may carry `{{ref}}` templates. */
+  args: Record<string, unknown>;
+}
+
+/**
+ * Branching. `on` is a single template reference, compared by string equality
+ * against `cases` keys; `else` is required — there is no implicit default.
+ */
+export interface SwitchStep extends StepBase {
+  kind: 'switch';
+  on: string;
+  cases: Record<string, string>;
+  else: string;
+}
+
+/** A plugin-defined step: `use:` names the component type, `with` its config. */
+export interface UseStep extends StepBase {
+  kind: 'use';
+  use: string;
+  config: Record<string, unknown>;
+}
+
+export type Step = AgentStep | LlmStep | ToolStep | SwitchStep | UseStep;
+
+export type StepKind = Step['kind'];
+
+/**
+ * A terminal state. `payload` maps output names to literals or templates;
+ * absent means "echo what the last step wrote", which is what the implicit
+ * `done` outcome does.
+ */
+export interface Outcome {
   name: string;
-  agent?: Agent;
-  inputs?: Property[];
-  outputs?: Property[];
+  payload?: Record<string, unknown>;
 }
 
-export interface ToolNode extends Branched {
-  componentType: 'ToolNode';
+/** The key every outcome writes beside its payload: which outcome it was. */
+export const OUTCOME_KEY = 'outcome';
+
+/** The synthetic node flow inputs are read through, and their ref namespace. */
+export const INPUTS_NODE = 'inputs';
+
+/** The outcome a document without an `outcomes` block gets, and the default fall-through target. */
+export const DEFAULT_OUTCOME = 'done';
+
+export interface ParsedFlow {
   name: string;
-  tool?: ToolSpec;
-  inputs?: Property[];
-  outputs?: Property[];
+  description?: string;
+  inputs: SchemaMap;
+  models: Record<string, ModelSpec>;
+  tools: Record<string, ToolSpec>;
+  steps: Step[];
+  outcomes: Outcome[];
+  /** Plugin component type → semver range the document requires. */
+  requires: Record<string, string>;
+  meta: Record<string, unknown>;
 }
 
-export interface LLMNode extends Branched {
-  componentType: 'LlmNode';
-  name: string;
-  llmConfig?: LLMConfig;
-  promptTemplate: string;
-  inputs?: Property[];
-  outputs?: Property[];
-}
-
-export interface BranchingNode extends Branched {
-  componentType: 'BranchingNode';
-  name: string;
-  mapping: Record<string, string>;
-  inputs?: Property[];
-}
-
-export type SpecNode =
-  | StartNode
-  | EndNode
-  | AgentNode
-  | ToolNode
-  | LLMNode
-  | BranchingNode;
-
-export interface CustomNode extends Branched {
-  componentType: string;
-  name: string;
-  inputs?: Property[];
-  outputs?: Property[];
-}
-
-export type AnyNode = SpecNode | CustomNode;
-
-export interface Flow {
-  name: string;
-  componentType: string;
-  startNode: unknown;
-  nodes: unknown[];
-  controlFlowConnections: ControlFlowEdge[];
-  dataFlowConnections?: DataFlowEdge[];
-}
-
-export interface ParsedFlow extends Flow {
-  parsedNodes: AnyNode[];
-}
-
-const SERVER_TOOL = 'ServerTool';
-
+/** Every tool name the flow's steps actually reference. */
 export function collectToolNames(flow: ParsedFlow): string[] {
   const names = new Set<string>();
 
-  for (const node of flow.parsedNodes) {
-    for (const tool of toolsOf(node)) {
-      if (tool.componentType === SERVER_TOOL) names.add(tool.name);
+  for (const step of flow.steps) {
+    if (step.kind === 'agent') {
+      for (const tool of step.agent.tools) names.add(tool.name);
     }
+    if (step.kind === 'tool') names.add(step.tool.name);
   }
 
   return [...names];
 }
 
-function toolsOf(node: AnyNode): ToolSpec[] {
-  if (node.componentType === 'AgentNode') {
-    return (node as AgentNode).agent?.tools ?? [];
-  }
-  if (node.componentType === 'ToolNode') {
-    const tool = (node as ToolNode).tool;
-    return tool ? [tool] : [];
-  }
-  return [];
+/** The step and outcome names of a flow, in declaration order. */
+export function targetNames(flow: ParsedFlow): string[] {
+  return [
+    ...flow.steps.map((step) => step.name),
+    ...flow.outcomes.map((outcome) => outcome.name),
+  ];
 }

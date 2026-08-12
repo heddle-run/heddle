@@ -1,132 +1,131 @@
-import type { AnyNode, ParsedFlow, SpecNode } from '../spec/types.js';
+import { INPUTS_NODE, type ParsedFlow, type Step } from '../spec/types.js';
+import {
+  flowEdges,
+  refsOf,
+  refsOfOutcome,
+  pluginComponentOf,
+  type SpecEdge,
+} from '../spec/resolve.js';
+import { refParts } from '../spec/template.js';
 import type { Dependencies, NodeExecutor } from '../node/types.js';
 import { PluginNodeAdapter } from '../plugin/executor.js';
 import type { PluginNode } from '../plugin/types.js';
-import { PassthroughExecutor, BranchingExecutor } from '../node/branching.js';
+import { InputsExecutor, OutcomeExecutor } from '../node/boundary.js';
+import { SwitchExecutor } from '../node/switch.js';
 import { AgentExecutor } from '../node/agent.js';
 import { LLMExecutor } from '../node/llm.js';
-import { ToolNodeExecutor } from '../node/tool.js';
-import { CompiledGraph, type CompiledNode } from './types.js';
+import { ToolStepExecutor } from '../node/tool.js';
+import { UseStepExecutor } from '../node/use.js';
+import { CompiledGraph, type CompiledNode, type DataSource } from './types.js';
 import { CompileError } from '../errors.js';
 
 /**
  * Turn a parsed flow into something a `Runner` can walk: every node paired
- * with the executor that will run it, every edge attached to its source.
+ * with the executor that will run it, every derived edge attached to its
+ * source, every `{{ref}}` turned into the data mapping that will carry it.
  *
  * This is where `deps` is bound — the tool registry, the provider, the plugin
  * registry all reach a node's executor here, so a graph compiled against one
  * set of dependencies runs against that set for its whole life. Compiling is
  * cheap and starts nothing (no plugin process, no model call), which is why a
- * compiled graph can be built once and run many times. Run `validate` on the
- * result before trusting it: `compile` refuses only what it cannot build, not
- * what will strand a run.
+ * compiled graph can be built once and run many times.
  */
 export function compile(flow: ParsedFlow, deps: Dependencies): CompiledGraph {
-  const nodes = compileNodes(flow, deps);
-  const start = findStartNode(nodes);
-
-  attachControlFlowEdges(flow, nodes);
-  attachDataFlowEdges(flow, nodes);
-
-  return new CompiledGraph(
-    flow.name,
-    nodes,
-    start,
-    flow.dataFlowConnections ?? [],
-  );
-}
-
-function compileNodes(
-  flow: ParsedFlow,
-  deps: Dependencies,
-): Map<string, CompiledNode> {
   const nodes = new Map<string, CompiledNode>();
 
-  for (const specNode of flow.parsedNodes) {
-    nodes.set(specNode.name, {
-      name: specNode.name,
-      type: specNode.componentType,
-      specNode,
-      executor: buildExecutor(specNode, deps),
+  nodes.set(INPUTS_NODE, {
+    name: INPUTS_NODE,
+    type: 'start',
+    spec: { role: 'inputs', inputs: flow.inputs },
+    executor: new InputsExecutor(flow.inputs),
+    edges: [],
+    inputMappings: new Map(),
+  });
+
+  for (const step of flow.steps) {
+    nodes.set(step.name, {
+      name: step.name,
+      type: step.kind === 'use' ? step.use : step.kind,
+      spec: { role: 'step', step },
+      executor: buildExecutor(step, deps),
       edges: [],
-      inputMappings: new Map(),
+      inputMappings: mappingsOf(refsOf(step)),
     });
   }
 
-  return nodes;
-}
-
-function findStartNode(nodes: Map<string, CompiledNode>): string {
-  for (const [name, node] of nodes) {
-    if (node.type === 'StartNode') return name;
+  for (const outcome of flow.outcomes) {
+    nodes.set(outcome.name, {
+      name: outcome.name,
+      type: 'outcome',
+      spec: { role: 'outcome', outcome },
+      executor: new OutcomeExecutor(outcome),
+      edges: [],
+      inputMappings: mappingsOf(refsOfOutcome(outcome)),
+    });
   }
-  throw new CompileError('no StartNode found');
+
+  attachEdges(flowEdges(flow), nodes);
+
+  return new CompiledGraph(flow.name, nodes, INPUTS_NODE);
 }
 
-function attachControlFlowEdges(
-  flow: ParsedFlow,
+/**
+ * A ref `a.b` resolves under its own dotted key, read from node `a`'s output
+ * `b`. `inputs.x` reads the start node, whose output is the run's input.
+ */
+function mappingsOf(refs: string[]): Map<string, DataSource> {
+  const mappings = new Map<string, DataSource>();
+  for (const ref of refs) {
+    const { source, key } = refParts(ref);
+    mappings.set(ref, { sourceNode: source, sourceOutput: key });
+  }
+  return mappings;
+}
+
+function attachEdges(
+  edges: SpecEdge[],
   nodes: Map<string, CompiledNode>,
 ): void {
-  for (const edge of flow.controlFlowConnections) {
-    const source = nodes.get(edge.fromNode);
+  for (const edge of edges) {
+    const source = nodes.get(edge.from);
     if (!source) {
-      throw new CompileError(
-        `control flow edge fromNode "${edge.fromNode}" not found`,
-      );
+      throw new CompileError(`edge from "${edge.from}" has no source node`);
     }
     source.edges.push(edge);
   }
 }
 
-function attachDataFlowEdges(
-  flow: ParsedFlow,
-  nodes: Map<string, CompiledNode>,
-): void {
-  for (const edge of flow.dataFlowConnections ?? []) {
-    const destination = nodes.get(edge.destinationNode);
-    if (!destination) {
-      throw new CompileError(
-        `data flow edge destinationNode "${edge.destinationNode}" not found`,
-      );
-    }
-    destination.inputMappings.set(edge.destinationInput, {
-      sourceNode: edge.sourceNode,
-      sourceOutput: edge.sourceOutput,
-    });
+function buildExecutor(step: Step, deps: Dependencies): NodeExecutor {
+  switch (step.kind) {
+    case 'agent':
+      return new AgentExecutor(step, deps);
+    case 'llm':
+      return new LLMExecutor(step, deps);
+    case 'tool':
+      return new ToolStepExecutor(step, deps);
+    case 'switch':
+      return new SwitchExecutor(step);
+    case 'use':
+      return buildUseExecutor(step, deps);
   }
 }
 
-function buildExecutor(node: AnyNode, deps: Dependencies): NodeExecutor {
-  const pluginDef = deps.plugins?.nodeDef(node.componentType);
-  if (pluginDef) {
-    return new PluginNodeAdapter(node as unknown as PluginNode, pluginDef, deps);
+function buildUseExecutor(
+  step: Step & { kind: 'use' },
+  deps: Dependencies,
+): NodeExecutor {
+  const def = deps.plugins?.nodeDef(step.use);
+  if (!def) {
+    throw new CompileError(
+      `step "${step.name}" uses "${step.use}", which no loaded plugin ` +
+        `provides. Loaded plugins: ${deps.plugins?.describe() ?? 'none'}`,
+    );
   }
-  return buildBuiltinExecutor(node, deps);
-}
 
-function buildBuiltinExecutor(node: AnyNode, deps: Dependencies): NodeExecutor {
-  const builtin = node as SpecNode;
-  switch (builtin.componentType) {
-    case 'StartNode':
-    case 'EndNode':
-      return new PassthroughExecutor();
-    case 'AgentNode':
-      return new AgentExecutor(builtin, deps);
-    case 'LlmNode':
-      return new LLMExecutor(builtin, deps);
-    case 'ToolNode':
-      return new ToolNodeExecutor(builtin, deps);
-    case 'BranchingNode':
-      return new BranchingExecutor(builtin, deps);
-    default:
-      throw new CompileError(unknownNodeTypeMessage(node, deps));
-  }
-}
-
-function unknownNodeTypeMessage(node: AnyNode, deps: Dependencies): string {
-  const loaded = deps.plugins?.describe() ?? 'none';
-  return (
-    `node "${node.name}" has type "${node.componentType}", which no builtin or ` +
-    `plugin provides. Loaded plugins: ${loaded}`
+  const node = pluginComponentOf(step.use, step.name, step.config) as PluginNode;
+  node.branches = [];
+  return new UseStepExecutor(
+    step,
+    new PluginNodeAdapter(node, def, deps),
   );
 }

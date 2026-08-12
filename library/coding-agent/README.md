@@ -193,7 +193,7 @@ heddle run library/dist/coding-agent.heddle --safe
 ## Files
 
 ```
-spec.yaml       start -> context -> coder -> end; the Codex prompt and tool schemas
+spec.yaml       context -> coder -> done; the Codex prompt and tool schemas
 tools/          shell_command, apply_patch, update_plan, environment_context
 plugin.json     CodexApprovals + CodexContextWindow manifest
 plugin.mjs      the two middleware

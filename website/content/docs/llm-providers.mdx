@@ -3,33 +3,39 @@ title: LLM Providers
 description: Configure OpenAI, vLLM, Ollama, or any compatible endpoint.
 ---
 
-heddle supports multiple LLM providers out of the box. Switch providers by changing a few lines in your spec. No code changes needed.
+heddle supports multiple LLM providers out of the box. Switch providers by changing a few
+lines in your document. No code changes needed.
 
-An LLM config appears as `llm_config` on an `Agent` or an `LlmNode`. All supported providers speak the OpenAI chat completions API.
+A model config is an entry under the document's top-level `models` map, or the same shape
+written inline wherever a model is expected (an agent's `model`, an `llm` step's `model`,
+a transform's `model`). `provider` selects the client; everything speaks the OpenAI chat
+completions API underneath.
 
-| `component_type` | `url` | Notes |
-|------------------|-------|-------|
-| `OpenAiConfig` | not accepted | Talks to the OpenAI API |
-| `OpenAiCompatibleConfig` | required | Any OpenAI-compatible endpoint |
-| `VllmConfig` | required | Self-hosted vLLM |
-| `OllamaConfig` | required | Local Ollama |
+| `provider` | `url` | Notes |
+|------------|-------|-------|
+| `openai` | optional | Talks to the OpenAI API |
+| `openai-compatible` | required in practice | Any OpenAI-compatible endpoint |
+| `vllm` | required in practice | Self-hosted vLLM |
+| `ollama` | defaults to `http://localhost:11434/v1` | Local Ollama |
 
-Every config needs a `name` and a `model_id`. These four are the ones heddle implements, and
-all of them speak the OpenAI chat-completions API underneath.
+Every config needs a `provider` and a `model` — the model id the endpoint knows. These
+four are the providers heddle implements; `api_key`, `url` and `params` are the only other
+fields a builtin accepts, and an unknown field is refused at load rather than carried as
+decoration.
 
-Any other `component_type` is rejected at the first model call, **unless a loaded plugin
-provides it**. A plugin can supply a custom `llm_config` type that answers model calls
-itself, which is how a spec reaches an endpoint heddle ships no client for. It may not
-claim one of the four above: a flow writing `OpenAiConfig` reaches heddle's own client
-whatever is loaded. See [Plugins](/docs/plugins).
+Any other `provider` value must come from a loaded plugin. A plugin can supply a provider
+type that answers model calls itself, which is how a document reaches an endpoint heddle
+ships no client for. It may not claim one of the four above: a flow writing
+`provider: openai` reaches heddle's own client whatever is loaded. See
+[Plugins](/docs/plugins).
 
 ## OpenAI
 
 ```yaml
-llm_config:
-  component_type: OpenAiConfig
-  name: openai
-  model_id: gpt-4o
+models:
+  main:
+    provider: openai
+    model: gpt-4o
 ```
 
 Set your API key in the environment:
@@ -38,31 +44,27 @@ Set your API key in the environment:
 export OPENAI_API_KEY=sk-...
 ```
 
-Or reference an environment variable from the spec:
+Or reference an environment variable from the document:
 
 ```yaml
-llm_config:
-  component_type: OpenAiConfig
-  name: openai
-  model_id: gpt-4o
-  api_key: $OPENAI_API_KEY
+models:
+  main:
+    provider: openai
+    model: gpt-4o
+    api_key: $OPENAI_API_KEY
 ```
-
-<Callout type="info">
-`OpenAiConfig` has no `url` field. Adding one is silently ignored rather than rejected, so use `OpenAiCompatibleConfig` to point at a custom endpoint.
-</Callout>
 
 ## OpenAI-compatible
 
 For any endpoint that implements the OpenAI API format:
 
 ```yaml
-llm_config:
-  component_type: OpenAiCompatibleConfig
-  name: my-provider
-  model_id: my-model
-  url: https://my-endpoint.com/v1
-  api_key: $MY_API_KEY
+models:
+  mine:
+    provider: openai-compatible
+    model: my-model
+    url: https://my-endpoint.com/v1
+    api_key: $MY_API_KEY
 ```
 
 ## vLLM
@@ -70,12 +72,12 @@ llm_config:
 For self-hosted models via vLLM:
 
 ```yaml
-llm_config:
-  component_type: VllmConfig
-  name: llama
-  model_id: meta-llama/Llama-3.1-8B
-  url: http://localhost:8000/v1
-  api_key: $VLLM_API_KEY
+models:
+  llama:
+    provider: vllm
+    model: meta-llama/Llama-3.1-8B
+    url: http://localhost:8000/v1
+    api_key: $VLLM_API_KEY
 ```
 
 ## Ollama
@@ -83,31 +85,49 @@ llm_config:
 For local models via Ollama:
 
 ```yaml
-llm_config:
-  component_type: OllamaConfig
-  name: ollama
-  model_id: llama3.1
-  url: http://localhost:11434/v1
-  api_key: $OLLAMA_API_KEY
+models:
+  local:
+    provider: ollama
+    model: llama3.1
 ```
 
-`url` is required; there is no default host.
+`url` defaults to `http://localhost:11434/v1`, and `api_key` may be omitted entirely:
+Ollama ignores the key, so heddle supplies a placeholder where the client insists on one.
+An Ollama running elsewhere is a `url` away.
+
+## Generation parameters
+
+`params` carries generation parameters, passed through to the endpoint as written:
+
+```yaml
+models:
+  fast:
+    provider: openai
+    model: gpt-4o-mini
+    params:
+      temperature: 0
+      max_tokens: 512
+```
+
+`temperature`, `max_tokens` and `top_p` are the three heddle sends, and the three the
+format accepts — a parameter heddle would drop on the floor is refused at load instead of
+carried.
 
 ## API keys
 
-API keys can reference environment variables using the `$` prefix:
+`api_key` can reference an environment variable using the `$` prefix:
 
 ```yaml
 api_key: $MY_API_KEY
 ```
 
 heddle resolves these from your shell environment at the **first model call**, not at
-compile time, and fails with a clear error if the variable is unset. A value without a `$`
+load time, and fails with a clear error if the variable is unset. A value without a `$`
 prefix is used literally. Because resolution is deferred, `heddle validate` never reaches a
-credential: a spec naming `$OPENAI_API_KEY` validates with nothing in the environment.
+credential: a document naming `$OPENAI_API_KEY` validates with nothing in the environment.
 
-`heddle run` looks ahead of that. Before the run starts it reads every variable the spec's
-`api_key` fields name and asks for the ones this shell does not have:
+`heddle run` looks ahead of that. Before the run starts it reads every variable the
+document's `api_key` fields name and asks for the ones this shell does not have:
 
 ```
 OPENAI_API_KEY is not set, and this flow reads it from the environment.
@@ -127,23 +147,28 @@ or a `--protocol` stream is never asked and fails at the first model call exactl
 before. [`--no-ask-env`](/docs/cli-reference#heddle-run) turns it off on a terminal too.
 
 <Callout type="warn">
-**This resolution is conditional, and the condition is who wrote the spec.** A server
-started with `--allow-request-code` refuses `$VAR` in a submitted spec entirely. The
+**This resolution is conditional, and the condition is who wrote the document.** A server
+started with `--allow-request-code` refuses `$VAR` in a submitted document entirely. The
 reference is not restricted to model credentials, so resolving it would let a caller read
-any variable in that process and send it wherever their own `llm_config` points, and the
-"is not set" error would answer whether a given variable exists. Specs you run yourself
-resolve normally; specs a caller submits must carry their credential literally.
+any variable in that process and send it wherever their own `models` entry points, and the
+"is not set" error would answer whether a given variable exists. Documents you run
+yourself resolve normally; documents a caller submits must carry their credential
+literally.
 </Callout>
 
 <Callout type="warn">
-An API key must be resolvable for **every** provider, including local ones. A config with
-no `api_key` falls through to `OPENAI_API_KEY`, and if that is unset the client cannot be
-built, so the run fails at the first model call even for Ollama or vLLM, which do not
-check the key. For local servers, set any placeholder value:
+A config with no `api_key` leaves the key to the OpenAI client, which reads
+`OPENAI_API_KEY` from the environment and refuses to be built without it — so an
+`openai-compatible` or `vllm` model with no `api_key` fails at the first model call even
+when the endpoint checks no key. For local servers, either set any placeholder value or
+write one into the document:
 
 ```bash
-export OLLAMA_API_KEY=local
+export VLLM_API_KEY=local
 ```
+
+`ollama` is the exception: heddle fills the placeholder itself, so an Ollama config needs
+no key anywhere.
 </Callout>
 
 <Callout type="warn">

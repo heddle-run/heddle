@@ -8,6 +8,7 @@ What is in this directory:
 | File | What it is |
 |---|---|
 | [docker.md](docker.md) | Running heddle in a container: both images, chat mode, local models, file ownership, `--safe` inside a container, the server image. |
+| [weave-spec-design.md](weave-spec-design.md) | The design of Weave, heddle's own agent definition format: worked examples, the document reference, semantics, versioning and migration. |
 | [plugin-system-design.md](plugin-system-design.md) | Internal design notes for the plugin system. A roadmap, not a manual. |
 | [session-persistence-design.md](session-persistence-design.md) | Internal design notes for sessions and durable runs. A roadmap, not a manual. |
 

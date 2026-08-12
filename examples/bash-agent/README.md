@@ -8,7 +8,7 @@ only way anything the agent produces reaches you.
 
 | File | What it is |
 |------|------------|
-| `spec.yaml` | The flow: `start → shell → end`, with both `ServerTool`s on the agent |
+| `spec.yaml` | The flow: one `shell` agent step, with both tools declared on the document |
 | `tools/bash.py` | Resolves interpreters, runs the command, reports the exit code |
 | `tools/present_file.py` | Copies one file from the workspace to a directory you keep |
 
@@ -27,7 +27,8 @@ with its own working directory, so the relative paths here would not resolve.)
 ```json
 {
   "task": "what python and node versions are available here?",
-  "result": "Python 3.14.2 and Node v22.17.0 are both available on PATH."
+  "result": "Python 3.14.2 and Node v22.17.0 are both available on PATH.",
+  "outcome": "done"
 }
 ```
 

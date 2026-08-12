@@ -2,7 +2,11 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { CompiledGraph, type CompiledNode } from '../../graph/types.js';
+import {
+  CompiledGraph,
+  type CompiledNode,
+  type GraphNodeSpec,
+} from '../../graph/types.js';
 import { Runner } from '../../runner/runner.js';
 import { DEFAULT_RUNNER_OPTIONS } from '../../runner/options.js';
 import type {
@@ -20,17 +24,24 @@ import { closeTurn, openTurn, resumeTurn } from '../turn.js';
 /** A node that records that it ran, and adds one field to the state. */
 function node(
   name: string,
-  type: string,
+  role: 'inputs' | 'step' | 'outcome',
   toNode: string | undefined,
   ran: string[],
   produce: (input: State) => State = (input) => input,
 ): [string, CompiledNode] {
+  const spec: GraphNodeSpec =
+    role === 'inputs'
+      ? { role, inputs: {} }
+      : role === 'outcome'
+        ? { role, outcome: { name } }
+        : { role, step: { kind: 'use', name, use: 'Recorder', config: {} } };
+
   return [
     name,
     {
       name,
-      type,
-      specNode: { componentType: type, name } as never,
+      type: role === 'step' ? 'Recorder' : role === 'inputs' ? 'start' : 'outcome',
+      spec,
       executor: {
         execute: async (_signal, input: State) => {
           ran.push(name);
@@ -38,7 +49,7 @@ function node(
         },
         branch: () => '',
       },
-      edges: toNode ? [{ fromNode: name, toNode }] : [],
+      edges: toNode ? [{ from: name, to: toNode }] : [],
       inputMappings: new Map(),
     },
   ];
@@ -47,7 +58,7 @@ function node(
 /** start -> a -> b -> end, each step adding a field. */
 function chain(ran: string[], failAt?: string): CompiledGraph {
   const step = (name: string, next: string) =>
-    node(name, 'CustomNode', next, ran, (input) => {
+    node(name, 'step', next, ran, (input) => {
       if (name === failAt) throw new RunError(`${name} exploded`);
       return input.set(name, `${name}-done`);
     });
@@ -55,13 +66,12 @@ function chain(ran: string[], failAt?: string): CompiledGraph {
   return new CompiledGraph(
     'chain',
     new Map([
-      node('start', 'StartNode', 'a', ran),
+      node('start', 'inputs', 'a', ran),
       step('a', 'b'),
       step('b', 'end'),
-      node('end', 'EndNode', undefined, ran),
+      node('end', 'outcome', undefined, ran),
     ]),
     'start',
-    [],
   );
 }
 

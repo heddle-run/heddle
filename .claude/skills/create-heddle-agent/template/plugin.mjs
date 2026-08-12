@@ -1,11 +1,12 @@
 /**
  * A heddle plugin: one custom component type, `SecretScrub`.
  *
- * It is a *transform*, so it hangs off `Agent.transforms` and runs around the
- * model call — `pre` on the way out, `post` on the way back. The other kinds a
- * plugin can contribute are `nodes` (placed in the graph), `providers` (a model
- * endpoint), `encoders` (a wire format) and `middleware` (installed by the
- * operator, never named by a document).
+ * It is a *transform*, so it hangs off an agent step's `transforms` — written
+ * in the document as `- use: SecretScrub` plus config keys — and runs around
+ * the model call: `pre` on the way out, `post` on the way back. The other
+ * kinds a plugin can contribute are `nodes` (a `use:` step in the flow),
+ * `providers` (a model endpoint), `encoders` (a wire format) and `middleware`
+ * (installed by the operator, never named by a document).
  *
  *   heddle run spec.yaml --tools-dir tools --plugin ./plugin.mjs
  *
@@ -27,7 +28,8 @@ function replaceLast(messages, content) {
 /**
  * What the agent was handed, as an object.
  *
- * heddle sends the node's input state as the user message, JSON-encoded, so this
+ * heddle sends the values the agent's prompt references as the user message,
+ * JSON-encoded and keyed by reference (`{"inputs.service": "..."}`), so this
  * is how a transform reads the flow's data rather than only its prose.
  */
 function inputState(messages) {
@@ -95,7 +97,7 @@ export default {
           apply(messages, ctx) {
             // A `pre` rejection skips the model call entirely, so a refused
             // request costs nothing. The agent then writes
-            // transform_status: "rejected", which a BranchingNode can route on.
+            // transform_status: "rejected", which a `switch` step can route on.
             if (ctx.phase === 'pre') {
               const state = inputState(messages);
               const missing = required.filter((key) => !String(state[key] ?? '').trim());

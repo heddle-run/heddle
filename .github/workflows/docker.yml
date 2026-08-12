@@ -58,10 +58,10 @@ jobs:
         include:
           - name: heddle
             dockerfile: Dockerfile
-            description: Run Open Agent Specification flows from the command line.
+            description: Run Weave agent documents from the command line.
           - name: heddle-server
             dockerfile: packages/server/Dockerfile
-            description: HTTP API for the heddle Agent Spec execution engine.
+            description: HTTP API for the heddle agent execution engine.
 
     steps:
       - uses: actions/checkout@v4
@@ -135,7 +135,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           # The repository root for both: the server's Dockerfile reaches
-          # across to packages/core and vendor/agentspec.
+          # across to packages/core.
           context: .
           file: ${{ matrix.dockerfile }}
           platforms: linux/amd64,linux/arm64

@@ -248,8 +248,12 @@ describe('two plugins wanting one name', () => {
 });
 
 describe('the tool definitions the model receives', () => {
-  const spec = (t: Partial<ToolSpec>): ToolSpec =>
-    ({ componentType: 'ServerTool', name: 'search', ...t }) as ToolSpec;
+  const spec = (t: Partial<ToolSpec>): ToolSpec => ({
+    name: 'search',
+    inputs: {},
+    outputs: {},
+    ...t,
+  });
 
   function registryWith(tool: Partial<ToolDef>): Registry {
     const def: ToolDef = {
@@ -288,9 +292,7 @@ describe('the tool definitions the model receives', () => {
   });
 
   it('never merges the two, because the spec marks everything required', () => {
-    const declared = spec({
-      inputs: [{ title: 'q', jsonSchema: { title: 'q', type: 'string' } }],
-    } as Partial<ToolSpec>);
+    const declared = spec({ inputs: { q: { type: 'string' } } });
     const [def] = buildToolDefinitions(
       [declared],
       registryWith({ inputSchema: { type: 'object', properties: { extra: { type: 'string' } } } }),
@@ -307,13 +309,13 @@ describe('the tool definitions the model receives', () => {
 
   it('does not mark an input with a default as required', () => {
     const schema = buildToolSchema({
-      componentType: 'ServerTool',
       name: 'page',
-      inputs: [
-        { title: 'q', jsonSchema: { title: 'q', type: 'string' } },
-        { title: 'limit', jsonSchema: { title: 'limit', type: 'integer', default: 10 } },
-      ],
-    } as ToolSpec);
+      inputs: {
+        q: { type: 'string' },
+        limit: { type: 'integer', default: 10 },
+      },
+      outputs: {},
+    });
     expect(schema.required).toEqual(['q']);
   });
 });
