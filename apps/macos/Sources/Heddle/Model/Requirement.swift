@@ -1,4 +1,5 @@
 import Foundation
+import HeddleCore
 
 /// A bundle's `requires` entry, mirroring `Requirement` in
 /// `packages/core/src/preflight.ts`: binary / env / file / node, plus a hint.

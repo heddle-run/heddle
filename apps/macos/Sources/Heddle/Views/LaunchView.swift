@@ -1,3 +1,4 @@
+import HeddleCore
 import SwiftUI
 
 /// The pre-run form: the agent's input, editable, then Run.

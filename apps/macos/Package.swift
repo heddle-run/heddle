@@ -7,14 +7,25 @@ import PackageDescription
 let package = Package(
     name: "Heddle",
     platforms: [.macOS(.v14)],
+    dependencies: [
+        // The protocol layer both apps share — frames, reducer, run records.
+        // See apps/HeddleCore/README.md.
+        .package(path: "../HeddleCore")
+    ],
     targets: [
         .executableTarget(
             name: "Heddle",
+            dependencies: [
+                .product(name: "HeddleCore", package: "HeddleCore")
+            ],
             path: "Sources/Heddle"
         ),
         .testTarget(
             name: "HeddleTests",
-            dependencies: ["Heddle"],
+            dependencies: [
+                "Heddle",
+                .product(name: "HeddleCore", package: "HeddleCore"),
+            ],
             path: "Tests/HeddleTests"
         ),
     ]

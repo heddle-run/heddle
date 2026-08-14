@@ -51,6 +51,12 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
 
+      # The Swift core both apps share — reducer, SSE parse, run records —
+      # has its own suite of pure logic tests, fed strings.
+      - name: Test the shared core
+        working-directory: apps/HeddleCore
+        run: swift test
+
       - name: Build and test the app
         working-directory: apps/macos
         env:

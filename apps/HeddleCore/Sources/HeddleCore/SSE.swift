@@ -3,9 +3,14 @@ import Foundation
 /// One server-sent event, as `SseStream` writes them
 /// (`packages/server/src/sse.ts`): an optional `event:` name and the joined
 /// `data:` lines.
-struct SSEEvent: Equatable {
-    var event: String?
-    var data: String
+public struct SSEEvent: Equatable {
+    public var event: String?
+    public var data: String
+
+    public init(event: String?, data: String) {
+        self.event = event
+        self.data = data
+    }
 }
 
 /// Incremental parser for the `/v1/runs?stream=true` byte stream.
@@ -14,11 +19,13 @@ struct SSEEvent: Equatable {
 /// pending event. Only the fields the server writes are honoured — `event:`
 /// and `data:` — plus `:` comments, which keep-alive proxies inject. Kept
 /// apart from the URLSession plumbing so it is testable with strings.
-struct SSEParser {
+public struct SSEParser {
     private var event: String?
     private var data: [String] = []
 
-    mutating func consume(line: String) -> SSEEvent? {
+    public init() {}
+
+    public mutating func consume(line: String) -> SSEEvent? {
         if line.isEmpty {
             guard !data.isEmpty else {
                 event = nil

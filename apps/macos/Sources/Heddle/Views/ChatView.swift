@@ -1,3 +1,4 @@
+import HeddleCore
 import SwiftUI
 
 /// The conversation window an `interactive` bundle opens.

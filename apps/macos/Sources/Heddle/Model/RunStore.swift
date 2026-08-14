@@ -1,65 +1,12 @@
 import Foundation
+import HeddleCore
 import Observation
 
-/// One run of one agent, as the windows see it.
-@MainActor
-@Observable
-final class RunRecord: Identifiable {
-    enum Status: Equatable {
-        case running
-        case succeeded
-        case failed(String)
-        /// Stopped for a person; the session holds the open turn.
-        case suspended(Suspension)
-    }
-
-    let id = UUID()
-    let agent: Agent
-    /// Set when this run belongs to a conversation on disk — always set for
-    /// chat turns, and minted on demand the moment a run suspends is not
-    /// possible, so any agent that *could* suspend should be given one.
-    let sessionID: String?
-    /// Flags every spawn of this record repeats — a resume needs the same
-    /// plugins loaded as the run that suspended, or nothing is there to
-    /// consume the answer. Bundles carry theirs inside the archive; these
-    /// are for bare flows (and tests) that take them from the command line.
-    let extraArguments: [String]
-    let startedAt = Date()
-    var endedAt: Date?
-    var status: Status = .running
-    var items: [TranscriptItem] = []
-    var finalState: JSONValue?
-
-    init(agent: Agent, sessionID: String?, extraArguments: [String] = []) {
-        self.agent = agent
-        self.sessionID = sessionID
-        self.extraArguments = extraArguments
-    }
-
-    var agentName: String { agent.name }
-    var isRunning: Bool { status == .running }
-
-    var suspension: Suspension? {
-        if case .suspended(let suspension) = status { return suspension }
-        return nil
-    }
-
-    /// The one line the menu and the notification lead with.
-    var summary: String {
-        switch status {
-        case .running: return "Running…"
-        case .failed(let message): return message
-        case .suspended(let suspension): return suspension.question
-        case .succeeded:
-            if let object = finalState?.objectValue, let first = object.values.first,
-               object.count == 1
-            {
-                return first.displayText
-            }
-            return finalState.map { $0.prettyJSON(compact: true) } ?? "Done"
-        }
-    }
-}
+/// This app's runs: heddle-core's record over this app's agent — a bundle
+/// or flow file on disk. `extraArguments` carries the flags every spawn of
+/// a record repeats; bundles carry theirs inside the archive, so these are
+/// for bare flows (and tests) that take them from the command line.
+typealias RunRecord = HeddleCore.RunRecord<Agent>
 
 /// Spawns `heddle run` per click and folds its stdout into records.
 ///

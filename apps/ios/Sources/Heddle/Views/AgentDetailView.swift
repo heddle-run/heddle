@@ -1,3 +1,4 @@
+import HeddleCore
 import SwiftUI
 
 /// One agent: chat with it, or fire a single run.
@@ -69,16 +70,6 @@ struct AgentDetailView: View {
             text.isEmpty ? nil : [agent.inputKey: .string(text)]
         input = ""
         return runs.start(agent: agent, input: inputs)
-    }
-}
-
-extension RunRecord: Hashable {
-    nonisolated static func == (lhs: RunRecord, rhs: RunRecord) -> Bool {
-        lhs === rhs
-    }
-
-    nonisolated func hash(into hasher: inout Hasher) {
-        hasher.combine(ObjectIdentifier(self))
     }
 }
 

@@ -11,8 +11,10 @@ heddle` frames. iOS has no subprocesses and no Node, so this app speaks the
 server's HTTP surface instead — `POST /v1/runs?stream=true` and a hand-rolled
 SSE parse over `URLSession` (the browser `EventSource` cannot POST). The
 frames on the wire are the same `serializeEvent` shapes either way, which is
-why `FrameReducer`, `JSONValue`, `Suspension` and the chat/answer flow are
-ports of the macOS app's, transport swapped.
+why everything past the transport — `FrameReducer`, `JSONValue`,
+`Suspension`, `RunRecord`, the SSE parse — is
+[`HeddleCore`](../HeddleCore), the Swift package both apps share. What this
+app adds is the transport and the screens.
 
 What follows from the transport:
 
@@ -50,12 +52,14 @@ behind an authenticating proxy, and rides as an `Authorization` header.
 
 - `project.yml` — XcodeGen manifest; `Heddle.xcodeproj` is generated, not
   checked in. (The macOS app is bare SwiftPM; an iOS app bundle needs
-  Xcode's build system.)
-- `Sources/Heddle/Model` — the server client, SSE parse, frame reducer,
-  stores, chat controller.
+  Xcode's build system.) It references [`../HeddleCore`](../HeddleCore) —
+  the shared package — by relative path.
+- `Sources/Heddle/Model` — the server client, stores, chat controller.
 - `Sources/Heddle/Views` — SwiftUI: agents, runs, transcript, chat,
   settings.
-- `Tests/HeddleTests` — reducer and SSE parser, fed strings.
+- `Tests/HeddleTests` — the request and capability shapes only this app
+  encodes. The reducer and SSE parser suites live with the shared code —
+  run them in `apps/HeddleCore` with `swift test`.
 
 `swift test` does not apply here; run the tests with
 `xcodebuild -scheme Heddle test -destination 'platform=iOS Simulator,name=iPhone 17'`.

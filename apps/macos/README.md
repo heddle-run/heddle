@@ -65,6 +65,11 @@ cd apps/macos
 swift build
 ```
 
+Everything past the transport — the frame reducer, run records, `JSONValue`
+— comes from [`../HeddleCore`](../HeddleCore), the Swift package this app
+shares with the iOS app. SwiftPM resolves the relative path on its own;
+there is nothing extra to fetch.
+
 The app finds a heddle runtime in this order:
 
 1. `HEDDLE_APP_CLI` — path to a `heddle.js`, with `HEDDLE_APP_NODE` naming
@@ -83,9 +88,12 @@ The app finds a heddle runtime in this order:
 ## Tests
 
 ```bash
-swift test                      # frame reducer units; CLI round trip skips
+swift test                      # app units; CLI round trip skips
 HEDDLE_APP_CLI=… HEDDLE_APP_NODE=… swift test   # + real CLI round trip
 ```
+
+The frame reducer's own suite lives with the shared code — run it in
+`apps/HeddleCore` with `swift test`.
 
 The round trip runs a model-free Start→End flow through the actual CLI and
 asserts the record finishes with the flow's state — the M0 exit criterion,

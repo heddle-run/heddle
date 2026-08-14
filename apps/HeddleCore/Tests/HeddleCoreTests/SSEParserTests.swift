@@ -1,5 +1,5 @@
 import XCTest
-@testable import Heddle
+import HeddleCore
 
 final class SSEParserTests: XCTestCase {
     private func parse(_ lines: [String]) -> [SSEEvent] {
