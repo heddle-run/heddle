@@ -3,10 +3,10 @@ title: Plugins
 description: Add component types, answer model calls, intercept failures, or render a run, in any language and in a process of their own.
 ---
 
-A plugin teaches heddle something the engine does not ship: a node type, a message
-transform, a model provider, an error policy, a wire format, a tool. Agent Spec's own
-plugin system covers serialisation only: it teaches a deserialiser to read a custom
-`component_type` and says nothing about how to run it. heddle's covers both halves.
+A plugin teaches heddle something the engine does not ship: a step type, a message
+transform, a model provider, an error policy, a wire format, a tool. Each component
+type has two halves — the schema a document naming it is validated against, and the
+code that runs it — and one plugin supplies both.
 
 Plugins are named by whoever runs heddle, never inside a flow document. Sharing a spec
 can therefore never cause code to be executed. A document selects among what was
@@ -20,9 +20,9 @@ deciding what to write.
 
 | Kind | Chosen by | Appears as |
 |---|---|---|
-| `node` | the spec | a `component_type` in `nodes[]` |
-| `transform` | the spec | an entry in `Agent.transforms` |
-| `provider` | the spec | an `llm_config`, beside `OpenAiConfig` |
+| `node` | the spec | a [`use:` step](/docs/nodes#use) in `steps` |
+| `transform` | the spec | an entry in an agent's `transforms` |
+| `provider` | the spec | a `provider:` in a model config, beside the builtins |
 | `component` | the spec | any other custom component the document names |
 | `middleware` | the operator | nothing; no document may name one |
 | `store` | the operator | nothing; `--session-store <ComponentType>` selects it |
@@ -134,17 +134,18 @@ There is no `readFile`, no `fetch` and no `getEnv`. The process boundary denies 
 and re-granting them over RPC would hand back exactly what the boundary bought.
 
 `callModel` is the one worth understanding before you use it. **The plugin composes the
-request; the spec chooses the model.** The call goes to the `llm_config` on the plugin's
-own component, the same field an agent carries, so a plugin ships no SDK, holds no
+request; the spec chooses the model.** The call goes to the `model` on the plugin's
+own component, the same shape an agent carries, so a plugin ships no SDK, holds no
 credential, and cannot send a request anywhere the document does not say it will go.
 
 ```yaml
-- component_type: LlmJudge
-  name: judge
-  rubric: "Is the answer supported by the sources?"
-  llm_config:
-    component_type: OpenAiConfig
-    model_id: gpt-4o-mini
+- name: judge
+  use: LlmJudge
+  with:
+    rubric: "Is the answer supported by the sources?"
+    model:
+      provider: openai
+      model: gpt-4o-mini
 ```
 
 ## Where to go next

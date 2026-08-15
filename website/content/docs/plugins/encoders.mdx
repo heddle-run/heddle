@@ -26,12 +26,15 @@ heddle run examples/ag-ui/flow.json --plugin ./examples/ag-ui/encoder.json \
 
 ```
 {"data":{"type":"RUN_STARTED","threadId":"5d4ed795-…","runId":"5d4ed795-…"}}
-{"data":{"type":"STEP_STARTED","stepName":"start"}}
-{"data":{"type":"STEP_FINISHED","stepName":"start"}}
+{"data":{"type":"STEP_STARTED","stepName":"inputs"}}
+{"data":{"type":"STEP_FINISHED","stepName":"inputs"}}
 {"data":{"type":"STATE_SNAPSHOT","snapshot":{"query":"hello"}}}
-{"data":{"type":"STEP_STARTED","stepName":"end"}}
-{"data":{"type":"STEP_FINISHED","stepName":"end"}}
+{"data":{"type":"STEP_STARTED","stepName":"inspect"}}
+{"data":{"type":"STEP_FINISHED","stepName":"inspect"}}
 {"data":{"type":"STATE_SNAPSHOT","snapshot":{"query":"hello"}}}
+{"data":{"type":"STEP_STARTED","stepName":"done"}}
+{"data":{"type":"STEP_FINISHED","stepName":"done"}}
+{"data":{"type":"STATE_SNAPSHOT","snapshot":{"query":"hello","outcome":"done"}}}
 {"data":{"type":"RUN_FINISHED","threadId":"5d4ed795-…","runId":"5d4ed795-…"}}
 ```
 

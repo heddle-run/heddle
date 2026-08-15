@@ -225,7 +225,7 @@ is labelled reports that the run cannot continue past it.
 
 ## Around a model call
 
-`modelCall` wraps every request heddle sends, an agent's rounds and an `LlmNode`'s single
+`modelCall` wraps every request heddle sends, an agent's rounds and an `llm` step's single
 call alike. It is the only seam that admits `retry`, and the reason is what has already
 been said: a failed *tool* call leaves an assistant message asking for it in the
 conversation, so re-issuing is not re-entering a clean state, while a failed *model* call
