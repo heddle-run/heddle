@@ -32,3 +32,34 @@ jobs:
       # a bundle nobody can run. Needs the build above for the CLI.
       - name: Pack the library
         run: node library/build.mjs
+
+  # The menu bar app. Its round-trip tests spawn the real CLI — a Start→End
+  # flow and a middleware suspension, no model, no key — so this job builds
+  # the workspace first and hands the tests the dist.
+  macos-app:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+      # The Swift core both apps share — reducer, SSE parse, run records —
+      # has its own suite of pure logic tests, fed strings.
+      - name: Test the shared core
+        working-directory: apps/HeddleCore
+        run: swift test
+
+      - name: Build and test the app
+        working-directory: apps/macos
+        env:
+          HEDDLE_APP_CLI: ${{ github.workspace }}/packages/cli/dist/heddle.js
+        run: |
+          HEDDLE_APP_NODE="$(command -v node)" swift test
