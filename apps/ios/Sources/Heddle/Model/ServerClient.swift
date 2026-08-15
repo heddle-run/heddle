@@ -1,4 +1,5 @@
 import Foundation
+import HeddleCore
 
 /// The slice of `GET /v1/capabilities` the app reads
 /// (`packages/server/src/capabilities.ts`).

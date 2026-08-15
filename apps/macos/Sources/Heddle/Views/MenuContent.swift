@@ -1,4 +1,5 @@
 import AppKit
+import HeddleCore
 import SwiftUI
 import UniformTypeIdentifiers
 

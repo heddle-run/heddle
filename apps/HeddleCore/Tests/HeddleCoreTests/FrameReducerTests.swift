@@ -1,5 +1,5 @@
 import XCTest
-@testable import Heddle
+import HeddleCore
 
 final class FrameReducerTests: XCTestCase {
     private func reduce(_ lines: [String]) -> FrameReducer {
@@ -56,12 +56,13 @@ final class FrameReducerTests: XCTestCase {
 
     func testSuspendedFrameCarriesSessionAndAsk() {
         let reducer = reduce([
-            #"{"event":"suspended","data":{"session":"s-1","by":"ApprovalGate","seam":"toolCall","node":"agent","ask":{"question":"run rm -rf?"}}}"#
+            #"{"event":"suspended","data":{"session":"s-1","by":"ApprovalGate","seam":"toolCall","node":"agent","ask":{"question":"run rm -rf?","reply":{"approved":"true or false"}},"resume":{}}}"#
         ])
 
         XCTAssertEqual(reducer.suspension?.session, "s-1")
         XCTAssertEqual(reducer.suspension?.by, "ApprovalGate")
         XCTAssertEqual(reducer.suspension?.question, "run rm -rf?")
+        XCTAssertEqual(reducer.items.last?.kind, .note)
     }
 
     func testGarbageLinesAreIgnored() {

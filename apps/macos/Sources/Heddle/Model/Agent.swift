@@ -1,4 +1,5 @@
 import Foundation
+import HeddleCore
 
 /// The slice of a bundle's `heddle.json` the app acts on.
 ///
@@ -14,7 +15,9 @@ struct AgentManifest: Decodable {
 }
 
 /// Something the menu can run: a `.heddle` bundle, or a bare flow file.
-struct Agent: Identifiable, Equatable {
+///
+/// `RunAgent` is heddle-core's view of it — the name a run record shows.
+struct Agent: Identifiable, Equatable, RunAgent {
     enum Kind: Equatable {
         case bundle
         case flow

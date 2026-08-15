@@ -1,4 +1,5 @@
 import Foundation
+import HeddleCore
 
 /// A flow the app can ask the server to run.
 ///
@@ -6,7 +7,9 @@ import Foundation
 /// a path under its `--flows-root`, or the document itself in the request
 /// body. `.heddle` bundles are not one of them — only the CLI opens bundles
 /// — so an agent here is a flow, not an archive.
-struct Agent: Identifiable, Codable, Equatable, Hashable {
+///
+/// `RunAgent` is heddle-core's view of it — the name a run record shows.
+struct Agent: Identifiable, Codable, Equatable, Hashable, RunAgent {
     enum Source: Codable, Equatable, Hashable {
         /// A `flowPath`, resolved server-side against `--flows-root`.
         case serverPath(String)

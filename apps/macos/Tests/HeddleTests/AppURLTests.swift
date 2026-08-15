@@ -1,3 +1,4 @@
+import HeddleCore
 import XCTest
 @testable import Heddle
 

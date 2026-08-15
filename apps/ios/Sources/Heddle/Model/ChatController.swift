@@ -1,4 +1,5 @@
 import Foundation
+import HeddleCore
 import Observation
 
 /// One conversation with one agent, request-per-turn.
@@ -97,29 +98,11 @@ final class ChatController {
         case .suspended(let suspension):
             pendingAsk = suspension
         case .succeeded:
-            messages.append(Message(role: .assistant, text: Self.answerText(of: record)))
+            messages.append(Message(role: .assistant, text: record.answerText))
             activeRun = nil
         case .failed(let message):
             messages.append(Message(role: .system, text: message))
             activeRun = nil
         }
-    }
-
-    /// The repo's own rendering rule for a turn's answer — `answerOf` in
-    /// `packages/core/src/session/turn.ts`: `result` when it is a string,
-    /// the whole output otherwise. The streamed text is the fallback for a
-    /// run that produced no state.
-    static func answerText(of record: RunRecord) -> String {
-        if let result = record.finalState?.objectValue?["result"]?.stringValue {
-            return result
-        }
-        if let state = record.finalState {
-            return state.prettyJSON(compact: true)
-        }
-        let streamed = record.items
-            .filter { $0.kind == .output }
-            .map(\.text)
-            .joined()
-        return streamed.isEmpty ? "(no output)" : streamed
     }
 }

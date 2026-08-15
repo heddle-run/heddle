@@ -1,3 +1,4 @@
+import HeddleCore
 import SwiftUI
 
 /// One run's transcript and result.

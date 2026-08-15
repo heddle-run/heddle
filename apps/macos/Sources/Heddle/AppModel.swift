@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import HeddleCore
 
 /// The one object graph, reachable from every entry point.
 ///

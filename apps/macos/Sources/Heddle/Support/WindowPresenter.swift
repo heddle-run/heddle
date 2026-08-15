@@ -1,4 +1,5 @@
 import AppKit
+import HeddleCore
 import SwiftUI
 
 /// Windows, presented the AppKit way.

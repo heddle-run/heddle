@@ -1,3 +1,4 @@
+import HeddleCore
 import SwiftUI
 
 /// The conversation screen: request-per-turn against one server session.

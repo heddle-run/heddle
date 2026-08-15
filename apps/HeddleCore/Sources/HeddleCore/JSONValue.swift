@@ -3,9 +3,9 @@ import Foundation
 /// Arbitrary JSON, as manifests and event frames carry it.
 ///
 /// The runtime's shapes are open-ended — a flow's `input` is whatever the
-/// author recorded, an event's `data` whatever the node emitted — so the app
-/// decodes them into this rather than pretending to know their fields.
-enum JSONValue: Codable, Equatable, Hashable {
+/// author recorded, an event's `data` whatever the node emitted — so a front
+/// end decodes them into this rather than pretending to know their fields.
+public enum JSONValue: Codable, Equatable, Hashable {
     case null
     case bool(Bool)
     case number(Double)
@@ -13,7 +13,7 @@ enum JSONValue: Codable, Equatable, Hashable {
     case array([JSONValue])
     case object([String: JSONValue])
 
-    init(from decoder: Decoder) throws {
+    public init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
         if container.decodeNil() {
             self = .null
@@ -35,7 +35,7 @@ enum JSONValue: Codable, Equatable, Hashable {
         }
     }
 
-    func encode(to encoder: Encoder) throws {
+    public func encode(to encoder: Encoder) throws {
         var container = encoder.singleValueContainer()
         switch self {
         case .null: try container.encodeNil()
@@ -47,28 +47,28 @@ enum JSONValue: Codable, Equatable, Hashable {
         }
     }
 
-    var objectValue: [String: JSONValue]? {
+    public var objectValue: [String: JSONValue]? {
         if case .object(let value) = self { return value }
         return nil
     }
 
-    var stringValue: String? {
+    public var stringValue: String? {
         if case .string(let value) = self { return value }
         return nil
     }
 
-    var boolValue: Bool? {
+    public var boolValue: Bool? {
         if case .bool(let value) = self { return value }
         return nil
     }
 
     /// The value as compact display text: strings bare, everything else JSON.
-    var displayText: String {
+    public var displayText: String {
         if case .string(let value) = self { return value }
         return prettyJSON(compact: true)
     }
 
-    func prettyJSON(compact: Bool = false) -> String {
+    public func prettyJSON(compact: Bool = false) -> String {
         let encoder = JSONEncoder()
         encoder.outputFormatting = compact
             ? [.sortedKeys, .withoutEscapingSlashes]

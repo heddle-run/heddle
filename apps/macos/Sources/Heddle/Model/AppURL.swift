@@ -1,4 +1,5 @@
 import Foundation
+import HeddleCore
 
 /// What a `heddle://` URL asks for.
 ///

@@ -15,12 +15,20 @@ settings:
     MARKETING_VERSION: "0.2.0"
     CURRENT_PROJECT_VERSION: "1"
 
+# The protocol layer both apps share — frames, reducer, run records — lives
+# in apps/HeddleCore; the generated project references it by relative path.
+packages:
+  HeddleCore:
+    path: ../HeddleCore
+
 targets:
   Heddle:
     type: application
     platform: iOS
     sources:
       - Sources/Heddle
+    dependencies:
+      - package: HeddleCore
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: run.heddle.ios
@@ -54,6 +62,7 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
     dependencies:
       - target: Heddle
+      - package: HeddleCore
 
 schemes:
   Heddle:

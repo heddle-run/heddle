@@ -1,59 +1,10 @@
 import Foundation
+import HeddleCore
 import Observation
 
-/// One run of one agent, as the screens see it.
-@MainActor
-@Observable
-final class RunRecord: Identifiable {
-    enum Status: Equatable {
-        case running
-        case succeeded
-        case failed(String)
-        /// Stopped for a person; the session on the server holds the open turn.
-        case suspended(Suspension)
-    }
-
-    let id = UUID()
-    let agent: Agent
-    /// Set when this run belongs to a conversation the server is keeping —
-    /// always set for chat turns. Minting one after a run suspends is not
-    /// possible, so any agent that *could* suspend should be given one.
-    let sessionID: String?
-    let startedAt = Date()
-    var endedAt: Date?
-    var status: Status = .running
-    var items: [TranscriptItem] = []
-    var finalState: JSONValue?
-
-    init(agent: Agent, sessionID: String?) {
-        self.agent = agent
-        self.sessionID = sessionID
-    }
-
-    var agentName: String { agent.name }
-    var isRunning: Bool { status == .running }
-
-    var suspension: Suspension? {
-        if case .suspended(let suspension) = status { return suspension }
-        return nil
-    }
-
-    /// The one line a list row leads with.
-    var summary: String {
-        switch status {
-        case .running: return "Running…"
-        case .failed(let message): return message
-        case .suspended(let suspension): return suspension.question
-        case .succeeded:
-            if let object = finalState?.objectValue, let first = object.values.first,
-               object.count == 1
-            {
-                return first.displayText
-            }
-            return finalState.map { $0.prettyJSON(compact: true) } ?? "Done"
-        }
-    }
-}
+/// This app's runs: heddle-core's record over this app's agent — a flow the
+/// server can be asked to run. The record's session is one the server keeps.
+typealias RunRecord = HeddleCore.RunRecord<Agent>
 
 /// Sends `POST /v1/runs?stream=true` per tap and folds the SSE frames into
 /// records.
@@ -61,8 +12,8 @@ final class RunRecord: Identifiable {
 /// Request-per-run is the concurrency model: each run is its own streaming
 /// request with its own lifetime, exactly as the server sees the world, and
 /// cancelling one is cancelling one request. The macOS app does the same
-/// with one CLI process per run; the reducer between transport and record is
-/// the identical code.
+/// with one CLI process per run; the reducer between transport and record
+/// is heddle-core's, shared.
 @MainActor
 @Observable
 final class RunStore {

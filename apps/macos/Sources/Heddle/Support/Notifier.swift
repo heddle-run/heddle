@@ -1,4 +1,5 @@
 import Foundation
+import HeddleCore
 import UserNotifications
 
 /// What the person did on a notification.

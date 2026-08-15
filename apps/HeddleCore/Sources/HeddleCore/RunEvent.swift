@@ -2,21 +2,23 @@ import Foundation
 
 /// One frame of a streamed run: an event name and its data.
 ///
-/// Over SSE the name is the `event:` field and the data is `serializeEvent`
-/// (`packages/core/src/plugin/encoder.ts`) — the event's own fields, with
-/// `state` flattened to plain data. The same shape the CLI's
-/// `--protocol heddle` writes one-per-line, which is why the reducer below
-/// is a straight port of the macOS app's.
-struct RunFrame: Decodable {
-    var event: String?
-    var data: JSONValue
+/// The data is `serializeEvent` (`packages/core/src/plugin/encoder.ts`) — the
+/// event's own fields, with `state` flattened to plain data. Every front end
+/// receives exactly this shape; only the wire differs. The CLI's `--protocol
+/// heddle` writes it one JSON frame per line on stdout (`frameLine`,
+/// `packages/cli/src/cli/encoders.ts`); `heddle-server` writes it as SSE with
+/// the name in the `event:` field. Which is why one reducer serves both apps:
+/// the transports differ, the frames do not.
+public struct RunFrame: Decodable {
+    public var event: String?
+    public var data: JSONValue
 
-    init(event: String?, data: JSONValue) {
+    public init(event: String?, data: JSONValue) {
         self.event = event
         self.data = data
     }
 
-    init?(sse: SSEEvent) {
+    public init?(sse: SSEEvent) {
         guard let data = try? JSONDecoder().decode(
             JSONValue.self, from: Data(sse.data.utf8)
         ) else { return nil }
@@ -24,9 +26,9 @@ struct RunFrame: Decodable {
     }
 }
 
-/// What a run's transcript is made of, reduced to what the screen renders.
-struct TranscriptItem: Identifiable, Equatable {
-    enum Kind: Equatable {
+/// What a run's transcript is made of, reduced to what the UI renders.
+public struct TranscriptItem: Identifiable, Equatable {
+    public enum Kind: Equatable {
         case nodeStart(name: String)
         case toolCall(name: String)
         case output
@@ -34,11 +36,11 @@ struct TranscriptItem: Identifiable, Equatable {
         case failure
     }
 
-    let id: UUID
-    let kind: Kind
-    var text: String
+    public let id: UUID
+    public let kind: Kind
+    public var text: String
 
-    init(id: UUID = UUID(), kind: Kind, text: String) {
+    public init(id: UUID = UUID(), kind: Kind, text: String) {
         self.id = id
         self.kind = kind
         self.text = text
@@ -47,47 +49,59 @@ struct TranscriptItem: Identifiable, Equatable {
 
 /// What a `suspended` frame carries: the run stopped for a person.
 ///
-/// The server writes it and closes the stream — the turn stays open in the
-/// session, and a new `/v1/runs` request with `resume` and an `answer`
-/// continues it (`runStreaming`, `packages/server/src/runs.ts`).
-struct Suspension: Equatable {
-    let session: String
-    let by: String
-    let ask: JSONValue
+/// The CLI writes it to the stream and exits 0 — the turn stays open in the
+/// session, and `--resume --answer '<json>'` continues it
+/// (`reportSuspension`, `packages/cli/src/cli/run.ts`). The server writes it
+/// and closes the stream — a new `/v1/runs` request with `resume` and an
+/// `answer` continues it (`runStreaming`, `packages/server/src/runs.ts`).
+public struct Suspension: Equatable {
+    public let session: String
+    public let by: String
+    public let ask: JSONValue
 
-    var question: String {
+    public init(session: String, by: String, ask: JSONValue) {
+        self.session = session
+        self.by = by
+        self.ask = ask
+    }
+
+    public var question: String {
         ask.objectValue?["question"]?.stringValue ?? by + " is asking"
     }
 }
 
 /// Folds the frame stream into a transcript and a final state.
 ///
-/// Kept apart from the transport so it is testable with strings: feed
-/// frames, read items. `token_delta` frames coalesce into one growing output
-/// item per node rather than one row per token.
-struct FrameReducer {
-    private(set) var items: [TranscriptItem] = []
-    private(set) var finalState: JSONValue?
-    private(set) var failure: String?
-    private(set) var suspension: Suspension?
+/// Kept apart from the transport so it is testable with strings: feed lines
+/// or frames, read items. `token_delta` frames coalesce into one growing
+/// output item per node rather than one row per token.
+public struct FrameReducer {
+    public private(set) var items: [TranscriptItem] = []
+    public private(set) var finalState: JSONValue?
+    public private(set) var failure: String?
+    public private(set) var suspension: Suspension?
     /// A `flow_complete` frame arrived: the run ran to its end. Without it,
     /// a cleanly closed stream still means an unfinished run.
-    private(set) var completed = false
+    public private(set) var completed = false
     /// The server's terminal `error` frame, sent when the run itself failed
-    /// after the SSE headers were already out (`runStreaming`, `runs.ts`).
-    private(set) var streamError: String?
+    /// after the SSE headers were already out (`runStreaming`,
+    /// `packages/server/src/runs.ts`). The CLI never writes one — its
+    /// failures arrive on stderr and in the exit status.
+    public private(set) var streamError: String?
 
     private var streamingNode: String?
     private static let decoder = JSONDecoder()
 
-    mutating func consume(line: Substring) {
+    public init() {}
+
+    public mutating func consume(line: Substring) {
         guard !line.isEmpty,
               let frame = try? Self.decoder.decode(RunFrame.self, from: Data(line.utf8))
         else { return }
         consume(frame: frame)
     }
 
-    mutating func consume(frame: RunFrame) {
+    public mutating func consume(frame: RunFrame) {
         let data = frame.data.objectValue ?? [:]
         switch frame.event {
         case "node_start":
