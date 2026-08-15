@@ -8,53 +8,12 @@ import { boolEnv, resolveConfig } from '../config.js';
 
 function agentFlow(): Record<string, unknown> {
   return {
-    component_type: 'Flow',
+    weave: 1,
     name: 'agent-flow',
-    start_node: { $component_ref: 'start' },
-    nodes: [
-      { $component_ref: 'start' },
-      { $component_ref: 'agent' },
-      { $component_ref: 'end' },
-    ],
-    control_flow_connections: [
-      {
-        component_type: 'ControlFlowEdge',
-        name: 'start_to_agent',
-        from_node: { $component_ref: 'start' },
-        to_node: { $component_ref: 'agent' },
-      },
-      {
-        component_type: 'ControlFlowEdge',
-        name: 'agent_to_end',
-        from_node: { $component_ref: 'agent' },
-        to_node: { $component_ref: 'end' },
-      },
-    ],
-    $referenced_components: {
-      start: {
-        component_type: 'StartNode',
-        id: 'start',
-        name: 'start',
-        outputs: [{ title: 'query', type: 'string' }],
-      },
-      agent: {
-        component_type: 'AgentNode',
-        id: 'agent',
-        name: 'agent',
-        agent: {
-          component_type: 'Agent',
-          id: 'inner-agent',
-          name: 'inner-agent',
-          system_prompt: 'be helpful',
-          llm_config: {
-            component_type: 'OpenAiConfig',
-            id: 'llm',
-            name: 'openai',
-            model_id: 'gpt-4o',
-          },
-        },
-      },
-      end: { component_type: 'EndNode', id: 'end', name: 'end' },
+    inputs: { query: 'string' },
+    agent: {
+      model: { provider: 'openai', model: 'gpt-4o' },
+      prompt: 'be helpful: {{inputs.query}}',
     },
   };
 }

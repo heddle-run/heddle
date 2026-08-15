@@ -3,18 +3,8 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import type { ChatRequest, ChatResponse } from '../../llm/types.js';
-import type { LLMConfig } from '../../spec/types.js';
-
-const chatCompletion = vi.fn();
-const built: Array<{ config: LLMConfig; options: ProviderOptions }> = [];
-
-const stubProvider = (config: LLMConfig, options: ProviderOptions): Provider => {
-  built.push({ config, options });
-  return { chatCompletion };
-};
-
-import type { Provider } from '../../llm/types.js';
+import type { ChatRequest, ChatResponse, Provider } from '../../llm/types.js';
+import type { ModelSpec } from '../../spec/types.js';
 import type { ProviderOptions } from '../../llm/provider.js';
 import { PluginRegistry } from '../registry.js';
 import { TransformChain } from '../transform.js';
@@ -27,6 +17,14 @@ import { Runner } from '../../runner/runner.js';
 import { DEFAULT_RUNNER_OPTIONS } from '../../runner/options.js';
 import type { Dependencies } from '../../node/types.js';
 import type { HeddlePlugin, PluginContext, TransformContext } from '../types.js';
+
+const chatCompletion = vi.fn();
+const built: Array<{ config: ModelSpec; options: ProviderOptions }> = [];
+
+const stubProvider = (config: ModelSpec, options: ProviderOptions): Provider => {
+  built.push({ config, options });
+  return { chatCompletion };
+};
 
 let scratch: string;
 const open: PluginRegistry[] = [];
@@ -56,45 +54,20 @@ afterEach(() => {
   rmSync(scratch, { recursive: true, force: true });
 });
 
-function llmConfig(extra: Record<string, unknown> = {}): Record<string, unknown> {
-  return {
-    component_type: 'OpenAiConfig',
-    name: 'judge-model',
-    model_id: 'gpt-test',
-    ...extra,
-  };
+function modelConfig(extra: Record<string, unknown> = {}): Record<string, unknown> {
+  return { provider: 'openai', model: 'gpt-test', ...extra };
 }
 
-function flowUsing(componentType: string, node: Record<string, unknown> = {}): string {
+/** A one-step flow whose plugin step's `with:` is the plugin's config. */
+function flowUsing(
+  componentType: string,
+  config: Record<string, unknown> = {},
+): string {
   return JSON.stringify({
-    component_type: 'Flow',
+    weave: 1,
     name: 'model-flow',
-    start_node: { $component_ref: 's' },
-    nodes: [{ $component_ref: 's' }, { $component_ref: 'p' }, { $component_ref: 'e' }],
-    control_flow_connections: [
-      {
-        component_type: 'ControlFlowEdge',
-        name: 'a',
-        from_node: { $component_ref: 's' },
-        to_node: { $component_ref: 'p' },
-      },
-      {
-        component_type: 'ControlFlowEdge',
-        name: 'b',
-        from_node: { $component_ref: 'p' },
-        to_node: { $component_ref: 'e' },
-      },
-    ],
-    $referenced_components: {
-      s: {
-        component_type: 'StartNode',
-        id: 's',
-        name: 's',
-        outputs: [{ title: 'text', type: 'string' }],
-      },
-      p: { component_type: componentType, id: 'p', name: 'p', ...node },
-      e: { component_type: 'EndNode', id: 'e', name: 'e' },
-    },
+    inputs: { text: 'string' },
+    steps: [{ name: 'p', use: componentType, with: config }],
   });
 }
 
@@ -145,11 +118,12 @@ describe('a plugin node calling the model', () => {
       return { verdict: resp.content };
     });
 
-    const state = await run(registry, flowUsing('JudgeNode', { llm_config: llmConfig() }));
+    const state = await run(registry, flowUsing('JudgeNode', { model: modelConfig() }));
 
     expect(state.verdict).toBe('the answer');
     expect(built).toHaveLength(1);
-    expect(built[0].config.modelId).toBe('gpt-test');
+    expect(built[0].config.provider).toBe('openai');
+    expect(built[0].config.model).toBe('gpt-test');
     expect(onlyRequest().model).toBe('gpt-test');
   });
 
@@ -165,7 +139,7 @@ describe('a plugin node calling the model', () => {
       return {};
     });
 
-    await run(registry, flowUsing('JudgeNode', { llm_config: llmConfig() }));
+    await run(registry, flowUsing('JudgeNode', { model: modelConfig() }));
 
     const req = onlyRequest();
     expect(req.messages).toEqual([
@@ -175,7 +149,7 @@ describe('a plugin node calling the model', () => {
     expect(req.responseFormat).toBe('json');
   });
 
-  it('lets a per-call setting override the spec default, and keeps the rest', async () => {
+  it('lets a per-call setting override the model default, and keeps the rest', async () => {
     const registry = inProcess('JudgeNode', async (ctx) => {
       await ctx.callModel({
         messages: [{ role: 'user', content: 'x' }],
@@ -187,8 +161,8 @@ describe('a plugin node calling the model', () => {
     await run(
       registry,
       flowUsing('JudgeNode', {
-        llm_config: llmConfig({
-          default_generation_parameters: { temperature: 0.9, max_tokens: 256 },
+        model: modelConfig({
+          params: { temperature: 0.9, max_tokens: 256 },
         }),
       }),
     );
@@ -205,7 +179,7 @@ describe('a plugin node calling the model', () => {
       return {};
     });
 
-    await run(registry, flowUsing('JudgeNode', { llm_config: llmConfig() }));
+    await run(registry, flowUsing('JudgeNode', { model: modelConfig() }));
 
     expect(built).toHaveLength(1);
     expect(chatCompletion).toHaveBeenCalledTimes(2);
@@ -218,7 +192,7 @@ describe('a plugin node calling the model', () => {
     });
 
     await expect(run(registry, flowUsing('JudgeNode'))).rejects.toThrow(
-      /callModel needs an "llm_config" on this component/,
+      /callModel needs a "model" on this component/,
     );
     expect(built).toHaveLength(0);
   });
@@ -229,7 +203,7 @@ describe('a plugin node calling the model', () => {
       return {};
     });
 
-    await run(registry, flowUsing('JudgeNode', { llm_config: llmConfig() }), {
+    await run(registry, flowUsing('JudgeNode', { model: modelConfig() }), {
       allowEnvRefs: false,
       defaultLlmKey: 'operator-key',
       defaultLlmUrl: 'https://operator.example',
@@ -246,7 +220,7 @@ describe('a plugin node calling the model', () => {
 describe('a plugin transform', () => {
   function chainWith(
     apply: (ctx: TransformContext) => Promise<void>,
-    component: Record<string, unknown>,
+    config: Record<string, unknown>,
   ): TransformChain {
     const registry = PluginRegistry.empty();
     registry.add({
@@ -267,7 +241,7 @@ describe('a plugin transform', () => {
     open.push(registry);
 
     return TransformChain.build(
-      [{ componentType: 'LlmGuard', name: 'guard', ...component } as never],
+      [{ use: 'LlmGuard', config }],
       { plugins: registry, createProvider: stubProvider },
       'agent',
     );
@@ -282,7 +256,7 @@ describe('a plugin transform', () => {
         });
         content = resp.content;
       },
-      { llmConfig: { componentType: 'OpenAiConfig', modelId: 'guard-model' } },
+      { model: { provider: 'openai', model: 'guard-model' } },
     );
 
     await chain.apply('pre', [{ role: 'user', content: 'hi' }], undefined);
@@ -303,7 +277,7 @@ describe('a plugin transform', () => {
     await chain.apply('pre', [{ role: 'user', content: 'hi' }], undefined);
 
     expect(String(ran)).toMatch(/no tool registry configured/);
-    expect(String(ran)).toMatch(/LlmGuard "guard"/);
+    expect(String(ran)).toMatch(/LlmGuard on "agent"/);
   });
 });
 
@@ -326,14 +300,14 @@ async function runRemote(
   componentType: string,
   entry: string,
   manifestData: unknown,
-  node: Record<string, unknown>,
+  config: Record<string, unknown>,
   { timeout = 5000, granted = ['callModel'] } = {},
 ): Promise<Record<string, unknown>> {
   const registry = PluginRegistry.empty();
   registry.addRemote(
     loadRemotePlugin(manifestData, entry, { timeout, capabilities: granted as never }),
   );
-  return run(registry, flowUsing(componentType, node));
+  return run(registry, flowUsing(componentType, config));
 }
 
 describe('a plugin calling the model from its own process', () => {
@@ -351,7 +325,8 @@ describe('a plugin calling the model from its own process', () => {
     );
 
     const state = await runRemote('LlmJudge', entry, manifest('LlmJudge', ['callModel']), {
-      llm_config: llmConfig(),
+      model: modelConfig(),
+      text: '{{inputs.text}}',
     });
 
     expect(state.verdict).toBe('{"score":0.9}');
@@ -373,7 +348,7 @@ describe('a plugin calling the model from its own process', () => {
     );
 
     const state = await runRemote('Sneaky', entry, manifest('Sneaky', []), {
-      llm_config: llmConfig(),
+      model: modelConfig(),
     });
 
     expect(String(state.err)).toMatch(/"callModel" is not granted to this plugin/);
@@ -410,7 +385,7 @@ describe('a plugin calling the model from its own process', () => {
     );
 
     const state = await runRemote('NoCall', entry, manifest('NoCall', ['callModel']), {
-      llm_config: llmConfig(),
+      model: modelConfig(),
     });
 
     expect(String(state.err)).toMatch(/callModel needs a "call"/);
@@ -428,7 +403,7 @@ describe('a plugin calling the model from its own process', () => {
     );
 
     const state = await runRemote('BadMsg', entry, manifest('BadMsg', ['callModel']), {
-      llm_config: llmConfig(),
+      model: modelConfig(),
     });
 
     expect(String(state.err)).toMatch(/messages\[0\] has role "wizard"/);
@@ -471,7 +446,7 @@ describe('a plugin calling the model from its own process', () => {
       'SlowModel',
       entry,
       manifest('SlowModel', ['callModel']),
-      { llm_config: llmConfig() },
+      { model: modelConfig() },
       { timeout: budget },
     );
 
@@ -505,7 +480,7 @@ describe('a plugin calling the model from its own process', () => {
         'Stalls',
         entry,
         manifest('Stalls', ['callModel']),
-        { llm_config: llmConfig() },
+        { model: modelConfig() },
         { timeout: budget },
       ),
     ).rejects.toThrow(/did not answer execute within 1000ms/);

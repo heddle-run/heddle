@@ -353,43 +353,10 @@ describe('cancellation', () => {
     chmodSync(toolPath, 0o755);
 
     const toolFlow = {
-      component_type: 'Flow',
+      weave: 1,
       name: 'tool-flow',
-      start_node: { $component_ref: 'start' },
-      nodes: [
-        { $component_ref: 'start' },
-        { $component_ref: 'slow' },
-        { $component_ref: 'end' },
-      ],
-      control_flow_connections: [
-        {
-          component_type: 'ControlFlowEdge',
-          name: 'start_to_slow',
-          from_node: { $component_ref: 'start' },
-          to_node: { $component_ref: 'slow' },
-        },
-        {
-          component_type: 'ControlFlowEdge',
-          name: 'slow_to_end',
-          from_node: { $component_ref: 'slow' },
-          to_node: { $component_ref: 'end' },
-        },
-      ],
-      $referenced_components: {
-        start: { component_type: 'StartNode', id: 'start', name: 'start' },
-        slow: {
-          component_type: 'ToolNode',
-          id: 'slow',
-          name: 'slow',
-          tool: {
-            component_type: 'ServerTool',
-            id: 'slow_tool',
-            name: 'slow_tool',
-            description: 'sleeps',
-          },
-        },
-        end: { component_type: 'EndNode', id: 'end', name: 'end' },
-      },
+      tools: { slow_tool: { description: 'sleeps', outputs: { done: 'boolean' } } },
+      steps: [{ name: 'slow', tool: 'slow_tool', with: {} }],
     };
 
     const toolServer = createServer({ toolsDir, log: () => {} });

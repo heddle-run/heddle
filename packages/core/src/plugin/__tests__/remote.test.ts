@@ -8,7 +8,6 @@ import { validate } from '../../graph/validate.js';
 import { parseFlow } from '../../spec/parser.js';
 import { Runner } from '../../runner/runner.js';
 import { DEFAULT_RUNNER_OPTIONS } from '../../runner/options.js';
-import type { Event } from '../../runner/events.js';
 import type { SandboxSession } from '../../sandbox/types.js';
 import { PluginError } from '../../errors.js';
 import {
@@ -22,6 +21,11 @@ import {
 const scratch = useScratch('heddle-remote-plugin-');
 const open = useDisposal<PluginRegistry>();
 
+/** The shared flow, with the run's `text` input handed to the plugin. */
+function flowWithText(componentType: string): string {
+  return flowUsing(componentType, { text: '{{inputs.text}}' });
+}
+
 async function runFlow(
   flow: string,
   entry: string,
@@ -29,7 +33,6 @@ async function runFlow(
   inputs: Record<string, unknown>,
   deps: Record<string, unknown>,
   timeout: number,
-  events?: Event[],
 ): Promise<Record<string, unknown>> {
   const registry = PluginRegistry.empty();
   open.track(registry);
@@ -41,11 +44,7 @@ async function runFlow(
   const graph = compile(pf, { plugins: registry, ...deps });
   validate(graph);
 
-  const runner = new Runner(graph, {
-    ...DEFAULT_RUNNER_OPTIONS,
-    verbose: false,
-    eventHandler: events ? (e) => events.push(e) : undefined,
-  });
+  const runner = new Runner(graph, { ...DEFAULT_RUNNER_OPTIONS, verbose: false });
   const state = await runner.run(undefined, inputs);
   return state.toData() as Record<string, unknown>;
 }
@@ -61,13 +60,24 @@ async function runWith(
   return runFlow(flowUsing(componentType), entry, manifestData, inputs, deps, timeout);
 }
 
+async function runWithText(
+  componentType: string,
+  entry: string,
+  manifestData: unknown,
+  inputs: Record<string, unknown> = { text: 'hello' },
+  deps: Record<string, unknown> = {},
+  timeout = 5000,
+): Promise<Record<string, unknown>> {
+  return runFlow(flowWithText(componentType), entry, manifestData, inputs, deps, timeout);
+}
+
 describe('running a node in another process', () => {
-  it('executes and returns its output', async () => {
+  it('executes on the resolved "with" block and returns its output', async () => {
     const entry = scratch.writePlugin(
       'shout',
       `return { output: { shouted: String(msg.params.input.text).toUpperCase() } };`,
     );
-    const state = await runWith('ShoutNode', entry, manifest('ShoutNode'));
+    const state = await runWithText('ShoutNode', entry, manifest('ShoutNode'));
     expect(state.shouted).toBe('HELLO');
   });
 
@@ -104,137 +114,36 @@ describe('running a node in another process', () => {
   it('times out a plugin that never answers', async () => {
     const entry = scratch.writePlugin('hang', `return new Promise(() => {});`);
     await expect(
-      runWith('HangNode', entry, manifest('HangNode'), {}, {}, 300),
+      runWith('HangNode', entry, manifest('HangNode'), { text: 'hello' }, {}, 300),
     ).rejects.toThrow(/did not answer execute within/);
   });
 });
 
-function branchingFlowUsing(componentType: string): string {
-  const edge = (name: string, to: string, branch: string | null) => ({
-    component_type: 'ControlFlowEdge',
-    name,
-    from_node: { $component_ref: 'p' },
-    from_branch: branch,
-    to_node: { $component_ref: to },
-  });
-
-  return JSON.stringify({
-    component_type: 'Flow',
-    name: 'branching-flow',
-    start_node: { $component_ref: 's' },
-    nodes: [
-      { $component_ref: 's' },
-      { $component_ref: 'p' },
-      { $component_ref: 'el' },
-      { $component_ref: 'er' },
-      { $component_ref: 'ed' },
-    ],
-    control_flow_connections: [
-      {
-        component_type: 'ControlFlowEdge',
-        name: 'enter',
-        from_node: { $component_ref: 's' },
-        to_node: { $component_ref: 'p' },
-      },
-      edge('to_left', 'el', 'left'),
-      edge('to_right', 'er', 'right'),
-      edge('to_default', 'ed', null),
-    ],
-    $referenced_components: {
-      s: {
-        component_type: 'StartNode',
-        id: 's',
-        name: 's',
-        outputs: [{ title: 'pick', type: 'string' }],
-      },
-      p: { component_type: componentType, id: 'p', name: 'p' },
-      el: { component_type: 'EndNode', id: 'el', name: 'end_left' },
-      er: { component_type: 'EndNode', id: 'er', name: 'end_right' },
-      ed: { component_type: 'EndNode', id: 'ed', name: 'end_default' },
-    },
-  });
-}
-
-function endReached(events: Event[]): string | undefined {
-  return events
-    .filter((e) => e.type === 'node_complete' && e.nodeType === 'EndNode')
-    .at(-1)?.nodeName;
-}
-
-describe('branching out of a plugin node', () => {
-  const CHOOSER = `return { output: { chose: msg.params.input.pick },
-                           branch: msg.params.input.pick };`;
-
-  async function route(
-    entry: string,
-    manifestData: unknown,
-    pick: string,
-  ): Promise<{ end: string | undefined; state: Record<string, unknown> }> {
-    const events: Event[] = [];
-    const state = await runFlow(
-      branchingFlowUsing('ChooserNode'),
-      entry,
-      manifestData,
-      { pick },
-      {},
-      5000,
-      events,
-    );
-    return { end: endReached(events), state };
-  }
-
-  it('routes on the branch the plugin returned', async () => {
-    const entry = scratch.writePlugin('chooser', CHOOSER);
-    const declared = manifest('ChooserNode', { branches: ['left', 'right'] });
-
-    expect(await route(entry, declared, 'left')).toMatchObject({ end: 'end_left' });
-    expect(await route(entry, declared, 'right')).toMatchObject({ end: 'end_right' });
-  });
-
-  it('takes the unbranched edge when the plugin names no branch', async () => {
-    const entry = scratch.writePlugin('nobranch', `return { output: { ran: true } };`);
-    const { end, state } = await route(
-      entry,
-      manifest('ChooserNode', { branches: ['left', 'right'] }),
-      'left',
+describe('a plugin node does not branch under Weave', () => {
+  // Routing belongs to `switch`, so the adapter is built with no declared
+  // branches — whatever the manifest says — and any branch a plugin returns
+  // is refused with a message naming that.
+  it('refuses a returned branch, even one the manifest declared', async () => {
+    const entry = scratch.writePlugin(
+      'chooser',
+      `return { output: { chose: msg.params.input.text }, branch: 'left' };`,
     );
 
-    expect(end).toBe('end_default');
-    expect(state).toMatchObject({ ran: true });
-  });
-
-  it('refuses a branch the manifest did not declare', async () => {
-    const entry = scratch.writePlugin('undeclaredbranch', CHOOSER);
-    // The manifest declares both branches the flow's edges leave on, so the
-    // undeclared one has to come from the plugin at run time. Declaring fewer
-    // than the flow routes on is caught by `validate` before anything runs,
-    // which is a different check answering a different question.
     await expect(
-      route(
+      runWithText(
+        'ChooserNode',
         entry,
         manifest('ChooserNode', { branches: ['left', 'right'] }),
-        'sideways',
       ),
     ).rejects.toThrow(
-      /returned branch "sideways", which is not in its declared branches \[left, right\]/,
-    );
-  });
-
-  it('refuses any branch from a node that declared none', async () => {
-    const entry = scratch.writePlugin('silentbranch', CHOOSER);
-    await expect(route(entry, manifest('ChooserNode'), 'left')).rejects.toThrow(
-      /not in its declared branches \[\]/,
+      /returned branch "left", which is not in its declared branches \[\]/,
     );
   });
 
   it('refuses a branch that is not a string', async () => {
     const entry = scratch.writePlugin('numericbranch', `return { output: {}, branch: 42 };`);
     await expect(
-      route(
-        entry,
-        manifest('ChooserNode', { branches: ['left', 'right'] }),
-        'left',
-      ),
+      runWith('NumericBranchNode', entry, manifest('NumericBranchNode')),
     ).rejects.toThrow(/returned a non-string "branch"/);
   });
 });
@@ -247,7 +156,7 @@ describe('reverse calls', () => {
        return { output: { fromTool: r.echoed } };`,
     );
 
-    const state = await runWith('ToolNode2', entry, manifest('ToolNode2', {}, ['runTool']), { text: 'ping' }, {
+    const state = await runWithText('ToolNode2', entry, manifest('ToolNode2', {}, ['runTool']), { text: 'ping' }, {
       toolRegistry: {
         lookup: (name: string) =>
           name === 'echo' ? { name, description: '', impl: { kind: 'path' as const, path: '/echo' } } : undefined,
@@ -271,7 +180,7 @@ describe('reverse calls', () => {
        catch (e) { return { output: { err: e.message } }; }`,
     );
 
-    const state = await runWith('MissingToolNode', entry, manifest('MissingToolNode', {}, ['runTool']), {}, {
+    const state = await runWith('MissingToolNode', entry, manifest('MissingToolNode', {}, ['runTool']), { text: 'hello' }, {
       toolRegistry: { lookup: () => undefined, all: () => [] },
       toolExecutor: { execute: async () => ({ output: {}, stderr: '' }) },
     });
@@ -298,7 +207,7 @@ describe('reverse calls', () => {
        catch (e) { return { output: { err: e.message } }; }`,
     );
 
-    const state = await runWith('NoNameNode', entry, manifest('NoNameNode', {}, ['runTool']), {}, {
+    const state = await runWith('NoNameNode', entry, manifest('NoNameNode', {}, ['runTool']), { text: 'hello' }, {
       toolRegistry: { lookup: () => undefined, all: () => [] },
       toolExecutor: { execute: async () => ({ output: {}, stderr: '' }) },
     });
@@ -351,7 +260,7 @@ describe('where a plugin node tools run', () => {
       'ScopedToolNode',
       entry,
       manifest('ScopedToolNode', {}, ['runTool']),
-      {},
+      { text: 'hello' },
       {
         toolRegistry: {
           lookup: (name: string) => ({ name, description: '', impl: { kind: 'path' as const, path: '/where' } }),
@@ -382,7 +291,7 @@ describe('where a plugin node tools run', () => {
       'SignalledToolNode',
       entry,
       manifest('SignalledToolNode', {}, ['runTool']),
-      {},
+      { text: 'hello' },
       {
         toolRegistry: {
           lookup: (name: string) => ({ name, description: '', impl: { kind: 'path' as const, path: '/where' } }),
@@ -406,7 +315,7 @@ describe('where a plugin node tools run', () => {
       'CalllessToolNode',
       entry,
       manifest('CalllessToolNode', {}, ['runTool']),
-      {},
+      { text: 'hello' },
       {
         toolRegistry: {
           lookup: (name: string) => ({ name, description: '', impl: { kind: 'path' as const, path: '/where' } }),
@@ -429,7 +338,7 @@ describe('capabilities', () => {
     );
 
     let toolRuns = 0;
-    const state = await runWith('UndeclaredNode', entry, manifest('UndeclaredNode'), {}, {
+    const state = await runWith('UndeclaredNode', entry, manifest('UndeclaredNode'), { text: 'hello' }, {
       toolRegistry: {
         lookup: (name: string) => ({ name, description: '', impl: { kind: 'path' as const, path: '/echo' } }),
         all: () => [],
@@ -457,7 +366,7 @@ describe('capabilities', () => {
       'DeclaredToolNode',
       entry,
       manifest('DeclaredToolNode', {}, ['runTool']),
-      {},
+      { text: 'hello' },
       {
         toolRegistry: {
           lookup: (name: string) => ({ name, description: '', impl: { kind: 'path' as const, path: '/echo' } }),
@@ -529,8 +438,8 @@ describe('capabilities', () => {
 });
 
 describe('the manifest is data, not code', () => {
-  it('supplies inputs, outputs and branches without starting the process', async () => {
-    const entry = scratch.writePlugin('declared', `return { output: {}, branch: 'left' };`);
+  it('supplies the outputs references validate against, without starting the process', async () => {
+    const entry = scratch.writePlugin('declared', `return { output: { result: 'x' } };`);
     const registry = PluginRegistry.empty();
     open.track(registry);
     registry.addRemote(
@@ -538,19 +447,24 @@ describe('the manifest is data, not code', () => {
         manifest('DeclaredNode', {
           inputs: [{ title: 'text', type: 'string' }],
           outputs: [{ title: 'result', type: 'string' }],
-          branches: ['left', 'right'],
         }),
         entry,
       ),
     );
 
-    const pf = parseFlow(flowUsing('DeclaredNode'), registry);
-    const node = pf.parsedNodes.find((n) => n.name === 'p') as unknown as {
-      branches: string[];
-      inputs: unknown[];
-    };
-    expect(node.branches).toEqual(['left', 'right']);
-    expect(node.inputs).toHaveLength(1);
+    const flowReferencing = (key: string): string =>
+      JSON.stringify({
+        weave: 1,
+        name: 'plugin-flow',
+        inputs: { text: 'string' },
+        steps: [{ name: 'p', use: 'DeclaredNode', with: {} }],
+        outcomes: { done: { out: `{{p.${key}}}` } },
+      });
+
+    expect(() => parseFlow(flowReferencing('result'), registry)).not.toThrow();
+    expect(() => parseFlow(flowReferencing('nope'), registry)).toThrow(
+      /"p" writes "result" — never "nope"/,
+    );
   });
 
   it('validates a component against the manifest schema', async () => {
@@ -575,36 +489,20 @@ describe('the manifest is data, not code', () => {
       loadRemotePlugin({ name: 'x', version: '1', components: [] }, entry),
     ).toThrow(PluginError);
   });
-
-  it('refuses a component type that would shadow a builtin', () => {
-    const entry = scratch.writePlugin('shadow', `return { output: {} };`);
-    const registry = PluginRegistry.empty();
-    open.track(registry);
-    expect(() =>
-      registry.addRemote(loadRemotePlugin(manifest('AgentNode'), entry)),
-    ).toThrow(/builtin Agent Spec type/);
-  });
 });
 
-function nodeAndComponentManifest(
-  componentSchema?: Record<string, unknown>,
-): Record<string, unknown> {
+function nodeAndComponentManifest(): Record<string, unknown> {
   return {
     name: 'test-plugin',
     version: '1.0.0',
     components: [
       { componentType: 'GateNode', kind: 'node' },
-      { componentType: 'Policy', kind: 'component', schema: componentSchema },
+      { componentType: 'Policy', kind: 'component' },
     ],
   };
 }
 
-const POLICY = {
-  component_type: 'Policy',
-  id: 'pol',
-  name: 'strict',
-  rule: 'deny',
-};
+const POLICY = { name: 'strict', rule: 'deny' };
 
 describe("kind: 'component'", () => {
   it('is neither a node nor a transform to the compiler', () => {
@@ -637,28 +535,7 @@ describe("kind: 'component'", () => {
     );
 
     expect(state.asked).toEqual(['GateNode']);
-    expect(state.policy).toMatchObject({
-      componentType: 'Policy',
-      name: 'strict',
-      rule: 'deny',
-    });
-  });
-
-  it('is validated against its manifest schema when its parent is parsed', async () => {
-    const entry = scratch.writePlugin('schemaonly', `return { output: {} };`);
-    const registry = PluginRegistry.empty();
-    open.track(registry);
-    registry.addRemote(
-      loadRemotePlugin(
-        nodeAndComponentManifest({ type: 'object', required: ['rule'] }),
-        entry,
-      ),
-    );
-
-    const policy = { component_type: 'Policy', id: 'pol', name: 'strict' };
-    expect(() =>
-      parseFlow(flowUsing('GateNode', { policy }), registry),
-    ).toThrow(/Policy "strict": "rule" is required/);
+    expect(state.policy).toEqual({ name: 'strict', rule: 'deny' });
   });
 
   it('is refused by kind when it is put in a node slot', () => {
@@ -678,6 +555,10 @@ const SHELL_PLUGIN = [
   'while IFS= read -r line; do',
   '  rest=${line#*${q}id${q}:}',
   '  id=${rest%%,*}',
+  // Skip to the "input" object first, so the node's own config (which
+  // carries the raw template string under the same key) is not what the
+  // extraction below finds.
+  '  line=${line#*${q}input${q}:}',
   '  rest=${line#*${q}text${q}:${q}}',
   '  text=${rest%%${q}*}',
   '  printf \'{"id":%s,"result":{"output":{"shell":"%s"}}}\\n\' "$id" "$text"',
@@ -697,7 +578,7 @@ function writeShellPlugin(
 describe('a plugin that is not a JavaScript module', () => {
   it('runs an executable entry point by path', async () => {
     const entry = writeShellPlugin('executable', { selfStarting: true });
-    const state = await runWith('ShellNode', entry, manifest('ShellNode'), {
+    const state = await runWithText('ShellNode', entry, manifest('ShellNode'), {
       text: 'from the shell',
     });
 
@@ -709,7 +590,7 @@ describe('a plugin that is not a JavaScript module', () => {
       selfStarting: false,
       extension: '.plugin',
     });
-    const state = await runWith(
+    const state = await runWithText(
       'ShellNode',
       entry,
       { ...manifest('ShellNode'), command: ['/bin/sh', 'interpreted.plugin'] },
@@ -724,7 +605,7 @@ describe('a plugin that is not a JavaScript module', () => {
       selfStarting: false,
       extension: '.plugin',
     });
-    const state = await runWith(
+    const state = await runWithText(
       'ShellNode',
       entry,
       { ...manifest('ShellNode'), command: ['sh', 'bareinterp.plugin'] },
@@ -743,7 +624,7 @@ describe('a plugin that is not a JavaScript module', () => {
     writeFileSync(launcher, '#!/bin/sh\nexec /bin/sh "$1"\n');
     chmodSync(launcher, 0o755);
 
-    const state = await runWith(
+    const state = await runWithText(
       'ShellNode',
       entry,
       { ...manifest('ShellNode'), command: ['./launch.sh', 'shipped.plugin'] },
@@ -1003,15 +884,15 @@ describe('isolation', () => {
     const entry = scratch.writePlugin(
       'planter',
       `globalThis.__planted ??= [];
-       if (msg.params.input.plant) globalThis.__planted.push(msg.params.input.plant);
+       if (msg.params.input.text) globalThis.__planted.push(msg.params.input.text);
        return { output: { seen: globalThis.__planted.slice() } };`,
     );
     const m = manifest('PlanterNode');
 
-    const first = await runWith('PlanterNode', entry, m, { plant: 'run-one-secret' });
+    const first = await runWithText('PlanterNode', entry, m, { text: 'run-one-secret' });
     expect(first.seen).toEqual(['run-one-secret']);
 
-    const second = await runWith('PlanterNode', entry, m, {});
+    const second = await runWithText('PlanterNode', entry, m, { text: '' });
     expect(second.seen).toEqual([]);
   });
 
@@ -1025,8 +906,8 @@ describe('isolation', () => {
     const m = manifest('ConcurrentNode');
 
     const [a, b] = await Promise.all([
-      runWith('ConcurrentNode', entry, m, { text: 'alice-private' }),
-      runWith('ConcurrentNode', entry, m, { text: 'bob-private' }),
+      runWithText('ConcurrentNode', entry, m, { text: 'alice-private' }),
+      runWithText('ConcurrentNode', entry, m, { text: 'bob-private' }),
     ]);
 
     expect(a.seen).toEqual(['alice-private']);
@@ -1069,64 +950,27 @@ describe('isolation', () => {
 
 function agentFlowWithTransform(
   componentType: string,
-  component: Record<string, unknown> = {},
+  config: Record<string, unknown> = {},
 ): string {
   return JSON.stringify({
-    component_type: 'Flow',
+    weave: 1,
     name: 'guarded',
-    start_node: { $component_ref: 's' },
-    nodes: [{ $component_ref: 's' }, { $component_ref: 'a' }, { $component_ref: 'e' }],
-    control_flow_connections: [
+    inputs: { query: 'string' },
+    steps: [
       {
-        component_type: 'ControlFlowEdge',
-        name: 'x',
-        from_node: { $component_ref: 's' },
-        to_node: { $component_ref: 'a' },
-      },
-      {
-        component_type: 'ControlFlowEdge',
-        name: 'y',
-        from_node: { $component_ref: 'a' },
-        to_node: { $component_ref: 'e' },
-      },
-    ],
-    $referenced_components: {
-      s: {
-        component_type: 'StartNode',
-        id: 's',
-        name: 's',
-        outputs: [{ title: 'query', type: 'string' }],
-      },
-      a: {
-        component_type: 'AgentNode',
-        id: 'a',
         name: 'a',
         agent: {
-          component_type: 'Agent',
-          id: 'ia',
-          name: 'ia',
-          system_prompt: 'be helpful',
-          llm_config: {
-            component_type: 'OpenAiConfig',
-            id: 'l',
-            name: 'l',
-            model_id: 'gpt-4o',
+          model: {
+            provider: 'openai',
+            model: 'gpt-4o',
             url: 'http://127.0.0.1:9/unreachable',
             api_key: 'not-a-real-key',
           },
-          tools: [],
-          transforms: [
-            {
-              component_type: componentType,
-              id: 't',
-              name: 'guard',
-              ...component,
-            },
-          ],
+          prompt: 'be helpful: {{inputs.query}}',
+          transforms: [{ use: componentType, ...config }],
         },
       },
-      e: { component_type: 'EndNode', id: 'e', name: 'e' },
-    },
+    ],
   });
 }
 
@@ -1134,26 +978,18 @@ async function runTransform(
   componentType: string,
   entry: string,
   manifestData: unknown,
-  component: Record<string, unknown> = {},
+  config: Record<string, unknown> = {},
   inputs: Record<string, unknown> = { query: 'hello' },
   deps: Record<string, unknown> = {},
 ): Promise<Record<string, unknown>> {
-  const registry = PluginRegistry.empty();
-  open.track(registry);
-  registry.addRemote(
-    loadRemotePlugin(manifestData, entry, {
-      timeout: 5000,
-      capabilities: [...ALL_CAPABILITIES],
-    }),
+  return runFlow(
+    agentFlowWithTransform(componentType, config),
+    entry,
+    manifestData,
+    inputs,
+    deps,
+    5000,
   );
-
-  const pf = parseFlow(agentFlowWithTransform(componentType, component), registry);
-  const graph = compile(pf, { plugins: registry, ...deps });
-  validate(graph);
-
-  const runner = new Runner(graph, { ...DEFAULT_RUNNER_OPTIONS, verbose: false });
-  const state = await runner.run(undefined, inputs);
-  return state.toData() as Record<string, unknown>;
 }
 
 function transformManifest(componentType: string, phase = 'pre', capabilities: string[] = []) {
@@ -1187,7 +1023,7 @@ describe('transforms out of process', () => {
     expect(state.transform_status).toBe('rejected');
     expect(state.transform_reason).toBe('matched a blocked pattern');
     expect(state.transform_phase).toBe('pre');
-    expect(state.transform_name).toBe('guard');
+    expect(state.transform_name).toBe('Blocklist');
   });
 
   it('receives the agent messages, not the flow state', async () => {
@@ -1210,7 +1046,7 @@ describe('transforms out of process', () => {
     expect(state.transform_reason).toBe('phase=pre');
   });
 
-  it('reads its own configuration from the spec', async () => {
+  it('reads its own configuration from the document', async () => {
     const entry = scratch.writePlugin(
       'configured',
       `return { action: 'reject', reason: 'limit=' + msg.params.component.config.limit };`,
