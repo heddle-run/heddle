@@ -56,7 +56,7 @@ struct AddAgentView: View {
                         )
                     case .inline:
                         Text(
-                            "The Agent Spec document itself, YAML or JSON. "
+                            "The Weave document itself, YAML or JSON. "
                                 + "It is sent with every run."
                         )
                     }

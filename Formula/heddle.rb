@@ -11,9 +11,6 @@ class Heddle < Formula
   depends_on "pnpm" => :build
 
   def install
-    # The agentspec SDK is vendored in-tree (vendor/agentspec), so there is
-    # nothing to fetch: `pnpm install` runs the root `prepare` script, which
-    # builds it.
     system "pnpm", "install", "--frozen-lockfile"
     system "pnpm", "build"
 

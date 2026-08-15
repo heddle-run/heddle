@@ -15,11 +15,11 @@ import { assertToolsAvailable, standardRegistry } from './runenv.js';
 import { assertRequirements, type Requirement } from './preflight.js';
 
 export interface RunFlowOptions extends Partial<Omit<RunnerOptions, 'eventHandler'>> {
-  /** A path to a flow document, or one already parsed with `loadFlow`. */
+  /** A path to a Weave document, or one already parsed with `loadFlow`. */
   flow: string | ParsedFlow;
   /** Directory of executables the flow's tools resolve against. */
   toolsDir?: string;
-  /** What the start node's outputs are filled from. */
+  /** What the document's `inputs` are filled from. */
   inputs?: Record<string, unknown>;
   /**
    * Plugin specifiers to load for this run, or a registry already loaded.

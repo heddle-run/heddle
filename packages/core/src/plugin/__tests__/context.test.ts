@@ -83,7 +83,7 @@ async function runTransform(
     }),
   ]);
 
-  const spec: TransformSpec = { componentType: 'Narrator', name: 'narrator' };
+  const spec: TransformSpec = { use: 'Narrator', config: {} };
   const chain = TransformChain.build(
     [spec],
     { plugins: registry, eventHandler: (e) => events.push(e) },

@@ -20,43 +20,10 @@ function slowToolFixture(seconds: number): {
   return {
     toolsDir,
     flow: {
-      component_type: 'Flow',
+      weave: 1,
       name: 'slow-flow',
-      start_node: { $component_ref: 'start' },
-      nodes: [
-        { $component_ref: 'start' },
-        { $component_ref: 'slow' },
-        { $component_ref: 'end' },
-      ],
-      control_flow_connections: [
-        {
-          component_type: 'ControlFlowEdge',
-          name: 'start_to_slow',
-          from_node: { $component_ref: 'start' },
-          to_node: { $component_ref: 'slow' },
-        },
-        {
-          component_type: 'ControlFlowEdge',
-          name: 'slow_to_end',
-          from_node: { $component_ref: 'slow' },
-          to_node: { $component_ref: 'end' },
-        },
-      ],
-      $referenced_components: {
-        start: { component_type: 'StartNode', id: 'start', name: 'start' },
-        slow: {
-          component_type: 'ToolNode',
-          id: 'slow',
-          name: 'slow',
-          tool: {
-            component_type: 'ServerTool',
-            id: 'slow_tool',
-            name: 'slow_tool',
-            description: 'sleeps',
-          },
-        },
-        end: { component_type: 'EndNode', id: 'end', name: 'end' },
-      },
+      tools: { slow_tool: { description: 'sleeps', outputs: { done: 'boolean' } } },
+      steps: [{ name: 'slow', tool: 'slow_tool', with: {} }],
     },
   };
 }
@@ -79,27 +46,10 @@ async function startHeldRun(base: string, flow: Record<string, unknown>): Promis
 
 function simpleFlow(): Record<string, unknown> {
   return {
-    component_type: 'Flow',
+    weave: 1,
     name: 'test-flow',
-    start_node: { $component_ref: 'start' },
-    nodes: [{ $component_ref: 'start' }, { $component_ref: 'end' }],
-    control_flow_connections: [
-      {
-        component_type: 'ControlFlowEdge',
-        name: 'start_to_end',
-        from_node: { $component_ref: 'start' },
-        to_node: { $component_ref: 'end' },
-      },
-    ],
-    $referenced_components: {
-      start: {
-        component_type: 'StartNode',
-        id: 'start',
-        name: 'start',
-        outputs: [{ title: 'query', type: 'string' }],
-      },
-      end: { component_type: 'EndNode', id: 'end', name: 'end' },
-    },
+    inputs: { query: { type: 'string', default: '' } },
+    steps: [{ name: 'route', switch: '{{inputs.query}}', else: 'done' }],
   };
 }
 

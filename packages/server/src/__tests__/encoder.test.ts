@@ -107,7 +107,7 @@ function run(query: string, body: Record<string, unknown>): Promise<Response> {
   return fetch(`${base}/v1/runs${query}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ flow: JSON.stringify(FLOW), inputs: { text: 'hi' }, ...body }),
+    body: JSON.stringify({ flow: JSON.stringify(FLOW), inputs: { query: 'hi' }, ...body }),
   });
 }
 
@@ -121,6 +121,8 @@ describe('heddle\'s own rendering, which every existing client is reading', () =
     const all = frames(await res.text());
     expect(all.map((f) => f.name)).toEqual([
       'flow_start',
+      'node_start',
+      'node_complete',
       'node_start',
       'node_complete',
       'node_start',
@@ -157,6 +159,9 @@ describe('a rendering a request submitted', () => {
     expect(all.every((f) => f.name === '')).toBe(true);
     expect(all.map((f) => f.data.type)).toEqual([
       'RUN_STARTED',
+      'STEP_STARTED',
+      'STEP_FINISHED',
+      'STATE_SNAPSHOT',
       'STEP_STARTED',
       'STEP_FINISHED',
       'STATE_SNAPSHOT',

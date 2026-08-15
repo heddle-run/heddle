@@ -17,7 +17,9 @@ import { DEFAULT_RUNNER_OPTIONS } from '../../runner/options.js';
 import type { Event } from '../../runner/events.js';
 import { State } from '../../state/state.js';
 import { MiddlewareChain, MiddlewareError } from '../middleware.js';
-import type { CompiledGraph, CompiledNode } from '../../graph/types.js';
+import { CompiledGraph } from '../../graph/types.js';
+import type { CompiledNode, GraphNodeSpec } from '../../graph/types.js';
+import type { SpecEdge } from '../../spec/resolve.js';
 import { chainOf, policy } from './helpers/seams.js';
 
 /**
@@ -36,28 +38,37 @@ function graphOf(spec: { failFor?: number; branchOut?: boolean } = {}): {
   const node = (
     name: string,
     type: string,
+    nodeSpec: GraphNodeSpec,
     execute: (input: State) => State,
-    edges: Array<{ fromNode: string; fromBranch?: string; toNode: string }>,
+    edges: SpecEdge[],
     branch = '',
-  ): CompiledNode =>
-    ({
-      name,
-      type,
-      specNode: { componentType: type, name } as never,
-      executor: {
-        execute: async (_s: AbortSignal | undefined, input: State) => {
-          ran.push(name);
-          return execute(input);
-        },
-        branch: () => branch,
+  ): CompiledNode => ({
+    name,
+    type,
+    spec: nodeSpec,
+    executor: {
+      execute: async (_s: AbortSignal | undefined, input: State) => {
+        ran.push(name);
+        return execute(input);
       },
-      edges,
-      inputMappings: new Map(),
-    }) as CompiledNode;
+      branch: () => branch,
+    },
+    edges,
+    inputMappings: new Map(),
+  });
 
   const work = node(
     'work',
-    'ToolNode',
+    'tool',
+    {
+      role: 'step',
+      step: {
+        kind: 'tool',
+        name: 'work',
+        tool: { name: 'work', inputs: {}, outputs: {} },
+        args: {},
+      },
+    },
     (input) => {
       attempts++;
       if (attempts <= (spec.failFor ?? 0)) {
@@ -66,38 +77,32 @@ function graphOf(spec: { failFor?: number; branchOut?: boolean } = {}): {
       return input.merge(new State({ worked: true, seen: input.get('seen') }));
     },
     spec.branchOut
-      ? [{ fromNode: 'work', fromBranch: 'onward', toNode: 'done' }]
-      : [{ fromNode: 'work', toNode: 'done' }],
+      ? [{ from: 'work', branch: 'onward', to: 'done' }]
+      : [{ from: 'work', to: 'done' }],
     spec.branchOut ? 'onward' : '',
   );
 
   const nodes = new Map<string, CompiledNode>([
     [
       'start',
-      node('start', 'StartNode', (input) => input, [
-        { fromNode: 'start', toNode: 'work' },
+      node('start', 'start', { role: 'inputs', inputs: {} }, (input) => input, [
+        { from: 'start', to: 'work' },
       ]),
     ],
     ['work', work],
-    ['done', node('done', 'EndNode', (input) => input, [])],
+    [
+      'done',
+      node(
+        'done',
+        'outcome',
+        { role: 'outcome', outcome: { name: 'done' } },
+        (input) => input,
+        [],
+      ),
+    ],
   ]);
 
-  const graph = {
-    name: 'three',
-    start: 'start',
-    getNode: (name: string) => nodes.get(name),
-    nextNode: (current: CompiledNode, wanted: string) => {
-      let fallback: CompiledNode | undefined;
-      for (const edge of current.edges) {
-        const edgeBranch = edge.fromBranch ?? '';
-        if (wanted && edgeBranch === wanted) return nodes.get(edge.toNode);
-        if (!edgeBranch && !fallback) fallback = nodes.get(edge.toNode);
-      }
-      return fallback;
-    },
-  } as unknown as CompiledGraph;
-
-  return { graph, ran: () => ran };
+  return { graph: new CompiledGraph('three', nodes, 'start'), ran: () => ran };
 }
 
 async function run(
@@ -157,7 +162,7 @@ describe('before a node runs', () => {
       })),
     );
 
-    expect(types).toEqual(['StartNode', 'ToolNode', 'EndNode']);
+    expect(types).toEqual(['start', 'tool', 'outcome']);
   });
 
   it('runs the node with an input a middleware edited', async () => {

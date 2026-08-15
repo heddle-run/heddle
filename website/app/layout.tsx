@@ -73,14 +73,14 @@ export const metadata: Metadata = {
     template: "%s — heddle",
   },
   description:
-    "heddle runs multi-step AI jobs described in a plain text file: read these files, decide what matters, write the summary. One free, open-source program on your own computer — with an OS-enforced sandbox, sessions, and the same file runnable behind a server. Flows are written in a published open format, portable to any conforming runtime.",
+    "heddle runs multi-step AI jobs described in a plain text file: read these files, decide what matters, write the summary. One free, open-source program on your own computer — with an OS-enforced sandbox, sessions, and the same file runnable behind a server. Flows are written in Weave, an open, documented format: one plain file that says everything the runtime will do.",
   keywords: [
     "heddle",
     "declarative agent runtime",
     "batteries included",
     "agent runtime",
-    "agent spec",
-    "open agent specification",
+    "weave",
+    "weave format",
     "ai agents",
     "agentic workflows",
     "no sdk",

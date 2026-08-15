@@ -9,7 +9,7 @@ import { PluginRegistry } from '../registry.js';
 import { loadRemotePlugin } from '../remote-loader.js';
 import { validateManifest } from '../manifest.js';
 import { withRuntime } from '../runtime-source.js';
-import { checkPluginComponents } from '../flow-preprocess.js';
+import { parseFlowObject } from '../../spec/parser.js';
 import { readWireFrames } from '../protocol.js';
 import {
   builtinEncoder,
@@ -367,15 +367,19 @@ describe('what an encoder may not take', () => {
     );
   });
 
-  it('refuses a spec that names an encoder as a component', () => {
+  it('refuses a document that writes an encoder as a step, naming its kind', () => {
     const registry = PluginRegistry.fromPlugins([encoderPlugin('ag-ui')]);
 
     expect(() =>
-      checkPluginComponents(
-        { nodes: [{ component_type: 'AgUiEncoder', name: 'render' }] },
+      parseFlowObject(
+        {
+          weave: 1,
+          name: 'renders',
+          steps: [{ name: 'render', use: 'AgUiEncoder' }],
+        },
         registry,
       ),
-    ).toThrow(/is an encoder.*chosen by the request/s);
+    ).toThrow(/provides as a encoder rather than a node/);
   });
 });
 

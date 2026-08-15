@@ -23,13 +23,13 @@ final class ServerClientTests: XCTestCase {
 
     func testRunRequestSendsInlineFlowAndAnswerVerbatim() throws {
         var body = RunRequest()
-        body.flow = .string("component_type: Flow")
+        body.flow = .string("weave: 1")
         body.inputs = ["query": .string("hi")]
         body.resume = true
         body.answer = .object(["approved": .bool(true)])
 
         let json = try encoded(body).objectValue
-        XCTAssertEqual(json?["flow"], .string("component_type: Flow"))
+        XCTAssertEqual(json?["flow"], .string("weave: 1"))
         XCTAssertEqual(json?["inputs"], .object(["query": .string("hi")]))
         XCTAssertEqual(json?["resume"], .bool(true))
         XCTAssertEqual(json?["answer"]?.objectValue?["approved"], .bool(true))

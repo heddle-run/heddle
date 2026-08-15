@@ -1,122 +1,25 @@
-component_type: Flow
-agentspec_version: 26.2.0
-id: reviewer-flow-0001
-name: code-reviewer-flow
-description: Sub-agent flow that reviews code for bugs, security issues, and improvements.
-metadata: {}
-inputs: []
-outputs: []
-start_node:
-  $component_ref: reviewer-start-0001
-nodes:
-  - $component_ref: reviewer-start-0001
-  - $component_ref: reviewer-agent-node-0001
-  - $component_ref: reviewer-end-0001
-control_flow_connections:
-  - component_type: ControlFlowEdge
-    id: reviewer-edge-start
-    name: start_to_reviewer
-    metadata: {}
-    from_node:
-      $component_ref: reviewer-start-0001
-    from_branch: null
-    to_node:
-      $component_ref: reviewer-agent-node-0001
-  - component_type: ControlFlowEdge
-    id: reviewer-edge-end
-    name: reviewer_to_end
-    metadata: {}
-    from_node:
-      $component_ref: reviewer-agent-node-0001
-    from_branch: null
-    to_node:
-      $component_ref: reviewer-end-0001
-data_flow_connections:
-  - component_type: DataFlowEdge
-    id: reviewer-data-start
-    name: task_to_reviewer
-    metadata: {}
-    source_node:
-      $component_ref: reviewer-start-0001
-    source_output: task
-    destination_node:
-      $component_ref: reviewer-agent-node-0001
-    destination_input: task
-  - component_type: DataFlowEdge
-    id: reviewer-data-end
-    name: reviewer_result_to_end
-    metadata: {}
-    source_node:
-      $component_ref: reviewer-agent-node-0001
-    source_output: result
-    destination_node:
-      $component_ref: reviewer-end-0001
-    destination_input: result
-$referenced_components:
-  reviewer-start-0001:
-    component_type: StartNode
-    id: reviewer-start-0001
-    name: start
-    metadata: {}
-    inputs: []
-    outputs:
-      - title: task
-        type: string
-    branches:
-      - next
-  reviewer-agent-node-0001:
-    component_type: AgentNode
-    id: reviewer-agent-node-0001
-    name: reviewer
-    metadata: {}
-    inputs:
-      - title: task
-        type: string
-    outputs:
-      - title: result
-        type: string
-    branches:
-      - next
-    agent:
-      component_type: Agent
-      id: reviewer-agent-0001
-      name: code-reviewer
-      description: Reviews code for bugs, security issues, performance problems, and style improvements
-      metadata: {}
-      inputs:
-        - title: task
-          type: string
-      outputs:
-        - title: result
-          type: string
-      llm_config:
-        component_type: OpenAiConfig
-        id: reviewer-llm-0001
-        name: openai-gpt4o
-        metadata: {}
-        model_id: gpt-4o
-        api_key: $OPENAI_API_KEY
-        api_type: chat_completions
-      system_prompt: |
-        You are a code reviewer. Analyze the provided code for:
+# A standalone one-agent document: top-level `agent:` is sugar for a
+# single-step flow. `delegate_task.sh` runs it as an independent heddle run.
+weave: 1
+name: code-reviewer
+description: Sub-agent that reviews code for bugs, security issues, and improvements.
 
-        1. **Bugs** — logic errors, off-by-one errors, null/undefined handling
-        2. **Security issues** — injection vulnerabilities, unsafe operations, credential exposure
-        3. **Performance** — unnecessary allocations, O(n^2) patterns, missing caching opportunities
-        4. **Style** — naming, consistency, readability improvements
+inputs:
+  task: string
 
-        Be specific with line references when possible. Provide actionable feedback organized by severity (critical, warning, suggestion).
+agent:
+  model:
+    provider: openai
+    model: gpt-4o
+    api_key: $OPENAI_API_KEY
+  prompt: |
+    You are a code reviewer. Analyze the provided code for:
 
-        Review task: {{task}}
-      tools: []
-  reviewer-end-0001:
-    component_type: EndNode
-    id: reviewer-end-0001
-    name: end
-    metadata: {}
-    inputs:
-      - title: result
-        type: string
-    outputs: []
-    branches: []
-    branch_name: next
+    1. **Bugs** — logic errors, off-by-one errors, null/undefined handling
+    2. **Security issues** — injection vulnerabilities, unsafe operations, credential exposure
+    3. **Performance** — unnecessary allocations, O(n^2) patterns, missing caching opportunities
+    4. **Style** — naming, consistency, readability improvements
+
+    Be specific with line references when possible. Provide actionable feedback organized by severity (critical, warning, suggestion).
+
+    Review task: {{inputs.task}}

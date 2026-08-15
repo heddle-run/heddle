@@ -9,97 +9,35 @@ const ORIGIN = 'https://heddle.run';
 
 function toolFlow(toolName = 'echo_upper'): Record<string, unknown> {
   return {
-    component_type: 'Flow',
+    weave: 1,
     name: 'tool-flow',
-    start_node: { $component_ref: 'start' },
-    nodes: [
-      { $component_ref: 'start' },
-      { $component_ref: 'run' },
-      { $component_ref: 'end' },
-    ],
-    control_flow_connections: [
-      {
-        component_type: 'ControlFlowEdge',
-        name: 'start_to_run',
-        from_node: { $component_ref: 'start' },
-        to_node: { $component_ref: 'run' },
+    inputs: { text: 'string' },
+    tools: {
+      [toolName]: {
+        description: 'uppercases text',
+        inputs: { text: 'string' },
+        outputs: { text: 'string' },
       },
-      {
-        component_type: 'ControlFlowEdge',
-        name: 'run_to_end',
-        from_node: { $component_ref: 'run' },
-        to_node: { $component_ref: 'end' },
-      },
-    ],
-    $referenced_components: {
-      start: {
-        component_type: 'StartNode',
-        id: 'start',
-        name: 'start',
-        outputs: [{ title: 'text', type: 'string' }],
-      },
-      run: {
-        component_type: 'ToolNode',
-        id: 'run',
-        name: 'run',
-        tool: {
-          component_type: 'ServerTool',
-          id: 'tool',
-          name: toolName,
-          description: 'uppercases text',
-        },
-      },
-      end: { component_type: 'EndNode', id: 'end', name: 'end' },
     },
+    steps: [{ name: 'run', tool: toolName, with: { text: '{{inputs.text}}' } }],
   };
 }
 
 function pluginFlow(): Record<string, unknown> {
   return {
-    component_type: 'Flow',
+    weave: 1,
     name: 'plugin-flow',
-    start_node: { $component_ref: 'start' },
-    nodes: [
-      { $component_ref: 'start' },
-      { $component_ref: 'shout' },
-      { $component_ref: 'end' },
+    inputs: { text: 'string' },
+    steps: [
+      { name: 'shout', use: 'ShoutNode', with: { text: '{{inputs.text}}' } },
     ],
-    control_flow_connections: [
-      {
-        component_type: 'ControlFlowEdge',
-        name: 'start_to_shout',
-        from_node: { $component_ref: 'start' },
-        to_node: { $component_ref: 'shout' },
-      },
-      {
-        component_type: 'ControlFlowEdge',
-        name: 'shout_to_end',
-        from_node: { $component_ref: 'shout' },
-        to_node: { $component_ref: 'end' },
-      },
-    ],
-    $referenced_components: {
-      start: {
-        component_type: 'StartNode',
-        id: 'start',
-        name: 'start',
-        outputs: [{ title: 'text', type: 'string' }],
-      },
-      shout: {
-        component_type: 'ShoutNode',
-        id: 'shout',
-        name: 'shout',
-        component_plugin_name: 'test-plugin',
-        component_plugin_version: '1.0.0',
-      },
-      end: { component_type: 'EndNode', id: 'end', name: 'end' },
-    },
   };
 }
 
+/** Uppercases the JSON line it is fed, then restores the key it must answer with. */
 const ECHO_UPPER = `
 read -r line
-printf '%s' "$line" | tr '[:lower:]' '[:upper:]'
+printf '%s' "$line" | tr '[:lower:]' '[:upper:]' | sed 's/"TEXT"/"text"/'
 `;
 
 const SHOUT_MANIFEST = {
@@ -232,7 +170,7 @@ describe('request-submitted tools', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({
       flow: 'tool-flow',
-      state: { TEXT: 'HELLO' },
+      state: { text: 'HELLO' },
     });
   });
 
@@ -288,7 +226,7 @@ describe('request-submitted plugins', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
       flow: 'plugin-flow',
-      state: { text: 'QUIET' },
+      state: { text: 'QUIET', outcome: 'done' },
     });
   });
 
@@ -369,7 +307,7 @@ describe('request-submitted plugins', () => {
 
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({
-      state: { text: '{"TEXT":"HELLO"}' },
+      state: { text: '{"text":"HELLO"}' },
     });
   });
 
@@ -519,8 +457,8 @@ describe('malformed flows', () => {
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: { type: string; message: string } };
     expect(body.error.type).toBe('SpecError');
-    expect(body.error.message).toContain('Agent Spec flow');
-    expect(body.error.message).toContain('start_node');
+    expect(body.error.message).toContain('not a Weave document');
+    expect(body.error.message).toContain('"weave: 1"');
   });
 
   it('passes a YAML syntax error through, which is already clear', async () => {
@@ -654,42 +592,12 @@ describe('streaming with submitted code', () => {
 });
 
 describe('specs cannot read the server environment', () => {
-  function agentFlowWith(llmConfig: Record<string, unknown>): Record<string, unknown> {
+  function agentFlowWith(model: Record<string, unknown>): Record<string, unknown> {
     return {
-      component_type: 'Flow',
+      weave: 1,
       name: 'env-probe',
-      start_node: { $component_ref: 's' },
-      nodes: [{ $component_ref: 's' }, { $component_ref: 'a' }, { $component_ref: 'e' }],
-      control_flow_connections: [
-        {
-          component_type: 'ControlFlowEdge',
-          name: 'x',
-          from_node: { $component_ref: 's' },
-          to_node: { $component_ref: 'a' },
-        },
-        {
-          component_type: 'ControlFlowEdge',
-          name: 'y',
-          from_node: { $component_ref: 'a' },
-          to_node: { $component_ref: 'e' },
-        },
-      ],
-      $referenced_components: {
-        s: { component_type: 'StartNode', id: 's', name: 's' },
-        a: {
-          component_type: 'AgentNode',
-          id: 'a',
-          name: 'a',
-          agent: {
-            component_type: 'Agent',
-            id: 'ia',
-            name: 'ia',
-            system_prompt: 'x',
-            llm_config: llmConfig,
-          },
-        },
-        e: { component_type: 'EndNode', id: 'e', name: 'e' },
-      },
+      inputs: { query: 'string' },
+      agent: { model, prompt: 'x: {{inputs.query}}' },
     };
   }
 
@@ -698,10 +606,8 @@ describe('specs cannot read the server environment', () => {
     try {
       const res = await post('/v1/runs', {
         flow: agentFlowWith({
-          component_type: 'OpenAiConfig',
-          id: 'l',
-          name: 'l',
-          model_id: 'gpt-4o',
+          provider: 'openai',
+          model: 'gpt-4o',
           url: 'http://127.0.0.1:9/never-reached',
           api_key: '$HEDDLE_UNRELATED_SECRET',
         }),
@@ -720,10 +626,8 @@ describe('specs cannot read the server environment', () => {
   it('does not reveal whether a variable exists', async () => {
     const forAbsent = await post('/v1/runs', {
       flow: agentFlowWith({
-        component_type: 'OpenAiConfig',
-        id: 'l',
-        name: 'l',
-        model_id: 'gpt-4o',
+        provider: 'openai',
+        model: 'gpt-4o',
         api_key: '$DEFINITELY_NOT_SET_ANYWHERE',
       }),
       inputs: { query: 'hi' },
@@ -734,10 +638,8 @@ describe('specs cannot read the server environment', () => {
     try {
       const forPresent = await post('/v1/runs', {
         flow: agentFlowWith({
-          component_type: 'OpenAiConfig',
-          id: 'l',
-          name: 'l',
-          model_id: 'gpt-4o',
+          provider: 'openai',
+          model: 'gpt-4o',
           api_key: '$HEDDLE_PRESENT',
         }),
         inputs: { query: 'hi' },
@@ -755,10 +657,8 @@ describe('specs cannot read the server environment', () => {
   it('still accepts a credential written into the spec', async () => {
     const res = await post('/v1/runs', {
       flow: agentFlowWith({
-        component_type: 'OpenAiConfig',
-        id: 'l',
-        name: 'l',
-        model_id: 'gpt-4o',
+        provider: 'openai',
+        model: 'gpt-4o',
         url: 'http://127.0.0.1:9/unreachable',
         api_key: 'sk-callers-own-key',
       }),
@@ -792,27 +692,16 @@ describe('the operator credential is bound to the operator endpoint', () => {
 
   function agentFlow(llm: Record<string, unknown>): Record<string, unknown> {
     return {
-      component_type: 'Flow',
+      weave: 1,
       name: 'ask',
-      start_node: { $component_ref: 's' },
-      nodes: [{ $component_ref: 's' }, { $component_ref: 'a' }, { $component_ref: 'e' }],
-      control_flow_connections: [
-        { component_type: 'ControlFlowEdge', name: 'x', from_node: { $component_ref: 's' }, to_node: { $component_ref: 'a' } },
-        { component_type: 'ControlFlowEdge', name: 'y', from_node: { $component_ref: 'a' }, to_node: { $component_ref: 'e' } },
-      ],
-      $referenced_components: {
-        s: { component_type: 'StartNode', id: 's', name: 's' },
-        a: {
-          component_type: 'AgentNode', id: 'a', name: 'a',
-          agent: {
-            component_type: 'Agent', id: 'ia', name: 'ia', system_prompt: 'x',
-          llm_config: {
-            component_type: llm.url ? 'OpenAiCompatibleConfig' : 'OpenAiConfig',
-            id: 'l', name: 'l', model_id: 'm', ...llm,
-          },
-          },
+      inputs: { query: 'string' },
+      agent: {
+        model: {
+          provider: llm.url ? 'openai-compatible' : 'openai',
+          model: 'm',
+          ...llm,
         },
-        e: { component_type: 'EndNode', id: 'e', name: 'e' },
+        prompt: 'x: {{inputs.query}}',
       },
     };
   }

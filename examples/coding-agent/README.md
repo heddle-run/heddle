@@ -1,14 +1,14 @@
 # coding-agent: file operations, shell, planning, and sub-agents
 
-A single `AgentNode` given the toolset of a coding assistant: it can explore a
+A single `agent` step given the toolset of a coding assistant: it can explore a
 codebase, edit files, run commands, keep a plan, and delegate specialized work
 to sub-agents that are themselves heddle flows.
 
 | File | What it is |
 |------|------------|
-| `spec.yaml` | The flow: `start → coder → end`, one agent, eight tools |
+| `spec.yaml` | The flow: one `coder` agent step, eight tools |
 | `tools/` | The eight tool executables, shell and Python |
-| `agents/` | Two sub-agent flows, run by the `delegate_task` tool |
+| `agents/` | Two sub-agent documents, run by the `delegate_task` tool |
 
 ## The tools
 
@@ -29,8 +29,8 @@ explore first, plan before acting, edit rather than rewrite, verify with
 
 ## The agents/ subdirectory
 
-`agents/` holds two more Agent Spec flows, each the same three-node shape as
-the main one:
+`agents/` holds two more Weave documents, each written with the top-level
+`agent:` sugar — a whole document that is one agent step:
 
 - `code_reviewer.yaml` reviews code for bugs, security issues and improvements
 - `test_writer.yaml` generates test cases for code
@@ -61,12 +61,13 @@ heddle run examples/coding-agent/spec.yaml \
 From a source checkout, build first (`pnpm install && pnpm build`) and use
 `node packages/cli/dist/heddle.js run …` with the same arguments.
 
-The final state lands on stdout:
+The run's result lands on stdout:
 
 ```json
 {
   "task": "...",
-  "result": "The directory contains ..."
+  "result": "The directory contains ...",
+  "outcome": "done"
 }
 ```
 

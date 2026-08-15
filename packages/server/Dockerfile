@@ -43,21 +43,16 @@ RUN corepack enable
 
 # Manifests first, so a source-only change does not re-resolve the lockfile.
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
-COPY vendor/agentspec/package.json ./vendor/agentspec/
 COPY packages/core/package.json ./packages/core/
 COPY packages/cli/package.json ./packages/cli/
 COPY packages/server/package.json ./packages/server/
 
-# --ignore-scripts: the root `prepare` script builds the vendored SDK, which
-# needs sources that have not been copied yet. It is run explicitly below.
 RUN pnpm install --frozen-lockfile --ignore-scripts
 
-COPY vendor/agentspec ./vendor/agentspec
 COPY packages/core ./packages/core
 COPY packages/server ./packages/server
 
-RUN pnpm run build:vendor \
- && pnpm --filter @heddle-run/core build \
+RUN pnpm --filter @heddle-run/core build \
  && pnpm --filter @heddle-run/server build
 
 # Strip out everything that is not needed to run: dev dependencies, sources,

@@ -6,11 +6,11 @@ import type { PluginRegistry } from '../plugin/registry.js';
  * An input wire format: one way a spec document reaches heddle as text.
  *
  * `parse` turns raw text into the one shape the rest of the pipeline consumes
- * — a plain object in Agent Spec's wire vocabulary (`component_type`,
- * snake_case keys, `$component_ref` references). Everything downstream of that
- * object — plugin checks, deserialization, graph compilation — is format-blind,
- * so a new format adapts at this seam and touches nothing else. A format whose
- * native schema is not Agent Spec translates to that vocabulary here.
+ * — a plain object in Weave's vocabulary (`weave: 1`, `steps`, snake_case
+ * keys). Everything downstream of that object — parsing, resolution, graph
+ * compilation — is format-blind, so a new format adapts at this seam and
+ * touches nothing else. A format whose native schema is not Weave translates
+ * to that vocabulary here.
  */
 export interface InputFormatDef {
   /**
@@ -20,7 +20,7 @@ export interface InputFormatDef {
   name: string;
   /** Extensions this format claims for path-based detection, dot included. */
   extensions: readonly string[];
-  /** Raw text to an Agent Spec document. */
+  /** Raw text to a Weave document. */
   parse(text: string): unknown;
 }
 

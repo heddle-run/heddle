@@ -1,20 +1,20 @@
 # heddle
 
-A runtime for agentic workflows written as [Open Agent Specification](https://oracle.github.io/agent-spec/) documents.
+A runtime for agentic workflows written as **Weave** documents — heddle's own declarative format.
 
-heddle needs no SDK. The workflow is a document, YAML or JSON, naming nodes, the edges between them, the model each agent calls and the tools they may use. heddle is what you point at it. One document runs two ways: `heddle run` on your machine, `heddle-server` over HTTP, with no rewrite between them.
+heddle needs no SDK. The workflow is a document, YAML or JSON (`weave.yaml` by convention), declaring its inputs, the steps that run in order, the model each agent calls and the tools they may use. heddle is what you point at it. One document runs two ways: `heddle run` on your machine, `heddle-server` over HTTP, with no rewrite between them.
 
 ## Features
 
 | | |
 |---|---|
-| Agent Spec compliant | Implements the [Open Agent Specification](https://oracle.github.io/agent-spec/), so a flow is portable off heddle |
-| Graph-based execution | Flows compile into directed graphs with control flow and data flow edges |
+| The Weave format | One strict document (`weave: 1`): steps run in order, `{{references}}` are the data wiring, and nothing unenforced is representable |
+| Graph-based execution | Flows compile into directed graphs derived from step order, `then:` jumps and `switch` branches |
 | LLM integration | An OpenAI-compatible provider, with the tool-calling loop built in |
 | External tools | Standalone executables (shell, Python, anything) speaking JSON over stdin and stdout |
 | Per-agent workspace | Each agent's tools share one writable directory and can reach each other by name; `--mount` puts your files in it |
-| Branching logic | Conditional routing with `BranchingNode` |
-| Validation | Spec-level and graph-level checks catch errors before execution |
+| Branching logic | Conditional routing with `switch` steps — `cases` plus a required `else` |
+| Validation | Structure, references and graph are all checked at load time: a document that validates is one that starts |
 | Scaffolding | `heddle init` writes a flow and a working tool to run |
 
 ## Packages
@@ -26,9 +26,6 @@ This repository is a pnpm workspace:
 | [`@heddle-run/core`](packages/core) | The engine: spec parsing, graph compilation, node executors, runner, tools, LLM providers. No CLI dependencies, so you can use it as a library. |
 | [`@heddle-run/cli`](packages/cli) | The `heddle` command: run, validate, init, sessions, and interactive chat. |
 | [`@heddle-run/server`](packages/server) | HTTP API over the same engine, with SSE streaming of execution events. **Unauthenticated. Read its [README](packages/server/README.md) before binding it anywhere but localhost.** |
-
-`vendor/agentspec` holds the Oracle Agent Spec TypeScript SDK, vendored because
-it is not published to npm. See [vendor/agentspec/VENDOR.md](vendor/agentspec/VENDOR.md).
 
 ## Installation
 
@@ -42,7 +39,7 @@ npx @heddle-run/cli run coding-agent
 Or your own flow:
 
 ```bash
-npx @heddle-run/cli run flow.json --tools-dir tools --input '{"query": "hello"}'
+npx @heddle-run/cli run weave.yaml --tools-dir tools --input '{"query": "hello"}'
 ```
 
 Every `heddle` in this README can be spelled `npx @heddle-run/cli`. Either way the
@@ -67,7 +64,7 @@ This creates:
 
 ```
 my-project/
-  flow.json              - Agent Spec flow definition
+  weave.yaml             - Weave flow definition
   tools/example_tool.sh  - Example tool script
 ```
 
@@ -84,7 +81,7 @@ Every provider needs a resolvable key, local ones included. See [LLM configurati
 ### 3. Run a flow
 
 ```bash
-heddle run my-project/flow.json \
+heddle run my-project/weave.yaml \
   --tools-dir my-project/tools \
   --input '{"query": "hello"}'
 ```
@@ -94,7 +91,7 @@ The final state is printed to stdout as JSON; progress and errors go to stderr.
 ### 4. Validate a flow
 
 ```bash
-heddle validate my-project/flow.json --tools-dir my-project/tools
+heddle validate my-project/weave.yaml --tools-dir my-project/tools
 ```
 
 ## CLI reference
@@ -103,7 +100,7 @@ heddle validate my-project/flow.json --tools-dir my-project/tools
 heddle [--verbose] <command>
 
 Commands:
-  run <flow>               Run an Agent Spec flow (JSON or YAML), or a
+  run <flow>               Run a Weave flow (weave.yaml or JSON), or a
                            .heddle bundle
   validate <flow>          Validate a flow or bundle without running it
   bundle <flow>            Pack a flow and everything it runs with into one
@@ -119,7 +116,7 @@ The `run` flags you will reach for first:
 | Flag | What it does |
 |---|---|
 | `--tools-dir <dir>` | Directory containing tool executables |
-| `--input <json>` | Input JSON object for the flow's start node |
+| `--input <json>` | Input JSON object for the flow's `inputs` |
 | `--session [id]` | Keep this run in a conversation on disk; see [Sessions](#sessions) |
 | `-i, --interactive` | Open the terminal chat UI; see [Interactive chat](#interactive-chat) |
 | `--plugin <module>` | Load custom component types (repeatable); see [Plugins](#plugins) |
@@ -167,17 +164,17 @@ it without re-running anything that already ran. See
 with `--session` it is kept, and a later `-i --session <id>` opens on the conversation so far.
 Type `/exit` to quit.
 
-Your message is bound to the first output declared on the flow's start node, falling back
+Your message is bound to the first key declared under the flow's `inputs`, falling back
 to `query` when none is declared.
 
 > **Note:** an in-flight run cannot be interrupted. `Ctrl+C` and `/exit` close the session,
 > but a flow already executing runs until it finishes or hits the five-minute timeout.
 
-> **Note:** `heddle validate` exits 1 when a spec does not parse, when its graph is
-> invalid, and when the flow names a tool nothing provides. The one thing it tolerates is a
-> graph it could not compile at all, reported as `Graph validation skipped` with the reason
-> and exit 0. The skip is there so a check that could not run is not mistaken for a fault.
-> Read the output as well as the status.
+> **Note:** `heddle validate` exits 1 when a document does not parse, when a reference
+> or branch target does not resolve, when the graph is invalid, and when the flow names a
+> tool nothing provides. Validation is complete before anything starts: an unknown key, a
+> `{{reference}}` nothing produces, or a case target that does not exist is a load-time
+> error, not a mid-run death. A flow that validates is a flow that starts.
 
 ### Bundles
 
@@ -228,7 +225,40 @@ so it is refused with a pointer at the manifest format.
 
 ### Flow definition
 
-Flows are JSON or YAML files following the [Open Agent Specification](https://oracle.github.io/agent-spec/) format. A flow consists of **nodes** connected by **control flow** (execution order) and **data flow** (data passing) edges. Nodes and edges use `$component_ref` references; see `testdata/` for examples.
+Flows are **Weave** documents: YAML or JSON, `weave.yaml` by convention, starting
+with the format version `weave: 1`. A document declares its `inputs`, its
+`models` and `tools`, then an ordered list of `steps` ending in `outcomes`.
+Control flow is the list order — plus `then:` jumps and `switch` branches — and
+data flow is `{{inputs.field}}` / `{{step.key}}` references. There are no ids
+and no edge lists; the wiring is implied by order and by the references
+themselves, and every reference is checked at load time.
+
+```yaml
+weave: 1
+name: notetaker
+description: Transcribes a recording and writes a summary note.
+
+inputs:
+  recording: string
+
+tools:
+  transcribe:
+    description: Transcribe an audio file.
+    inputs: { path: string }
+    outputs: { text: string }
+
+agent: # a document with a top-level agent is sugar for a one-step flow
+  model:
+    provider: ollama
+    model: qwen2.5:7b
+  prompt: |
+    Transcribe the recording at {{inputs.recording}} with the transcribe
+    tool, then write a one-paragraph summary note.
+  tools: [transcribe]
+```
+
+The full design, with worked multi-step examples, is in
+[docs/weave-spec-design.md](docs/weave-spec-design.md).
 
 ### Input formats
 
@@ -236,10 +266,10 @@ JSON and YAML are not baked in: they are the two builtin **input formats**,
 and a plugin can add more. An input format is the input mirror of an encoder.
 Where an encoder renders the run's event stream into another wire format on the
 way out, an input format reads a spec document in from another wire format. It
-turns raw text into an Agent Spec document (the `component_type` /
-`$component_ref` vocabulary above), and everything past that point (validation,
-compilation, execution) never knows which format the bytes arrived in. A format
-whose native schema is not Agent Spec translates to it in its `parse`.
+turns raw text into a Weave document (the `weave: 1` vocabulary above), and
+everything past that point (validation, compilation, execution) never knows
+which format the bytes arrived in. A format whose native schema is not Weave
+translates to it in its `parse`.
 
 A format is selected three ways, all naming the same registry:
 
@@ -260,7 +290,7 @@ export default {
     {
       name: 'toml',
       extensions: ['.toml'],
-      parse: (text) => parseToml(text), // → an Agent Spec document
+      parse: (text) => parseToml(text), // → a Weave document
     },
   ],
 };
@@ -271,21 +301,25 @@ same name or extension are refused at load, because what a spec file means may
 not depend on plugin load order.
 
 `parse` does not have to be a decoder: a format for a *different spec* is a
-translator into Agent Spec's vocabulary. See
+translator into Weave's vocabulary. See
 [examples/docker-agent](examples/docker-agent) for a worked one that reads a
 [Docker agent file](https://docs.docker.com/ai/docker-agent/configuration/overview/)
 and runs it as the flow it describes.
 
-### Node types
+### Step verbs
 
-| Node | Description |
-|------|-------------|
-| `StartNode` | Entry point of the flow. Defines expected inputs. |
-| `EndNode` | Exit point. Supports named branches for multi-branch flows. |
-| `AgentNode` | LLM-powered agent with a system prompt and optional tools. Runs an automatic tool-calling loop (up to 10 rounds). |
-| `LlmNode` | Runs a prompt template through an LLM. Supports `{{variable}}` substitution. |
-| `ToolNode` | Executes an external tool directly within the flow. |
-| `BranchingNode` | Routes execution to different branches based on an input-to-branch mapping. |
+Each step declares a `name` and exactly one verb:
+
+| Verb | Description | Writes |
+|------|-------------|--------|
+| `agent:` | LLM-powered agent with a system prompt and optional tools. Runs an automatic tool-calling loop (up to 10 rounds). | `result` — or, with an `output:` schema declared, exactly those keys as enforced JSON |
+| `llm:` | One completion through a model, no tools. The prompt is a template. | `text` |
+| `tool:` | Executes an external tool directly, with arguments from `with:`. | the tool's declared `outputs`, checked against what the executable returned |
+| `switch:` | Routes on one `{{reference}}`, compared against `cases:` keys; `else:` is required. | nothing |
+| `use:` | A plugin-defined step; `with:` is the component's config. | what the plugin's manifest declares |
+
+The flow's entry is its `inputs` declaration; its exits are the `outcomes` map,
+each outcome naming the payload the run returns when it ends there.
 
 ### Tools
 
@@ -299,9 +333,12 @@ MESSAGE=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin
 echo "{\"response\": \"Echo: $MESSAGE\"}"
 ```
 
-Tools are declared inline as `ServerTool` components in the flow, and matched at runtime to an
-executable in `--tools-dir` by name. A tool's name is its filename with the extension stripped,
-so `fetch_api.py` is declared as `fetch_api`.
+Tools are declared once in the document's top-level `tools:` map — name,
+description, input and output schemas — and matched at runtime to an executable
+in `--tools-dir` by name. A tool's name is its filename with the extension
+stripped, so `fetch_api.py` is declared as `fetch_api`. An input without a
+`default` is reported to the model as required; on a `tool:` step the declared
+outputs are a contract, checked against what the executable actually returned.
 
 > **Warning:** by default tools run as subprocesses of `heddle` and inherit its full
 > environment, API keys included, so a tool can read and write anything the invoking user can.
@@ -320,10 +357,10 @@ $HEDDLE_WORKSPACE/       # the tool's cwd, and its scratch
 └── .heddle/bin/         # every tool, reachable by name
 ```
 
-**One workspace per `AgentNode` execution**, shared by every tool call that agent
+**One workspace per agent step execution**, shared by every tool call that agent
 makes, so an agent's tools can pass files to each other (write a CSV in one
 call, run a script over it in the next) while a different agent sees an empty
-one. It is removed when the agent finishes. A bare `ToolNode` gets a throwaway
+one. It is removed when the agent finishes. A bare `tool:` step gets a throwaway
 of its own.
 
 Every tool is also linked into `.heddle/bin`, which is on `PATH`, so a tool can
@@ -368,7 +405,7 @@ around afterwards.
 `--safe` runs every tool inside an OS sandbox:
 
 ```bash
-heddle run flow.json --tools-dir ./tools --safe
+heddle run weave.yaml --tools-dir ./tools --safe
 ```
 
 Backends are picked automatically: **bubblewrap** on Linux, **Seatbelt**
@@ -393,7 +430,7 @@ rather than fail.
 
 #### Per-agent sessions
 
-Every `AgentNode` execution opens its own sandbox session, over that node's own
+Every agent step execution opens its own sandbox session, over that step's own
 [workspace](#the-workspace). Each tool call is still its own container, and what
 `--safe` adds is enforcement: the workspace becomes the only place a tool *can*
 write, and a `ro` mount inside it is refused a write outright.
@@ -428,11 +465,10 @@ write, and a `ro` mount inside it is refused a write outright.
 
 ### Plugins
 
-Custom component types beyond the builtin list come from plugins. A plugin is an
+Custom component types beyond the builtin verbs come from plugins. A plugin is an
 ES module that default-exports its component declarations. It can contribute
-**transforms** (attached to `Agent.transforms`, running before or after the model
-call), **nodes** (placed in a flow's graph), or plain **components** nested inside
-either:
+**transforms** (attached to an agent step's `transforms:`, running before or
+after the model call) and **nodes** (a `use:` step placed in the flow):
 
 ```js
 export default {
@@ -451,43 +487,45 @@ export default {
 ```
 
 ```bash
-heddle run flow.json --plugin ./plugin.js
+heddle run weave.yaml --plugin ./plugin.js
 ```
 
-One declaration drives both halves: it becomes an [Agent Spec deserialization
-plugin](https://oracle.github.io/agent-spec/26.1.2/howtoguides/howto_plugin.html)
-so the custom `component_type` parses and round-trips, and it registers the
-executor that makes the component run. Agent Spec's own plugin system covers only
-the serialization half.
+One declaration drives both halves: it tells the validator what the component's
+config may say (a `validate` hook, or a JSON Schema in a manifest plugin), and
+it registers the executor that makes the component run. In the document, the
+component appears as `use: <Type>` on a step (config under `with:`) or
+`- use: <Type>` in a transforms list (config as the remaining keys). A document
+can also pin the plugin version it was written against with a top-level
+`requires:` map (`SecretScrub: '^1.0'`), checked at load.
 
 Plugins are named on the command line, never inside a flow file, so sharing a spec
-can never cause code to be executed. A plugin node's branch names must be static,
-because the graph is validated for reachability before anything runs.
+can never cause code to be executed.
 
 A transform returning `reject` is what makes guardrails work. In the `pre` phase
 heddle skips the model call entirely, so a blocked prompt costs nothing; the agent
-returns `transform_status: "rejected"`, which a builtin `BranchingNode` can route on.
+writes `transform_status: "rejected"`, which a `switch` step can route on.
 
 Nodes and transforms are both handed a `ctx` with the same five things:
 `runTool`, `callModel`, `emitEvent`, `log`, and for a node `getWorkspace`.
 
 `ctx.callModel({ messages })` is how a plugin thinks: an LLM judge, a semantic
 router, a summarizer. **The plugin does not choose the model.** heddle calls the
-`llm_config` written on the plugin's own component in the spec, exactly as it
+`model` written on the plugin's own component in the spec, exactly as it
 would an agent's, so the plugin ships no SDK, holds no credential, and cannot
 send a request anywhere the flow does not say it will go:
 
 ```yaml
-- component_type: LlmJudge
-  name: judge
-  rubric: "Is the answer supported by the sources?"
-  llm_config:
-    component_type: OpenAiConfig
-    model_id: gpt-4o-mini
+- name: judge
+  use: LlmJudge
+  with:
+    rubric: "Is the answer supported by the sources?"
+    model:
+      provider: openai
+      model: gpt-4o-mini
 ```
 
-Anything a spec sets under `default_generation_parameters`, such as `temperature`,
-`max_tokens` and `top_p`, is sent with the request, for agents and `LlmNode`s too.
+Anything a spec sets under a model's `params` — `temperature`, `max_tokens` and
+`top_p` — is sent with the request, for agents and `llm` steps too.
 
 See [examples/guardrails](examples/guardrails) for a worked example: a `Processor`
 transform used as both a pre- and post-processor on an agent.
@@ -517,14 +555,14 @@ rate limit, each runnable without a credential.
 ### Execution pipeline
 
 ```
-JSON file → Parse → Validate spec → Compile graph → Validate graph → Run
+JSON/YAML → Parse → Resolve (refs + plugins) → Compile graph → Validate → Run
 ```
 
-1. **Parse.** Reads the Agent Spec JSON or YAML through the [agentspec SDK](https://oracle.github.io/agent-spec/) and resolves every node type.
-2. **Validate spec.** Zod schema validation through the SDK.
-3. **Compile.** Builds an executable graph with control and data flow edges.
-4. **Validate graph.** Checks that nodes are reachable and connections are well-formed.
-5. **Run.** Walks the graph from `StartNode` to `EndNode`, passing state between nodes.
+1. **Parse.** Reads the Weave document key by key, strictly: the `weave: 1` version, names, schemas, models, tools, steps. Unknown keys are refused everywhere except `meta` and plugin config (`packages/core/src/spec/parse.ts`).
+2. **Resolve.** Checks the document against its own graph and the loaded plugins: every branch target lands, every `{{reference}}` names a producer that writes that key and runs on every path to its consumer, every `use:`/transform/provider type is one a plugin provides, every `requires` range is satisfied (`packages/core/src/spec/resolve.ts`).
+3. **Compile graph.** Derives the executable graph from step order, `then:` jumps and `switch` cases — the edges are computed, not transcribed.
+4. **Validate.** A backstop over the compiled graph: reachability and dead-end checks.
+5. **Run.** Walks the graph from the flow's `inputs` to an outcome, each step's outputs namespaced under its name.
 
 ### Runner defaults
 
@@ -566,15 +604,32 @@ of that name is here.
 
 ## LLM configuration
 
-LLM providers are configured in the `llm_config` field of an `Agent` or an `LlmNode`.
-Every config needs a `name` and a `model_id`. Supported types:
+Models are declared in the document's top-level `models` map and referenced by
+name from `agent` and `llm` steps (an inline config object works anywhere a
+name does). One shape, discriminated by `provider`:
 
-| Config Type | `url` | Description |
+```yaml
+models:
+  fast:
+    provider: openai
+    model: gpt-4o-mini
+    api_key: $OPENAI_API_KEY
+  local:
+    provider: ollama
+    model: qwen2.5:7b
+    params: { temperature: 0 }
+```
+
+| `provider` | `url` | Description |
 |-------------|-------|-------------|
-| `OpenAiConfig` | not accepted | OpenAI API (uses `OPENAI_API_KEY` env var or `api_key` in spec) |
-| `OpenAiCompatibleConfig` | required | Any OpenAI-compatible endpoint |
-| `VllmConfig` | required | vLLM self-hosted endpoint |
-| `OllamaConfig` | required | Ollama local endpoint |
+| `openai` | optional | OpenAI API (uses `OPENAI_API_KEY` env var or `api_key` in spec) |
+| `openai-compatible` | your endpoint | Any OpenAI-compatible endpoint |
+| `vllm` | your endpoint | vLLM self-hosted endpoint |
+| `ollama` | defaults to `http://localhost:11434/v1` | Ollama local endpoint; needs no key |
+
+Any other `provider` value names a plugin-registered provider type. `params`
+admits `temperature`, `max_tokens` and `top_p` — a parameter heddle would not
+send is refused at load rather than carried as decoration.
 
 An `api_key` value beginning with `$` is resolved from the environment, so `api_key: $MY_KEY`
 reads `MY_KEY` and fails with a clear error when it is unset. On a terminal, `heddle run`
@@ -583,9 +638,9 @@ rather than failing at the first model call; the answer is hidden as you type an
 that process only. Scripts and CI are never asked, and `--no-ask-env` declines the question
 on a terminal too.
 
-> **Note:** an API key must be resolvable for every provider, including local ones. A config
-> with no `api_key` fails at startup unless `OPENAI_API_KEY` is set, even for Ollama and vLLM,
-> which ignore the key. Export any placeholder value for local servers.
+> **Note:** apart from `ollama`, which needs no key, a key must be resolvable even for
+> endpoints that ignore it: a `vllm` or `openai-compatible` config with no `api_key` fails
+> at startup unless `OPENAI_API_KEY` is set. Export any placeholder value for local servers.
 
 ## Agent skill
 
@@ -611,7 +666,7 @@ This repo uses [pnpm](https://pnpm.io/).
 pnpm install
 
 # Run in development mode
-pnpm dev run flow.json
+pnpm dev run weave.yaml
 
 # Run tests
 pnpm test

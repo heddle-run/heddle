@@ -122,7 +122,8 @@ export const runtimes = {
 
 {
   "query": "hello",
-  "result": "..."
+  "result": "...",
+  "outcome": "done"
 }`,
     caption: "On your machine: one program, printing each step as it runs.",
   },
@@ -136,7 +137,8 @@ $ curl -sX POST localhost:4319/v1/runs \\
     -d '{"flowPath": "flow.yaml",
          "inputs": {"query": "hello"}}'
 
-{"flow":"flow","state":{"result":"..."}}`,
+{"flow":"flow","state":{"result":"...",
+  "outcome":"done"}}`,
     caption:
       "On a server: the same file, unchanged, doing the job without you.",
   },
@@ -184,44 +186,42 @@ export const safeMode = {
 
 /* The specimen the hero and How-it-works windows show: the local-notetaker
    entry from library/, not an illustration. The spec is an excerpt of
-   library/local-notetaker/spec.yaml with the graph plumbing elided and the
+   library/local-notetaker/spec.yaml with the plumbing elided and the
    instruction — the interesting part — kept; "…" marks every cut, and the
-   node's keys are reordered so the prompt leads (YAML map order is not
+   step's keys are reordered so the prompt leads (YAML map order is not
    semantic). The transcript states only what the spec guarantees: the
-   graph's true shape (6 nodes, 5 edges), the real tool name, and the four
-   fixed headings the prompt demands — the notes themselves are elided,
-   never invented. Check both against the library entry before changing
-   either.
+   graph's true shape (6 nodes, 5 edges: inputs, three steps and two
+   outcomes), the real tool name, and the four fixed headings the prompt
+   demands — the notes themselves are elided, never invented. Check both
+   against the library entry before changing either.
 
    The rule for samples on this page: never elide the instruction, elide
    the plumbing. A reader who can see one line of English they could
    imagine changing has learned what no paragraph teaches. */
 export const specimenSpread = {
-  spec: `component_type: Flow
+  spec: `weave: 1
 name: local-notetaker
-# start ─ record ─ route ─ notes ─ end
-$referenced_components:
+# record ─ route ─┬─ notes ─ done
+#                 └─ failed
+steps:
   # …
-  notes:
-    component_type: LlmNode
-    name: notes
-    prompt_template: |
-      You took the notes for a
-      meeting … Write the notes
-      for someone who was not
-      there, under exactly these
-      four headings, in this
-      order:
-      ## Summary
-      ## Decisions
-      ## Action items
-      ## Open questions
-      … Add nothing that is not
-      in the transcript: an empty
-      heading is a correct answer.
-    llm_config:
-      component_type: OpenAiConfig
-      model_id: gpt-4o-mini`,
+  - name: notes
+    llm:
+      prompt: |
+        You took the notes for a
+        meeting … Write the notes
+        for someone who was not
+        there, under exactly these
+        four headings, in this
+        order:
+        ## Summary
+        ## Decisions
+        ## Action items
+        ## Open questions
+        … Add nothing that is not
+        in the transcript: an empty
+        heading is a correct answer.
+      model: gpt`,
   terminal: [
     { kind: "prompt", text: "heddle run local-notetaker.heddle" },
     { kind: "blank", text: "" },
@@ -307,6 +307,6 @@ export const faqItems = [
   {
     question: "Am I locked in?",
     answer:
-      "No. The file format is a published open standard that heddle implements rather than owns, and other conforming runtimes read the same files. If this project disappeared tomorrow, your agents would still run somewhere else.",
+      "No. The whole agent is one plain, documented file you can read in full — the instructions, the steps, the tool shapes — not code written against an SDK. Both the format and the program that runs it are open source, so nothing about your agents is anyone's to take away, and moving them elsewhere is copying text, not porting a program.",
   },
 ];

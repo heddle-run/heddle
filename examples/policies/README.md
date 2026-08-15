@@ -26,7 +26,7 @@ Nobody in the flow, and nobody in the request. That is the whole distinction:
 | encoder | the request, with `?protocol=` |
 | **middleware** | **the operator, with `--plugin`** |
 
-A spec that writes `RetryPolicy` as a `component_type` is refused, saying so. A
+A spec that writes `use: RetryPolicy` as a step is refused, saying so. A
 plugin submitted to `heddle-server` that declares middleware is refused with a
 400, whether or not `--allow-request-code` is on. `--plugin` is the only door.
 
@@ -55,7 +55,8 @@ Warning: "RetryPolicy" supplied a result for "lookup" after it failed, so the ru
           The node did not produce this.
 {
   "query": "anything",
-  "answer": "unavailable, ask again later"
+  "answer": "unavailable, ask again later",
+  "outcome": "done"
 }
 ```
 
@@ -80,7 +81,8 @@ Warning: "ApprovalGate" refused the tool call "shell": "shell" may not be called
          with "rm -rf" on this host. Try something that does not need it.
 {
   "task": "clean up the data directory",
-  "result": "Understood, I will stop there."
+  "result": "Understood, I will stop there.",
+  "outcome": "done"
 }
 ```
 
@@ -97,10 +99,12 @@ gate guards nothing it was not told to guard.
 
 `NodeAudit` is the widest of the four. It emits an event per settled node and, if
 the operator lists a node type under `dryRun`, answers for that type instead of
-letting it run. A flow's shape walked without its side effects:
+letting it run. Node types are the step verbs — `agent`, `llm`, `tool`,
+`switch`, a plugin component type — plus `start` and `outcome` for the
+synthetic ends. A flow's shape walked without its side effects:
 
 ```bash
-heddle run examples/policies/flow.json --tools-dir ./examples/policies/tools --plugin ./examples/policies/policies.json --plugin-config NodeAudit='{"dryRun":["ToolNode"],"stub":{"answer":"not really run"}}' --input '{"query":"anything"}'
+heddle run examples/policies/flow.json --tools-dir ./examples/policies/tools --plugin ./examples/policies/policies.json --plugin-config NodeAudit='{"dryRun":["tool"],"stub":{"answer":"not really run"}}' --input '{"query":"anything"}'
 ```
 
 ```
@@ -108,7 +112,8 @@ Warning: "NodeAudit" supplied a result for "lookup" instead of letting it run, s
          the node did not execute at all.
 {
   "query": "anything",
-  "answer": "not really run"
+  "answer": "not really run",
+  "outcome": "done"
 }
 ```
 
@@ -116,8 +121,8 @@ With no `dryRun` it only watches. Run it with `--verbose` against the failing
 tool and the audit shows the nesting that matters:
 
 ```
-[start]  plugin:NodeAudit:node {"node":"start","type":"StartNode","ok":true,"attempt":1}
-[lookup] plugin:NodeAudit:node {"node":"lookup","type":"ToolNode","ok":false,"attempt":3}
+[inputs] plugin:NodeAudit:node {"node":"inputs","type":"start","ok":true,"attempt":1}
+[lookup] plugin:NodeAudit:node {"node":"lookup","type":"tool","ok":false,"attempt":3}
 ```
 
 One line per node, not one per attempt. `node` wraps *an execution* and
@@ -147,7 +152,8 @@ Warning: "RetryPolicy" is retrying "agent" after it failed (attempt 1 of 3), in 
 Warning: "RetryPolicy" supplied a result for "agent" after it failed, so the run continues.
 {
   "task": "anything",
-  "result": "busy, try again shortly"
+  "result": "busy, try again shortly",
+  "outcome": "done"
 }
 ```
 
@@ -238,5 +244,7 @@ replacement.
 
 `StubModelConfig` is a provider, not a policy. It exists so the tool-call demo
 runs without a credential. It answers the first request with a tool call and the
-second with a sentence. Replace its `llm_config` in `gated-flow.json` with a real
-one and nothing about the policies changes.
+second with a sentence. Replace the `model` in `gated-flow.json` with a real
+provider and nothing about the policies changes. `gated-flow.json` also pins it
+— `"requires": { "StubModelConfig": "^1.0" }` — so a load against a plugin
+version the spec was not written for fails at validation rather than mid-run.

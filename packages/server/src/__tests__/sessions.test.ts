@@ -8,29 +8,15 @@ import { createServer } from '../server.js';
 
 function simpleFlow(): Record<string, unknown> {
   return {
-    component_type: 'Flow',
+    weave: 1,
     name: 'test-flow',
-    start_node: { $component_ref: 'start' },
-    nodes: [{ $component_ref: 'start' }, { $component_ref: 'end' }],
-    control_flow_connections: [
-      {
-        component_type: 'ControlFlowEdge',
-        name: 'start_to_end',
-        from_node: { $component_ref: 'start' },
-        to_node: { $component_ref: 'end' },
-      },
-    ],
-    $referenced_components: {
-      start: {
-        component_type: 'StartNode',
-        id: 'start',
-        name: 'start',
-        outputs: [{ title: 'query', type: 'string' }],
-      },
-      end: { component_type: 'EndNode', id: 'end', name: 'end' },
-    },
+    inputs: { query: 'string' },
+    steps: [{ name: 'route', switch: '{{inputs.query}}', else: 'done' }],
   };
 }
+
+/** What the run of {@link simpleFlow} answers: the echo, plus its outcome. */
+const answered = (query: string) => JSON.stringify({ query, outcome: 'done' });
 
 let withSessions: Server;
 let withoutSessions: Server;
@@ -159,9 +145,9 @@ describe('a server that keeps sessions', () => {
 
     expect(transcript.messages).toEqual([
       { role: 'user', content: JSON.stringify({ query: 'first' }) },
-      { role: 'assistant', content: JSON.stringify({ query: 'first' }) },
+      { role: 'assistant', content: answered('first') },
       { role: 'user', content: JSON.stringify({ query: 'second' }) },
-      { role: 'assistant', content: JSON.stringify({ query: 'second' }) },
+      { role: 'assistant', content: answered('second') },
     ]);
   });
 
@@ -177,7 +163,7 @@ describe('a server that keeps sessions', () => {
     expect(body.turns[0].input).toEqual({ query: 'hello' });
     expect(body.messages).toEqual([
       { role: 'user', content: JSON.stringify({ query: 'hello' }) },
-      { role: 'assistant', content: JSON.stringify({ query: 'hello' }) },
+      { role: 'assistant', content: answered('hello') },
     ]);
   });
 
@@ -211,7 +197,8 @@ describe('a server that keeps sessions', () => {
     const id = await newSession();
 
     const res = await send(sessionBase, 'POST', '/v1/runs', {
-      flow: { ...simpleFlow(), control_flow_connections: [] },
+      // The switch reads an input the document no longer declares.
+      flow: { ...simpleFlow(), inputs: {} },
       inputs: { query: 'broken' },
       session: id,
     });
@@ -279,7 +266,7 @@ describe('a durable run over HTTP', () => {
     await store.writeCheckpoint(id, {
       runId: 'r1',
       at: new Date().toISOString(),
-      node: 'end',
+      node: 'done',
       carried: { query: 'hi' },
       nodeOutputs: {},
       attempt: 1,
@@ -299,16 +286,16 @@ describe('a run that stopped on a human', () => {
     await store.writeCheckpoint(id, {
       runId: 'r1',
       at: new Date().toISOString(),
-      node: 'end',
+      node: 'done',
       carried: { query: 'refund me' },
-      nodeOutputs: { start: { query: 'refund me' } },
+      nodeOutputs: { inputs: { query: 'refund me' } },
       attempt: 1,
       input: { query: 'refund me' },
       suspension: {
         by: 'ApprovalGate',
         seam: 'toolCall',
         ask: { tool: 'refund', question: 'Approve refund?' },
-        node: 'end',
+        node: 'done',
         resume: {},
       },
     });

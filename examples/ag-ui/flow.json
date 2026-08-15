@@ -1,24 +1,20 @@
 {
-  "component_type": "Flow",
+  "weave": 1,
   "name": "ag-ui-demo",
-  "description": "A minimal flow, so a rendering has a lifecycle to render.",
-  "start_node": { "$component_ref": "start" },
-  "nodes": [{ "$component_ref": "start" }, { "$component_ref": "end" }],
-  "control_flow_connections": [
+  "description": "A minimal flow, so a rendering has a lifecycle to render. The switch needs no model and no tool: the run is inputs, one step, one outcome.",
+  "inputs": {
+    "query": "string"
+  },
+  "steps": [
     {
-      "component_type": "ControlFlowEdge",
-      "name": "start_to_end",
-      "from_node": { "$component_ref": "start" },
-      "to_node": { "$component_ref": "end" }
+      "name": "inspect",
+      "switch": "{{inputs.query}}",
+      "else": "done"
     }
   ],
-  "$referenced_components": {
-    "start": {
-      "component_type": "StartNode",
-      "id": "start",
-      "name": "start",
-      "outputs": [{ "title": "query", "type": "string" }]
-    },
-    "end": { "component_type": "EndNode", "id": "end", "name": "end" }
+  "outcomes": {
+    "done": {
+      "query": "{{inputs.query}}"
+    }
   }
 }

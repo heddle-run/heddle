@@ -1,6 +1,6 @@
 ---
 title: Introduction
-description: A runtime for Open Agent Specification flows. The workflow is a document; heddle is what you point at it.
+description: A runtime for Weave flows. The workflow is a document; heddle is what you point at it.
 ---
 
 **heddle needs no SDK.** Most agent frameworks are libraries: you install one, import it,
@@ -9,9 +9,10 @@ abstractions. heddle inverts that. The flow is a document you write, and heddle 
 runtime you point at it. Nothing in the document imports anything, and nothing in your
 project depends on heddle's types.
 
-The document is an [Open Agent Specification](https://oracle.github.io/agent-spec/) flow,
-in YAML or JSON. It names nodes, the edges between them, the model each agent calls, and
-the tools they may use.
+The document is a [Weave](/docs/flows) flow, in YAML or JSON: `weave: 1` at the top, the
+inputs a run must be given, the model each agent calls, the tools they may use, and an
+ordered list of steps. Wiring is implied — by list order, and by `{{references}}` between
+steps — so there are no ids, no edge lists, and no ceremony.
 
 **One document runs two ways.** `heddle run` executes it on your machine; `heddle-server`
 serves it over HTTP with the run streamed back as it happens. There is no rewrite between
@@ -29,31 +30,33 @@ Scaffold a project, then run it:
 ```bash
 heddle init my-agent
 cd my-agent
-heddle run flow.json --tools-dir tools --input '{"query": "hello"}'
+heddle run weave.yaml --tools-dir tools --input '{"query": "hello"}'
 ```
 
-`--input` is JSON handed to the flow as its starting state. The scaffolded prompt
-references `{{query}}`, so a run without it sends the placeholder to the model unchanged.
+`--input` is JSON carrying the flow's declared inputs. The scaffolded document declares
+one, `query`, and its prompt references `{{inputs.query}}`; a run that omits a required
+input fails before anything executes, naming the field.
 
 <Callout>
-Set `OPENAI_API_KEY` before running, or point the spec's `llm_config` somewhere that
-needs no key. A spec may write `$OPENAI_API_KEY` and heddle resolves it from the
-environment, with one exception covered in [LLM providers](/docs/llm-providers).
+Set `OPENAI_API_KEY` before running, or point the document's `models` entry somewhere that
+needs no key. A document may write `api_key: $OPENAI_API_KEY` and heddle resolves it from
+the environment, with one exception covered in [LLM providers](/docs/llm-providers).
 </Callout>
 
 ## What happens when you run it
 
 ```
-document → parse → validate spec → compile graph → validate graph → execute
+document → parse → resolve → compile → execute
 ```
 
-There are two validation passes and they check different things. The first reads the
-document against the Agent Spec schema, before heddle knows what a graph is. The second
-runs after compilation and checks the graph itself: that every node is reachable, that
-every branch a node can take has an edge, and that the flow terminates.
+Validation is two passes, and both run at load time. The first reads the document alone,
+strictly: every key known, every name well-formed, unknown keys refused. The second checks
+what the document means: that every branch target lands, that every `{{reference}}` names
+a value its producer actually writes on every path, that every plugin component is
+provided and valid, and that the graph reaches an outcome.
 
-`heddle validate` runs everything up to execution, so it is the whole of that pipeline
-minus the model calls.
+`heddle validate` runs everything up to execution — so a flow that validates is a flow
+that starts, and anything discoverable at load time fails there rather than mid-run.
 
 ## Where to go next
 
@@ -62,12 +65,12 @@ minus the model calls.
     Install, scaffold, and run your first flow.
   </Card>
   <Card title="Flows" href="/docs/flows">
-    The document: nodes, edges, and how state moves between them.
+    The document: steps, outcomes, and how data moves between them.
   </Card>
   <Card title="Tools" href="/docs/tools">
     Executables in any language, over JSON on stdin and stdout.
   </Card>
   <Card title="Plugins" href="/docs/plugins">
-    Add node types, providers, error policy, or a wire format.
+    Add step types, providers, error policy, or a wire format.
   </Card>
 </Cards>

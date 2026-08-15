@@ -1,223 +1,263 @@
 ---
 title: Flows
-description: Learn how to define multi-step agent workflows using nodes and edges.
+description: Learn how to define multi-step agent workflows as an ordered list of steps.
 ---
 
-A flow is a directed graph of nodes connected by edges. It defines the execution order and data passing between steps in your workflow.
+A flow is an ordered list of steps with the wiring implied: control flows from one step to
+the next, and data moves wherever a `{{reference}}` names it. It defines the execution
+order and data passing between the steps of your workflow.
 
-Flows are written in JSON or YAML following the [Open Agent Specification](https://oracle.github.io/agent-spec/). Field names in the file are `snake_case`. JSON and YAML are the two builtin [input formats](/docs/plugins/formats); a plugin can add another wire format without touching anything downstream of the parse.
-
-## Component references
-
-Agent Spec files are *disaggregated*: components are defined once under `$referenced_components`, keyed by `id`, and referred to everywhere else by `$component_ref`.
-
-```yaml
-nodes:
-  - $component_ref: start
-  - $component_ref: end
-
-$referenced_components:
-  start:
-    component_type: StartNode
-    id: start
-    name: start
-  end:
-    component_type: EndNode
-    id: end
-    name: end
-```
-
-This matters because a flow refers to the same node from several places: `start_node`, `nodes`, and both edge lists. References keep those pointing at one shared component. Writing the same node out twice inline is rejected, because the parser compares component identity rather than names.
+Flows are written in YAML or JSON in **Weave**, heddle's own format. The default filename
+is `weave.yaml`, and field names are `snake_case`. YAML and JSON are the two builtin
+[input formats](/docs/plugins/formats); a plugin can add another wire format without
+touching anything downstream of the parse.
 
 ## A complete flow
 
 This flow takes a `query`, runs it through an agent with one tool, and returns a `result`:
 
 ```yaml
-component_type: Flow
-agentspec_version: 26.2.0
+weave: 1
 name: research-flow
-start_node:
-  $component_ref: start
-nodes:
-  - $component_ref: start
-  - $component_ref: researcher
-  - $component_ref: end
-control_flow_connections:
-  - component_type: ControlFlowEdge
-    name: start_to_researcher
-    from_node:
-      $component_ref: start
-    to_node:
-      $component_ref: researcher
-  - component_type: ControlFlowEdge
-    name: researcher_to_end
-    from_node:
-      $component_ref: researcher
-    to_node:
-      $component_ref: end
-data_flow_connections:
-  - component_type: DataFlowEdge
-    name: query_to_researcher
-    source_node:
-      $component_ref: start
-    source_output: query
-    destination_node:
-      $component_ref: researcher
-    destination_input: query
-  - component_type: DataFlowEdge
-    name: result_to_end
-    source_node:
-      $component_ref: researcher
-    source_output: result
-    destination_node:
-      $component_ref: end
-    destination_input: result
-$referenced_components:
-  start:
-    component_type: StartNode
-    id: start
-    name: start
-    outputs:
-      - title: query
-        type: string
-  researcher:
-    component_type: AgentNode
-    id: researcher
-    name: researcher
+
+inputs:
+  query: string
+
+models:
+  main:
+    provider: openai
+    model: gpt-4o
+    api_key: $OPENAI_API_KEY
+
+tools:
+  web_search:
+    description: Search the web for information
     inputs:
-      - title: query
-        type: string
+      query: string
     outputs:
-      - title: result
-        type: string
+      results: string
+
+steps:
+  - name: researcher
     agent:
-      component_type: Agent
-      name: research-agent
-      system_prompt: |
+      model: main
+      prompt: |
         You are a research assistant.
-        Answer the user's question: {{query}}
-      llm_config:
-        component_type: OpenAiConfig
-        name: openai
-        model_id: gpt-4o
-      tools:
-        - component_type: ServerTool
-          name: web_search
-          description: Search the web for information
-          inputs:
-            - title: query
-              type: string
-          outputs:
-            - title: results
-              type: string
-  end:
-    component_type: EndNode
-    id: end
-    name: end
-    inputs:
-      - title: result
-        type: string
+        Answer the user's question: {{inputs.query}}
+      tools: [web_search]
+
+outcomes:
+  done:
+    result: '{{researcher.result}}'
 ```
 
-`id` is optional, and a UUID is generated when you omit it, but any component you point at with `$component_ref` needs an explicit `id` to be addressable.
+Everything is named once and referred to by name: `main` from `models`, `web_search` from
+`tools`, `researcher` by the outcome that reads its output. There are no ids, no edge
+lists, and no start or end nodes — the run starts at the first step, and ends at an
+outcome.
 
-## Nodes
+A document whose whole job is one agent can drop `steps` entirely: a top-level `agent` is
+shorthand for a single-step flow whose step is named after the document. That is what
+`heddle init` scaffolds.
 
-Nodes are the building blocks of a flow. Every node has a `component_type` and a `name`:
+```yaml
+weave: 1
+name: researcher
 
-| Type | What it does |
-|---|---|
-| `StartNode` | Entry point; declares the flow's inputs |
-| `EndNode` | Exit point |
-| `AgentNode` | Runs an agent with tools |
-| `LlmNode` | Runs a prompt template through a model |
-| `ToolNode` | Executes an external tool directly |
-| `BranchingNode` | Routes execution on an input value |
+inputs:
+  query: string
 
-See [Nodes](/docs/nodes) for detailed documentation on each type.
+agent:
+  model:
+    provider: openai
+    model: gpt-4o
+    api_key: $OPENAI_API_KEY
+  prompt: 'Answer the question: {{inputs.query}}'
+```
 
-## Properties
+## Top-level keys
 
-Node `inputs` and `outputs` are JSON Schema fragments carrying a `title`:
+| Key | Required | Meaning |
+|---|---|---|
+| `weave` | yes | Format version, the integer `1` |
+| `name` | yes | The flow's name: lower-case letters, digits, `_` or `-`, starting with a letter |
+| `description` | no | Prose |
+| `inputs` | no | What a run must be given, as a [schema map](#schemas) |
+| `models` | no | Named model configs; see [LLM providers](/docs/llm-providers) |
+| `tools` | no | Named tool declarations; see [Tools](/docs/tools) |
+| `steps` | one of | The ordered list of steps |
+| `agent` | one of | Shorthand: the whole document is one agent step |
+| `outcomes` | no | Named terminal states and what each returns |
+| `requires` | no | Plugin component type → semver range; see [Plugins](/docs/plugins) |
+| `meta` | no | An opaque map, the only place unknown keys may live |
+
+Unknown keys are an error everywhere else — at the top level, on a step, inside a schema.
+The exceptions are `meta`, and the config of a plugin component (`use ... with` and a
+transform's fields), which the owning plugin's schema judges.
+
+## Inputs
+
+`inputs` declares what a run must be given. A field without a `default` is required, and a
+run missing one fails before anything executes; a field with a `default` is optional and
+the default is filled in.
 
 ```yaml
 inputs:
-  - title: query
-    type: string
-  - title: max_results
+  alert: string
+  limit:
     type: integer
-    default: 10
+    default: 5
 ```
 
-A title cannot be empty, and cannot contain spaces, quotes, braces, commas, or periods.
+`--input '{"alert": "..."}'` on the CLI, or the request's `inputs` over HTTP, is checked
+against this declaration at the start of the run.
 
-## Edges
+## Steps
 
-### Control flow edges
+`steps` is an ordered list. Each step has a required `name` — lower-case letters, digits
+and `_`, starting with a letter — unique across steps and outcomes, since branch targets
+resolve against both. The name `inputs` is reserved; it is the namespace flow inputs are
+referenced through.
 
-`control_flow_connections` define execution order. Each edge names a `from_node` and a `to_node`, and optionally a `from_branch`:
+Beyond `name`, a step declares exactly one **verb**:
+
+| Verb | What it does | Writes |
+|---|---|---|
+| `agent` | Runs an agent with tools | `result`, or its declared `output` keys |
+| `llm` | Runs a prompt through a model, no tools | `text` |
+| `tool` | Executes an external tool directly | The tool's declared outputs |
+| `switch` | Routes execution on a referenced value | Nothing |
+| `use` | Runs a plugin-defined step | What the plugin's manifest declares |
+
+See [Steps](/docs/nodes) for detailed documentation on each verb.
+
+### Control flow
+
+Control flow defaults to **fall-through**: each step runs after the one before it, and the
+last step falls through to the outcome `done`. A step may override that with
+`then: <target>`, where a target is a later step or an outcome:
 
 ```yaml
-control_flow_connections:
-  - component_type: ControlFlowEdge
-    name: start_to_agent
-    from_node:
-      $component_ref: start
-    from_branch: null
-    to_node:
-      $component_ref: agent
+steps:
+  - name: triage
+    agent: { model: fast, prompt: '...' }
+    then: summarize      # skip past fetch
+
+  - name: fetch
+    tool: log_search
+    with: { pattern: '{{inputs.alert}}' }
+
+  - name: summarize
+    llm: { model: fast, prompt: 'Summarize: {{inputs.alert}}' }
 ```
 
-`from_branch: null`, or leaving it out entirely, makes the edge unconditional. Only branch-producing nodes need named branches; see [BranchingNode](/docs/nodes#branchingnode).
+A `switch` step routes through its `cases` and `else` instead, and takes no `then`.
 
-A node with several unconditional outgoing edges does not fan out in parallel. The first edge is taken and the others are ignored, so express alternatives with a `BranchingNode`.
+A `then` or `case` target must appear *later* in the list. Backward edges are reserved for
+loops in a later format version, and refused by the validator today — so a Weave flow
+always terminates, and fan-out does not exist: a step has exactly one successor unless it
+is a `switch`, in which case it has exactly the successors its cases name.
 
-### Data flow edges
+## Templates
 
-`data_flow_connections` map one node's output onto another node's input. `source_output` and `destination_input` are property titles:
+`{{ref}}` is the whole data-flow language, where `ref` is a dotted path:
+`inputs.<field>` for a flow input, `<step>.<key>` for a prior step's output.
 
 ```yaml
-data_flow_connections:
-  - component_type: DataFlowEdge
-    name: query_to_agent
-    source_node:
-      $component_ref: start
-    source_output: query
-    destination_node:
-      $component_ref: agent
-    destination_input: query
+prompt: |
+  Service: {{inputs.service}}
+  Evidence: {{fetch.matches}}
 ```
 
-<Callout type="warn">
-Data flow edges currently *add to* the accumulated run state rather than isolating a node's inputs. Every node also sees the merged outputs of all nodes that ran before it, so identically-named outputs from different nodes overwrite one another. Declare your edges as though isolation were enforced, but avoid reusing one property title for two different meanings in the same flow.
+No expressions, no filters, no bare names. Literal `{{` is written `{{{{`.
+
+Every reference is resolved at validation time: the producer must exist, the key must be
+one the producer actually writes, and the producer must run on every control-flow path
+that reaches the consumer. A reference to a key nothing writes, or to a step a path can
+skip, is a load-time error rather than a placeholder reaching the model verbatim.
+
+## State
+
+There is no shared state bag. Each step's outputs live under its own name, and a step
+receives exactly the values its templates reference. Two steps writing an identically
+named output cannot collide, because the step name qualifies everything: `{{fetch.count}}`
+and `{{verify.count}}` are different values.
+
+<Callout>
+This is a rule the format enforces, not a convention to follow. Earlier heddle releases
+merged every node's outputs into one accumulated state, where identically named outputs
+overwrote one another; Weave makes that unrepresentable.
 </Callout>
+
+## Schemas
+
+Everywhere the format wants a schema — flow `inputs`, a tool's `inputs` and `outputs`, an
+agent's `output` — it uses one shape: a map from field name to either a bare type string
+or an object.
+
+```yaml
+inputs:
+  alert: string                                # shorthand
+  service:
+    type: string
+    description: The service the alert names.  # longhand
+  limit:
+    type: integer
+    default: 5                                 # a default makes it optional
+```
+
+Types are `string`, `integer`, `number`, `boolean`, `array` (with `items`) and `object`
+(with `fields`, recursively this shape). Field names are identifiers: lower-case letters,
+digits and `_`, starting with a letter.
+
+## Outcomes
+
+`outcomes` maps each terminal state to the payload the run returns when it ends there.
+Payload values are literals or templates:
+
+```yaml
+outcomes:
+  done:
+    note: '{{triage.result}}'
+  handoff:
+    note: '{{triage.result}}'
+    reason: needs-human       # literals are fine
+```
+
+The run's final output is the payload plus `outcome: <name>`, so a caller always learns
+which way the flow ended. `outcome` is therefore not yours to write in a payload.
+
+If `outcomes` is omitted, the document gets an implicit outcome `done` that echoes what
+the run accumulated — for a one-agent flow, the agent's own output. A step falls through
+to `done` by default, so a document that defines `outcomes` without `done` must give its
+last step an explicit `then`.
 
 ## Execution
 
 When you run a flow, heddle:
 
-1. Parses the JSON/YAML file and resolves `$component_ref` references
-2. Validates it against the Open Agent Specification schema
-3. Compiles the graph and validates its structure
-4. Walks from the `StartNode`, one node at a time, until an `EndNode` is reached
-5. Prints the final state as JSON on stdout
+1. Parses the YAML/JSON and checks the document's own shape — strictly, unknown keys
+   refused
+2. Resolves it: every branch target lands, every template reference names a real producer
+   on every path, every plugin component is provided and validated by its plugin's schema,
+   every `requires` range is satisfied
+3. Compiles the graph and walks it, one step at a time, until an outcome is reached
+4. Prints the outcome's payload, plus `outcome`, as JSON on stdout
 
-Graph validation checks that every node is reachable from the start node, that a reachable `EndNode` exists, and that no non-terminal node is a dead end.
-
-It also checks where a branch leads, which is otherwise something only the input that selects it reveals: a `BranchingNode` that maps a key to a branch no control flow edge leaves the node on is refused, as is an edge labelled with a branch its source never selects. Both would have ended a run mid-flight with `no next node from "<node>"`.
-
-Data flow edges are checked against what their source node can actually produce, where that is knowable. An `LlmNode` writes `generated_text` and nothing else, so an edge reading anything else from one is refused; the runner would have dropped the mapping silently and the destination would never have received the input. A source node the flow does not contain is refused for the same reason. Node types whose outputs are not fixed by heddle are not checked: an `AgentNode` writes `result` plus whatever keys its answer parsed to, a `ToolNode` writes what the tool returned, and a plugin node writes what its plugin returned.
+Both validation passes run at load time, before any process starts and before any model is
+called. `heddle validate` runs everything up to execution, and a flow that validates is a
+flow that starts: a branch with no target, a placeholder nothing fills, a tool argument
+the tool does not take — all of it fails at load rather than mid-run.
 
 ### Runner defaults
 
-These are fixed and not currently configurable from the CLI:
-
 | Setting | Default |
 |---------|---------|
-| Max nodes executed per run | 50 |
+| Max steps executed per run | 50 |
 | Total run timeout | 5 minutes |
-| Max tool rounds per agent | 10 |
+| Max tool rounds per agent | 10 — a step's own `max_tool_rounds` overrides it, as does `--max-tool-rounds` on the CLI |
 | Tool execution timeout | 30 seconds |
 
-Exceeding the node limit or the run timeout fails the run with an error.
+The step limit, the run timeout and the tool timeout are fixed and not currently
+configurable from the CLI. Exceeding the step limit or the run timeout fails the run with
+an error.

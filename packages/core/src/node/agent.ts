@@ -1,5 +1,12 @@
-import type { Agent, AgentNode, LLMConfig, ToolSpec } from '../spec/types.js';
-import { propertyTitle } from '../spec/types.js';
+import type {
+  AgentSpec,
+  AgentStep,
+  FieldSchema,
+  ModelSpec,
+  SchemaMap,
+  ToolSpec,
+} from '../spec/types.js';
+import { collectRefs, renderTemplate } from '../spec/template.js';
 import { State } from '../state/state.js';
 import type {
   ChatChunk,
@@ -25,7 +32,7 @@ import type { SeamOutcome } from '../plugin/types.js';
 import { generationParams, providerFor } from '../llm/provider.js';
 import { TransformChain } from '../plugin/transform.js';
 import { historyMessages } from '../session/history.js';
-import { CHAT_HISTORY_KEY, withoutReserved } from '../session/reserved.js';
+import { CHAT_HISTORY_KEY } from '../session/reserved.js';
 import { RunSuspended, readResume } from '../session/suspend.js';
 import { isObject, sleep, typeName } from '../internal/util.js';
 import { LLMError, messageOf, RunError, ToolError } from '../errors.js';
@@ -68,31 +75,27 @@ interface AgentBookmark {
 }
 
 export class AgentExecutor implements NodeExecutor {
-  private readonly node: AgentNode;
+  private readonly name: string;
   private readonly deps: Dependencies;
-  private readonly agent: Agent;
-  private readonly llmConfig: LLMConfig;
+  private readonly agent: AgentSpec;
+  private readonly model: ModelSpec;
   private readonly generation: ReturnType<typeof generationParams>;
   private readonly transforms: TransformChain;
+  /** The dotted references the prompt makes — the step's whole input surface. */
+  private readonly refs: string[];
   private provider?: Provider;
 
-  constructor(node: AgentNode, deps: Dependencies) {
-    const agent = node.agent;
-    if (!agent?.llmConfig) {
-      throw new RunError(
-        `AgentNode "${node.name}": agent or llmConfig is missing`,
-      );
-    }
-
-    this.node = node;
+  constructor(step: AgentStep, deps: Dependencies) {
+    this.name = step.name;
     this.deps = deps;
-    this.agent = agent;
-    this.llmConfig = agent.llmConfig;
-    this.generation = generationParams(agent.llmConfig);
+    this.agent = step.agent;
+    this.model = step.agent.model;
+    this.generation = generationParams(step.agent.model);
+    this.refs = collectRefs(step.agent.prompt, `step "${step.name}"`);
     this.transforms = TransformChain.build(
-      agent.transforms,
+      step.agent.transforms,
       deps,
-      agent.name ?? node.name,
+      step.name,
     );
   }
 
@@ -104,7 +107,7 @@ export class AgentExecutor implements NodeExecutor {
     signal: AbortSignal | undefined,
     input: State,
   ): Promise<State> {
-    const scope = this.deps.toolExecutor?.beginScope?.(this.node.name);
+    const scope = this.deps.toolExecutor?.beginScope?.(this.name);
     try {
       return await this.converse(signal, input, scope?.executor);
     } finally {
@@ -136,7 +139,7 @@ export class AgentExecutor implements NodeExecutor {
       const gate = await this.beforeRound(signal, round);
       if (gate.action === 'reject') {
         throw new RunError(
-          `AgentNode "${this.node.name}" was stopped by middleware ` +
+          `agent step "${this.name}" was stopped by middleware ` +
             `"${gate.by}" before round ${round}: ${gate.reason}`,
         );
       }
@@ -175,28 +178,32 @@ export class AgentExecutor implements NodeExecutor {
       const settled = await this.afterRound(signal, round, response.tool_calls);
       if (settled.action === 'fail') {
         throw new RunError(
-          `AgentNode "${this.node.name}" was ended by middleware ` +
+          `agent step "${this.name}" was ended by middleware ` +
             `"${settled.by}" after round ${round}: ${settled.reason}`,
         );
       }
     }
 
     throw new RunError(
-      `AgentNode "${this.node.name}" exceeded max tool rounds ` +
+      `agent step "${this.name}" exceeded max tool rounds ` +
         `(${this.maxToolRounds()}). The ceiling is the operator's: raise it ` +
         `with --max-tool-rounds if this agent's work is legitimately long.`,
     );
   }
 
   /**
-   * The round ceiling this run set, with the engine's 10 as the fallback.
+   * The round ceiling: the step's own `max_tool_rounds` if it set one, the
+   * run's (`--max-tool-rounds`) otherwise, the engine's 10 as the fallback.
    *
    * Floored at 1 because a ceiling of 0 is not a tighter budget, it is an
    * agent that cannot answer at all — and that misconfiguration should read
    * as "one round", not as an unconditional failure dressed up as policy.
    */
   private maxToolRounds(): number {
-    return Math.max(1, this.deps.maxToolRounds ?? MAX_TOOL_ROUNDS);
+    return Math.max(
+      1,
+      this.agent.max_tool_rounds ?? this.deps.maxToolRounds ?? MAX_TOOL_ROUNDS,
+    );
   }
 
   /**
@@ -244,7 +251,7 @@ export class AgentExecutor implements NodeExecutor {
       // asked. A gate that returned only "approve?" would leave whoever answers
       // it with no way to know what they are approving.
       ask: { tool: call.name, arguments: args, ...ask },
-      node: this.node.name,
+      node: this.name,
       resume: bookmark as unknown as Record<string, unknown>,
     });
   }
@@ -268,7 +275,7 @@ export class AgentExecutor implements NodeExecutor {
     input: State,
     scopedExecutor: Executor | undefined,
   ): Promise<{ messages: Message[]; round: number; rejected?: Rejection }> {
-    const resume = readResume(input, this.node.name);
+    const resume = readResume(input, this.name);
 
     if (!resume) {
       const opening = await this.transforms.apply(
@@ -283,7 +290,7 @@ export class AgentExecutor implements NodeExecutor {
       };
     }
 
-    const bookmark = readBookmark(this.node.name, resume.bookmark);
+    const bookmark = readBookmark(this.name, resume.bookmark);
     const messages = [...bookmark.messages];
 
     messages.push({
@@ -305,15 +312,35 @@ export class AgentExecutor implements NodeExecutor {
     return { messages, round: bookmark.round + 1 };
   }
 
+  /**
+   * The system prompt is the rendered template plus, under a declared
+   * `output`, the shape the answer is held to. The user message carries the
+   * step's referenced values and nothing else — a step reads exactly what its
+   * templates name, never the ambient state.
+   */
   private openingMessages(input: State): Message[] {
+    let system = renderTemplate(
+      this.agent.prompt,
+      input,
+      `step "${this.name}"`,
+    );
+    if (this.agent.output) {
+      system += `\n\n${outputInstruction(this.agent.output)}`;
+    }
+
     return [
-      {
-        role: 'system',
-        content: substituteTemplate(this.agent.systemPrompt ?? '', input),
-      },
+      { role: 'system', content: system },
       ...historyMessages(input.get(CHAT_HISTORY_KEY)),
-      { role: 'user', content: JSON.stringify(inputWithoutHistory(input)) },
+      { role: 'user', content: JSON.stringify(this.referencedValues(input)) },
     ];
+  }
+
+  private referencedValues(input: State): Record<string, unknown> {
+    const values: Record<string, unknown> = {};
+    for (const ref of this.refs) {
+      if (input.has(ref)) values[ref] = input.get(ref);
+    }
+    return values;
   }
 
   private describeTools(): ToolDefinition[] {
@@ -334,14 +361,15 @@ export class AgentExecutor implements NodeExecutor {
       this.getProvider(),
       signal,
       {
-        model: this.llmConfig.modelId,
+        model: this.model.model,
         messages,
         tools: tools.length > 0 ? tools : undefined,
+        ...(this.agent.output ? { responseFormat: 'json' as const } : {}),
         ...this.generation,
       },
       {
-        nodeName: this.node.name,
-        nodeType: 'AgentNode',
+        nodeName: this.name,
+        nodeType: 'agent',
         middleware: this.deps.middleware,
         eventHandler: this.deps.eventHandler,
         allowStream:
@@ -364,7 +392,9 @@ export class AgentExecutor implements NodeExecutor {
     if (closing.rejected) return rejectionState(closing.rejected);
 
     const answer = closing.messages.at(-1)?.content ?? response.content;
-    const output = answerFields(answer);
+    const output = this.agent.output
+      ? structuredAnswer(this.name, answer, this.agent.output)
+      : { result: answer };
     if (!this.transforms.isEmpty()) output.transform_status = 'ok';
 
     return new State(output);
@@ -408,7 +438,7 @@ export class AgentExecutor implements NodeExecutor {
 
       this.deps.eventHandler?.({
         type: 'tool_result',
-        nodeName: this.node.name,
+        nodeName: this.name,
         toolName: call.name,
         toolCallId: call.id,
         duration: Date.now() - startedAt,
@@ -428,7 +458,7 @@ export class AgentExecutor implements NodeExecutor {
 
     this.deps.eventHandler?.({
       type: 'tool_call',
-      nodeName: this.node.name,
+      nodeName: this.name,
       toolName: call.name,
       toolArgs: args,
       toolCallId: call.id,
@@ -469,7 +499,7 @@ export class AgentExecutor implements NodeExecutor {
     if (outcome.ok) {
       this.deps.eventHandler?.({
         type: 'tool_result',
-        nodeName: this.node.name,
+        nodeName: this.name,
         toolName: call.name,
         toolResult: outcome.value,
         toolCallId: call.id,
@@ -485,7 +515,7 @@ export class AgentExecutor implements NodeExecutor {
 
     this.deps.eventHandler?.({
       type: 'tool_result',
-      nodeName: this.node.name,
+      nodeName: this.name,
       toolName: call.name,
       toolCallId: call.id,
       duration: Date.now() - startedAt,
@@ -518,8 +548,8 @@ export class AgentExecutor implements NodeExecutor {
       'toolCall',
       {
         subject: {
-          nodeName: this.node.name,
-          nodeType: 'AgentNode',
+          nodeName: this.name,
+          nodeType: 'agent',
           toolName: call.name,
           toolCallId: call.id,
         },
@@ -552,8 +582,8 @@ export class AgentExecutor implements NodeExecutor {
     return chain.consultBefore(
       'toolCall',
       {
-        nodeName: this.node.name,
-        nodeType: 'AgentNode',
+        nodeName: this.name,
+        nodeType: 'agent',
         toolName: call.name,
         toolCallId: call.id,
       },
@@ -583,7 +613,7 @@ export class AgentExecutor implements NodeExecutor {
 
     return chain.consultBefore(
       'agentRound',
-      { nodeName: this.node.name, nodeType: 'AgentNode' },
+      { nodeName: this.name, nodeType: 'agent' },
       // `maxRounds` because a policy tightening a ceiling has to be told which
       // one it is tightening, or it hardcodes 10 and drifts when the operator
       // moves it.
@@ -618,7 +648,7 @@ export class AgentExecutor implements NodeExecutor {
     return chain.consult(
       'agentRound',
       {
-        subject: { nodeName: this.node.name, nodeType: 'AgentNode' },
+        subject: { nodeName: this.name, nodeType: 'agent' },
         outcome: {
           ok: true,
           value: { round, toolCalls: calls.map((call) => call.name) },
@@ -639,7 +669,7 @@ export class AgentExecutor implements NodeExecutor {
     scopedExecutor: Executor | undefined,
   ): Promise<Record<string, unknown>> {
     return runNamedTool(
-      `AgentNode "${this.node.name}"`,
+      `agent step "${this.name}"`,
       this.deps.toolRegistry,
       scopedExecutor ?? this.deps.toolExecutor,
       signal,
@@ -649,15 +679,15 @@ export class AgentExecutor implements NodeExecutor {
   }
 
   private getProvider(): Provider {
-    this.provider ??= providerFor(this.llmConfig, this.deps);
+    this.provider ??= providerFor(this.model, this.deps);
     return this.provider;
   }
 
   private warn(message: string): void {
     this.deps.eventHandler?.({
       type: 'warning',
-      nodeName: this.node.name,
-      nodeType: this.node.componentType,
+      nodeName: this.name,
+      nodeType: 'agent',
       message,
     });
   }
@@ -863,14 +893,6 @@ export async function collectStream(
   return response;
 }
 
-export function substituteTemplate(template: string, state: State): string {
-  let result = template;
-  for (const key of state.keys()) {
-    result = result.replaceAll(`{{${key}}}`, state.getString(key) ?? '');
-  }
-  return result;
-}
-
 export function buildToolDefinitions(
   tools: ToolSpec[] | undefined,
   registry: Registry | undefined,
@@ -893,17 +915,7 @@ export function buildToolDefinitions(
 }
 
 export function buildToolSchema(tool: ToolSpec): JsonSchema {
-  const properties: Record<string, JsonSchema> = {};
-  const required: string[] = [];
-
-  for (const input of tool.inputs ?? []) {
-    const name = propertyTitle(input);
-    if (!name) continue;
-
-    properties[name] = withoutTitle(input.jsonSchema);
-    if (input.jsonSchema.default === undefined) required.push(name);
-  }
-
+  const { properties, required } = jsonSchemaOf(tool.inputs);
   return { type: 'object', properties, required };
 }
 
@@ -911,14 +923,37 @@ function toolParameters(
   tool: ToolSpec,
   knownSchema: JsonSchema | undefined,
 ): JsonSchema {
-  const specDeclaresInputs = Boolean(tool.inputs && tool.inputs.length > 0);
-  if (specDeclaresInputs) return buildToolSchema(tool);
+  if (Object.keys(tool.inputs).length > 0) return buildToolSchema(tool);
   return knownSchema ?? buildToolSchema(tool);
 }
 
-function withoutTitle(schema: JsonSchema): JsonSchema {
-  const { title: _title, ...rest } = schema;
-  return rest;
+/** A schema map as JSON Schema: what a model is shown, for tools and output. */
+function jsonSchemaOf(schema: SchemaMap): {
+  properties: Record<string, JsonSchema>;
+  required: string[];
+} {
+  const properties: Record<string, JsonSchema> = {};
+  const required: string[] = [];
+
+  for (const [name, field] of Object.entries(schema)) {
+    properties[name] = fieldJsonSchema(field);
+    if (field.default === undefined) required.push(name);
+  }
+
+  return { properties, required };
+}
+
+function fieldJsonSchema(field: FieldSchema): JsonSchema {
+  const schema: JsonSchema = { type: field.type };
+  if (field.description !== undefined) schema.description = field.description;
+  if (field.default !== undefined) schema.default = field.default;
+  if (field.items) schema.items = fieldJsonSchema(field.items);
+  if (field.fields) {
+    const { properties, required } = jsonSchemaOf(field.fields);
+    schema.properties = properties;
+    schema.required = required;
+  }
+  return schema;
 }
 
 function withDefaults(
@@ -927,16 +962,15 @@ function withDefaults(
   calledTool: string,
 ): Record<string, unknown> {
   const spec = tools?.find((tool) => tool.name === calledTool);
-  if (!spec?.inputs) return args;
+  if (!spec) return args;
 
   let filled: Record<string, unknown> | undefined;
-  for (const input of spec.inputs) {
-    const name = propertyTitle(input);
-    if (!name || input.jsonSchema.default === undefined) continue;
+  for (const [name, field] of Object.entries(spec.inputs)) {
+    if (field.default === undefined) continue;
     if (Object.hasOwn(args, name)) continue;
 
     filled ??= { ...args };
-    filled[name] = input.jsonSchema.default;
+    filled[name] = field.default;
   }
   return filled ?? args;
 }
@@ -988,7 +1022,7 @@ function readBookmark(node: string, raw: Record<string, unknown>): AgentBookmark
     typeof pending?.name !== 'string'
   ) {
     throw new RunError(
-      `AgentNode "${node}" cannot resume: the checkpoint holds no usable ` +
+      `agent step "${node}" cannot resume: the checkpoint holds no usable ` +
         `conversation. It needs the messages built so far and the tool call ` +
         `that was waiting — without them the model would be asked to answer a ` +
         `conversation it never had.`,
@@ -1003,17 +1037,61 @@ function readBookmark(node: string, raw: Record<string, unknown>): AgentBookmark
   };
 }
 
-function inputWithoutHistory(input: State): Record<string, unknown> {
-  return withoutReserved(input.toData());
-}
+/**
+ * Hold a declared-output answer to its declaration: a JSON object with every
+ * declared key present, extras dropped rather than smuggled into the state.
+ * Structure is declared and enforced or absent, never guessed from whether
+ * the answer happened to parse.
+ */
+function structuredAnswer(
+  name: string,
+  answer: string,
+  declared: SchemaMap,
+): Record<string, unknown> {
+  const parsed = parseJson(answer) ?? parseJson(unfenced(answer));
+  if (!isObject(parsed)) {
+    throw new RunError(
+      `agent step "${name}" declares a structured output and the model did ` +
+        `not answer with a JSON object. Answer: ${answer.slice(0, 200)}`,
+    );
+  }
 
-function answerFields(answer: string): Record<string, unknown> {
-  const output: Record<string, unknown> = { result: answer };
+  const output: Record<string, unknown> = {};
+  const missing: string[] = [];
+  for (const key of Object.keys(declared)) {
+    if (key in parsed) {
+      output[key] = parsed[key];
+    } else {
+      missing.push(key);
+    }
+  }
 
-  const parsed = parseJson(answer);
-  if (parsed !== undefined) Object.assign(output, parsed);
+  if (missing.length > 0) {
+    throw new RunError(
+      `agent step "${name}": the answer is missing declared output ` +
+        `key${missing.length === 1 ? '' : 's'} ` +
+        `${missing.map((key) => `"${key}"`).join(', ')}.`,
+    );
+  }
 
   return output;
+}
+
+/** A ```json fenced answer, unfenced — the one shape worth being lenient on. */
+function unfenced(answer: string): string {
+  const match = /^```(?:json)?\s*([\s\S]*?)\s*```$/.exec(answer.trim());
+  return match ? match[1] : answer;
+}
+
+function outputInstruction(declared: SchemaMap): string {
+  const lines = Object.entries(declared).map(([name, field]) => {
+    const description = field.description ? ` — ${field.description}` : '';
+    return `  "${name}": ${field.type}${description}`;
+  });
+  return (
+    `Answer with a single JSON object and nothing else, with exactly these ` +
+    `keys:\n{\n${lines.join('\n')}\n}`
+  );
 }
 
 function rejectionState(rejected: Rejection): State {

@@ -40,11 +40,11 @@ Provide exactly one flow selector:
 
 | Field | Meaning |
 |---|---|
-| `flow` (object) | An Agent Spec flow as JSON |
+| `flow` (object) | A Weave flow as JSON |
 | `flow` (string) | Flow source text, YAML or JSON |
 | `flowPath` | Path relative to `--flows-root` |
 
-Plus `inputs`, a JSON object handed to the flow as its starting state. An optional
+Plus `inputs`, a JSON object filling the flow's declared `inputs`. An optional
 `format` names the [input format](/docs/plugins/formats) of a string `flow` or of the
 file behind `flowPath`; `/v1/capabilities` lists the names on offer under `formats`.
 Without it, a string body is read as YAML (which reads JSON too) and a path resolves by
@@ -57,8 +57,11 @@ curl -sX POST 'localhost:4319/v1/runs' \
 ```
 
 ```json
-{ "flow": "demo", "state": { "query": "hello", "result": "..." } }
+{ "flow": "demo", "state": { "query": "hello", "result": "...", "outcome": "done" } }
 ```
+
+`state` is the run's answer: the payload of the outcome the flow ended at, plus `outcome`
+naming it.
 
 **Compilation happens before the stream opens.** A malformed flow comes back as a real
 `400`, not a `200` followed by an error frame. Once SSE headers are out the status is
@@ -77,13 +80,13 @@ event: flow_start
 data: {"type":"flow_start"}
 
 event: node_start
-data: {"type":"node_start","nodeName":"agent","nodeType":"AgentNode","state":{...}}
+data: {"type":"node_start","nodeName":"agent","nodeType":"agent","state":{...}}
 
 event: token_delta
 data: {"type":"token_delta","nodeName":"agent","delta":"The "}
 
 event: flow_complete
-data: {"type":"flow_complete","state":{"result":"..."}}
+data: {"type":"flow_complete","state":{"result":"...","outcome":"done"}}
 ```
 
 The frames are the engine's own event model. Only two fields need translating for JSON:

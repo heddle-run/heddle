@@ -25,7 +25,6 @@ on:
     paths:
       - "packages/server/**"
       - "packages/core/**"
-      - "vendor/agentspec/**"
       - "pnpm-lock.yaml"
       - ".github/workflows/deploy-playground.yml"
   workflow_dispatch:

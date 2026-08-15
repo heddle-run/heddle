@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
-import { loadComponent, loadFlow } from '../load.js';
+import { loadFlow } from '../load.js';
 import { loadPlugins } from '../../plugin/loader.js';
 import { validateManifest } from '../../plugin/manifest.js';
 
@@ -28,7 +28,7 @@ function isManifest(filePath: string): boolean {
     return (
       typeof candidate.name === 'string' &&
       typeof candidate.version === 'string' &&
-      candidate.component_type === undefined
+      candidate.weave === undefined
     );
   } catch {
     return false;
@@ -99,9 +99,9 @@ function pluginsBeside(filePath: string): string[] {
  *
  * A manifest loaded from disk is matched to the entry point named after it, so
  * `policies.json` runs `policies.mjs`. An example whose manifest has no such
- * neighbour is one that is only ever *submitted* to a server, where the source
- * travels in the request body — `examples/ag-ui/` is that shape. Loading it here
- * would fail on a program that was never meant to be on disk.
+ * neighbour ships programs instead of a process — `examples/skills-agent/` is
+ * that shape. Loading it here would fail on an entry point that was never
+ * meant to exist.
  */
 function loadableFromDisk(manifestPath: string): boolean {
   const base = manifestPath.slice(0, -'.json'.length);
@@ -112,11 +112,9 @@ describe('examples', () => {
   it.each(fileEntries)('%s parses and validates', async (_label, filePath) => {
     const plugins = await loadPlugins(pluginsBeside(filePath));
 
-    const component = loadComponent(filePath, plugins);
-    const ct = (component as unknown as { componentType: string }).componentType;
-    const name = (component as unknown as { name: string }).name;
-    expect(ct).toBeTruthy();
-    expect(name).toBeTruthy();
+    const flow = loadFlow(filePath, plugins);
+    expect(flow.name).toBeTruthy();
+    expect(flow.steps.length).toBeGreaterThan(0);
   });
 
   it('docker-agent/agent.yaml parses through its own input format', async () => {
@@ -127,7 +125,7 @@ describe('examples', () => {
       format: 'docker-agent',
     });
     expect(flow.name).toBe('quayside');
-    expect(flow.parsedNodes.map((n) => n.componentType)).toContain('AgentNode');
+    expect(flow.steps.map((step) => step.kind)).toContain('agent');
   });
 
   it.each(manifestEntries)('%s is a valid plugin manifest', (_label, filePath) => {

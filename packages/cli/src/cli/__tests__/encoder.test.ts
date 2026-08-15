@@ -175,8 +175,12 @@ describe('a run rendered by the shipped ag-ui encoder', () => {
 
       const frames = parseFrames(stdout);
       expect(frames.every((frame) => frame.event === undefined)).toBe(true);
+      // Three steps: the synthetic inputs node, the switch, and the outcome.
       expect(frames.map((frame) => (frame.data as { type: string }).type)).toEqual([
         'RUN_STARTED',
+        'STEP_STARTED',
+        'STEP_FINISHED',
+        'STATE_SNAPSHOT',
         'STEP_STARTED',
         'STEP_FINISHED',
         'STATE_SNAPSHOT',
@@ -188,6 +192,10 @@ describe('a run rendered by the shipped ag-ui encoder', () => {
       expect(frames[3].data).toEqual({
         type: 'STATE_SNAPSHOT',
         snapshot: { query: 'hello' },
+      });
+      expect(frames[9].data).toEqual({
+        type: 'STATE_SNAPSHOT',
+        snapshot: { query: 'hello', outcome: 'done' },
       });
     },
     SPAWNS_A_PLUGIN,
@@ -249,6 +257,8 @@ describe("heddle's own protocol, which needs no plugin at all", () => {
       'node_complete',
       'node_start',
       'node_complete',
+      'node_start',
+      'node_complete',
       'flow_complete',
     ]);
   });
@@ -258,6 +268,6 @@ describe('a run that selects nothing', () => {
   it('is unchanged: the final state on stdout, and no frames', async () => {
     const { stdout } = await run(FLOW, '--input', '{"query":"hello"}');
 
-    expect(JSON.parse(stdout)).toEqual({ query: 'hello' });
+    expect(JSON.parse(stdout)).toEqual({ query: 'hello', outcome: 'done' });
   });
 });

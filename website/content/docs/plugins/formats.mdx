@@ -1,6 +1,6 @@
 ---
 title: Input formats
-description: Read a spec in from another wire format, the input mirror of an encoder. Docker's agent spec ships as a worked example.
+description: Read a spec in from another wire format, the input mirror of an encoder. Docker's agent file ships as a worked example.
 ---
 
 An input format is the input mirror of an [encoder](/docs/plugins/encoders). Where an
@@ -9,11 +9,11 @@ format reads the spec document in from another wire format before anything runs.
 YAML are not baked into heddle: they are the two builtin formats in the same registry a
 plugin writes into.
 
-A format is one function: raw text in, an Agent Spec document out, in the
-`component_type` / `$component_ref` vocabulary [flows](/docs/flows) are written in.
+A format is one function: raw text in, a Weave document out, in the
+`steps` / `outcomes` vocabulary [flows](/docs/flows) are written in.
 Everything past that point (validation, compilation, execution) never learns which
 format the bytes arrived in. That is also the escape hatch for a format whose native
-schema is not Agent Spec at all: its `parse` translates to that vocabulary, and heddle
+schema is not Weave at all: its `parse` translates to that vocabulary, and heddle
 needs nothing else.
 
 Three things select one, all naming the same registry:
@@ -40,7 +40,7 @@ export default {
     {
       name: "toml",
       extensions: [".toml"],
-      parse: (text) => parseToml(text), // → an Agent Spec document
+      parse: (text) => parseToml(text), // → a Weave document
     },
   ],
 };
@@ -57,14 +57,14 @@ plugin has no way to provide one.
 
 ## A different spec, not just a different encoding
 
-`parse` is not required to be a decoder. It takes text and returns an Agent Spec
-document, and nothing says the text had to be Agent Spec in another syntax. A format for a
+`parse` is not required to be a decoder. It takes text and returns a Weave
+document, and nothing says the text had to be Weave in another syntax. A format for a
 foreign agent spec is a *translator*, and
 [examples/docker-agent](https://github.com/heddle-run/heddle/tree/main/examples/docker-agent)
 is a worked one: it reads a
 [Docker agent file](https://docs.docker.com/ai/docker-agent/configuration/overview/)
 (cagent's YAML configuration), with its named agents, models table and `instruction`,
-and emits the Agent Spec flow it describes:
+and emits the Weave flow it describes:
 
 ```bash
 heddle validate examples/docker-agent/agent.yaml \

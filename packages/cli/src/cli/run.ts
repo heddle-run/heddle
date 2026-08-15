@@ -6,7 +6,6 @@ import {
   validate,
   loadFlow,
   collectToolNames,
-  propertyTitle,
   EncoderStream,
   SubprocessExecutor,
   Runner,
@@ -79,7 +78,7 @@ interface RunOptions extends SandboxOptions, WorkspaceOptions, SessionFlags {
 }
 
 export const runCommand = new Command('run')
-  .description('Run an Agent Spec flow')
+  .description('Run a Weave document')
   .argument(
     '<flow>',
     'Path to flow JSON or YAML file, a .heddle bundle made by ' +
@@ -815,14 +814,8 @@ function parseInputs(input: string | undefined): Record<string, unknown> {
 }
 
 function detectInputKey(flow: ParsedFlow): string {
-  for (const node of flow.parsedNodes) {
-    if (node.componentType !== 'StartNode') continue;
-    if (!node.outputs || node.outputs.length === 0) continue;
-
-    const title = propertyTitle(node.outputs[0]);
-    if (title) return title;
-  }
-  return DEFAULT_INPUT_KEY;
+  const [first] = Object.keys(flow.inputs);
+  return first ?? DEFAULT_INPUT_KEY;
 }
 
 function pluginToolPaths(plugins: PluginRegistry): string[] {

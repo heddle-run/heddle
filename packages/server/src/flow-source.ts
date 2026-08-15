@@ -6,7 +6,6 @@ import {
   messageOf,
   parseFlowObject,
   parseFlowWith,
-  validateFlow,
   type ParsedFlow,
   type PluginRegistry,
 } from '@heddle-run/core';
@@ -107,15 +106,11 @@ function flowFromBody(
     );
   }
 
-  return specErrorAsBadRequest(() => {
-    const parsed =
-      typeof flow === 'string'
-        ? parseFlowWith(inputFormatByName(format ?? 'yaml', plugins), flow, plugins)
-        : parseFlowObject(flow, plugins);
-
-    validateFlow(parsed);
-    return parsed;
-  });
+  return specErrorAsBadRequest(() =>
+    typeof flow === 'string'
+      ? parseFlowWith(inputFormatByName(format ?? 'yaml', plugins), flow, plugins)
+      : parseFlowObject(flow, plugins),
+  );
 }
 
 function specErrorAsBadRequest(parse: () => ParsedFlow): ParsedFlow {
@@ -145,8 +140,8 @@ function notFound(requested: string): HttpError {
 
 function unparseableFlowMessage(parserMessage: string): string {
   return (
-    'this does not parse as an Agent Spec flow. Check that it declares ' +
-    'component_type, name, start_node, nodes and control_flow_connections. ' +
+    'this does not parse as a Weave document. Check that it declares ' +
+    '"weave: 1", "name", and "agent" or "steps". ' +
     `(the parser failed with: ${parserMessage})`
   );
 }

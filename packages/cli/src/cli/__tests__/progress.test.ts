@@ -60,14 +60,14 @@ describe('everything else', () => {
 
   it('stays quiet without --verbose', () => {
     const r = record();
-    r.feed({ type: 'flow_start' }, { type: 'node_start', nodeName: 'a', nodeType: 'AgentNode' });
+    r.feed({ type: 'flow_start' }, { type: 'node_start', nodeName: 'a', nodeType: 'agent' });
     expect(r.text()).toBe('');
   });
 
   it('reports the lifecycle with --verbose', () => {
     const r = record(true);
-    r.feed({ type: 'flow_start' }, { type: 'node_start', nodeName: 'a', nodeType: 'AgentNode' });
-    expect(r.text()).toBe('Flow started\n[a] Starting AgentNode\n');
+    r.feed({ type: 'flow_start' }, { type: 'node_start', nodeName: 'a', nodeType: 'agent' });
+    expect(r.text()).toBe('Flow started\n[a] Starting agent\n');
   });
 });
 

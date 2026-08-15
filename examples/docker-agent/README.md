@@ -7,12 +7,12 @@ the run's output into another wire format, an input format reads the spec in
 from one.
 
 The spec here is a [Docker agent file](https://docs.docker.com/ai/docker-agent/configuration/overview/)
-(cagent's YAML configuration), which is not another encoding of Agent Spec but
+(cagent's YAML configuration), which is not another encoding of Weave but
 a different schema with different ideas: named agents, a models table, an
 `instruction` instead of a templated prompt. The format's `parse` is a
-translator: Docker agent document in, Agent Spec document out. Everything
-downstream (validation, compilation, the run) never learns the file was not
-Agent Spec to begin with.
+translator: Docker agent document in, Weave document out — the root agent
+becomes Weave's one-step `agent:` sugar. Everything downstream (validation,
+compilation, the run) never learns the file was not Weave to begin with.
 
 | File | What it is |
 |------|------------|
@@ -29,12 +29,12 @@ heddle validate examples/docker-agent/agent.yaml \
 ```
 
 ```
-  Parsed Flow: quayside
+  Parsed flow: quayside
   Graph validation passed
 Valid: examples/docker-agent/agent.yaml
 ```
 
-Running it is no different from any Agent Spec flow: an OpenAI key, a question
+Running it is no different from any Weave flow: an OpenAI key, a question
 in, an answer out.
 
 ```bash
@@ -67,9 +67,10 @@ Translation is honest about its edges. A Docker agent file declaring
 
 Refused, not dropped: a toolset silently discarded would run a *different
 agent* than the file describes, and it would do so without saying so. The same
-goes for providers: `openai` maps to heddle's `OpenAiConfig` and `dmr` (Docker
-Model Runner) to `OpenAiCompatibleConfig` pointed at the local engine, while a
-provider heddle has no client for is refused with the list of what would work.
+goes for providers: `openai` maps to heddle's `provider: openai` and `dmr`
+(Docker Model Runner) to `provider: openai-compatible` pointed at the local
+engine, while a provider heddle has no client for is refused with the list of
+what would work.
 
 The refusal messages all point the same direction, and it is the real lesson of
 the example: a format is one entry in an ordinary plugin. A fuller integration
@@ -84,4 +85,4 @@ because it can finally carry them.
 example, because heddle's examples run from a bare checkout with nothing
 installed. It is scaffolding, not the point: a real deployment of this format
 would import a YAML library and delete that half of the file. `parse` is
-yours: whatever turns text into an Agent Spec document is a valid format.
+yours: whatever turns text into a Weave document is a valid format.

@@ -1,218 +1,199 @@
 ---
-title: Nodes
-description: Reference for all node types available in heddle workflows.
+title: Steps
+description: Reference for the step verbs available in heddle workflows.
 ---
 
-Nodes are the building blocks of a flow. Each node performs one step of your workflow.
+Steps are the building blocks of a flow. Each step performs one piece of your workflow,
+and declares exactly one **verb** — `agent`, `llm`, `tool`, `switch` or `use` — beside its
+`name`. The examples below are entries in a flow's `steps` list; see
+[Flows](/docs/flows) for how order, `then` and templates wire them together.
 
-The examples below are single components, as they appear under a flow's `$referenced_components`. See [Flows](/docs/flows) for how they are wired together.
+Every verb has a defined set of output keys, and those keys are the contract: a
+`{{step.key}}` reference to anything a step does not write is refused when the document is
+loaded. There is nothing a step writes that the format does not say it writes.
 
-<Callout type="warn">
-**heddle runs six of Agent Spec's fourteen node types.** `StartNode`, `EndNode`,
-`AgentNode`, `LlmNode`, `ToolNode` and `BranchingNode` execute. `ApiNode`,
-`CatchExceptionNode`, `FlowNode`, `InputMessageNode`, `MapNode`, `OutputMessageNode`,
-`ParallelFlowNode` and `ParallelMapNode` are valid Agent Spec, deserialise cleanly, and
-are then refused by name when the flow is parsed. A spec that is correct by the
-specification can still fail here.
-</Callout>
+A sixth possibility is a step type a plugin registers, written with `use:`. It brings its
+own executor and declares its own config schema and outputs. See [Plugins](/docs/plugins).
 
-A seventh possibility is a node type a plugin registers. It is written into `nodes[]` like
-any other, brings its own executor, and declares its own inputs, outputs and branches.
-See [Plugins](/docs/plugins).
+## agent
 
-## StartNode
-
-The entry point of a flow. Its `outputs` **document** what the flow expects to be given at
-run time; they do not enforce it. `--input` becomes the starting state whatever it
-contains: a key nothing declares is carried, and a declared key you omit is absent
-rather than defaulted.
+An LLM-powered agent that can call tools autonomously. The step sends the prompt to the
+model, the model decides which tools to call, the tools execute, and their results feed
+back to the model until it answers without requesting more tools.
 
 ```yaml
-component_type: StartNode
-name: start
-outputs:
-  - title: query
-    type: string
-  - title: max_results
-    type: integer
-    default: 10
+- name: researcher
+  agent:
+    model: main              # a name from `models`, or an inline config
+    prompt: |
+      You are a research assistant.
+      Answer the user's question: {{inputs.query}}
+    tools: [web_search]      # names from the document's `tools` map
+    max_tool_rounds: 10      # optional; the runtime's default otherwise
 ```
 
-A flow must have exactly one `StartNode`.
+`prompt` is the system prompt, and supports `{{ref}}` substitution. `tools` names entries
+in the document's top-level `tools` map — a step only uses tools the document declares.
 
-## EndNode
+**Writes:** `result`, the model's final message as a string.
 
-The exit point of a flow. Its declared `inputs` filter nothing: an EndNode passes state
-through, so the run returns the whole accumulated state that reached it, merged with
-anything a data-flow edge mapped in. Declare them to document the shape you intend.
+**What the model is sent.** heddle builds a system message from the `prompt` with its
+references substituted, then a user message carrying, as JSON, exactly the values the
+prompt references — `{"inputs.query": "hello"}` and nothing more. The agent sees precisely
+what the document wired to it.
 
-`branch_name` is accepted and read nowhere. In Agent Spec it feeds branch inference for
-subflow nodes, which heddle does not support, so labelling an EndNode with it changes
-nothing about how the flow runs.
-
-```yaml
-component_type: EndNode
-name: end
-inputs:
-  - title: result
-    type: string
-branch_name: next
-```
-
-Reaching any `EndNode` ends the run, and the state at that point is printed as JSON.
-
-## AgentNode
-
-An LLM-powered agent that can call tools autonomously. The node sends the prompt to the LLM, the LLM decides which tools to call, the tools execute, and their results feed back to the LLM until it answers without requesting more tools.
-
-```yaml
-component_type: AgentNode
-name: researcher
-inputs:
-  - title: query
-    type: string
-outputs:
-  - title: result
-    type: string
-agent:
-  component_type: Agent
-  name: research-agent
-  system_prompt: |
-    You are a research assistant.
-    Answer the user's question: {{query}}
-  llm_config:
-    component_type: OpenAiConfig
-    name: openai
-    model_id: gpt-4o
-  tools:
-    - component_type: ServerTool
-      name: web_search
-      description: Search the web for information
-      inputs:
-        - title: query
-          type: string
-      outputs:
-        - title: results
-          type: string
-```
-
-The nested `agent` carries the prompt, the LLM config, and the tool declarations. `system_prompt` supports `{{variable}}` substitution from the node's input state.
-
-The agent runs at most 10 rounds of tool calling; exceeding that fails the run.
+The agent runs at most `max_tool_rounds` rounds of tool calling (default 10); exceeding
+that fails the run.
 
 A tool input carrying a `default` is optional: it is left out of the schema's `required`
 list, and if the model omits it the default is filled in before the tool runs. An input
 without a default is required.
 
-**What the model is sent.** heddle builds a system message from the `system_prompt`, with
-`{{key}}` placeholders substituted from the run's state, and then a user message carrying
-the node's entire input state as JSON. The agent therefore sees its inputs whether or not
-the prompt mentions them.
+### Structured output
 
-**`transforms`** attaches guardrails to the agent; see
-[Plugins](/docs/plugins). They change this node's contract in ways worth knowing: a `pre`
-transform that rejects skips the model call entirely and the node returns
-`transform_status: "rejected"` instead of its usual output, and an agent carrying a `post`
-transform does not stream, because a token that has reached a client cannot be recalled
-once the transform rejects the answer.
-
-<Callout type="warn">
-Agent Spec defines `human_in_the_loop`, `toolboxes` and `requires_confirmation` on an
-agent. heddle parses all three and acts on none. `human_in_the_loop` defaults to `true` in
-the schema, so a spec that appears to ask for human approval gets none.
-</Callout>
-
-The node's output is the model's final message under the key `result`. If that message is itself a JSON object, its keys are merged into the output as well.
-
-## LlmNode
-
-Runs a prompt template through an LLM, with no tool-calling loop. `prompt_template` supports `{{variable}}` substitution from the node's input state.
+Declare `output` to get JSON instead of prose. The model is constrained to a JSON object,
+and the step writes exactly the declared keys — extra keys in the answer are dropped, and
+a missing key fails the run.
 
 ```yaml
-component_type: LlmNode
-name: summarizer
-prompt_template: |
-  Summarize the following text in three bullet points:
-  {{text}}
-llm_config:
-  component_type: OpenAiConfig
-  name: openai
-  model_id: gpt-4o
-inputs:
-  - title: text
-    type: string
-outputs:
-  - title: generated_text
-    type: string
+- name: triage
+  agent:
+    model: main
+    prompt: 'Classify the alert: {{inputs.alert}}'
+    output:
+      status: string
+      note: string
 ```
 
-The response is written to the output key `generated_text`.
+**Writes:** the `output` keys — here `status` and `note` — instead of `result`.
 
-<Callout type="warn">
-Substitution only fills in string values. A placeholder bound to a number, object, or array is replaced with an empty string, and a placeholder with no matching key is left in the prompt verbatim.
-</Callout>
+Structure is either declared and enforced or absent, never guessed: an agent without
+`output` writes only `result`, even when its answer happens to parse as JSON.
 
-## ToolNode
+### Transforms
 
-Executes an external tool directly, with no LLM involved. The node's input state is passed to the tool as JSON, and the tool's JSON output becomes the node's output.
+`transforms` attaches guardrails to the agent — plugin components that see the agent's
+messages on their way to the model (`pre`) or back (`post`). `use` names the component
+type; the rest of the entry is that transform's own config.
 
 ```yaml
-component_type: ToolNode
-name: fetch_data
-inputs:
-  - title: url
-    type: string
-outputs:
-  - title: body
-    type: string
-tool:
-  component_type: ServerTool
-  name: fetch_api
-  description: Fetch a URL and return the response body
-  inputs:
-    - title: url
-      type: string
-  outputs:
-    - title: body
-      type: string
+- name: triage
+  agent:
+    model: main
+    prompt: '...'
+    transforms:
+      - use: SecretScrub
+        phase: both
+        patterns: ['sk-[A-Za-z0-9]{16,}']
+        replacement: '[REDACTED]'
 ```
 
-The tool's `name` must resolve in the flow's tool registry: an executable in
-`--tools-dir`, or a tool a loaded plugin contributes, which exists nowhere on disk. See
+A step with transforms also writes `transform_status` (`"ok"` or `"rejected"`), and
+`transform_reason`, `transform_name` and `transform_phase` beside it — which a
+[`switch`](#switch) step can route on. A `pre` transform that rejects skips the model call
+entirely, and an agent carrying a `post` transform does not stream, because a token that
+has reached a client cannot be recalled once the transform rejects the answer. See
+[Plugins](/docs/plugins).
+
+## llm
+
+A single completion, with no tool-calling loop.
+
+```yaml
+- name: summarize
+  llm:
+    model: main
+    prompt: |
+      Summarize the following text in three bullet points:
+      {{fetch.body}}
+```
+
+**Writes:** `text`, the model's response.
+
+References substitute into the prompt as text: a string stays itself, a number or boolean
+is stringified, an object or array is rendered as JSON. A reference nothing produces is a
+load-time error, so a placeholder can never reach the model unfilled.
+
+## tool
+
+Executes an external tool directly, with no LLM involved. `tool` names an entry in the
+document's `tools` map, and `with` carries the call's arguments — literals or templates.
+
+```yaml
+- name: fetch
+  tool: fetch_api
+  with:
+    url: '{{inputs.url}}'
+```
+
+with the tool declared once, at the top level:
+
+```yaml
+tools:
+  fetch_api:
+    description: Fetch a URL and return the response body
+    inputs:
+      url: string
+    outputs:
+      body: string
+```
+
+**Writes:** the tool's declared `outputs` — and for a tool step they are contractual. The
+runtime checks the executable's JSON against the declaration and fails the step on a
+missing key or a mismatched type, so `{{fetch.body}}` downstream is a value, not a hope.
+
+`with` is checked at load time too: an argument the tool does not declare is refused, and
+so is leaving out a required input (one with no `default`). A value that is exactly one
+reference keeps its type — `limit: '{{inputs.limit}}'` stays a number.
+
+The tool's name must resolve in the flow's tool registry: an executable in `--tools-dir`,
+or a tool a loaded plugin contributes, which exists nowhere on disk. See
 [Tools](/docs/tools).
 
-## BranchingNode
+## switch
 
-Routes execution to a named branch by looking up an input value in `mapping`. Mapping keys are input values; mapping values are branch names, which must match the `from_branch` of an outgoing control flow edge.
-
-```yaml
-component_type: BranchingNode
-name: router
-inputs:
-  - title: branching_mapping_key
-    type: string
-mapping:
-  tech: tech_branch
-  science: science_branch
-  DEFAULT_BRANCH: default_branch
-```
-
-The value is read from the input named `branching_mapping_key`. Wire it with a data flow edge:
+Routes execution by comparing one referenced value against `cases`. Case keys are values;
+case targets are step or outcome names.
 
 ```yaml
-data_flow_connections:
-  - component_type: DataFlowEdge
-    name: category_to_router
-    source_node:
-      $component_ref: classifier
-    source_output: category
-    destination_node:
-      $component_ref: router
-    destination_input: branching_mapping_key
+- name: route
+  switch: '{{classify.category}}'
+  cases:
+    tech: tech_steps
+    science: science_steps
+  else: done
 ```
 
-Unmatched values fall back in two steps: to the branch named by the special `DEFAULT_BRANCH` mapping key if you define one, and otherwise to the branch literally named `default`. If neither exists as an outgoing edge, the run fails with a "no next node" error, so give every branching node a default path.
+The switch expression is exactly one template reference, compared by string equality.
+`else` is required — a switch says where every unmatched value goes, and there is no
+implicit default and no fallback scanning. Targets must appear later in the list, the same
+forward-only rule every edge follows.
 
-<Callout type="warn">
-If `branching_mapping_key` is missing from the input state entirely, the node falls back to the first string value it finds in that state, which makes routing depend on key ordering. Always wire `branching_mapping_key` explicitly.
-</Callout>
+**Writes:** nothing. A switch routes; it produces no state.
+
+A `switch` step takes no `then`: its `cases` and `else` are its routing.
+
+## use
+
+A plugin-defined step. `use` names a component type some loaded plugin provides; `with` is
+that component's config, validated by the schema the plugin registered.
+
+```yaml
+- name: scrub
+  use: RegexRewrite
+  with:
+    pattern: '\d{4}-\d{4}'
+    replacement: 'XXXX'
+    text: '{{researcher.result}}'
+```
+
+The plugin's executor receives the resolved `with` block — templates substituted — as its
+input, not the run's ambient state.
+
+**Writes:** the outputs the plugin's manifest declares for that component type, checked
+against what the plugin actually returned, the same way a tool step is checked. Template
+references into a plugin step's outputs validate against the manifest declaration.
+
+Which plugin code answers to the type is the operator's decision (`--plugin`), never the
+document's: a spec selects among what was already loaded. A document can pin the version
+it was written against with top-level `requires`. See [Plugins](/docs/plugins).

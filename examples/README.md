@@ -2,8 +2,8 @@
 
 Thirteen worked examples, each with a README of its own. They are ordered here as
 a learning path: the first rows need nothing but an OpenAI key, the middle
-rows introduce plugins, and the last rows are specs authored outside this repo
-that heddle validates as-is.
+rows introduce plugins, and the last rows are documents that began life as
+Oracle Agent Spec examples, converted to Weave.
 
 Start with [research-assistant](research-assistant/README.md).
 
@@ -17,11 +17,11 @@ Start with [research-assistant](research-assistant/README.md).
 | [approval-gate](approval-gate/README.md) | Middleware that suspends a run until a person answers, with `--session --resume --answer`. | Intermediate |
 | [policies](policies/README.md) | Four middleware — retry, approval, audit, rate limit — and how an operator composes them at the seams of a run. | Advanced |
 | [ag-ui](ag-ui/README.md) | An encoder plugin rendering the run as the [AG-UI](https://docs.ag-ui.com) protocol, selected per request with `--protocol` / `?protocol=`. | Advanced |
-| [docker-agent](docker-agent/README.md) | An input format plugin reading a [Docker agent file](https://docs.docker.com/ai/docker-agent/configuration/overview/): a different spec translated into Agent Spec at the parse, selected with `--format`. | Advanced |
+| [docker-agent](docker-agent/README.md) | An input format plugin reading a [Docker agent file](https://docs.docker.com/ai/docker-agent/configuration/overview/): a different spec translated into Weave at the parse, selected with `--format`. | Advanced |
 | [session-store](session-store/README.md) | Replacing where the server keeps conversations with a SQLite-backed `store` plugin. | Advanced |
-| [math-homework-agent](math-homework-agent/README.md) | Portability: an Oracle-authored bare `Agent` spec that heddle validates unmodified. | Reference |
-| [rag-agent](rag-agent/README.md) | Portability: an Oracle-authored agent whose retrieval is just a `ServerTool` returning an array. | Reference |
-| [oracle-it-assistant](oracle-it-assistant/README.md) | Portability at flow scale: Oracle's multi-agent IT-support flow — orchestrator, branching, specialist agents. | Reference |
+| [math-homework-agent](math-homework-agent/README.md) | The one-agent sugar: a whole document that is `inputs` and one `agent`. Converted from an Oracle Agent Spec example. | Reference |
+| [rag-agent](rag-agent/README.md) | A retrieval tool is just a tool returning an array — no special component type. Converted from an Oracle Agent Spec example. | Reference |
+| [oracle-it-assistant](oracle-it-assistant/README.md) | Orchestration at flow scale: a tool step, a classifying agent, a `switch` routing to specialist agents. Converted from Oracle's multi-agent IT-support flow. | Reference |
 
 Every command in these READMEs is written for an installed CLI (`heddle`, or
 `npx @heddle-run/cli`), run from the repository root. From a source checkout,

@@ -10,7 +10,7 @@ import { AgentExecutor } from '../../../node/agent.js';
 import { MiddlewareChain } from '../../middleware.js';
 import { PluginRegistry } from '../../registry.js';
 import { State } from '../../../state/state.js';
-import type { AgentNode } from '../../../spec/types.js';
+import type { AgentStep } from '../../../spec/types.js';
 import type { Event } from '../../../runner/events.js';
 import type { Provider } from '../../../llm/types.js';
 import type { Dependencies } from '../../../node/types.js';
@@ -69,18 +69,24 @@ export function agentWith(
     },
   };
 
-  const node = {
+  const step: AgentStep = {
+    kind: 'agent',
     name: 'assistant',
-    componentType: 'AgentNode',
     agent: {
-      name: 'assistant',
-      systemPrompt: 'do the thing',
-      llmConfig: { componentType: 'OpenAiConfig', modelId: 'gpt-4o', name: 'llm' },
-      tools: [{ name: 'shell', description: 'run a command' }],
+      model: { provider: 'openai', model: 'gpt-4o', extra: {} },
+      prompt: 'do the thing',
+      tools: [
+        {
+          name: 'shell',
+          description: 'run a command',
+          inputs: {},
+          outputs: {},
+        },
+      ],
       transforms: [],
     },
-  } as unknown as AgentNode;
+  };
 
-  const executor = new AgentExecutor(node, deps);
+  const executor = new AgentExecutor(step, deps);
   return { execute: () => executor.execute(undefined, new State({})), events };
 }

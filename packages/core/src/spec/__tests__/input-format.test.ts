@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -14,7 +14,25 @@ import { loadFlow } from '../load.js';
 import { PluginRegistry } from '../../plugin/registry.js';
 import { definePlugin } from '../../plugin/types.js';
 
-const testdataDir = join(import.meta.dirname, '../../../testdata');
+const FLOW_JSON = JSON.stringify({
+  weave: 1,
+  name: 'simple-flow',
+  inputs: { question: 'string' },
+  agent: {
+    model: { provider: 'openai', model: 'gpt-4o' },
+    prompt: 'Answer: {{inputs.question}}',
+  },
+});
+
+const FLOW_YAML = `
+weave: 1
+name: simple-flow
+inputs:
+  question: string
+agent:
+  model: { provider: openai, model: gpt-4o }
+  prompt: 'Answer: {{inputs.question}}'
+`;
 
 // A wire format of its own: base64-wrapped JSON. Small enough to define
 // inline, foreign enough that nothing but the adapter could have read it.
@@ -68,49 +86,55 @@ describe('inputFormatForPath', () => {
 
 describe('parseFlowWith', () => {
   it('parses a flow through a custom format', () => {
-    const json = readFileSync(join(testdataDir, 'simple_flow.json'), 'utf-8');
-    const encoded = Buffer.from(json, 'utf-8').toString('base64');
+    const encoded = Buffer.from(FLOW_JSON, 'utf-8').toString('base64');
 
     const flow = parseFlowWith(b64Format, encoded, registryWithB64());
 
     expect(flow.name).toBe('simple-flow');
-    expect(flow.parsedNodes.length).toBe(2);
+    expect(flow.steps).toHaveLength(1);
   });
 
-  it('names the format when it yields no top-level object', () => {
-    expect(() => parseFlowWith(b64Format, Buffer.from('[]').toString('base64')))
-      .toThrow('B64 must contain a top-level object');
+  it('names the format when the text does not parse', () => {
+    expect(() => parseFlowWith(b64Format, 'certainly not base64 json')).toThrow(
+      /does not parse as B64/,
+    );
+  });
+
+  it('refuses a document that is not a mapping', () => {
+    expect(() =>
+      parseFlowWith(b64Format, Buffer.from('[]').toString('base64')),
+    ).toThrow(/must be a mapping of keys to values/);
   });
 });
 
 describe('loadFlow with an explicit format', () => {
   it('reads a file whose extension says nothing', () => {
-    const yaml = readFileSync(join(testdataDir, 'simple_flow.yaml'), 'utf-8');
     const dir = mkdtempSync(join(tmpdir(), 'heddle-format-test-'));
     const path = join(dir, 'flow.txt');
-    writeFileSync(path, yaml);
+    writeFileSync(path, FLOW_YAML);
 
-    expect(() => loadFlow(path)).toThrow();
+    expect(() => loadFlow(path)).toThrow(/does not parse as JSON/);
     expect(loadFlow(path, undefined, { format: 'yaml' }).name).toBe(
       'simple-flow',
     );
   });
 
   it('reads a plugin format by extension', () => {
-    const json = readFileSync(join(testdataDir, 'simple_flow.json'), 'utf-8');
     const dir = mkdtempSync(join(tmpdir(), 'heddle-format-test-'));
     const path = join(dir, 'flow.b64');
-    writeFileSync(path, Buffer.from(json, 'utf-8').toString('base64'));
+    writeFileSync(path, Buffer.from(FLOW_JSON, 'utf-8').toString('base64'));
 
     expect(loadFlow(path, registryWithB64()).name).toBe('simple-flow');
   });
 
   it('refuses an unknown format name', () => {
-    expect(() =>
-      loadFlow(join(testdataDir, 'simple_flow.json'), undefined, {
-        format: 'toml',
-      }),
-    ).toThrow(/unknown input format "toml"/);
+    const dir = mkdtempSync(join(tmpdir(), 'heddle-format-test-'));
+    const path = join(dir, 'flow.json');
+    writeFileSync(path, FLOW_JSON);
+
+    expect(() => loadFlow(path, undefined, { format: 'toml' })).toThrow(
+      /unknown input format "toml"/,
+    );
   });
 });
 

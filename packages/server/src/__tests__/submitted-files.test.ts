@@ -33,49 +33,16 @@ const DATES = 'Date arithmetic\n\nCount days with timedelta, never by hand.\n';
 
 function skillsFlow(): Record<string, unknown> {
   return {
-    component_type: 'Flow',
+    weave: 1,
     name: 'skills-flow',
-    start_node: { $component_ref: 'start' },
-    nodes: [
-      { $component_ref: 'start' },
-      { $component_ref: 'list' },
-      { $component_ref: 'end' },
-    ],
-    control_flow_connections: [
-      {
-        component_type: 'ControlFlowEdge',
-        name: 'start_to_list',
-        from_node: { $component_ref: 'start' },
-        to_node: { $component_ref: 'list' },
+    inputs: { task: 'string' },
+    tools: {
+      list_skills: {
+        description: 'every skill and its first line',
+        outputs: { index: 'string' },
       },
-      {
-        component_type: 'ControlFlowEdge',
-        name: 'list_to_end',
-        from_node: { $component_ref: 'list' },
-        to_node: { $component_ref: 'end' },
-      },
-    ],
-    $referenced_components: {
-      start: {
-        component_type: 'StartNode',
-        id: 'start',
-        name: 'start',
-        outputs: [{ title: 'task', type: 'string' }],
-      },
-      list: {
-        component_type: 'ToolNode',
-        id: 'list',
-        name: 'list',
-        tool: {
-          component_type: 'ServerTool',
-          id: 'tool',
-          name: 'list_skills',
-          description: 'every skill and its first line',
-          outputs: [{ title: 'index', type: 'string' }],
-        },
-      },
-      end: { component_type: 'EndNode', id: 'end', name: 'end' },
     },
+    steps: [{ name: 'list', tool: 'list_skills', with: {} }],
   };
 }
 

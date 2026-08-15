@@ -3,15 +3,12 @@ import {
   compile,
   validate,
   loadFlow,
-  loadComponent,
   collectToolNames,
   loadPlugins,
-  messageOf,
   assertToolsAvailable,
   standardRegistry,
   isBundlePath,
   PluginRegistry,
-  type CompiledGraph,
   type ParsedFlow,
 } from '@heddle-run/core';
 import { openBundle, type OpenedBundle } from './bundles.js';
@@ -24,14 +21,14 @@ interface ValidateOptions {
 }
 
 export const validateCommand = new Command('validate')
-  .description('Validate an Agent Spec component (Flow, Agent, Swarm, etc.)')
-  .argument('<spec>', 'Path to spec JSON or YAML file, or a .heddle bundle')
+  .description('Validate a Weave document')
+  .argument('<flow>', 'Path to a weave.yaml (or JSON), or a .heddle bundle')
   .option('--tools-dir <dir>', 'Directory containing tool executables')
   .option(
     '--format <name>',
-    'Read the spec through this input format instead of resolving it from ' +
-      'the file extension. "json" and "yaml" are builtin; any other name ' +
-      'comes from a plugin',
+    'Read the document through this input format instead of resolving it ' +
+      'from the file extension. "json" and "yaml" are builtin; any other ' +
+      'name comes from a plugin',
   )
   .option(
     '--plugin <module>',
@@ -61,16 +58,18 @@ export const validateCommand = new Command('validate')
       discovery: options.discoverTools === true,
     });
     try {
-      const component = loadComponent(specPath, plugins, {
-        format: options.format,
-      }) as unknown as {
-        componentType: string;
-        name: string;
-      };
-      console.log(`  Parsed ${component.componentType}: ${component.name}`);
+      // `loadFlow` runs both passes: the document's own shape, then the
+      // references, the graph and the plugin components. A flow that loads
+      // is one that compiles — `validate` after `compile` is the backstop
+      // over heddle's own lowering.
+      const flow = loadFlow(specPath, plugins, { format: options.format });
+      console.log(`  Parsed flow: ${flow.name}`);
 
-      if (component.componentType === 'Flow') {
-        validateFlowFile(specPath, options, plugins);
+      validate(compile(flow, { plugins }));
+      console.log('  Graph validation passed');
+
+      if (options.toolsDir || plugins.hasTools()) {
+        reportToolValidation(flow, options, plugins);
       }
 
       console.log(`Valid: ${given}`);
@@ -84,47 +83,6 @@ export const validateCommand = new Command('validate')
       bundle?.dispose();
     }
   });
-
-function validateFlowFile(
-  specPath: string,
-  options: ValidateOptions,
-  plugins: PluginRegistry,
-): void {
-  const flow = loadFlow(specPath, plugins, { format: options.format });
-
-  reportGraphValidation(flow, plugins);
-
-  if (options.toolsDir || plugins.hasTools()) {
-    reportToolValidation(flow, options, plugins);
-  }
-}
-
-/**
- * Check the graph, and tell a graph that is wrong from one that was not read.
- *
- * Only compilation is tolerated here. It is the half that can fail for reasons
- * that are not the flow's fault — a node type whose plugin is not loaded is the
- * usual one — and reporting a check that could not run as a fault would refuse
- * specs that are fine. Validation is the other half: the graph compiled, heddle
- * read it, and what it found is a verdict. That throws, and the exit status
- * carries it, because a validator that prints a fatal problem and exits 0 is
- * one nobody can put in CI.
- */
-function reportGraphValidation(
-  flow: ParsedFlow,
-  plugins: PluginRegistry,
-): void {
-  let graph: CompiledGraph;
-  try {
-    graph = compile(flow, { plugins });
-  } catch (err) {
-    console.log(`  Graph validation skipped: ${messageOf(err)}`);
-    return;
-  }
-
-  validate(graph);
-  console.log('  Graph validation passed');
-}
 
 function reportToolValidation(
   flow: ParsedFlow,

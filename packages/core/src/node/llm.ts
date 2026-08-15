@@ -1,27 +1,24 @@
-import type { LLMConfig, LLMNode } from '../spec/types.js';
+import type { LlmStep, ModelSpec } from '../spec/types.js';
+import { renderTemplate } from '../spec/template.js';
 import { State } from '../state/state.js';
 import type { NodeExecutor, Dependencies } from './types.js';
 import type { Provider } from '../llm/types.js';
-import { completeChat, substituteTemplate } from './agent.js';
+import { completeChat } from './agent.js';
 import { generationParams, providerFor } from '../llm/provider.js';
-import { RunError } from '../errors.js';
 
+/** A single completion, no tools. Writes `text`. */
 export class LLMExecutor implements NodeExecutor {
-  private readonly node: LLMNode;
+  private readonly step: LlmStep;
   private readonly deps: Dependencies;
-  private readonly llmConfig: LLMConfig;
+  private readonly model: ModelSpec;
   private readonly generation: ReturnType<typeof generationParams>;
   private provider?: Provider;
 
-  constructor(node: LLMNode, deps: Dependencies) {
-    if (!node.llmConfig) {
-      throw new RunError(`LlmNode "${node.name}": node has no llmConfig`);
-    }
-
-    this.node = node;
+  constructor(step: LlmStep, deps: Dependencies) {
+    this.step = step;
     this.deps = deps;
-    this.llmConfig = node.llmConfig;
-    this.generation = generationParams(node.llmConfig);
+    this.model = step.model;
+    this.generation = generationParams(step.model);
   }
 
   branch(): string {
@@ -32,30 +29,34 @@ export class LLMExecutor implements NodeExecutor {
     signal: AbortSignal | undefined,
     input: State,
   ): Promise<State> {
-    const prompt = substituteTemplate(this.node.promptTemplate, input);
+    const prompt = renderTemplate(
+      this.step.prompt,
+      input,
+      `step "${this.step.name}"`,
+    );
 
     const response = await completeChat(
       this.getProvider(),
       signal,
       {
-        model: this.llmConfig.modelId,
+        model: this.model.model,
         messages: [{ role: 'user', content: prompt }],
         ...this.generation,
       },
       {
-        nodeName: this.node.name,
-        nodeType: 'LlmNode',
+        nodeName: this.step.name,
+        nodeType: 'llm',
         middleware: this.deps.middleware,
         eventHandler: this.deps.eventHandler,
         allowStream: this.deps.stream !== false,
       },
     );
 
-    return new State({ generated_text: response.content });
+    return new State({ text: response.content });
   }
 
   private getProvider(): Provider {
-    this.provider ??= providerFor(this.llmConfig, this.deps);
+    this.provider ??= providerFor(this.model, this.deps);
     return this.provider;
   }
 }

@@ -77,7 +77,7 @@ process, the latter existing nowhere on the filesystem. A flow names them exactl
 names a file-backed tool, and nothing downstream can tell the difference.
 
 ```bash
-heddle run flow.json --tools-dir ./tools --plugin ./mcp-proxy/manifest.json
+heddle run weave.yaml --tools-dir ./tools --plugin ./mcp-proxy/manifest.json
 ```
 
 The registries are composed, and a plugin's tools go in weakest: a name from `--tools-dir`
@@ -89,45 +89,47 @@ See [Plugins](/docs/plugins/manifest) for the manifest's `tools` field.
 
 ## Declaring tools in a spec
 
-Tools are declared inline as `ServerTool` components, not referenced by bare name. The `name` is what links the declaration to the executable in `--tools-dir`; `description`, `inputs`, and `outputs` are what the model sees when deciding whether to call it.
+Tools are declared once, in the document's top-level `tools` map, and referenced by name
+everywhere else. The map key is what links the declaration to the executable in
+`--tools-dir`; `description`, `inputs`, and `outputs` are what the model sees when
+deciding whether to call it.
 
 ```yaml
-component_type: AgentNode
+weave: 1
 name: assistant
+
+tools:
+  web_search:
+    description: Search the web for information
+    inputs:
+      query: string
+    outputs:
+      results: string
+  calculator:
+    description: Perform mathematical calculations
+    inputs:
+      expression: string
+    outputs:
+      value: string
+
 agent:
-  component_type: Agent
-  name: assistant-agent
-  system_prompt: You are a helpful assistant.
-  llm_config:
-    component_type: OpenAiConfig
-    name: openai
-    model_id: gpt-4o
-  tools:
-    - component_type: ServerTool
-      name: web_search
-      description: Search the web for information
-      inputs:
-        - title: query
-          type: string
-      outputs:
-        - title: results
-          type: string
-    - component_type: ServerTool
-      name: calculator
-      description: Perform mathematical calculations
-      inputs:
-        - title: expression
-          type: string
-      outputs:
-        - title: value
-          type: string
+  model:
+    provider: openai
+    model: gpt-4o
+  prompt: You are a helpful assistant.
+  tools: [web_search, calculator]
 ```
 
-Each `inputs` entry becomes a parameter in the JSON Schema handed to the model. All of them are marked required; optional parameters are not yet expressible.
+Each `inputs` entry becomes a parameter in the JSON Schema handed to the model. An input
+without a `default` is required; one carrying a `default` is optional, and the default is
+filled in before the tool runs when the model omits it. A step naming a tool the document
+does not declare is refused at load.
 
-To run a tool directly, without an LLM choosing it, use a [ToolNode](/docs/nodes#toolnode).
+To run a tool directly, without an LLM choosing it, use a [tool step](/docs/nodes#tool).
+For a tool step the declared `outputs` are contractual: the runtime checks the
+executable's JSON against them and fails the step on a mismatch.
 
-Running `heddle validate` with `--tools-dir` checks that every declared `ServerTool` has a matching executable.
+Running `heddle validate` with `--tools-dir` checks that every declared tool has a matching executable.
 
 ## Execution details
 
@@ -137,7 +139,7 @@ Running `heddle validate` with `--tools-dir` checks that every declared `ServerT
 - Malformed JSON on stdout fails the call
 - Empty stdout is treated as an empty object
 
-When an agent calls a tool, a failure is reported back to the model as a tool message so it can retry or recover. A failure in a `ToolNode` fails the whole run.
+When an agent calls a tool, a failure is reported back to the model as a tool message so it can retry or recover. A failure in a `tool` step fails the whole run.
 
 <Callout type="warn">
 By default tools run as subprocesses of `heddle` and inherit its full environment, including any API keys, and a tool can read and write anything the invoking user can. Treat a tools directory the way you would treat a directory of shell scripts you are about to run, and be especially careful with tools that execute commands or write files on the model's behalf.
@@ -154,7 +156,7 @@ $HEDDLE_WORKSPACE/       # the tool's cwd, and its scratch
 └── .heddle/bin/         # reserved: every tool, reachable by name
 ```
 
-**One workspace per `AgentNode` execution**, shared by every tool call that agent makes.
+**One workspace per agent-step execution**, shared by every tool call that agent makes.
 That is what lets an agent's tools hand each other files: write a CSV in one call, run a
 script over it in the next. A different agent in the same flow sees an empty one, and it
 is removed when the agent finishes.
@@ -164,7 +166,7 @@ is removed when the agent finishes.
 `--mount` puts a file or directory in every workspace, before the run starts:
 
 ```bash
-heddle run flow.yaml --tools-dir ./tools \
+heddle run weave.yaml --tools-dir ./tools \
   --mount ./skills \
   --mount ./data/report.csv:input.csv \
   --mount ./notes:notes:rw
@@ -177,8 +179,8 @@ source's own name by default) and `:ro` or `:rw`.
 editing its copy, and the original is untouched. Under `--safe` it is a real boundary and
 the write is refused outright.
 
-**`rw` is shared with the run.** It is copied in when a node's scope opens and the files
-the node changed are copied back when it closes, so a later node sees what an earlier one
+**`rw` is shared with the run.** It is copied in when a step's scope opens and the files
+the step changed are copied back when it closes, so a later step sees what an earlier one
 wrote. Three rules worth knowing, because they are chosen rather than incidental:
 
 - **Deletions do not propagate.** A model's `rm -rf` in a scratch directory must not become
@@ -207,7 +209,7 @@ it in every workspace without holding the path themselves.
 ### Keeping it
 
 ```bash
-heddle run flow.yaml --tools-dir ./tools --safe --workspace ./run-out
+heddle run weave.yaml --tools-dir ./tools --safe --workspace ./run-out
 ```
 
 Each node's workspace goes in `./run-out/<node-name>` and stays there. With `--safe` and no
@@ -231,7 +233,7 @@ heddle run flow.json --tools-dir ./tools --safe
 
 A confined tool gets read-only system paths, a throwaway `$HOME` (so `~/.ssh` and `~/.aws` are unreachable), a private `$TMPDIR`, and only the environment variables named with `--allow-env`, so API keys in heddle's environment are not handed to tool code. Network access is allowed unless you pass `--deny-net`.
 
-What `--safe` adds to the workspace is enforcement: the workspace becomes the only place a tool *can* write, and the directory heddle was launched from becomes readable and nothing more. Each `AgentNode` execution opens its own sandbox session over its own workspace, so every tool call is still its own container while all calls within one agent share the directory.
+What `--safe` adds to the workspace is enforcement: the workspace becomes the only place a tool *can* write, and the directory heddle was launched from becomes readable and nothing more. Each `agent` step opens its own sandbox session over its own workspace, so every tool call is still its own container while all calls within one agent share the directory.
 
 Widen the policy with `--allow-read <path>` and `--allow-write <path>`.
 

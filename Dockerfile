@@ -41,21 +41,16 @@ RUN corepack enable
 # workspace member absent from the context is simply not an importer, which
 # --frozen-lockfile accepts.
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
-COPY vendor/agentspec/package.json ./vendor/agentspec/
 COPY packages/core/package.json ./packages/core/
 COPY packages/cli/package.json ./packages/cli/
 COPY packages/server/package.json ./packages/server/
 
-# --ignore-scripts: the root `prepare` script builds the vendored SDK, which
-# needs sources that have not been copied yet. It is run explicitly below.
 RUN pnpm install --frozen-lockfile --ignore-scripts
 
-COPY vendor/agentspec ./vendor/agentspec
 COPY packages/core ./packages/core
 COPY packages/cli ./packages/cli
 
-RUN pnpm run build:vendor \
- && pnpm --filter @heddle-run/core build \
+RUN pnpm --filter @heddle-run/core build \
  && pnpm --filter @heddle-run/cli build
 
 # Strip out everything that is not needed to run: dev dependencies, the
@@ -115,7 +110,7 @@ ENV NODE_ENV=production \
     HOME=/home/node
 
 LABEL org.opencontainers.image.title="heddle" \
-      org.opencontainers.image.description="Run Open Agent Specification flows from the command line." \
+      org.opencontainers.image.description="Run Weave agent documents from the command line." \
       org.opencontainers.image.source="https://github.com/heddle-run/heddle" \
       org.opencontainers.image.url="https://heddle.run" \
       org.opencontainers.image.licenses="MIT"

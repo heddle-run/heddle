@@ -1,7 +1,7 @@
 import type { State } from '../state/state.js';
 import type { Executor, Registry } from '../tool/types.js';
 import type { EventHandler } from '../runner/events.js';
-import type { LLMConfig } from '../spec/types.js';
+import type { ModelSpec } from '../spec/types.js';
 import type { Provider } from '../llm/types.js';
 import type { ProviderOptions } from '../llm/provider.js';
 import type { EgressPolicy } from '../llm/egress.js';
@@ -36,7 +36,7 @@ export interface Dependencies {
   allowEnvRefs?: boolean;
   defaultLlmKey?: string;
   defaultLlmUrl?: string;
-  createProvider?: (config: LLMConfig, options: ProviderOptions) => Provider;
+  createProvider?: (config: ModelSpec, options: ProviderOptions) => Provider;
   stream?: boolean;
   /**
    * Middleware installed by whoever runs heddle, for the seams that sit *inside*
