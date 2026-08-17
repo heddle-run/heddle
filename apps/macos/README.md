@@ -52,9 +52,18 @@ apps/macos/make-app.sh          # → apps/macos/build/Heddle.app
 ```
 
 Self-contained: the Swift release binary, an LSUIElement Info.plist, and a
-`heddle-runtime/` of the `pnpm deploy`'d CLI plus this machine's node binary,
-ad-hoc signed. The app prefers that packed runtime, so the bundle runs on a
-machine with neither Node nor heddle installed.
+`heddle-runtime/` of the `pnpm deploy`'d CLI plus a **pinned** official Node
+build — downloaded from nodejs.org at the exact `NODE_VERSION` in the script,
+checked against the release's `SHASUMS256.txt`, stripped of debug symbols
+(~20% smaller), and ad-hoc signed. Two machines assembling the same commit
+pack the same runtime; the builder's own node is never an input. The app
+prefers that packed runtime, so the bundle runs on a machine with neither
+Node nor heddle installed.
+
+Flags: `--universal` lipos arm64 + x86_64 together (bigger, one artifact for
+both Macs); `--system-node` packs whatever `node` is on PATH — the offline
+development escape hatch, never a release build. Downloads cache in
+`.node-cache/`.
 
 ## Build and run
 

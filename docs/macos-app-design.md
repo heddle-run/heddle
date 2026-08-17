@@ -207,11 +207,14 @@ for names the manifest declares — mirroring `askForEnvRefs`
 
 ## Packaging and distribution
 
-- **Node runtime**: ship the official `node` binary (arm64 + x64 → universal
-  lipo, or arm64-only to start) plus the packed `@heddle-run/cli` dist in
-  `Resources/`. Expect ~55–90 MB in the app; acceptable for this class of
-  app. A Node SEA single-binary is a later size optimization, not a
-  dependency.
+- **Node runtime**: a pinned official `node`, downloaded from nodejs.org at
+  the exact `NODE_VERSION` in `make-app.sh`, verified against the release's
+  `SHASUMS256.txt`, and stripped of debug symbols (~113 MB → ~90 MB; the
+  strip invalidates the signature, so it is re-signed ad-hoc and proven by
+  running before it is kept). Built per-arch by default, `--universal` lipos
+  both; `--system-node` is the offline development escape hatch and never a
+  release build. The whole app lands ~133 MB. A Node SEA single-binary is a
+  later size optimization, not a dependency.
 - **Signing**: Developer ID signed and notarized. The app is **not**
   App-Sandboxed — it exists to run user tools as subprocesses — which rules
   out the Mac App Store but is fine for direct distribution (hardened runtime
@@ -242,8 +245,9 @@ live transcript; completion notifications; Quit terminates in-flight runs.
 Landed alongside: `--auth-token` on heddle-server, and — pulled forward from
 M2 — `make-app.sh`, which assembles a self-contained `Heddle.app` (release
 binary, LSUIElement Info.plist, `pnpm deploy`'d CLI + node in `Resources/
-heddle-runtime/`, ad-hoc signed; ~150 MB, of which ~110 MB is the stock node
-binary — the size line item to revisit).
+heddle-runtime/`, ad-hoc signed). The node was first whatever the builder's
+machine had; it is now the pinned, checksum-verified, stripped download the
+Packaging section describes, and the app is ~133 MB.
 
 **M2 — batteries. Partially built.** Landed: `.heddle` file association (an
 exported `run.heddle.bundle` UTI conforming to `public.data` — deliberately
