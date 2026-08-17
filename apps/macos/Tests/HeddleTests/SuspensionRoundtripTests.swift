@@ -55,7 +55,10 @@ final class SuspensionRoundtripTests: XCTestCase {
         )
     }
 
-    private func settle(_ record: RunRecord) async throws {
+    // Qualified because this file imports both modules: bare `RunRecord` is
+    // the app's typealias in Heddle and the generic class in HeddleCore, and
+    // the compiler rightly refuses to pick.
+    private func settle(_ record: Heddle.RunRecord) async throws {
         let deadline = Date().addingTimeInterval(90)
         while record.isRunning && Date() < deadline {
             try await Task.sleep(for: .milliseconds(50))
