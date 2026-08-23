@@ -11,8 +11,8 @@ to sit alongside it.
 - **Name:** heddle (always lowercase, including at the start of a sentence)
 - **Domain:** heddle.run
 - **Descriptor:** A batteries-included declarative agent runtime.
-- **Tagline:** Weave agents from spec. (retained as the loom voice — it runs the
-  `Definition` epigraph and the CTA badge, but it is no longer what the hero says)
+- **Tagline:** Weave agents from spec. (it is the footer brand line now — the
+  loom voice's one surviving sentence on the landing page)
 - **Package:** `@heddle-run/cli` · **Binary:** `heddle` · **Tap:** `spichen/tap/heddle`
 - **Server:** `@heddle-run/server` · **Binary:** `heddle-server`
 - **Images:** `salahpichen/heddle` · `salahpichen/heddle-server` on Docker Hub,
@@ -25,13 +25,17 @@ to sit alongside it.
 **The name.** A heddle is the part of a loom that lifts individual warp threads
 to form the shed — the opening the weft passes through. It decides, thread by
 thread, what the pattern becomes. That is the product thesis: the spec decides
-what runs, the runtime just holds the threads. The dictionary entry appears
-verbatim on the site as the pull quote, because the metaphor *is* the pitch.
+what runs, the runtime just holds the threads. The metaphor survives the 2026-08
+redesign in two places: the stroke-drawn logo (three warp threads, one weft
+passing over and under) and the footer's bottom bar ("Woven by agents · Heddled
+by humans"). The dictionary epigraph no longer appears on the landing page.
 
 **Voice.** Declarative, unhurried, faintly editorial. Short sentences. No
-exclamation marks, no "blazing fast", no emoji. State what the thing does and
-stop. British-leaning spelling in prose ("licence", "standardised"); American
-in code and identifiers.
+exclamation marks, no "blazing fast". State what the thing does and stop.
+British-leaning spelling in prose ("licence", "standardised"); American in code
+and identifiers. One scoped exception since the redesign: the ✨ sparkle that
+opens the hero badge and the two feature eyebrows — it is part of the vendored
+badge pattern, appears nowhere else, and is the only emoji on the site.
 
 **The audience the landing page addresses.** Technically confident
 non-developers: IT and ops people, analysts, automation builders who have hit
@@ -41,12 +45,14 @@ heard of LangGraph, and do not experience dependency trees as pain. The
 landing page's comparison class is therefore doing the job by hand, a chat
 window, or a fixed-rule Zapier flow — **not** other agent frameworks. Its
 rules: at most one unexplained term per screen; outcome-first headings;
-examples before features; prerequisites, cost and data-handling stated
-plainly; an early-release marker visible in the hero (no version number anywhere in the app — the user removed it deliberately). The H1 keeps the descriptor —
-"A batteries-included declarative agent runtime." was chosen deliberately in
-2026-08 and reconfirmed after a retarget experiment briefly replaced it — and
-the lede beneath it is the descriptor's plain-language translation, which is
-what carries the page for the non-developer reader.
+prerequisites, cost and data-handling stated plainly (the FAQ carries these
+now); an early-release marker visible in the hero — it lives in the badge
+("✨ Early release — …"), and there is still no version number anywhere in the
+app (removed deliberately). The H1 keeps the descriptor — "A
+batteries-included declarative agent runtime." was chosen deliberately in
+2026-08 and survived the Plety redesign, with "runtime." as the serif italic
+accent word — and the lede beneath it is the descriptor's plain-language
+translation, which is what carries the page for the non-developer reader.
 
 **The claim for developers still exists — it just moved.** heddle is a
 batteries-included declarative agent runtime, and both halves of that
@@ -59,9 +65,8 @@ so the same equipment costs the project nothing. That argument now lives in
 the docs (getting-started keeps it) and in the playground's compare view —
 wherever it appears, never let the descriptor stand without the
 runtime-vs-library wedge in the next breath. On the landing page the same
-facts surface in this reader's terms: "nothing is installed into anything",
-"the file is an open format you are not locked into", "your computer first,
-a server when you need one".
+facts surface in this reader's terms: the hero lede's "one free, open-source
+program on your own computer" and "an open format you are not locked into".
 
 **Security copy is load-bearing.** The site makes falsifiable claims about
 sandboxing. They live in `safeMode` in `lib/constants.ts` and are checked
@@ -70,399 +75,248 @@ soften, extend or round them up without re-reading those sources: state
 mechanisms, not adjectives, and never write "enterprise-grade" or "bank-level".
 Where a guarantee is conditional — `$VAR` resolution is refused for
 caller-supplied specs but resolves for your own — say so rather than implying a
-blanket promise.
+blanket promise. The landing FAQ quotes `faqItems` verbatim for the same
+reason; translate language there, never claims.
 
 ---
 
 ## The design system
 
-One vendored system now drives every page: the **Heddle design system**, in
-`website/ds-heddle/`, from the "Heddle Design System" Claude Design project
-(`2028ba65-c304-4d64-a4c6-09cbf88891be`). Three deviations from upstream are
-recorded in `website/ds-heddle/DEVIATIONS.md` — read it before changing
-anything under `ds-heddle/`. Its tokens are on `:root` and its element styles
-on `body`, exactly as upstream ships them.
+Two layers drive the site:
 
-The site ran two systems for a while: FormFlow in `website/ds/` drove the
-playground, compare and docs while the landing was rebuilt on Heddle, and the
-Heddle tokens were scoped under a `.hds` wrapper so the two could coexist
-without forty-two colliding property names. Both are gone — `ds/`, the `.hds`
-wrapper, the `hd-*` helper classes, the FormFlow `Backdrop`, `lucide-react`
-and the Inter font were all removed when the docs migrated. **If you find a
-`--brand-pink`, a `--fs-xs`, a `--text-faint` or an `hd-` class anywhere, it is
-a leftover and it resolves to nothing.** The pink accent is not part of this
-brand.
+- The vendored **Heddle design system** in `website/ds-heddle/` still supplies
+  the tokens, element styles and components the docs shell, library pages and
+  playground are built from. Its deviations from upstream are recorded in
+  `website/ds-heddle/DEVIATIONS.md` — read it before changing anything under
+  `ds-heddle/`. No site-specific code belongs inside `ds-heddle/`.
+- The **Plety look** (adopted 2026-08 from a reference design the user
+  supplied, brand-named "Plety" in the prompt): a sleek, pure-black,
+  monochrome aesthetic in the Untitled-UI/Linear register. It is the brand's
+  look now. The landing page implements it directly in Tailwind utilities;
+  the rest of the site inherits it through the dark theme, which became the
+  default, plus a small monochrome override block at the end of
+  `app/globals.css`.
 
-heddle's own components live in `website/components/` and are built *from* the
-vendored system — no site-specific code belongs inside `ds-heddle/`.
+The loom world is gone. The Three.js ply (`components/weave-world/`), the SVG
+plain weave (`WeaveTexture`), the grain overlay, the chapter rail, the ivory
+ground and the Meadow-accented light-first look were all retired with the
+redesign; `three`, `gsap` and `motion` left `package.json` with them. The
+light theme survives only as the docs shell's toggle, still wearing the old
+ivory/sage palette — pure black is the brand, light is the courtesy.
 
-### The Heddle system, in one idea
+### The Plety look, in one idea
 
-Airy, light-first, Stripe-craft editorial: paper ground, navy ink, hairline
-dividers between sections rather than background changes, and code always in
-navy windows that stay dark in both themes. Inspired by the craft of Stripe's
-marketing site and the restraint of Vercel's AI SDK page — inspiration only,
-nothing copied.
-
-**Loom, literalized (evolution on top of the above).** The warp-thread
-metaphor stopped being a texture and became the landing page's actual
-ground: a persistent Three.js loom — `components/weave-world/` — rendered
-behind the whole page and driven by native scroll. `WeaveWorld.tsx` owns the
-canvas, renderer and teardown, framing a fixed orthographic cover box (no
-camera travel — a perspective dolly in an earlier build smeared geometry
-across the near plane); `threadField.ts` builds the loom as a **ply of
-three thick yarn ribbons** twisting around one shared cubic-bezier spine
-that sweeps diagonally across the frame — each a GPU ribbon whose vertex
-shader orbits it around the spine and whose fragment shader draws
-spun-fiber striations, cylindrical shading, a silky sheen and depth-shadow
-on the far side of the twist, so crossings occlude like a real braid. The
-five `--gradient-thread` hues are spread across the three plies' colour
-stops (no pink — retired with FormFlow). Scroll reaches the shader as two
-uniforms: twist advance, and the **shed** — the orbit radius, so the ply
-literally opens on the dark chapters and the weft tube (revealed by a
-clipping plane at z = 0, between the front and back strands) passes through
-the gap. `scrollConductor.ts` turns scroll into a fractional chapter number
-keyed to the **viewport centre** (keyed to the top edge, a dark chapter
-started fading while its own copy was still on screen); `chapters.ts` is
-the keyframe ledger — drift, shed, weft, glow per section — including the
-two chapters where the canvas itself turns navy (see Page composition). The
-canvas follows the `html.dark` toggle live via a MutationObserver; the first
-build hardcoded paper and painted the dark theme white.
-
-`components/WeaveTexture.tsx` — the SVG plain weave with the checkerboard
-over/under crossing — is still here, but demoted to the fallback ground: it
-renders unconditionally one layer behind the canvas
-(`components/weave-world/WeaveGround.tsx`, mounted in `app/layout.tsx`), and
-is what no-JS, no-WebGL and `prefers-reduced-motion` users see. No section
-mounts a `variant="strong"` instance any more; the sections stopped painting
-their own woven surfaces when the world became live.
-
-Ink deepened (`--navy-900` is `#081b2c`, not upstream's `#0a2540`) for more
-contrast against paper, and shadows tightened from a soft Stripe float into
-something closer to a printed edge — ink-tinted, not generic grey-blue. A
-fixed, near-invisible grain overlay (`components/Grain.tsx`) gives the paper
-actual tooth. The editorial serif, upstream reserved for the dictionary
-epigraph alone, also carries two headline moments — How-it-works' "The
-whole thing is one file you can read." and the CTA's "Thread the loom." — because
-those two sentences are the closest thing the page has to a second pull
-quote. The small hand-drawn SVG weave that used to sit beneath the epigraph
-is retired: the Definition chapter is now the live loom's own close-up (the
-camera pulls in and the real weft crosses the real warp behind the copy), so
-the 2D miniature had become a duplicate — retiring it also removed the
-landing page's gsap/ScrollTrigger usage. These are deviations from the
-vendored `ds-heddle` tokens, applied at the site layer in `app/globals.css`
-and `components/` (following the same override pattern already used there
-for `--gradient-warp` and `--border-inverse`), not edits to `ds-heddle/`
-itself.
+Pure black ground (`bg-black`, `#000`), white display type, `gray-400` prose,
+hairline rules at `white/10`, controls as pills. Depth comes from translucency,
+not shadow: glass surfaces (`bg-black/80 backdrop-blur-md` nav,
+`bg-[#1C1C1E]/90 backdrop-blur-xl` floating cards) over ambient background
+video, with gradient scrims keeping text legible. Every display headline
+carries exactly one serif italic accent word. Motion is one gesture: FadeInUp —
+sections slide up 40px from transparent over 1000ms as they enter the
+viewport.
 
 ### Palette
 
-Ramps live in `ds-heddle/tokens/colors.css`; always use the semantic aliases,
-never raw ramp values.
+The landing page states these directly as Tailwind utilities; the equivalent
+dark-theme tokens (for pages built from `ds-heddle/`) are noted beside them.
 
-| Token | Value | Use |
+| Use | Landing (Tailwind) | Token equivalent (dark theme) |
 |---|---|---|
-| `--surface-page` | warm ivory `#faf7f0` (site override; upstream cloud-50) / black | Page ground |
-| `--navy-900` | `#081b2c` (site override; upstream `#0a2540`) | Headings, code windows, dark bands |
-| `--blurple-500` | deep sage `#66785f` (site override; upstream blurple `#635bff`) | Primary accent, primary buttons, links |
-| `--cyan-500` | camel `#c8a96b` (site override; upstream cyan `#00d4ff`) | Secondary accent (CTA button on navy, in-window accent) |
-| `--text-body` | slate-700 `#425466` / `#d4d4d4` | Prose |
-| `--border-hairline` | cloud-200 / `#262626` | Section and list rules |
+| Page ground | `bg-black` | `--surface-page` `#000000` |
+| Display type, emphasis | `text-white` | `--text-strong`, `--text-accent` `#ffffff` |
+| Prose | `text-gray-400` | `--text-muted` |
+| Quiet labels, marquee | `text-gray-500` | `--text-subtle` |
+| Hairlines | `border-white/10` (quieter: `white/5`) | `--border-hairline` `#262626` |
+| Raised control | `bg-[#1F1F22]`, hover `#2A2A2D` | `--surface-accent-soft` `#1f1f22` |
+| Glass card | `bg-[#1C1C1E]/90 backdrop-blur-xl border-white/10` | — |
+| Primary action | white bg, black text | `--action-primary-bg/fg` |
+| Feature eyebrows | `text-yellow-200`, `text-green-300` | — (the two permitted tints) |
 
-The loom's threads wear the **Meadow** palette — ivory, sage and camel
-linen tones (`PLY_STOPS` in `components/weave-world/threadField.ts`, with a
-soft shading profile tuned for those pastels), picked from a side-by-side
-variants board over an all-`--gradient-thread` spread and a blurple/cyan
-monochrome. The weft is navy ink on the light ground and candlelit gold on
-the dark bands. `--gradient-thread` itself no longer appears anywhere. The
-landing page's structural motif is the live loom (see above), with
-`components/WeaveTexture.tsx` as its fallback ground; no section paints
-its own woven surface any more. The world's surfaces track the theme: in
-light, a vertical warm-ivory gradient `#fefdfa → #f7f4ed` with the navy
-band `#081b2c`; in dark, flat black with the near-black band `#0f0f0f` —
-kept in `chapters.ts` `palette()` because a WebGL ground cannot read a CSS
-variable, and paired with the site-layer `--surface-page: #faf7f0`
-override in `app/globals.css`; change the two files together.
-
-**The interface accents follow the loom.** The site layer remaps the whole
-blurple ramp to sage and the cyan ramp to camel (`app/globals.css`, in the
-`:root` override block), so every alias routed through them — primary
-buttons, links, `--text-accent` eyebrows, the focus ring, `::selection`,
-the playground's in-window accent — wears Meadow without touching
-`ds-heddle/`. The 500 slot carries a deepened sage `#66785f`, not the
-palette's own `#8fa28a`: the lighter sage fails contrast as text or a
-button fill on ivory (~2.8:1) and lives at the 400 slot, where only
-non-text uses reach it. Camel-500 keeps `#c8a96b`; its alias pairs it with
-navy text (≈7:1), and on the navy bands it is the same candlelit gold as
-the weft. **These overrides only work because `app/layout.tsx` imports
-`ds-heddle/styles.css` before `globals.css`** — for equal-specificity
-`:root` declarations the later stylesheet wins, and with the order flipped
-every site-layer token silently loses (which is exactly what happened:
-the printed-ink navy and ivory ground shipped inert until the Meadow
-ramps' having no effect exposed the ordering).
-**Always-dark surfaces use
-`--surface-code`/`--surface-code-alt` (not `--surface-inverse`, which flips to
-white in dark theme).** Shadows (`--shadow-xs` … `--shadow-lg`) are overridden
-at the site layer to be tighter and ink-tinted (`rgba(8,27,44,…)`) rather than
-upstream's softer, bluer-grey Stripe float.
+The accent is monochrome: emphasis is white, links are the body grey
+brightening to white on hover. The `html.dark` override block at the end of
+`app/globals.css` is what neutralises the sage the Meadow ramps would
+otherwise route into `--text-accent`, links and the focus ring. The Meadow
+ramps themselves (sage/camel over ivory) still exist for the legacy light
+theme; do not extend them to anything new.
 
 ### Type
 
-Three roles, assigned by rule rather than by feel — the Humans/Agents
-toggle, made typography (adopted August 2026 from a typography
-recommendation the user supplied; the Plex/Instrument set it replaced is in
-the git history):
+Three roles, assigned by rule rather than by feel — unchanged by the redesign:
 
-- **Structural — Archivo** (variable, with its width axis): headings, nav,
-  buttons, labels, eyebrows, numerals — the page's own furniture. Display
-  headings sit at **500** (`--fw-light` carries 500 now — terse and
-  certain, not shouting) with `--ls-display` −0.02em.
-- **Human — Newsreader** (variable, optical sizes, true italic): prose,
-  ledes, the FAQ — anything a person wrote for another person. It is the
-  default: `--font-body` is the serif, and body text is prose unless an
-  element claims otherwise. The serif moments that used to be Instrument
-  Serif (the dictionary epigraph, How-it-works' "The whole thing is one
-  file you can read.", the CTA's "Thread the loom.") are Newsreader italic
-  now. On the dark bands prose sheds ~50 units of weight and gains
-  +0.005em tracking (`.hds-band-copy p`) — serif hairlines thicken
-  optically in light-on-dark.
-- **Machine — Commit Mono** (400/500, SIL OFL, vendored in
-  `website/fonts/` from @fontsource): **only** where text is genuinely
-  machine-read or machine-written — commands, filenames, flags, YAML,
-  transcripts. The discipline is what makes it loud where it appears.
-  Ligatures are off in code (`!==` as one glyph means nothing to this
-  page's reader) and on in prose. Inline code in prose or headings sits at
-  0.92em with inherited leading and a quiet tint.
-- **Gentium Plus** exists for one line: the dictionary block's IPA
-  pronunciation, whose phonetic glyphs the other faces cannot promise.
+- **Structural — Archivo** (variable, width axis): headings, nav, buttons,
+  labels — the page's own furniture. The landing sets `var(--font-sans)` on
+  its root and Tailwind weights on top: display headlines `font-medium
+  tracking-tight` (hero `text-5xl md:text-7xl`), section heads
+  `text-4xl md:text-5xl font-semibold`, controls `text-sm font-medium`.
+- **Human — Newsreader** (variable, true italic): the serif italic accent
+  word inside each display headline (`var(--font-serif)`, `italic
+  font-normal`) — one word per headline, usually the last. In the docs it
+  remains the prose default via `--font-body`.
+- **Machine — Commit Mono**: only where text is genuinely machine-read or
+  machine-written — commands, filenames, YAML, transcripts — and the
+  wordmark. Ligatures off in code, on in prose.
+- **Gentium Plus** remains loaded for the docs; the landing no longer shows
+  the IPA line.
 
-All load self-hosted through `next/font` in `app/layout.tsx` (deviations
-§2 and §4 — §4 also records the three vendored component edits the role
-system needed). Scale and families are overridden in `app/globals.css`'s
-type-system block, not in the vendored tokens: section heads
-`clamp(2rem, 4vw, 2.75rem)`, lead paragraphs 22px, prose 19px, labels 12px
-caps at +0.08em, code 15px/1.45. The hero H1 keeps its 34px floor —
-`batteries-included` measures wider than a 375px viewport below it.
-Headings are sentence case and end in periods. Numbered eyebrows still
-mark the sections (`001 What you can build`, `002 How it works`, …) — in
-Archivo with tabular figures, no longer in the mono.
+All load self-hosted through `next/font` in `app/layout.tsx` (deviations §2
+and §4). The docs type scale in `globals.css`'s type-system block is
+unchanged. Headings are sentence case; the landing's display headlines drop
+the trailing period in favour of the serif accent word carrying its own.
 
 The wordmark is the lowercase word "heddle" set in the machine face at
-+0.02em, `text-transform: lowercase` guarding the casing — the one place
-mono is furniture, on purpose: the mark reads as something the machine
-would type.
++0.02em — the one place mono is furniture, on purpose. Since the redesign it
+is paired with the logo (below) in the landing nav and footer.
+
+### The logo
+
+There is a logo now — the first this brand has had: a stroke-drawn heddle on
+a 28-grid, `fill="none" stroke="currentColor"` at 1.5px with round caps —
+three vertical warp threads and one weft path crossing them. It lives as
+`Logo` inside `components/landing/Landing.tsx` and is drawn in the same
+stroke language as every icon on the page (Untitled-UI register: minimal,
+geometric, single-weight). Use it beside the wordmark, never instead of it.
 
 ### Geometry and depth
 
-- Radii are small and precise: controls 5px, cards 10px, panels 12px, pills
-  for badges. Nothing above 16px.
-- Borders are 1px hairlines everywhere; sections divide by hairline, not by
-  background swap.
-- Shadows mostly none; cards `--shadow-xs` lifting to `--shadow-sm` on hover;
-  the hero windows carry one large soft drop each. Never coloured glows.
-  The shadow tokens themselves are tighter and ink-tinted at the site layer
-  (see Palette) — a printed edge, not a soft Stripe float.
-- Layout: 1180px container (`--maxw-container`), `--section-y` (112px) rhythm.
-  Responsive grids are the `hds-*` classes in `globals.css` — media queries
-  only; everything else styles inline from tokens.
-- A fixed, pointer-events-none grain overlay (`components/Grain.tsx`, mounted
-  once in `app/layout.tsx`) sits above everything at ~5% opacity: an inline
-  SVG fractal-noise filter, alpha-composited rather than blend-moded, because
-  `mix-blend-mode: overlay` does nothing over the dark theme's pure black.
-- WebGL on this page has a history. A Stripe-style colourful graphic behind
-  the old hero's code-window stack was tried three times — thin decorative
-  threads, five blurred solid bands, then a gradient-mesh simplex shader —
-  and pulled three times: each looked reasonable in the constrained,
-  automated browser tab used to build it and wrong in a real one (the
-  shader version rendered as a blurry, disconnected blob). The fourth
-  attempt is the one that shipped, as `components/weave-world/`, and it
-  survived because of two changes in kind, not degree: the shader draws
-  *threads* — bounded ribbons with fibre, shading and occlusion — rather
-  than a full-screen gradient wash, so there is nothing to smear; and every
-  step was verified by eye in a real browser — which is what caught a
-  camera dolly smearing geometry across the near plane (the camera is now a
-  fixed orthographic frame), the dark theme painted white, and a dark
-  chapter fading under its own copy. Keep that verification rule: never
-  judge this canvas by forcing animation state via JavaScript in an
-  automated tab and screenshotting the result — that method is what let
-  three bad versions ship in a row.
+- Pills for every control (`rounded-full`); cards `rounded-2xl`; mockup
+  frames `rounded-3xl`; the FAQ container `rounded-xl`. The old small-radius
+  rule (5/10/12px) still governs `ds-heddle`-built pages.
+- Borders are 1px hairlines at `white/10` (structural) or `white/5`
+  (quieter: nav button, footer rules). Sections divide by hairline or by
+  nothing — never by background swap; the ground is always black.
+- No shadows on the landing. Depth is translucency + backdrop-blur over
+  video, with gradient scrims (`from-black/30 via-transparent to-black` on
+  the hero, `from-black via-black/60 to-black` on the footer) keeping copy
+  legible.
+- Layout: `max-w-7xl mx-auto px-6` is the landing container; the FAQ narrows
+  to `max-w-3xl`. `ds-heddle` pages keep `--maxw-container`.
+- Background video: three ambient loops from `cdn.sceneai.art`, absolutely
+  positioned behind content (`-z-10` full-bleed in hero and footer,
+  `absolute inset-0 object-cover` inside the feature mockup frames), always
+  `autoPlay muted loop playsInline`, always under a scrim or `bg-black/20`
+  overlay. Video is atmosphere only; no content depends on it.
 
 ### Motion
 
-Fast and dry — 140–220ms on `--ease-standard`, fades and small translates, no
-bounces. `prefers-reduced-motion` zeroes the duration tokens in
-`ds-heddle/tokens/motion.css`.
+One gesture, used everywhere: **FadeInUp** (in `Landing.tsx`) — opacity 0 →
+1, translate-y 40px → 0, 1000ms ease-out, triggered once per element by
+IntersectionObserver, with small stagger delays (0/100/150ms) between a
+section's text and its mockup. Everything else is fast and dry: 300ms for
+the nav glass, mobile menu, FAQ accordion and plus-to-close rotation;
+`transition-colors` on hovers. The marquee is the only loop: a 30s linear
+`marquee` keyframe (defined in `globals.css`) sliding a `w-max` flex row by
+exactly −25% — four identical groups, so the loop closes seamlessly — behind
+a `mask-image` edge fade. `html { scroll-behavior: smooth }` carries anchor
+navigation. `prefers-reduced-motion` zeroes all of it via the global rule in
+`globals.css`; no scroll hijacking, no pinned sections, ever.
 
-The loom world is the one exception to "fast and dry": its camera, light and
-shed interpolate continuously from native scroll (damped for rendering only —
-the exact value drives nothing but pixels), with idle thread sway on top.
-Scroll stays native and reversible: no Lenis, no scroll hijacking, no pinned
-sections. Under `prefers-reduced-motion` the canvas never mounts and the
-static `WeaveTexture` ground shows instead; the same fallback covers no-JS
-and no-WebGL, so the canvas is atmosphere only and no content depends on it.
+The FAQ accordion animates height with the grid trick —
+`grid-template-rows: 0fr → 1fr` on a wrapper with an `overflow-hidden`
+child — because height: auto cannot transition.
 
 ### Iconography
 
-The system's `Icon` is self-contained inline SVG paths (1.5px stroke, round
-caps, `currentColor`) in `ds-heddle/components/core/Icon.jsx` — no CDN, no
-icon-font. It holds eleven glyphs drawn for a marketing page and takes no site
-additions, so what the playground needs beyond them (run controls, a file
-tree, the sun and moon) lives in `components/Glyph.tsx`: lucide paths on the
-same 24 grid at the same stroke, indistinguishable beside it. Reach for `Icon`
-first. Mono glyphs are legitimate icons in this brand: `⚙` for tool calls, `$`
-prompts, `01`–`04` step numerals. There is no logo; the wordmark is the
-lowercase word "heddle" set in the machine face (see Type), which is all
-`components/Wordmark.tsx` renders. No emoji, ever.
+Inline stroke SVG only: 24-grid, 1.5px, round caps, `currentColor` — the
+logo, the hamburger, the mic and soundwave, the play button, the FAQ plus,
+the marquee platform glyphs are all drawn this way in `Landing.tsx`. The
+system's `Icon` (`ds-heddle/components/core/Icon.jsx`) and
+`components/Glyph.tsx` still serve the `ds-heddle`-built pages. Mono glyphs
+(`⚙`, `$`, step numerals) remain legitimate icons. The ✨ badge sparkle is
+the single emoji exception recorded under Voice.
+
+### Honesty rules the design must keep
+
+- **The marquee names platforms, never customers.** "Runs where you already
+  work" — macOS, Linux, Docker, Kubernetes, npx — is a checkable claim. The
+  reference design's "Trusted by industry leaders" over invented brand names
+  is exactly the kind of fake social proof this site does not do.
+- **Mock UI states only what the product does.** The chat card mirrors
+  `heddle chat`; the notetaker card (play, timestamp, waveform, transcript)
+  mirrors `library/local-notetaker`, and its feature copy is the `useCases`
+  detail line quoted, not embellished. The FAQ quotes `faqItems` verbatim.
 
 ### Accessibility
 
-- Focus is the soft blurple ring (`--ring-focus`), applied via
-  `:focus-visible` in the system's base styles.
+- Focus stays visible: `--focus-ring` is a neutral grey on black (overridden
+  in the dark block of `globals.css`), applied via `:focus-visible`.
 - A visible skip link opens the landing page.
-- The FAQ uses native `<details>`, so it is keyboard-accessible without
-  JavaScript.
-- `prefers-reduced-motion` is honoured (above).
+- The FAQ accordion is a real `<button>` with `aria-expanded`; the mobile
+  menu button carries `aria-expanded` and a state-dependent label.
+- `prefers-reduced-motion` is honoured (above). The scroll reveal's only
+  cost under it is an instant appearance.
+- Marquee repeats are `aria-hidden` past the first group.
 
 ---
 
 ## Page composition
 
-The landing page is one continuous walk through the loom world: nine
-full-viewport chapters over the single persistent scene, in the kage manner —
-the world changes state per chapter and the DOM floats over it. Each chapter
-is a `components/landing/Chapter.tsx` wrapper (full-viewport `<section>` with
-the id, centred content, and a full-width vertical scrim band in the
-chapter's own surface colour — never an oval patch behind the copy; that was
-tried and read as a floating blob in a real browser). **Three things are
-ordered by the same list and must change together:** the `<Chapter>` sequence
-in `app/page.tsx`, the keyframes in `components/weave-world/chapters.ts`, and
-`CHAPTERS` in `components/landing/LandingChrome.tsx`.
+The landing page is a single file — `components/landing/Landing.tsx`
+(`"use client"`), rendered by the server wrapper `app/page.tsx` so the
+layout's metadata applies. Single-file is deliberate, from the reference
+prompt: the FadeInUp wrapper, the nav, every section and the logo live
+together. Checkable copy still comes from `lib/constants.ts` (the FAQ picks
+five `faqItems` by question string; the notetaker copy quotes `useCases`).
+Six sections, in order:
 
-`app/page.tsx` assembles, in order:
+1. **Nav** — fixed, `z-50`, transparent until 20px of scroll then
+   `bg-black/80 backdrop-blur-md` (also when the mobile menu is open).
+   Logo + wordmark left; About / Features / FAQ / Contact centred
+   (`text-sm font-medium text-gray-300 hover:text-white`), anchoring to the
+   section ids; a pill "Get started" (`bg-[#1F1F22]` …) right, linking to
+   /docs. Below `md`: hamburger, height-animated dropdown, links close it
+   on tap.
+2. **Hero** (`id="about"`) — `min-h-screen`, centred, over the ambient
+   video (opacity-90) under a `from-black/30 via-transparent to-black`
+   scrim. Badge pill ("✨ Early release — now with an agent library"), the
+   descriptor H1 with "runtime." in serif italic, the plain-language lede
+   at exactly `text-[16px] text-gray-400`, then white "Get started" and
+   dark "Learn more" pills. `mt-24` below: the platform marquee ("Runs
+   where you already work").
+3. **Feature: interactive chat** (`id="features"`) — two columns
+   (`lg:grid-cols-2 gap-16 py-24`), text left / mockup right. Yellow
+   eyebrow, headline with serif "conversation.", session-transcript copy,
+   "Get started". The mockup is a `rounded-3xl` video frame with a glass
+   chat card: suggestion chips, "Ask anything..." input, mic and soundwave
+   strokes.
+4. **Feature: local notetaker** — mirrored (mockup left, text right; the
+   mockup drops below the text on mobile via `order-last lg:order-first`).
+   Green eyebrow, headline with serif "machine.", the `useCases` detail
+   quoted. Card: play button, "11:06 AM – Chris", waveform bars, a dummy
+   transcript line.
+5. **FAQ** (`id="faq"`) — `max-w-3xl`, centred "We've got answers" with
+   serif "answers", one transparent `border-white/10 rounded-xl` container,
+   five real questions (`border-b` between items, none after the last),
+   plus-rotates-to-close, grid-rows height animation. First item open by
+   default.
+6. **Footer** (`id="contact"`) — the same hero video at opacity-40 under a
+   strong `from-black via-black/60 to-black` scrim. Centred CTA "Ready to
+   automate everything?" with serif italic "everything?", the two pills,
+   `mb-32`; then the four-column link grid (brand + "Weave agents from
+   spec." / Product / Source / Standard), `mb-24`; then the bottom bar —
+   "© 2026 heddle. All rights reserved · Woven by agents · Heddled by
+   humans", the words "agents" and "humans" one step brighter
+   (`text-gray-300`).
 
-1. **LandingChrome** — the landing's own chrome, replacing the shared sticky
-   Nav *on this page only* (`components/Nav.tsx` still serves /library and
-   the 404): a fixed bar with wordmark, Docs / Library / Playground links,
-   theme toggle and GitHub — the bar stays still while scrolling (a live
-   chapter indicator used to sit beside the wordmark; removed on request);
-   plus the right-edge chapter rail — one dot per chapter, active one named
-   and accent-coloured (blurple has contrast on both paper and the navy
-   band, where `--text-strong` vanishes), click to jump. The rail hides
-   below 980px, where the page scrolls without chapter wayfinding.
-2. **Hero** (`start`) — the two-column composition, one viewport over the
-   loom: copy on the left (label eyebrow, the display descriptor H1 with
-   its plain-language lede beneath it, playground-first dual CTA, the
-   Humans/Agents install tabs from `installTabs` — Humans runs a finished
-   library bundle from its published URL — and the early-release marker,
-   above the fold on purpose), and on the right the navy `flow.yaml`
-   editor showing the local-notetaker excerpt from `specimenSpread`, cut
-   at the last of the prompt's four fixed headings, with the
-   `zsh — heddle` terminal overlapping it. **The sample rule for this
-   audience: never elide the instruction, elide the plumbing.** The
-   specimen is the real `library/local-notetaker` entry; its transcript
-   states only what the spec guarantees — the graph's true shape, the real
-   tool name and progress line, the prompt's fixed headings — and elides
-   the notes rather than inventing them. Check both against the library
-   before changing either. A scroll cue sits bottom-centre.
-3. **What you can build** (`included`) — 001. The library's agents from
-   `useCases` in `lib/constants.ts`, each a real entry whose "Read the
-   flow" link opens `/library/<slug>`. **The highest-value section for
-   this audience** — a reader who can open the file that produces the
-   meeting notes has learned more than the rest of the page teaches. Never
-   let a use case stand without a flow that exists; check each detail line
-   against that entry's README. It stays a hairline list, not a card
-   grid.
-4. **How it works** (`position`) — 002, the page's first dark moment: the
-   *world's canvas* turns navy for this chapter (the section paints no
-   background of its own), the shed opens — the loom action the brand is
-   named for — and the threads glow. "The whole thing is one file you can
-   read.", the config-file analogy (docker-compose, GitHub Actions, Home
-   Assistant), and the open-format reassurance — a published open standard,
-   deliberately unnamed on this page — beside the full `specimenSpread`
-   spec with the English instruction in full view.
-5. **First run** (`method`) — 003, "About ten minutes to your first
-   result.": four hairline-divided literal steps from `firstRun` (Node 18+,
-   a model key or Ollama, `heddle init` or a library entry, run it) —
-   checked against `docs/getting-started.mdx`. A prerequisite the landing
-   page omits is a reader who arrives at the docs feeling misled.
-6. **Where it runs** (`runtimes`) — 004, on paper: your computer first, a
-   server when you need one. Two navy windows side by side, `runtimes.cli`
-   and `runtimes.server` from `lib/constants.ts` — the identical flow, run
-   locally and served over HTTP. Both transcripts are checked against
-   `docs/cli-reference.mdx` and `docs/server.mdx`, not written to look
-   plausible; update this section if either doc's example commands change.
-   Closes with the no-login server warning in plain words — that sentence
-   earns a cautious reader's trust, keep it.
-7. **Safety** (`isolation`) — 005, "What it can and cannot touch.": the
-   sandboxing claims as four cards, verbatim from `safeMode`, ordered by
-   the reader's actual questions (can touch / cannot / a shared file cannot
-   hide code / never degrades quietly). Plain words, same falsifiable
-   mechanisms (see the security note above) — translate language, never
-   claims. The design's illustrative badges ("default in CI", "no daemon")
-   were claims heddle does not make and must not return.
-8. **Definition** (`definition`) — the dictionary epigraph, in the
-   editorial serif, at the loom's close-up: the camera pulls in and the
-   world's weft crosses the warp behind the copy. The pronunciation span
-   alone is Gentium Plus, for its phonetic glyphs. (The 2D SVG mini-weave
-   this section used to draw is retired — see the loom note above.)
-9. **FAQ** (`faq`) — 006, native `<details>`; the world holds nearly still
-   here so the dense text stays readable. The questions are this reader's,
-   in their order: do I need to program, what does it cost, where does my
-   data go, what happens when it is wrong, how is it different from Zapier
-   or n8n, can I use MCP connectors (honestly: not yet). The framework
-   comparisons (LangGraph, Docker Agent, ADK) live in the playground's
-   compare view, not here — a reader who has not heard of them loses
-   nothing.
-10. **CTA** (`begin`) — the finale: the canvas goes navy again, the shed
-    opens widest on the page, and the weft completes its final pass.
-    "Thread the loom.", "One program. One file. Ten minutes.", accent Get
-    started, ghost playground link, the npx command. Like the 002 band, the
-    section paints nothing — the world owns the band.
-11. **Footer** — on its own solid `--surface-page` wrapper so the page ends
-    on a real surface rather than the glowing world; brand blurb plus the
-    Project / Source / Standard columns, and a mono bottom bar (heddle.run ·
-    "Woven by agents, heddled by humans" · version). The byline leans on the
-    Definition block above it having already taught the reader what a heddle
-    does.
-
-The Loom drawing, the bento Features grid and the Spread section from the
-previous (FormFlow) landing page were retired earlier — the hero's
-spec-beside-run windows carry what Spread carried. If a brand drawing
-returns, it should be built in this system's warp-thread line language.
-
-Copy and data live in `lib/constants.ts`; sections read from it rather than
-hard-coding strings.
-
-The section numbers are contiguous by hand, not computed. Adding or removing
-a section means renumbering the ones after it — and keeping the three
-chapter-ordered lists in sync (see above): the scroll conductor counts
-`#main > section` elements, so a chapter added to the page but not to the
-keyframe ledger shifts every world moment after it by one section.
+Anchor targets carry `scroll-mt-16` for the fixed nav. The shared
+`components/Nav.tsx` and `components/Footer.tsx` still serve /library and
+the 404 only; the landing's nav and footer are its own.
 
 The playground is not composed this way. It is an application: it fills the
 viewport, carries its own bar and status bar instead of the site's nav and
-footer, and has no numbered sections and no marketing copy. The wordmark in
-the bar is the way back to the site, set the way the nav sets it. Two panes
-scroll independently and the page itself does not scroll; below 900px they
-stack and it does. Its layout classes are the `hds-playground*` and
-`hds-compare*` sets in `globals.css`.
+footer, and has no marketing copy. The wordmark in the bar is the way back to
+the site, set the way the nav sets it. Two panes scroll independently and the
+page itself does not scroll; below 900px they stack and it does. Its layout
+classes are the `hds-playground*` and `hds-compare*` sets in `globals.css`.
 
-**The panes are the landing's navy code windows, given the whole screen.** The
-rule that code is always navy does not stop being true because the page is an
-application — the playground is mostly code, so paper is only the bar and the
-status bar, and everything between them is a window inset on the page ground
-with a 12px gutter. Inside a window: the tab strip is the hero's
-`flow.yaml · tools/ · README` strip made selectable, `--surface-code-alt`
-marking the one you are on; the body is `--surface-code`; every rule is
+**The panes are dark code windows given the whole screen.** The rule that
+code is always dark holds everywhere; in the site's dark default the whole
+page is black with them. Inside a window: the tab strip is
+`--surface-code-alt`, the body `--surface-code`, every rule
 `--border-inverse`, never `--border-hairline`. **Cyan is the accent inside a
-window and blurple is the accent on paper** — `--text-accent` has no contrast
-against navy, and `--cyan-500` is what the system already puts on a dark
-surface. The system's `Select`, `Input` and `IconButton` are paper controls
-and read as holes punched in a window, so the inverse versions in
-`components/playground/WindowControls.tsx` are what goes inside one, following
-`IconButton`'s own `inverse` variant. Panes carry `color-scheme: dark` and
-style their own scrollbars, because a light scrollbar drawn across the navy is
-the one thing the tokens cannot reach.
+window** — `--text-accent` (white in dark) is for paper/black surfaces, and
+`--cyan-500` is what the system puts on a code surface. The inverse controls
+in `components/playground/WindowControls.tsx` are what goes inside a window.
+Panes carry `color-scheme: dark` and style their own scrollbars.
 
 It is one page with two views, switched in the bar and carried in the address
 as `?view=`. **Build** is the editor, the engine and the run log. **Compare**
@@ -508,40 +362,42 @@ it — unset, every link stays relative and nothing breaks.
 
 ## Theme
 
-Light is the default since the Heddle system landed — it is light-first, with
-a navy-black dark theme a toggle away. (Dark was the default before the
-redesign; every page supports both now.) **next-themes is the single source
-of truth**, configured
-on fumadocs' `RootProvider` in `app/layout.tsx` — fumadocs already runs it for
-the `/docs` shell, so introducing a second theme system meant a toggle in the
-docs sidebar that did nothing. It writes `class="dark"` on `<html>`, which is
-exactly the hook the design system's tokens key on, and injects its own
-pre-paint script so there is no flash.
+Dark is the default since the Plety redesign — pure black is the brand
+ground, and the landing page paints it unconditionally with Tailwind `bg-black`
+regardless of theme. **next-themes is the single source of truth**, configured
+on fumadocs' `RootProvider` in `app/layout.tsx` (`defaultTheme: "dark"`) —
+fumadocs already runs it for the `/docs` shell, so introducing a second theme
+system meant a toggle in the docs sidebar that did nothing. It writes
+`class="dark"` on `<html>`, which is exactly the hook the design system's
+tokens key on, and injects its own pre-paint script so there is no flash.
 
-`lib/theme.tsx` wraps it in a `useTheme()` that returns the `{ dark, toggle }`
-shape the design system's `ThemeToggle` expects. Use that rather than reaching
-for `next-themes` directly, and note that `<html>` needs
+The light theme survives as the docs shell's toggle, still wearing the
+pre-redesign ivory/Meadow palette (the `:root` override block in
+`globals.css`). It is a courtesy, not the brand; check dark first when
+shipping a change, and do not build anything new that only works in light.
+
+`lib/theme.tsx` wraps next-themes in a `useTheme()` that returns the
+`{ dark, toggle }` shape the design system's `ThemeToggle` expects. Use that
+rather than reaching for `next-themes` directly, and note that `<html>` needs
 `suppressHydrationWarning` because the class is set before React hydrates.
-
-Both themes are supported everywhere. Check both before shipping a change.
 
 ## Stack
 
-Next.js 15 (static export) · React 19 · one vendored design system in
-`website/ds-heddle/`, styled with CSS custom properties and inline styles
-rather than utility classes · Tailwind v4 retained **only** because fumadocs
-needs it · fumadocs for `/docs`, remapped onto the system's tokens in
+Next.js 15 (static export) · React 19 · Tailwind v4 (the landing page and the
+fumadocs shell) · one vendored design system in `website/ds-heddle/`, styled
+with CSS custom properties and inline styles, driving the docs, library and
+playground · fumadocs for `/docs`, remapped onto the system's tokens in
 `globals.css`. Deployed to Cloudflare Pages.
 
-`gsap` and `motion` (`motion/react`) drive the landing page's animation —
-scroll reveals, the hero terminal's typed draw-in, the woven-thread motifs.
-`three` was added and removed for a hero graphic that didn't work out (see
-the note in Motion, above) — it is not a dependency of this site.
+The landing page's animation is hand-rolled: an IntersectionObserver reveal,
+CSS transitions and one CSS keyframe. `gsap`, `motion` and `three` were
+removed with the loom world; none of them is a dependency of this site any
+more.
 
 Layout helpers in `globals.css` are prefixed `hds-` and exist only for what
 inline styles cannot express — media queries, `::placeholder`,
-`::-webkit-scrollbar`, hover. Everything else uses the system's own tokens
-directly.
+`::-webkit-scrollbar`, hover — and only for the `ds-heddle`-built pages; the
+landing page uses Tailwind utilities directly.
 
 ### The docs shell
 
@@ -551,9 +407,7 @@ to `--color-fd-*`. Those are remapped onto the system's aliases at the top of
 themes come free, because every alias on the right flips with `html.dark`. The
 `#nd-*` rules under it are only the shape on top: hairline section rules above
 each `h2`, mono uppercase for the sidebar groups and the table of contents,
-navy code windows. They are the reason the tokens had to go back on `:root`:
-Radix portals the search dialog and the mobile sidebar to `<body>`, where a
-wrapper class cannot reach them.
+dark code windows.
 
 Two fumadocs details are load-bearing. Its markup is not a stable interface,
 so the selectors that catch the sidebar groups (`#nd-sidebar p`) and the
@@ -564,4 +418,4 @@ upgrade. And the TOC lives inside `#nd-page`, so its title rule has to come
 
 Both shiki themes in `source.config.ts` are `github-dark`, on purpose: fumadocs
 would otherwise swap in a light theme with the site theme, and code is always
-navy here.
+dark here.
