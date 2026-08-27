@@ -296,28 +296,14 @@ body {
   }
 }
 
-/* The hero terminal's cursor, blinking only while the prompt line is being
-   typed (components/AnimatedTerminal.tsx fades it out once typing finishes).
-   Static and hidden under prefers-reduced-motion, since there the whole log
-   is shown settled rather than performed. */
-.hds-cursor {
-  display: inline-block;
-  width: 7px;
-  height: 1em;
-  margin-left: 1px;
-  vertical-align: -2px;
-  background: var(--code-fg);
-  animation: hds-blink 1s steps(1) infinite;
-}
-@keyframes hds-blink {
-  50% {
-    opacity: 0;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .hds-cursor {
-    animation: none;
-    opacity: 0;
+/* The landing marquee (components/landing/Landing.tsx): four identical
+   groups in a w-max flex row, so sliding exactly one group's width — 25% —
+   lands on an identical arrangement and the loop never shows a seam. The
+   edges fade under a mask-image on the wrapper, and the global
+   prefers-reduced-motion rule above zeroes the animation. */
+@keyframes marquee {
+  to {
+    transform: translateX(-25%);
   }
 }
 
@@ -355,115 +341,6 @@ body {
 @media (min-width: 760px) {
   .hds-nav-links {
     display: flex;
-  }
-}
-
-.hds-hero-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 48px;
-  align-items: center;
-}
-@media (min-width: 980px) {
-  .hds-hero-grid {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
-    gap: 64px;
-  }
-}
-
-/* Below the two-column break the terminal cannot overlap the spec window from
-   the side, so it tucks under it instead. */
-.hds-hero-terminal {
-  position: relative;
-  margin-top: 16px;
-}
-@media (min-width: 980px) {
-  .hds-hero-windows {
-    padding-bottom: 120px;
-  }
-  .hds-hero-terminal {
-    position: absolute;
-    left: -36px;
-    bottom: 0;
-    width: 78%;
-    margin-top: 0;
-  }
-}
-
-.hds-inventory-list {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-}
-@media (min-width: 700px) {
-  .hds-inventory-list {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    column-gap: 44px;
-  }
-}
-
-.hds-position-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 40px;
-  align-items: center;
-}
-@media (min-width: 900px) {
-  .hds-position-grid {
-    grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
-    gap: 56px;
-  }
-}
-
-.hds-runtimes-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 32px;
-}
-@media (min-width: 760px) {
-  .hds-runtimes-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 40px;
-  }
-}
-
-.hds-method-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  margin-top: 44px;
-  border-top: 1px solid var(--border-hairline);
-  text-align: left;
-}
-.hds-method-grid > div {
-  padding: 24px 0 0;
-}
-@media (min-width: 820px) {
-  .hds-method-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-  .hds-method-grid > div {
-    padding: 24px 22px 0;
-  }
-  .hds-method-grid > div:first-child {
-    padding-left: 0;
-  }
-  .hds-method-grid > div:last-child {
-    padding-right: 0;
-  }
-  .hds-method-grid > div + div {
-    border-left: 1px solid var(--border-hairline);
-  }
-}
-
-.hds-isolation-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 12px;
-  margin-top: 28px;
-}
-@media (min-width: 760px) {
-  .hds-isolation-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 16px;
   }
 }
 
@@ -526,40 +403,6 @@ body {
   .hds-footer-brand {
     grid-column: auto;
   }
-}
-
-.hds-faq summary {
-  list-style: none;
-}
-.hds-faq summary::-webkit-details-marker {
-  display: none;
-}
-.hds-faq details[open] summary svg {
-  transform: rotate(180deg);
-}
-.hds-faq summary svg {
-  transition: transform var(--dur-fast) var(--ease-standard);
-}
-
-/* InstallCommand is vendored; these rules stretch it to the column, pin its
-   copy button to the right edge, and let a long command (the library-bundle
-   URL) wrap onto a second line at narrow widths — all without touching the
-   component. The fixed 44px height becomes a minimum so the pill can grow. */
-.hds-install > div {
-  display: flex;
-  width: 100%;
-  height: auto;
-  min-height: 44px;
-  padding-top: 6px;
-  padding-bottom: 6px;
-}
-.hds-install > div > span + span {
-  overflow-wrap: anywhere;
-  min-width: 0;
-}
-.hds-install > div > button {
-  margin-left: auto;
-  flex-shrink: 0;
 }
 
 /* ── The playground ───────────────────────────────────────────────────────
@@ -1041,133 +884,19 @@ samp {
   font-variant-numeric: tabular-nums;
 }
 
-/* Light-on-dark correction: serif hairlines thicken optically on the navy
-   bands, so prose there sheds ~50 units of weight and gains a whisper of
-   tracking. Newsreader is variable — 350 is a real weight, not a
-   synthesised one. */
-.hds-band-copy p {
-  font-weight: 350;
-  letter-spacing: 0.005em;
-}
-
-/* The page's own ground is a real plain weave now — components/WeaveTexture.tsx,
-   mounted once as a fixed backdrop in app/layout.tsx — rather than a flat
-   repeating-linear-gradient of vertical lines. A CSS gradient can only draw
-   stripes; an actual over/under crossing needs the checkerboard alternation
-   that component builds in SVG. Sections painting their own opaque surface
-   (Hero, Position, CTA) mount their own instance at full strength over that
-   surface instead of relying on the page-level one showing through. */
-
-/* ---- Landing chrome: the kage-style chapter rail and hero scroll cue ----
-   The rail is landing-only (components/landing/LandingChrome.tsx). Dots use
-   the accent for the active chapter — legible on both the paper ground and
-   the navy band chapters, where --text-strong would vanish. Hidden below
-   980px; the fixed bar's chapter label carries wayfinding there. */
-
-.hds-chapter-rail {
-  display: none;
-}
-@media (min-width: 980px) {
-  .hds-chapter-rail {
-    position: fixed;
-    right: 18px;
-    top: 50%;
-    transform: translateY(-50%);
-    z-index: 40;
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-  }
-}
-
-.hds-chapter-dot {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  width: 24px;
-  height: 14px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  cursor: pointer;
-}
-
-.hds-chapter-dot-mark {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--text-subtle);
-  opacity: 0.45;
-  transition:
-    transform var(--dur-fast) var(--ease-standard),
-    opacity var(--dur-fast) var(--ease-standard),
-    background var(--dur-fast) var(--ease-standard);
-}
-
-.hds-chapter-dot[data-active] .hds-chapter-dot-mark {
-  background: var(--text-accent);
-  opacity: 1;
-  transform: scale(1.45);
-}
-
-.hds-chapter-dot-label {
-  position: absolute;
-  right: 26px;
-  font-family: var(--font-label);
-  font-size: 10px;
-  letter-spacing: var(--ls-label);
-  text-transform: uppercase;
-  white-space: nowrap;
-  color: var(--text-subtle);
-  opacity: 0;
-  transition: opacity var(--dur-fast) var(--ease-standard);
-  pointer-events: none;
-}
-
-.hds-chapter-dot:hover .hds-chapter-dot-label,
-.hds-chapter-dot:focus-visible .hds-chapter-dot-label,
-.hds-chapter-dot[data-active] .hds-chapter-dot-label {
-  opacity: 1;
-}
-
-/* The hero's scroll cue: a thin thread that draws itself downward, over and
-   over, the page's first hint that scroll is the shuttle. The global
-   reduced-motion rule zeroes the animation. */
-.hds-scroll-cue {
-  position: absolute;
-  bottom: 28px;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  font-family: var(--font-label);
-  font-size: 10px;
-  letter-spacing: var(--ls-label);
-  text-transform: uppercase;
-  color: var(--text-subtle);
-}
-
-.hds-scroll-cue-line {
-  width: 1px;
-  height: 44px;
-  background: var(--text-subtle);
-  transform-origin: top;
-  animation: hds-cue-draw 2.2s var(--ease-standard) infinite;
-}
-
-@keyframes hds-cue-draw {
-  0% {
-    transform: scaleY(0);
-  }
-  55% {
-    transform: scaleY(1);
-    opacity: 1;
-  }
-  100% {
-    transform: scaleY(1);
-    opacity: 0;
-  }
+/* ── The dark theme, made the brand ───────────────────────────────────────
+   The Plety redesign: dark is the default theme and the accent is
+   monochrome. Upstream's dark aliases already sit on pure black; what the
+   site layer removes is colour — the sage accent the Meadow ramps would
+   otherwise route into links, eyebrows and the focus ring. On black,
+   emphasis is white, links are the body grey brightening to white, and the
+   focus ring is a visible neutral. The light theme keeps its Meadow
+   accents; it survives as the docs shell's toggle. */
+html.dark {
+  --text-accent: #ffffff;
+  --text-link: #d4d4d4;
+  --text-link-hover: #ffffff;
+  --border-accent: #ffffff;
+  --focus-ring: #8f8f8f;
+  --surface-accent-soft: #1f1f22;
 }

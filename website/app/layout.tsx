@@ -2,8 +2,6 @@ import type { Metadata } from "next";
 import { Archivo, Gentium_Plus, Newsreader } from "next/font/google";
 import localFont from "next/font/local";
 import { RootProvider } from "fumadocs-ui/provider";
-import Grain from "@/components/Grain";
-import { WeaveTexture } from "@/components/WeaveTexture";
 /* Vendored system first, site layer second: globals.css ends with the
    site's :root token overrides (printed-ink navy, ivory ground, the Meadow
    accent ramps), and for equal-specificity :root declarations the later
@@ -112,22 +110,21 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <body>
-        <WeaveTexture variant="faint" style={{ position: "fixed", zIndex: -2 }} />
         <RootProvider
           theme={{
             enabled: true,
             attribute: "class",
-            /* The system is light-first, with the navy-black dark theme a
-               toggle away. next-themes remains the single source of truth for
-               every page, the docs shell included. */
-            defaultTheme: "light",
+            /* The system is dark-first since the Plety redesign — pure black
+               is the brand ground, and the landing paints it unconditionally.
+               The light theme survives as a toggle in the docs shell.
+               next-themes remains the single source of truth for every page. */
+            defaultTheme: "dark",
             enableSystem: false,
             disableTransitionOnChange: true,
           }}
         >
           {children}
         </RootProvider>
-        <Grain />
       </body>
     </html>
   );
