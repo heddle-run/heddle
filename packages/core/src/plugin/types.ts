@@ -1,4 +1,3 @@
-import type { Property } from 'agentspec';
 import type {
   ChatResponse,
   Message,
@@ -30,8 +29,8 @@ export interface PluginComponent {
 }
 
 export interface PluginNode extends PluginComponent {
-  inputs?: Property[];
-  outputs?: Property[];
+  inputs?: PluginIO[];
+  outputs?: PluginIO[];
   branches?: string[];
 }
 
@@ -225,7 +224,7 @@ export interface HeddlePlugin {
   /**
    * Input wire formats this plugin can read a spec from — the mirror of
    * `encoders`, which render a run's output. Each turns raw text into an
-   * Agent Spec document; see {@link InputFormatDef}.
+   * Weave document; see {@link InputFormatDef}.
    *
    * In-process plugins only: `parse` is a synchronous function on the loading
    * path, which a manifest-declared subprocess has no way to provide.

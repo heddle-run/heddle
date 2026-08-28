@@ -1,7 +1,7 @@
 /**
  * Where a submitted spec may send heddle's own requests.
  *
- * `llm_config.url` becomes the model client's base URL and heddle connects to
+ * A model's `url` becomes the model client's base URL and heddle connects to
  * it. That is the point of the field when the spec is yours, and a different
  * thing entirely when it arrived in an HTTP request — then a stranger is
  * choosing where this process makes outbound connections *from inside your
@@ -18,10 +18,10 @@ import {
   redirectRefusingFetch,
 } from '../egress.js';
 import { createProvider } from '../provider.js';
-import type { LLMConfig } from '../../spec/types.js';
+import type { ModelSpec } from '../../spec/types.js';
 
 const submitted = { allow: [] as string[] };
-const where = 'llm_config "x"';
+const where = 'models.x';
 
 describe('the addresses nobody enumerates', () => {
   it.each([
@@ -111,8 +111,13 @@ describe('what this does not do', () => {
 });
 
 describe('at the provider', () => {
-  const config = (url: string): LLMConfig =>
-    ({ componentType: 'OpenAiCompatibleConfig', modelId: 'm', url, apiKey: 'k' }) as LLMConfig;
+  const config = (url: string): ModelSpec => ({
+    provider: 'openai-compatible',
+    model: 'm',
+    url,
+    api_key: 'k',
+    extra: {},
+  });
 
   it('refuses before the URL becomes a connection', () => {
     expect(() =>
@@ -140,7 +145,7 @@ describe('the address checked and the address connected to', () => {
     // answering 302 Location: http://127.0.0.1/ would move the request somewhere
     // the policy already refused, and a 302 turns the POST into a GET, which is
     // the shape a metadata service wants.
-    const redirecting = redirectRefusingFetch('llm_config "x"') as unknown as (
+    const redirecting = redirectRefusingFetch('models.x') as unknown as (
       input: string,
       init?: RequestInit,
     ) => Promise<Response>;
@@ -165,7 +170,7 @@ describe('the address checked and the address connected to', () => {
   });
 
   it('passes an ordinary response through untouched', async () => {
-    const redirecting = redirectRefusingFetch('llm_config "x"') as unknown as (
+    const redirecting = redirectRefusingFetch('models.x') as unknown as (
       input: string,
     ) => Promise<Response>;
 

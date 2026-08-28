@@ -128,7 +128,7 @@ export class Runner {
         attempt,
       });
 
-      if (current.type === 'EndNode') {
+      if (this.graph.isTerminal(current)) {
         this.emit({ type: 'flow_complete', state: result.output });
         // Cleared before the answer is handed back, so a caller that reads the
         // session on seeing the result never finds a checkpoint for a run that

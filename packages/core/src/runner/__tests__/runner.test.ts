@@ -1,35 +1,75 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { parseFlow } from '../../spec/parser.js';
+import { parseFlowObject } from '../../spec/parser.js';
 import { compile } from '../../graph/compile.js';
 import { Runner } from '../runner.js';
 import { DEFAULT_RUNNER_OPTIONS } from '../options.js';
+import type { Dependencies } from '../../node/types.js';
 import type { Event } from '../events.js';
 
-const testdataDir = join(import.meta.dirname, '../../../testdata');
+/** A provider that answers with the prompt it was sent, marked. */
+const echoProvider = {
+  chatCompletion: async (
+    _signal: AbortSignal | undefined,
+    request: { messages: Array<{ content: string }> },
+  ) => ({
+    content: `echo: ${request.messages.at(-1)?.content ?? ''}`,
+    finish_reason: 'stop',
+  }),
+};
+
+const deps: Dependencies = { createProvider: () => echoProvider };
+
+const SIMPLE = {
+  weave: 1,
+  name: 'simple',
+  inputs: { input: 'string' },
+  steps: [
+    {
+      name: 'reply',
+      llm: {
+        model: { provider: 'openai', model: 'gpt-4o' },
+        prompt: 'say {{inputs.input}}',
+      },
+    },
+  ],
+  outcomes: {
+    done: { input: '{{inputs.input}}', text: '{{reply.text}}' },
+  },
+};
+
+const BRANCHING = {
+  weave: 1,
+  name: 'branching',
+  inputs: { category: 'string' },
+  steps: [
+    {
+      name: 'route',
+      switch: '{{inputs.category}}',
+      cases: { tech: 'tech_end', science: 'science_end' },
+      else: 'default_end',
+    },
+  ],
+  outcomes: {
+    tech_end: { topic: 'tech' },
+    science_end: { topic: 'science' },
+    default_end: { topic: 'other' },
+  },
+};
 
 describe('Runner', () => {
-  it('runs simple flow', async () => {
-    const data = readFileSync(join(testdataDir, 'simple_flow.json'), 'utf-8');
-    const pf = parseFlow(data);
-    const cg = compile(pf, {});
-
-    const opts = { ...DEFAULT_RUNNER_OPTIONS };
-    const runner = new Runner(cg, opts);
+  it('walks inputs through a step to the outcome payload', async () => {
+    const cg = compile(parseFlowObject(SIMPLE), deps);
+    const runner = new Runner(cg, { ...DEFAULT_RUNNER_OPTIONS });
 
     const result = await runner.run(undefined, { input: 'hello world' });
 
     expect(result.get('input')).toBe('hello world');
+    expect(result.get('text')).toBe('echo: say hello world');
+    expect(result.get('outcome')).toBe('done');
   });
 
-  it('runs branching flow', async () => {
-    const data = readFileSync(
-      join(testdataDir, 'branching_flow.json'),
-      'utf-8',
-    );
-    const pf = parseFlow(data);
-    const cg = compile(pf, {});
+  it('takes the branch a switch selects, and says so in the result', async () => {
+    const cg = compile(parseFlowObject(BRANCHING), {});
 
     const tests = [
       { input: 'tech', wantEnd: 'tech_end' },
@@ -44,24 +84,18 @@ describe('Runner', () => {
         eventHandler: (e: Event) => events.push(e),
       });
 
-      await runner.run(undefined, {
-        category: tt.input,
-        branching_mapping_key: tt.input,
-      });
+      const result = await runner.run(undefined, { category: tt.input });
 
-      // The end node that ran is only observable on the event stream: the
-      // result state does not say where the walk came out.
+      expect(result.get('outcome')).toBe(tt.wantEnd);
       const reached = events
-        .filter((e) => e.type === 'node_complete' && e.nodeType === 'EndNode')
+        .filter((e) => e.type === 'node_complete' && e.nodeType === 'outcome')
         .map((e) => e.nodeName);
       expect(reached).toEqual([tt.wantEnd]);
     }
   });
 
   it('emits events', async () => {
-    const data = readFileSync(join(testdataDir, 'simple_flow.json'), 'utf-8');
-    const pf = parseFlow(data);
-    const cg = compile(pf, {});
+    const cg = compile(parseFlowObject(SIMPLE), deps);
 
     const events: Event[] = [];
     const opts = { ...DEFAULT_RUNNER_OPTIONS };

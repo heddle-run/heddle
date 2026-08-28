@@ -110,7 +110,7 @@ export default function Build({ pg }: { pg: Playground }) {
               value={pg.flow}
               onChange={pg.setFlow}
               rows={30}
-              placeholder="An Agent Spec document, rooted at a Flow, as YAML or JSON"
+              placeholder="A Weave document, as YAML or JSON"
             />
           )}
 

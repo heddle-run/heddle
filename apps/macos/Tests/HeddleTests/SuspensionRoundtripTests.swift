@@ -97,42 +97,25 @@ final class SuspensionRoundtripTests: XCTestCase {
 
         let flow = root.appendingPathComponent("gate-flow.yaml")
         try """
-            component_type: Flow
+            weave: 1
             name: gate-flow
-            start_node: { $component_ref: start }
-            nodes:
-              - { $component_ref: start }
-              - { $component_ref: pay }
-              - { $component_ref: end }
-            control_flow_connections:
-              - component_type: ControlFlowEdge
-                name: start_to_pay
-                from_node: { $component_ref: start }
-                to_node: { $component_ref: pay }
-              - component_type: ControlFlowEdge
-                name: pay_to_end
-                from_node: { $component_ref: pay }
-                to_node: { $component_ref: end }
-            $referenced_components:
-              start:
-                component_type: StartNode
-                id: start
-                name: start
-                outputs: [{ title: order, type: string }]
-              pay:
-                component_type: ToolNode
-                id: pay
-                name: pay
-                inputs: [{ title: order, type: string }]
-                outputs: [{ title: receipt, type: string }]
-                tool:
-                  component_type: ServerTool
-                  id: refund-tool
-                  name: refund
-                  description: refunds an order
-                  inputs: [{ title: order, type: string }]
-                  outputs: [{ title: receipt, type: string }]
-              end: { component_type: EndNode, id: end, name: end }
+            inputs:
+              order: string
+            tools:
+              refund:
+                description: refunds an order
+                inputs:
+                  order: string
+                outputs:
+                  receipt: string
+            steps:
+              - name: pay
+                tool: refund
+                with:
+                  order: '{{inputs.order}}'
+            outcomes:
+              done:
+                receipt: '{{pay.receipt}}'
             """.write(to: flow, atomically: true, encoding: .utf8)
 
         let manifest = plugin.appendingPathComponent("pause.json")

@@ -14,11 +14,10 @@ import { Runner } from '../../runner/runner.js';
 import { DEFAULT_RUNNER_OPTIONS } from '../../runner/options.js';
 import { LLMExecutor } from '../../node/llm.js';
 import { State } from '../../state/state.js';
-import { isBuiltinComponentType } from 'agentspec';
-import { isBuiltinConfigType, providerFor } from '../../llm/provider.js';
+import { providerFor } from '../../llm/provider.js';
 import type { Dependencies } from '../../node/types.js';
 import type { ChatChunk, ChatRequest, ChatResponse, Provider } from '../../llm/types.js';
-import type { LLMConfig, LLMNode } from '../../spec/types.js';
+import type { LlmStep, ModelSpec } from '../../spec/types.js';
 import type { Event } from '../../runner/events.js';
 import type { HeddlePlugin, PluginComponent } from '../types.js';
 
@@ -39,8 +38,8 @@ afterEach(() => {
   rmSync(scratch, { recursive: true, force: true });
 });
 
-const builtinCalls: LLMConfig[] = [];
-const builtinProvider = (config: LLMConfig): Provider => {
+const builtinCalls: ModelSpec[] = [];
+const builtinProvider = (config: ModelSpec): Provider => {
   builtinCalls.push(config);
   return {
     chatCompletion: async () => ({ content: 'from the builtin', finish_reason: 'stop' }),
@@ -80,52 +79,21 @@ function providerPlugin(
   ]);
 }
 
-function flowWithLlmNode(config: Record<string, unknown>): string {
+function flowWithLlmStep(model: Record<string, unknown>): string {
   return JSON.stringify({
-    component_type: 'Flow',
+    weave: 1,
     name: 'provider-flow',
-    start_node: { $component_ref: 's' },
-    nodes: [{ $component_ref: 's' }, { $component_ref: 'p' }, { $component_ref: 'e' }],
-    control_flow_connections: [
-      {
-        component_type: 'ControlFlowEdge',
-        name: 'a',
-        from_node: { $component_ref: 's' },
-        to_node: { $component_ref: 'p' },
-      },
-      {
-        component_type: 'ControlFlowEdge',
-        name: 'b',
-        from_node: { $component_ref: 'p' },
-        to_node: { $component_ref: 'e' },
-      },
-    ],
-    $referenced_components: {
-      s: {
-        component_type: 'StartNode',
-        id: 's',
-        name: 's',
-        outputs: [{ title: 'text', type: 'string' }],
-      },
-      p: {
-        component_type: 'LlmNode',
-        id: 'p',
-        name: 'p',
-        prompt_template: 'say something',
-        llm_config: config,
-      },
-      e: { component_type: 'EndNode', id: 'e', name: 'e' },
-    },
+    inputs: { text: 'string' },
+    steps: [{ name: 'p', llm: { model, prompt: 'say something' } }],
   });
 }
 
-function pluginConfig(extra: Record<string, unknown> = {}): Record<string, unknown> {
-  return {
-    component_type: 'AnthropicConfig',
-    name: 'claude',
-    model_id: 'claude-sonnet-4-5',
-    ...extra,
-  };
+function pluginModel(extra: Record<string, unknown> = {}): Record<string, unknown> {
+  return { provider: 'AnthropicConfig', model: 'claude-sonnet-4-5', ...extra };
+}
+
+function pluginModelSpec(): ModelSpec {
+  return { provider: 'AnthropicConfig', model: 'claude-sonnet-4-5', extra: {} };
 }
 
 async function runFlow(
@@ -147,64 +115,60 @@ async function runFlow(
   return state.toData() as Record<string, unknown>;
 }
 
-describe('a plugin provider answering a spec', () => {
-  it('answers an LlmNode whose llm_config names it', async () => {
+describe('a plugin provider answering a document', () => {
+  it('answers an llm step whose model names it', async () => {
     const registry = providerPlugin('AnthropicConfig');
 
-    const state = await runFlow(registry, flowWithLlmNode(pluginConfig()));
+    const state = await runFlow(registry, flowWithLlmStep(pluginModel()));
 
-    expect(state.generated_text).toBe('from the plugin');
+    expect(state.text).toBe('from the plugin');
     expect(asked).toHaveLength(1);
     expect(asked[0].model).toBe('claude-sonnet-4-5');
     expect(builtinCalls).toHaveLength(0);
   });
 
-  it('hands over the config the spec wrote, camelCased and otherwise untouched', async () => {
+  it('hands over the model entry as the document wrote it, extra fields and all', async () => {
     const registry = providerPlugin('AnthropicConfig');
 
     await runFlow(
       registry,
-      flowWithLlmNode(pluginConfig({ api_key: '$ANTHROPIC_KEY', anthropic_version: '2023-06-01' })),
+      flowWithLlmStep(
+        pluginModel({ api_key: '$ANTHROPIC_KEY', anthropic_version: '2023-06-01' }),
+      ),
     );
 
     expect(configs).toHaveLength(1);
     expect(configs[0]).toMatchObject({
       componentType: 'AnthropicConfig',
-      modelId: 'claude-sonnet-4-5',
-      anthropicVersion: '2023-06-01',
+      model: 'claude-sonnet-4-5',
+      anthropic_version: '2023-06-01',
     });
-    expect(configs[0].apiKey).toBe('$ANTHROPIC_KEY');
+    expect(configs[0].api_key).toBe('$ANTHROPIC_KEY');
   });
 
-  it('reads the spec generation parameters into the request, as a builtin does', async () => {
+  it('reads the model params into the request, as a builtin does', async () => {
     const registry = providerPlugin('AnthropicConfig');
 
     await runFlow(
       registry,
-      flowWithLlmNode(
-        pluginConfig({ default_generation_parameters: { temperature: 0.2, max_tokens: 64 } }),
-      ),
+      flowWithLlmStep(pluginModel({ params: { temperature: 0.2, max_tokens: 64 } })),
     );
 
     expect(asked[0]).toMatchObject({ temperature: 0.2, maxTokens: 64 });
   });
 
-  it('builds the provider once for a node executed twice', async () => {
+  it('builds the provider once for a step executed twice', async () => {
     const registry = providerPlugin('AnthropicConfig');
     open.push(registry);
 
-    const node = {
-      componentType: 'LlmNode',
+    const step: LlmStep = {
+      kind: 'llm',
       name: 'p',
-      promptTemplate: 'say something',
-      llmConfig: {
-        componentType: 'AnthropicConfig',
-        name: 'claude',
-        modelId: 'claude-sonnet-4-5',
-      },
-    } as unknown as LLMNode;
+      model: pluginModelSpec(),
+      prompt: 'say something',
+    };
 
-    const executor = new LLMExecutor(node, {
+    const executor = new LLMExecutor(step, {
       plugins: registry,
       createProvider: builtinProvider,
     });
@@ -236,39 +200,10 @@ describe('a plugin provider answering a spec', () => {
     } as HeddlePlugin);
 
     const flow = JSON.stringify({
-      component_type: 'Flow',
+      weave: 1,
       name: 'judge-flow',
-      start_node: { $component_ref: 's' },
-      nodes: [{ $component_ref: 's' }, { $component_ref: 'p' }, { $component_ref: 'e' }],
-      control_flow_connections: [
-        {
-          component_type: 'ControlFlowEdge',
-          name: 'a',
-          from_node: { $component_ref: 's' },
-          to_node: { $component_ref: 'p' },
-        },
-        {
-          component_type: 'ControlFlowEdge',
-          name: 'b',
-          from_node: { $component_ref: 'p' },
-          to_node: { $component_ref: 'e' },
-        },
-      ],
-      $referenced_components: {
-        s: {
-          component_type: 'StartNode',
-          id: 's',
-          name: 's',
-          outputs: [{ title: 'text', type: 'string' }],
-        },
-        p: {
-          component_type: 'JudgeNode',
-          id: 'p',
-          name: 'p',
-          llm_config: pluginConfig(),
-        },
-        e: { component_type: 'EndNode', id: 'e', name: 'e' },
-      },
+      inputs: { text: 'string' },
+      steps: [{ name: 'p', use: 'JudgeNode', with: { model: pluginModel() } }],
     });
 
     const state = await runFlow(registry, flow);
@@ -279,24 +214,12 @@ describe('a plugin provider answering a spec', () => {
 });
 
 describe('what a provider may not take', () => {
-  it('refuses a plugin claiming a builtin config type, at load', () => {
-    expect(() =>
-      PluginRegistry.fromPlugins([
-        {
-          name: 'sneaky',
-          version: '1.0.0',
-          providers: [{ componentType: 'OpenAiConfig', createProvider: () => builtinProvider({ modelId: 'x' }) }],
-        },
-      ]),
-    ).toThrow(/"OpenAiConfig", which is a builtin Agent Spec type/);
-  });
-
-  it('sends a builtin config to the builtin path even with providers loaded', () => {
+  it('sends a builtin provider to the builtin path even with plugins loaded', () => {
     const registry = providerPlugin('AnthropicConfig');
     open.push(registry);
 
     const provider = providerFor(
-      { componentType: 'OpenAiConfig', modelId: 'gpt-4o-mini' },
+      { provider: 'openai', model: 'gpt-4o-mini', extra: {} },
       { plugins: registry, createProvider: builtinProvider },
     );
 
@@ -305,55 +228,15 @@ describe('what a provider may not take', () => {
     expect(provider).toBeDefined();
   });
 
-  it('agrees with the SDK about what a builtin config type is', () => {
-    for (const type of ['OpenAiConfig', 'OpenAiCompatibleConfig', 'VllmConfig', 'OllamaConfig']) {
-      expect(isBuiltinConfigType(type)).toBe(true);
-      expect(isBuiltinComponentType(type)).toBe(true);
-    }
-    expect(isBuiltinComponentType('OciGenAiConfig')).toBe(true);
-    expect(isBuiltinConfigType('OciGenAiConfig')).toBe(false);
-  });
-
-  it('refuses an SDK config type heddle cannot build, without offering it to a plugin', () => {
+  it('never offers a builtin provider to the registry at all', () => {
     const registry = providerPlugin('AnthropicConfig');
     open.push(registry);
-
-    expect(() =>
-      PluginRegistry.fromPlugins([
-        {
-          name: 'oci',
-          version: '1.0.0',
-          providers: [
-            { componentType: 'OciGenAiConfig', createProvider: () => builtinProvider({ modelId: 'x' }) },
-          ],
-        },
-      ]),
-    ).toThrow(/builtin Agent Spec type/);
-
-    expect(() =>
-      providerFor(
-        { componentType: 'OciGenAiConfig', modelId: 'x' },
-        { plugins: registry, createProvider: builtinProvider },
-      ),
-    ).toThrow(/Agent Spec defines but heddle has no client for/);
-
-    expect(() =>
-      providerFor(
-        { componentType: 'OciGenAiConfig', modelId: 'x' },
-        { createProvider: builtinProvider },
-      ),
-    ).toThrow(/No plugin can supply it either/);
-  });
-
-  it('never offers an SDK builtin to the registry at all', () => {
-    const registry = providerPlugin('AnthropicConfig');
-    open.push(registry);
-    const asked: string[] = [];
+    const consulted: string[] = [];
     const spy = new Proxy(registry, {
       get(target, prop, receiver) {
         if (prop === 'providerDef' || prop === 'kindOf') {
           return (type: string) => {
-            asked.push(type);
+            consulted.push(type);
             return (Reflect.get(target, prop, receiver) as (t: string) => unknown).call(target, type);
           };
         }
@@ -361,19 +244,14 @@ describe('what a provider may not take', () => {
       },
     });
 
-    for (const builtin of ['OpenAiConfig', 'OciGenAiConfig']) {
-      try {
-        providerFor(
-          { componentType: builtin, modelId: 'x' },
-          { plugins: spy, createProvider: builtinProvider },
-        );
-      } catch {
-      }
-    }
-    expect(asked).toEqual([]);
+    providerFor(
+      { provider: 'openai', model: 'gpt-4o-mini', extra: {} },
+      { plugins: spy, createProvider: builtinProvider },
+    );
+    expect(consulted).toEqual([]);
   });
 
-  it('refuses a plugin transform written as an llm_config, naming its kind', () => {
+  it('refuses a plugin transform written as a provider, naming its kind', () => {
     const registry = PluginRegistry.fromPlugins([
       {
         name: 'guard-plugin',
@@ -390,60 +268,62 @@ describe('what a provider may not take', () => {
 
     expect(() =>
       providerFor(
-        { componentType: 'Guard', modelId: 'x' },
+        { provider: 'Guard', model: 'x', extra: {} },
         { plugins: registry, createProvider: builtinProvider },
       ),
-    ).toThrow(/provides as a transform rather than a provider/);
+    ).toThrow(/provided by a plugin as a transform rather than a provider/);
   });
 
-  it('names the loaded plugins for a config type nothing provides', () => {
+  it('names the loaded plugins for a provider nothing provides', () => {
     const registry = providerPlugin('AnthropicConfig');
     open.push(registry);
 
     expect(() =>
       providerFor(
-        { componentType: 'BedrockConfig', modelId: 'x' },
+        { provider: 'BedrockConfig', model: 'x', extra: {} },
         { plugins: registry, createProvider: builtinProvider },
       ),
-    ).toThrow(/unsupported config type "BedrockConfig"[\s\S]*anthropic-plugin@1\.0\.0/);
+    ).toThrow(/unsupported provider "BedrockConfig"[\s\S]*anthropic-plugin@1\.0\.0/);
   });
 
   it('does not let an embedder’s factory shadow a provider plugin', () => {
     const registry = providerPlugin('AnthropicConfig');
     open.push(registry);
 
-    providerFor(
-      { componentType: 'AnthropicConfig', modelId: 'claude-sonnet-4-5' },
-      { plugins: registry, createProvider: builtinProvider },
-    );
+    providerFor(pluginModelSpec(), {
+      plugins: registry,
+      createProvider: builtinProvider,
+    });
 
     expect(configs).toHaveLength(1);
     expect(builtinCalls).toHaveLength(0);
   });
 });
 
-describe('the widened LlmConfigUnion', () => {
-  it('parses a flow whose llm_config is a plugin type', () => {
+describe('a document naming a plugin provider', () => {
+  it('parses, keeping the extra fields on the model spec', () => {
     const registry = providerPlugin('AnthropicConfig');
     open.push(registry);
 
-    const flow = parseFlow(flowWithLlmNode(pluginConfig()), registry);
-    const node = flow.parsedNodes.find((n) => n.name === 'p') as {
-      llmConfig?: { componentType?: string; modelId?: string };
-    };
+    const flow = parseFlow(
+      flowWithLlmStep(pluginModel({ anthropic_version: '2023-06-01' })),
+      registry,
+    );
+    const step = flow.steps.find((s) => s.name === 'p') as LlmStep;
 
-    expect(node.llmConfig?.componentType).toBe('AnthropicConfig');
-    expect(node.llmConfig?.modelId).toBe('claude-sonnet-4-5');
+    expect(step.model.provider).toBe('AnthropicConfig');
+    expect(step.model.model).toBe('claude-sonnet-4-5');
+    expect(step.model.extra).toEqual({ anthropic_version: '2023-06-01' });
   });
 
-  it('still refuses a builtin config missing a required field', () => {
+  it('still refuses a builtin model entry missing its model id', () => {
     expect(() =>
-      parseFlow(flowWithLlmNode({ component_type: 'OpenAiConfig', name: 'llm' })),
+      parseFlow(flowWithLlmStep({ provider: 'openai' })),
     ).toThrow();
   });
 
-  it('still refuses an object that is no config at all', () => {
-    expect(() => parseFlow(flowWithLlmNode({ model_id: 'gpt-4o-mini' }))).toThrow();
+  it('still refuses an object that names no provider at all', () => {
+    expect(() => parseFlow(flowWithLlmStep({ model: 'gpt-4o-mini' }))).toThrow();
   });
 });
 
@@ -479,9 +359,9 @@ describe('a provider in its own process', () => {
        } } });`,
     );
 
-    const state = await runFlow(remoteRegistry(entry, false), flowWithLlmNode(pluginConfig()));
+    const state = await runFlow(remoteRegistry(entry, false), flowWithLlmStep(pluginModel()));
 
-    expect(state.generated_text).toBe('answered claude-sonnet-4-5 streaming=false');
+    expect(state.text).toBe('answered claude-sonnet-4-5 streaming=false');
     expect(builtinCalls).toHaveLength(0);
   });
 
@@ -497,11 +377,11 @@ describe('a provider in its own process', () => {
     const events: Event[] = [];
     const state = await runFlow(
       remoteRegistry(entry, true),
-      flowWithLlmNode(pluginConfig()),
+      flowWithLlmStep(pluginModel()),
       { eventHandler: (e) => events.push(e) },
     );
 
-    expect(state.generated_text).toBe('a poem about hi');
+    expect(state.text).toBe('a poem about hi');
     expect(events.filter((e) => e.type === 'token_delta').map((e) => e.delta)).toEqual([
       'a ',
       'poem ',
@@ -522,11 +402,11 @@ describe('a provider in its own process', () => {
     const events: Event[] = [];
     const state = await runFlow(
       remoteRegistry(entry, false),
-      flowWithLlmNode(pluginConfig()),
+      flowWithLlmStep(pluginModel()),
       { eventHandler: (e) => events.push(e) },
     );
 
-    expect(state.generated_text).toBe('buffered');
+    expect(state.text).toBe('buffered');
     expect(events.filter((e) => e.type === 'token_delta')).toHaveLength(0);
   });
 
@@ -540,9 +420,9 @@ describe('a provider in its own process', () => {
        } } });`,
     );
 
-    const state = await runFlow(remoteRegistry(entry, false), flowWithLlmNode(pluginConfig()));
+    const state = await runFlow(remoteRegistry(entry, false), flowWithLlmStep(pluginModel()));
 
-    expect(String(state.generated_text)).toMatch(
+    expect(String(state.text)).toMatch(
       /ctx\.partial is only available to a provider serving a streamed chat/,
     );
   });
@@ -571,7 +451,7 @@ describe('a provider in its own process', () => {
     );
     open.push(registry);
 
-    const state = await runFlow(registry, flowWithLlmNode(pluginConfig()), {
+    const state = await runFlow(registry, flowWithLlmStep(pluginModel()), {
       toolRegistry: {
         lookup: (name) =>
           name === 'probe'
@@ -584,7 +464,7 @@ describe('a provider in its own process', () => {
       },
     });
 
-    expect(state.generated_text).toBe('tool said yes');
+    expect(state.text).toBe('tool said yes');
   });
 
   it('does not send the operator credential across the pipe', async () => {
@@ -596,13 +476,13 @@ describe('a provider in its own process', () => {
        } } });`,
     );
 
-    const state = await runFlow(remoteRegistry(entry, false), flowWithLlmNode(pluginConfig()), {
+    const state = await runFlow(remoteRegistry(entry, false), flowWithLlmStep(pluginModel()), {
       defaultLlmKey: 'operator-key',
       defaultLlmUrl: 'https://operator.example',
     });
 
-    expect(String(state.generated_text)).not.toContain('operator-key');
-    expect(String(state.generated_text)).not.toContain('operator.example');
+    expect(String(state.text)).not.toContain('operator-key');
+    expect(String(state.text)).not.toContain('operator.example');
   });
 
   it('refuses an answer with no content, naming the component', async () => {
@@ -612,7 +492,7 @@ describe('a provider in its own process', () => {
     );
 
     await expect(
-      runFlow(remoteRegistry(entry, false), flowWithLlmNode(pluginConfig())),
+      runFlow(remoteRegistry(entry, false), flowWithLlmStep(pluginModel())),
     ).rejects.toThrow(/returned no "content" string/);
   });
 
@@ -626,7 +506,7 @@ describe('a provider in its own process', () => {
     );
 
     await expect(
-      runFlow(remoteRegistry(entry, true), flowWithLlmNode(pluginConfig())),
+      runFlow(remoteRegistry(entry, true), flowWithLlmStep(pluginModel())),
     ).rejects.toThrow(/whose "content" is a number/);
   });
 
@@ -640,11 +520,11 @@ describe('a provider in its own process', () => {
     );
 
     await expect(
-      runFlow(remoteRegistry(entry, true), flowWithLlmNode(pluginConfig())),
+      runFlow(remoteRegistry(entry, true), flowWithLlmStep(pluginModel())),
     ).rejects.toThrow(/"finish_reason" is a number/);
   });
 
-  it('fails the node when a plugin dies mid-stream rather than keeping the prefix', async () => {
+  it('fails the step when a plugin dies mid-stream rather than keeping the prefix', async () => {
     const entry = writeHelperPlugin(
       'diesmidstream',
       `serve({ AnthropicConfig: { async chat(request, ctx) {
@@ -654,7 +534,7 @@ describe('a provider in its own process', () => {
     );
 
     await expect(
-      runFlow(remoteRegistry(entry, true), flowWithLlmNode(pluginConfig())),
+      runFlow(remoteRegistry(entry, true), flowWithLlmStep(pluginModel())),
     ).rejects.toThrow(/exited/);
   });
 
@@ -665,7 +545,7 @@ describe('a provider in its own process', () => {
     );
 
     await expect(
-      runFlow(remoteRegistry(entry, false), flowWithLlmNode(pluginConfig())),
+      runFlow(remoteRegistry(entry, false), flowWithLlmStep(pluginModel())),
     ).rejects.toThrow(/serves no chat handler/);
   });
 });
@@ -734,10 +614,7 @@ describe('the chunk contract', () => {
     );
 
     const registry = remoteRegistry(entry, true);
-    const provider = providerFor(
-      { componentType: 'AnthropicConfig', name: 'claude', modelId: 'claude-sonnet-4-5' },
-      { plugins: registry },
-    );
+    const provider = providerFor(pluginModelSpec(), { plugins: registry });
 
     const chunks: ChatChunk[] = [];
     for await (const chunk of provider.chatCompletionStream!(undefined, {

@@ -1,6 +1,7 @@
 import { generationParams, providerFor } from '../llm/provider.js';
 import type { ChatResponse, ModelRequest, Provider } from '../llm/types.js';
-import type { LLMConfig } from '../spec/types.js';
+import type { ModelSpec } from '../spec/types.js';
+import { BUILTIN_PROVIDERS } from '../spec/types.js';
 import type { Dependencies } from '../node/types.js';
 import type { Executor, Registry } from '../tool/types.js';
 import { invokeTool } from '../tool/invoke.js';
@@ -15,7 +16,7 @@ export type ToolRunner = (
 export type ModelCaller = (request: ModelRequest) => Promise<ChatResponse>;
 
 interface ConfigHolder {
-  llmConfig?: unknown;
+  model?: unknown;
   [key: string]: unknown;
 }
 
@@ -56,7 +57,7 @@ export function toolRunner(where: string, deps: Dependencies): ToolRunner {
 
 export class PluginModel {
   private provider?: Provider;
-  private config?: LLMConfig;
+  private config?: ModelSpec;
 
   constructor(
     private readonly where: string,
@@ -78,12 +79,12 @@ export class PluginModel {
     return this.provider.chatCompletion(signal, {
       ...generationParams(config),
       ...request,
-      model: config.modelId,
+      model: config.model,
     });
   }
 
-  private readConfig(): LLMConfig {
-    const raw = this.component.llmConfig;
+  private readConfig(): ModelSpec {
+    const raw = this.component.model;
 
     if (raw === undefined) {
       throw new PluginError(missingConfigMessage(this.where));
@@ -92,33 +93,51 @@ export class PluginModel {
       throw new PluginError(wrongConfigShapeMessage(this.where, raw));
     }
 
-    const config = raw as Partial<LLMConfig>;
-    if (typeof config.modelId !== 'string' || config.modelId.length === 0) {
-      throw new PluginError(missingModelIdMessage(this.where));
+    const config = raw as Record<string, unknown>;
+    if (typeof config.provider !== 'string' || config.provider.length === 0) {
+      throw new PluginError(missingFieldMessage(this.where, 'provider'));
+    }
+    if (typeof config.model !== 'string' || config.model.length === 0) {
+      throw new PluginError(missingFieldMessage(this.where, 'model'));
     }
 
-    return config as LLMConfig;
+    const known = new Set(['provider', 'model', 'url', 'api_key', 'params']);
+    const extra: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(config)) {
+      if (!known.has(key)) extra[key] = value;
+    }
+
+    const spec: ModelSpec = {
+      provider: config.provider,
+      model: config.model,
+      extra,
+    };
+    if (typeof config.url === 'string') spec.url = config.url;
+    if (typeof config.api_key === 'string') spec.api_key = config.api_key;
+    if (isObject(config.params)) spec.params = config.params;
+
+    return spec;
   }
 }
 
 function missingConfigMessage(where: string): string {
   return (
-    `${where}: callModel needs an "llm_config" on this component, and it ` +
-    `has none. A plugin composes the request; the spec chooses the model, so ` +
-    `add the same llm_config an agent would carry:\n` +
-    `  llm_config:\n` +
-    `    component_type: OpenAiConfig\n` +
-    `    model_id: gpt-4o-mini`
+    `${where}: callModel needs a "model" on this component, and it has ` +
+    `none. A plugin composes the request; the document chooses the model, ` +
+    `so add the same model an agent would carry:\n` +
+    `  model:\n` +
+    `    provider: openai   # or ${BUILTIN_PROVIDERS.join(', ')}\n` +
+    `    model: gpt-4o-mini`
   );
 }
 
 function wrongConfigShapeMessage(where: string, raw: unknown): string {
-  return `${where}: "llm_config" is ${typeName(raw)}, not a config object.`;
+  return `${where}: "model" is ${typeName(raw)}, not a model object.`;
 }
 
-function missingModelIdMessage(where: string): string {
+function missingFieldMessage(where: string, field: string): string {
   return (
-    `${where}: "llm_config" has no "model_id". Every config names the ` +
-    `model it reaches, and heddle sends it verbatim.`
+    `${where}: this component's "model" has no "${field}". Every model ` +
+    `names its provider and its model id.`
   );
 }

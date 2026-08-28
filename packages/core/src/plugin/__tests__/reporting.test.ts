@@ -429,54 +429,24 @@ describe('the workspace a node is given', () => {
 
 function agentFlowWithTransform(componentType: string): string {
   return JSON.stringify({
-    component_type: 'Flow',
+    weave: 1,
     name: 'guarded',
-    start_node: { $component_ref: 's' },
-    nodes: [{ $component_ref: 's' }, { $component_ref: 'a' }, { $component_ref: 'e' }],
-    control_flow_connections: [
+    inputs: { text: 'string' },
+    steps: [
       {
-        component_type: 'ControlFlowEdge',
-        name: 'x',
-        from_node: { $component_ref: 's' },
-        to_node: { $component_ref: 'a' },
-      },
-      {
-        component_type: 'ControlFlowEdge',
-        name: 'y',
-        from_node: { $component_ref: 'a' },
-        to_node: { $component_ref: 'e' },
-      },
-    ],
-    $referenced_components: {
-      s: {
-        component_type: 'StartNode',
-        id: 's',
-        name: 's',
-        outputs: [{ title: 'text', type: 'string' }],
-      },
-      a: {
-        component_type: 'AgentNode',
-        id: 'a',
         name: 'agent_node',
         agent: {
-          component_type: 'Agent',
-          id: 'ia',
-          name: 'the_agent',
-          system_prompt: 'be helpful',
-          llm_config: {
-            component_type: 'OpenAiConfig',
-            id: 'l',
-            name: 'l',
-            model_id: 'gpt-4o',
+          model: {
+            provider: 'openai',
+            model: 'gpt-4o',
             url: 'http://127.0.0.1:9/unreachable',
             api_key: 'not-a-real-key',
           },
-          tools: [],
-          transforms: [{ component_type: componentType, id: 't', name: 'guard' }],
+          prompt: 'be helpful',
+          transforms: [{ use: componentType }],
         },
       },
-      e: { component_type: 'EndNode', id: 'e', name: 'e' },
-    },
+    ],
   });
 }
 

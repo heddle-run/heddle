@@ -9,88 +9,42 @@ import type { Reference } from "./types";
    a credential: a pre-transform that rejects skips the model call, and routing
    has no model in it at all. */
 
-const RESEARCH_FLOW = `component_type: Flow
+const RESEARCH_FLOW = `weave: 1
 name: research-assistant
-start_node: { $component_ref: start }
 
-nodes:
-  - $component_ref: start
-  - $component_ref: researcher
-  - $component_ref: end
+inputs:
+  question: string
 
-control_flow_connections:
-  - component_type: ControlFlowEdge
-    name: start_to_researcher
-    from_node: { $component_ref: start }
-    to_node: { $component_ref: researcher }
-  - component_type: ControlFlowEdge
-    name: researcher_to_end
-    from_node: { $component_ref: researcher }
-    to_node: { $component_ref: end }
-
-$referenced_components:
-  start:
-    component_type: StartNode
-    id: start
-    name: start
-    outputs:
-      - title: question
-        type: string
-
-  researcher:
-    component_type: AgentNode
-    id: researcher
-    name: researcher
-    outputs:
-      - title: result
-        type: string
-    agent:
-      component_type: Agent
-      id: research_agent
-      name: research-agent
-      system_prompt: >-
-        You are a research assistant. Answer the question. Use web_search
-        when you need current information, and calculator for arithmetic.
-
-      llm_config:
-        component_type: OpenAiConfig
-        id: llm
-        name: openai
-        model_id: gpt-4o
-        api_key: $OPENAI_API_KEY
-
-      # Declaring a tool's inputs is what gives the model a shape to fill
-      # in: they become the function's parameters.
-      tools:
-        - component_type: ServerTool
-          id: web_search_tool
-          name: web_search
-          description: Search the web for information
-          inputs:
-            - title: query
-              type: string
-          outputs:
-            - title: results
-              type: string
-
-        - component_type: ServerTool
-          id: calculator_tool
-          name: calculator
-          description: Evaluate a mathematical expression
-          inputs:
-            - title: expression
-              type: string
-          outputs:
-            - title: result
-              type: string
-
-  end:
-    component_type: EndNode
-    id: end
-    name: end
+# Declaring a tool's inputs is what gives the model a shape to fill in:
+# they become the function's parameters.
+tools:
+  web_search:
+    description: Search the web for information
     inputs:
-      - title: result
-        type: string
+      query: string
+    outputs:
+      results: string
+
+  calculator:
+    description: Evaluate a mathematical expression
+    inputs:
+      expression: string
+    outputs:
+      result: string
+
+agent:
+  model:
+    provider: openai
+    model: gpt-4o
+    api_key: $OPENAI_API_KEY
+
+  prompt: |
+    You are a research assistant. Answer the question. Use web_search when
+    you need current information, and calculator for arithmetic.
+
+    The question: {{inputs.question}}
+
+  tools: [web_search, calculator]
 `;
 
 const WEB_SEARCH = `#!/usr/bin/env python3
@@ -118,72 +72,35 @@ else:
 json.dump({"result": result}, sys.stdout)
 `;
 
-const GUARDRAIL_FLOW = `component_type: Flow
+const GUARDRAIL_FLOW = `weave: 1
 name: guarded-assistant
-start_node: { $component_ref: start }
 
-nodes:
-  - $component_ref: start
-  - $component_ref: assistant
-  - $component_ref: end
+inputs:
+  query: string
 
-control_flow_connections:
-  - component_type: ControlFlowEdge
-    name: start_to_assistant
-    from_node: { $component_ref: start }
-    to_node: { $component_ref: assistant }
-  - component_type: ControlFlowEdge
-    name: assistant_to_end
-    from_node: { $component_ref: assistant }
-    to_node: { $component_ref: end }
+agent:
+  # Never reached while the guardrail rejects. That is the point: a
+  # blocked prompt costs nothing.
+  model:
+    provider: openai
+    model: gpt-4o
+    api_key: $OPENAI_API_KEY
 
-$referenced_components:
-  start:
-    component_type: StartNode
-    id: start
-    name: start
-    outputs:
-      - title: query
-        type: string
+  prompt: |
+    You are a concise, helpful assistant. Answer the question:
 
-  assistant:
-    component_type: AgentNode
-    id: assistant
-    name: assistant
-    agent:
-      component_type: Agent
-      id: inner
-      name: assistant
-      system_prompt: You are a concise, helpful assistant.
+    {{inputs.query}}
 
-      # Never reached while the guardrail rejects. That is the point: a
-      # blocked prompt costs nothing.
-      llm_config:
-        component_type: OpenAiConfig
-        id: llm
-        name: openai
-        model_id: gpt-4o
-        api_key: $OPENAI_API_KEY
-
-      tools: []
-
-      # Transforms travel with the agent, not with the graph, so this
-      # guardrail applies in chat mode and to a standalone agent too.
-      transforms:
-        - component_type: Blocklist
-          id: guard
-          name: guard
-          phase: pre
-          config:
-            patterns:
-              - password
-              - credit card
-            reason: that topic is blocked
-
-  end:
-    component_type: EndNode
-    id: end
-    name: end
+  # Transforms travel with the agent, not with the graph, so this
+  # guardrail applies in chat mode and to a standalone agent too. The
+  # keys beside "use" are the transform's own config.
+  transforms:
+    - use: Blocklist
+      phase: pre
+      patterns:
+        - password
+        - credit card
+      reason: that topic is blocked
 `;
 
 const GUARDRAIL_PLUGIN = `export default {
@@ -197,7 +114,9 @@ const GUARDRAIL_PLUGIN = `export default {
       phase: (node) => node.phase ?? 'pre',
 
       createTransform(node) {
-        const { patterns = [], reason } = node.config ?? {};
+        // The keys the document wrote beside "use" arrive spread onto
+        // the component itself.
+        const { patterns = [], reason } = node;
 
         return {
           apply(messages) {
@@ -217,111 +136,66 @@ const GUARDRAIL_PLUGIN = `export default {
 };
 `;
 
-const ROUTING_FLOW = `component_type: Flow
+const ROUTING_FLOW = `weave: 1
 name: triage
-start_node: { $component_ref: start }
 
-nodes:
-  - $component_ref: start
-  - $component_ref: classify
-  - $component_ref: route
-  - $component_ref: urgent
-  - $component_ref: normal
-  - $component_ref: end
+inputs:
+  message: string
 
-control_flow_connections:
-  - component_type: ControlFlowEdge
-    name: start_to_classify
-    from_node: { $component_ref: start }
-    to_node: { $component_ref: classify }
-  - component_type: ControlFlowEdge
-    name: classify_to_route
-    from_node: { $component_ref: classify }
-    to_node: { $component_ref: route }
-
-  # One edge per branch the mapping can produce.
-  - component_type: ControlFlowEdge
-    name: route_urgent
-    from_node: { $component_ref: route }
-    from_branch: urgent
-    to_node: { $component_ref: urgent }
-  - component_type: ControlFlowEdge
-    name: route_normal
-    from_node: { $component_ref: route }
-    from_branch: normal
-    to_node: { $component_ref: normal }
-
-  - component_type: ControlFlowEdge
-    name: urgent_to_end
-    from_node: { $component_ref: urgent }
-    to_node: { $component_ref: end }
-  - component_type: ControlFlowEdge
-    name: normal_to_end
-    from_node: { $component_ref: normal }
-    to_node: { $component_ref: end }
-
-$referenced_components:
-  start:
-    component_type: StartNode
-    id: start
-    name: start
-    outputs:
-      - title: message
-        type: string
-
+tools:
   classify:
-    component_type: ToolNode
-    id: classify
-    name: classify
-    tool:
-      component_type: ServerTool
-      id: classify_tool
-      name: classify
-      description: Labels the message urgent or normal
+    description: Labels the message urgent or normal
+    inputs:
+      message: string
+    outputs:
+      label: string
 
-  # Routes on branching_mapping_key, which the tool above sets.
-  route:
-    component_type: BranchingNode
-    id: route
-    name: route
-    mapping:
-      urgent: urgent
-      normal: normal
-      DEFAULT_BRANCH: normal
+  page_oncall:
+    description: Pages whoever is on call
+    outputs:
+      action: string
 
-  urgent:
-    component_type: ToolNode
-    id: urgent
-    name: urgent
-    tool:
-      component_type: ServerTool
-      id: urgent_tool
-      name: page_oncall
-      description: Pages whoever is on call
+  file_ticket:
+    description: Files an ordinary ticket
+    outputs:
+      action: string
 
-  normal:
-    component_type: ToolNode
-    id: normal
-    name: normal
-    tool:
-      component_type: ServerTool
-      id: normal_tool
-      name: file_ticket
-      description: Files an ordinary ticket
+steps:
+  - name: classify
+    tool: classify
+    with:
+      message: '{{inputs.message}}'
 
-  end:
-    component_type: EndNode
-    id: end
-    name: end
+  # Routes on the label the tool wrote. "else" says where every unmatched
+  # value goes — there is no implicit default.
+  - name: route
+    switch: '{{classify.label}}'
+    cases:
+      urgent: page
+    else: file
+
+  - name: page
+    tool: page_oncall
+    then: paged
+
+  - name: file
+    tool: file_ticket
+    then: filed
+
+outcomes:
+  paged:
+    action: '{{page.action}}'
+  filed:
+    action: '{{file.action}}'
 `;
 
 const CLASSIFY = `#!/usr/bin/env bash
 read -r input
 
 if printf '%s' "$input" | grep -qiE 'fire|outage|down|urgent'; then
-  printf '{"branching_mapping_key":"urgent"}'
+  printf '{"label":"urgent"}'
 else
-  printf '{"branching_mapping_key":"normal"}'
+  printf '{"label":"normal"}'
 fi
 `;
 
@@ -335,130 +209,58 @@ read -r input
 printf '{"action":"filed a ticket for the morning"}'
 `;
 
-const AGENT_FLOW = `component_type: Flow
+const AGENT_FLOW = `weave: 1
 name: ask
-start_node: { $component_ref: start }
 
-nodes:
-  - $component_ref: start
-  - $component_ref: assistant
-  - $component_ref: end
+inputs:
+  query: string
 
-control_flow_connections:
-  - component_type: ControlFlowEdge
-    name: start_to_assistant
-    from_node: { $component_ref: start }
-    to_node: { $component_ref: assistant }
-  - component_type: ControlFlowEdge
-    name: assistant_to_end
-    from_node: { $component_ref: assistant }
-    to_node: { $component_ref: end }
+# A document with a top-level agent and no steps is a one-step flow.
+agent:
+  model:
+    provider: openai
+    model: gpt-4o
+    api_key: $OPENAI_API_KEY
 
-$referenced_components:
-  start:
-    component_type: StartNode
-    id: start
-    name: start
-    outputs:
-      - title: query
-        type: string
+  prompt: |
+    Answer in one sentence.
 
-  assistant:
-    component_type: AgentNode
-    id: assistant
-    name: assistant
-    agent:
-      component_type: Agent
-      id: inner
-      name: assistant
-      system_prompt: Answer in one sentence.
-
-      llm_config:
-        component_type: OpenAiConfig
-        id: llm
-        name: openai
-        model_id: gpt-4o
-        api_key: $OPENAI_API_KEY
-
-      tools: []
-
-  end:
-    component_type: EndNode
-    id: end
-    name: end
+    {{inputs.query}}
 `;
 
-const SHELL_FLOW = `component_type: Flow
+const SHELL_FLOW = `weave: 1
 name: shell
-start_node: { $component_ref: start }
 
-nodes:
-  - $component_ref: start
-  - $component_ref: shell
-  - $component_ref: end
+inputs:
+  task: string
 
-control_flow_connections:
-  - component_type: ControlFlowEdge
-    name: start_to_shell
-    from_node: { $component_ref: start }
-    to_node: { $component_ref: shell }
-  - component_type: ControlFlowEdge
-    name: shell_to_end
-    from_node: { $component_ref: shell }
-    to_node: { $component_ref: end }
-
-$referenced_components:
-  start:
-    component_type: StartNode
-    id: start
-    name: start
+tools:
+  bash:
+    description: >-
+      Run a shell command and return its stdout, stderr and exit code.
+      Each call is a fresh shell and commands are killed after 20 seconds.
+    inputs:
+      command: string
     outputs:
-      - title: task
-        type: string
+      stdout: string
+      stderr: string
+      exit_code: integer
 
-  shell:
-    component_type: AgentNode
-    id: shell
-    name: shell
-    agent:
-      component_type: Agent
-      id: inner
-      name: shell
-      system_prompt: >-
-        You run shell commands to answer the task. python3 and node are both on
-        PATH. Each call is a fresh shell, so chain what depends on itself into a
-        single command. Read exit_code every time. Answer in one or two
-        sentences.
+agent:
+  model:
+    provider: openai
+    model: gpt-4o
+    api_key: $OPENAI_API_KEY
 
-      llm_config:
-        component_type: OpenAiConfig
-        id: llm
-        name: openai
-        model_id: gpt-4o
-        api_key: $OPENAI_API_KEY
+  prompt: |
+    You run shell commands to answer the task. python3 and node are both
+    on PATH. Each call is a fresh shell, so chain what depends on itself
+    into a single command. Read exit_code every time. Answer in one or
+    two sentences.
 
-      tools:
-        - component_type: ServerTool
-          id: bash_tool
-          name: bash
-          description: >-
-            Run a shell command and return its stdout, stderr and exit code.
-            Each call is a fresh shell and commands are killed after 20 seconds.
-          inputs:
-            - title: command
-              type: string
-          outputs:
-            - title: stdout
-              type: string
-            - title: stderr
-              type: string
-            - title: exit_code
-              type: integer
+    The task: {{inputs.task}}
 
-  end:
-    component_type: EndNode
-    id: end
-    name: end
+  tools: [bash]
 `;
 
 const BASH = `#!/usr/bin/env python3
@@ -484,84 +286,44 @@ json.dump(
 )
 `;
 
-const SKILLS_FLOW = `component_type: Flow
+const SKILLS_FLOW = `weave: 1
 name: skills
-start_node: { $component_ref: start }
 
-nodes:
-  - $component_ref: start
-  - $component_ref: assistant
-  - $component_ref: end
+inputs:
+  task: string
 
-control_flow_connections:
-  - component_type: ControlFlowEdge
-    name: start_to_assistant
-    from_node: { $component_ref: start }
-    to_node: { $component_ref: assistant }
-  - component_type: ControlFlowEdge
-    name: assistant_to_end
-    from_node: { $component_ref: assistant }
-    to_node: { $component_ref: end }
-
-$referenced_components:
-  start:
-    component_type: StartNode
-    id: start
-    name: start
+tools:
+  list_skills:
+    description: Every skill's name and its one-line description
     outputs:
-      - title: task
-        type: string
+      skills: string
 
-  assistant:
-    component_type: AgentNode
-    id: assistant
-    name: assistant
-    agent:
-      component_type: Agent
-      id: inner
-      name: assistant
+  read_skill:
+    description: One skill's body, by name
+    inputs:
+      name: string
+    outputs:
+      body: string
 
-      # The contract, and the only place it is stated. A model that is not
-      # told to look will not look, and a skill nobody reads is a file.
-      system_prompt: >-
-        You have skills: short written procedures. Their text is not in this
-        prompt. list_skills returns every skill's name and description;
-        read_skill returns one body. Call list_skills first, on every task. If
-        a description covers the task, read that skill and follow it exactly --
-        it outranks how you would otherwise do the job. Finish by naming the
-        skill you followed.
+agent:
+  model:
+    provider: openai
+    model: gpt-4o
+    api_key: $OPENAI_API_KEY
 
-      llm_config:
-        component_type: OpenAiConfig
-        id: llm
-        name: openai
-        model_id: gpt-4o
-        api_key: $OPENAI_API_KEY
+  # The contract, and the only place it is stated. A model that is not
+  # told to look will not look, and a skill nobody reads is a file.
+  prompt: |
+    You have skills: short written procedures. Their text is not in this
+    prompt. list_skills returns every skill's name and description;
+    read_skill returns one body. Call list_skills first, on every task.
+    If a description covers the task, read that skill and follow it
+    exactly -- it outranks how you would otherwise do the job. Finish by
+    naming the skill you followed.
 
-      tools:
-        - component_type: ServerTool
-          id: list_skills_tool
-          name: list_skills
-          description: Every skill's name and its one-line description
-          outputs:
-            - title: skills
-              type: string
+    The task: {{inputs.task}}
 
-        - component_type: ServerTool
-          id: read_skill_tool
-          name: read_skill
-          description: One skill's body, by name
-          inputs:
-            - title: name
-              type: string
-          outputs:
-            - title: body
-              type: string
-
-  end:
-    component_type: EndNode
-    id: end
-    name: end
+  tools: [list_skills, read_skill]
 `;
 
 const LIST_SKILLS = `#!/usr/bin/env python3
@@ -603,61 +365,37 @@ result beside the original with a .tidy.csv suffix. Never edit in place:
 the original is what someone will check the result against.
 `;
 
-const TOOL_AND_PLUGIN_FLOW = `component_type: Flow
+const TOOL_AND_PLUGIN_FLOW = `weave: 1
 name: shout
-start_node: { $component_ref: start }
 
-nodes:
-  - $component_ref: start
-  - $component_ref: shout
-  - $component_ref: reverse
-  - $component_ref: end
+inputs:
+  text: string
 
-control_flow_connections:
-  - component_type: ControlFlowEdge
-    name: start_to_shout
-    from_node: { $component_ref: start }
-    to_node: { $component_ref: shout }
-  - component_type: ControlFlowEdge
-    name: shout_to_reverse
-    from_node: { $component_ref: shout }
-    to_node: { $component_ref: reverse }
-  - component_type: ControlFlowEdge
-    name: reverse_to_end
-    from_node: { $component_ref: reverse }
-    to_node: { $component_ref: end }
-
-$referenced_components:
-  start:
-    component_type: StartNode
-    id: start
-    name: start
-    outputs:
-      - title: text
-        type: string
-
-  # A tool: an executable the engine runs as a subprocess.
+# A tool: an executable the engine runs as a subprocess.
+tools:
   shout:
-    component_type: ToolNode
-    id: shout
-    name: shout
-    tool:
-      component_type: ServerTool
-      id: shout_tool
-      name: shout
-      description: Uppercases the text it is given
+    description: Uppercases the text it is given
+    inputs:
+      text: string
+    outputs:
+      shouted: string
 
-  # A plugin node. ReverseNode is not a heddle type -- the plugin adds it,
+steps:
+  - name: shout
+    tool: shout
+    with:
+      text: '{{inputs.text}}'
+
+  # A plugin step. ReverseNode is not a heddle type -- the plugin adds it,
   # and it runs in the plugin's own process rather than the engine's.
-  reverse:
-    component_type: ReverseNode
-    id: reverse
-    name: reverse
+  - name: reverse
+    use: ReverseNode
+    with:
+      shouted: '{{shout.shouted}}'
 
-  end:
-    component_type: EndNode
-    id: end
-    name: end
+outcomes:
+  done:
+    reversed: '{{reverse.reversed}}'
 `;
 
 const SHOUT = `#!/bin/sh
@@ -677,85 +415,55 @@ const REVERSE_PLUGIN = `export default {
       // ReverseNode is not a heddle type. This adds it.
       componentType: 'ReverseNode',
 
-      execute(input, ctx) {
-        const text = String(input.shouted ?? input.text ?? '');
+      // Declaring the outputs is what lets a document's {{reverse.reversed}}
+      // reference validate before anything runs.
+      inferOutputs: () => [{ title: 'reversed', type: 'string' }],
 
-        ctx.log('info', 'reversing ' + text.length + ' characters');
+      createExecutor: () => ({
+        execute(input, ctx) {
+          const text = String(input.shouted ?? '');
 
-        return { output: { reversed: [...text].reverse().join('') } };
-      },
+          ctx.log('info', 'reversing ' + text.length + ' characters');
+
+          return { output: { reversed: [...text].reverse().join('') } };
+        },
+      }),
     },
   ],
 };
 `;
 
-const AG_UI_FLOW = `component_type: Flow
+const AG_UI_FLOW = `weave: 1
 name: rendered
-start_node: { $component_ref: start }
 
-nodes:
-  - $component_ref: start
-  - $component_ref: assistant
-  - $component_ref: end
+inputs:
+  question: string
 
-control_flow_connections:
-  - component_type: ControlFlowEdge
-    name: start_to_assistant
-    from_node: { $component_ref: start }
-    to_node: { $component_ref: assistant }
-  - component_type: ControlFlowEdge
-    name: assistant_to_end
-    from_node: { $component_ref: assistant }
-    to_node: { $component_ref: end }
-
-$referenced_components:
-  start:
-    component_type: StartNode
-    id: start
-    name: start
+tools:
+  digest:
+    description: The SHA-256 of a string, as hexadecimal
+    inputs:
+      text: string
     outputs:
-      - title: question
-        type: string
+      sha256: string
 
-  # Nothing in this flow knows it is being rendered. Each node's start and
-  # finish become STEP_STARTED and STEP_FINISHED, its outputs become a
-  # STATE_SNAPSHOT, the tool call becomes TOOL_CALL_START, _ARGS and _END, and
-  # the answer arrives as TEXT_MESSAGE_CONTENT deltas.
-  assistant:
-    component_type: AgentNode
-    id: assistant
-    name: assistant
-    agent:
-      component_type: Agent
-      id: inner
-      name: assistant
-      system_prompt: >-
-        Call digest for a hash rather than guessing one. Answer in one
-        sentence.
+# Nothing in this flow knows it is being rendered. Each step's start and
+# finish become STEP_STARTED and STEP_FINISHED, its outputs become a
+# STATE_SNAPSHOT, the tool call becomes TOOL_CALL_START, _ARGS and _END, and
+# the answer arrives as TEXT_MESSAGE_CONTENT deltas.
+agent:
+  model:
+    provider: openai
+    model: gpt-4o
+    api_key: $OPENAI_API_KEY
 
-      llm_config:
-        component_type: OpenAiConfig
-        id: llm
-        name: openai
-        model_id: gpt-4o
-        api_key: $OPENAI_API_KEY
+  prompt: |
+    Call digest for a hash rather than guessing one. Answer in one
+    sentence.
 
-      tools:
-        - component_type: ServerTool
-          id: digest_tool
-          name: digest
-          description: The SHA-256 of a string, as hexadecimal
-          inputs:
-            - title: text
-              type: string
-          outputs:
-            - title: sha256
-              type: string
+    The question: {{inputs.question}}
 
-  end:
-    component_type: EndNode
-    id: end
-    name: end
+  tools: [digest]
 `;
 
 const DIGEST = `#!/usr/bin/env python3
@@ -814,13 +522,13 @@ export const heddle: Reference = {
   install: "npm install -g @heddle-run/cli",
   packages: [],
   artifact: "a document",
-  modelSwap: "Change model_id, or swap OpenAiConfig for another config type.",
+  modelSwap: "Change the model line, or point provider at another backend.",
   docs: "/docs",
   note:
-    "The flow is data, not code. heddle parses it, validates the whole graph, " +
-    "and runs it. Nothing enters your dependency tree, and because the " +
-    "document is Open Agent Specification rather than heddle's own format, it " +
-    "runs on any compliant runtime.",
+    "The flow is data, not code. heddle parses it and validates the whole " +
+    "document — every reference, every target, every tool shape — before " +
+    "anything starts, then runs it. Nothing enters your dependency tree, " +
+    "and a document that validates is a document that runs.",
 
   impls: {
     research: {
@@ -859,8 +567,8 @@ export const heddle: Reference = {
         "heddle run flow.yaml --plugin ./guardrail.js \\\n" +
         `  --input '{"query": "what is my password"}'`,
       note:
-        "Agent Spec already defines the slot, Agent.transforms, so the " +
-        "guardrail is configuration. A plugin supplies the one component type " +
+        "Weave defines the slot, an agent's transforms, so the guardrail " +
+        "is configuration. A plugin supplies the one component type " +
         "heddle does not ship, and the patterns stay in the document.",
     },
 
@@ -875,9 +583,9 @@ export const heddle: Reference = {
         "heddle run flow.yaml --tools-dir ./tools \\\n" +
         `  --input '{"message": "the database is on fire"}'`,
       note:
-        "The branch is an edge in the document, not an if-statement. Every " +
-        "tool is its own executable, which is why this column has four files " +
-        "where the others have one.",
+        "The branch is a switch step in the document, not an if-statement. " +
+        "Every tool is its own executable, which is why this column has four " +
+        "files where the others have one.",
     },
 
     agent: {
@@ -887,8 +595,8 @@ export const heddle: Reference = {
         `  --input '{"query": "what is a heddle on a loom?"}'`,
       note:
         "One model call and nothing else, so this is the whole of the " +
-        "format at its smallest: a start, an agent and an end, and no " +
-        "runtime to construct.",
+        "format at its smallest: an input, an agent and an implicit " +
+        "outcome, and no runtime to construct.",
     },
 
     shell: {
@@ -935,7 +643,7 @@ export const heddle: Reference = {
         `  --input '{"text": "weave agents from spec"}'`,
       note:
         "Both steps are out of the engine's process, the tool as a " +
-        "subprocess and the plugin node in its own, and the flow names them " +
+        "subprocess and the plugin step in its own, and the flow names them " +
         "without knowing either is not a heddle type.",
     },
 

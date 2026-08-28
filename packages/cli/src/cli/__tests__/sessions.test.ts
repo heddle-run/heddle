@@ -102,13 +102,16 @@ describe('a run kept in a session', () => {
     await run(FLOW, '--session', 's1', '--input', '{"query":"first"}');
     await run(FLOW, '--session', 's1', '--input', '{"query":"second"}');
 
-    // The flow passes its state through, so what the second run was *given* is
-    // visible in what the first turn's answer became history for.
+    // The flow passes its input through to its outcome, so what the second run
+    // was *given* is visible in what the first turn's answer became history for.
     const record = await store.read('s1');
     expect(record?.version).toBe(2);
     expect(historyFromTurns(record!.turns.slice(0, 1))).toEqual([
       { role: 'user', content: JSON.stringify({ query: 'first' }) },
-      { role: 'assistant', content: JSON.stringify({ query: 'first' }) },
+      {
+        role: 'assistant',
+        content: JSON.stringify({ query: 'first', outcome: 'done' }),
+      },
     ]);
   });
 
@@ -125,7 +128,7 @@ describe('a run kept in a session', () => {
     // The run was given the history; the answer it reports is not carrying it
     // back out, so copying this into the next --input would not be refused.
     const state = JSON.parse(stdout);
-    expect(state).toEqual({ query: 'second' });
+    expect(state).toEqual({ query: 'second', outcome: 'done' });
     expect(CHAT_HISTORY_KEY in state).toBe(false);
     expect((await store.read('s1'))?.turns[1].output).toEqual(state);
   });
@@ -177,7 +180,10 @@ describe('a run kept in a session', () => {
 
     expect(frames[0].event).toBe('flow_start');
     // The turn was still recorded, with the state the frames never printed.
-    expect((await store.read('s1'))?.turns[0].output).toEqual({ query: 'hi' });
+    expect((await store.read('s1'))?.turns[0].output).toEqual({
+      query: 'hi',
+      outcome: 'done',
+    });
   });
 });
 
@@ -210,7 +216,7 @@ describe('durability', () => {
     await store.writeCheckpoint('s1', {
       runId: 'r1',
       at: new Date().toISOString(),
-      node: 'end',
+      node: 'done',
       carried: { query: 'hi' },
       nodeOutputs: {},
       attempt: 1,
@@ -226,17 +232,19 @@ describe('durability', () => {
     await store.writeCheckpoint('s1', {
       runId: 'r1',
       at: new Date().toISOString(),
-      node: 'end',
-      carried: { query: 'hi', already: 'done' },
-      nodeOutputs: { start: { query: 'hi' } },
+      node: 'done',
+      carried: { query: 'hi' },
+      nodeOutputs: { inputs: { query: 'hi' } },
       attempt: 1,
       input: { query: 'hi' },
     });
 
     const { stdout } = await run(FLOW, '--session', 's1', '--resume');
 
-    // The state the checkpoint carried came back, without start re-running.
-    expect(JSON.parse(stdout)).toMatchObject({ query: 'hi', already: 'done' });
+    // The outcome the checkpoint pointed at ran, without the inputs node or
+    // the switch re-running: the value it renders comes from the recorded
+    // node outputs.
+    expect(JSON.parse(stdout)).toEqual({ query: 'hi', outcome: 'done' });
     expect(await store.readCheckpoint('s1')).toBeUndefined();
     expect((await store.read('s1'))?.turns[0].input).toEqual({ query: 'hi' });
   });
@@ -260,7 +268,7 @@ describe('the sessions command', () => {
 
     const { stdout } = await sessions('show', 's1');
     expect(stdout).toBe(
-      `> ${JSON.stringify({ query: 'hi' })}\n< ${JSON.stringify({ query: 'hi' })}\n`,
+      `> ${JSON.stringify({ query: 'hi' })}\n< ${JSON.stringify({ query: 'hi', outcome: 'done' })}\n`,
     );
   });
 

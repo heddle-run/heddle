@@ -1,6 +1,4 @@
 import { describe, it, expect, vi } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { Runner } from '../../runner/runner.js';
 import { DEFAULT_RUNNER_OPTIONS } from '../../runner/options.js';
 import type { Event } from '../../runner/events.js';
@@ -11,7 +9,7 @@ import { validateManifest } from '../manifest.js';
 import { loadRemotePlugin } from '../remote-loader.js';
 import { parseFlow } from '../../spec/parser.js';
 import { compile } from '../../graph/compile.js';
-import type { CompiledGraph, CompiledNode } from '../../graph/types.js';
+import { CompiledGraph, type CompiledNode, type GraphNodeSpec } from '../../graph/types.js';
 import type {
   MiddlewareContext,
   PluginMiddlewareDef,
@@ -22,6 +20,14 @@ import { useScratch } from './helpers/remote-plugin.js';
 import { chainOf, pluginWith } from './helpers/seams.js';
 
 const scratch = useScratch('heddle-middleware-');
+
+function stepSpec(): GraphNodeSpec {
+  return { role: 'step', step: {} as never };
+}
+
+function outcomeSpec(name: string): GraphNodeSpec {
+  return { role: 'outcome', outcome: { name } };
+}
 
 interface Failing {
   failFor: number;
@@ -37,8 +43,8 @@ function failingGraph(spec: Failing, extraEdges: string[] = []): {
 
   const worker: CompiledNode = {
     name: 'work',
-    type: 'ToolNode',
-    specNode: { componentType: 'ToolNode', name: 'work' } as never,
+    type: 'tool',
+    spec: stepSpec(),
     executor: {
       async execute(): Promise<State> {
         attempts++;
@@ -50,11 +56,10 @@ function failingGraph(spec: Failing, extraEdges: string[] = []): {
       },
       branch: () => branch,
     },
-    edges: [{ fromNode: 'work', toNode: 'done' }, ...extraEdges.map((b) => ({
-      fromNode: 'work',
-      fromBranch: b,
-      toNode: `${b}_end`,
-    }))],
+    edges: [
+      { from: 'work', to: 'done' },
+      ...extraEdges.map((b) => ({ from: 'work', branch: b, to: `${b}_end` })),
+    ],
     inputMappings: new Map(),
   };
 
@@ -62,8 +67,8 @@ function failingGraph(spec: Failing, extraEdges: string[] = []): {
   for (const name of ['done', ...extraEdges.map((b) => `${b}_end`)]) {
     nodes.set(name, {
       name,
-      type: 'EndNode',
-      specNode: { componentType: 'EndNode', name } as never,
+      type: 'outcome',
+      spec: outcomeSpec(name),
       executor: {
         execute: async (_s: AbortSignal | undefined, input: State) =>
           input.merge(new State({ ended_at: name })),
@@ -74,27 +79,14 @@ function failingGraph(spec: Failing, extraEdges: string[] = []): {
     });
   }
 
-  const graph = {
-    name: 'failing',
-    start: 'work',
-    getNode: (name: string) => nodes.get(name),
-    nextNode: (current: CompiledNode, wanted: string) => {
-      let fallback: CompiledNode | undefined;
-      for (const edge of current.edges) {
-        const edgeBranch = edge.fromBranch ?? '';
-        if (wanted && edgeBranch === wanted) {
-          const next = nodes.get(edge.toNode);
-          if (next) return next;
-        }
-        if (!edgeBranch && !fallback) fallback = nodes.get(edge.toNode);
-      }
-      return fallback;
-    },
-  } as unknown as CompiledGraph;
-
-  return { graph, attempts: () => attempts };
+  return { graph: new CompiledGraph('failing', nodes, 'work'), attempts: () => attempts };
 }
 
+/**
+ * A graph the runner walks around twice — hand-built, because a Weave document
+ * cannot write a loop, and the per-arrival attempt budget is the runner's own
+ * mechanism rather than the format's.
+ */
 function loopingGraph(spec: { failOnArrival: number[] }): {
   graph: CompiledGraph;
   arrivals: () => number;
@@ -105,8 +97,8 @@ function loopingGraph(spec: { failOnArrival: number[] }): {
 
   const work: CompiledNode = {
     name: 'work',
-    type: 'ToolNode',
-    specNode: { componentType: 'ToolNode', name: 'work' } as never,
+    type: 'tool',
+    spec: stepSpec(),
     executor: {
       async execute(): Promise<State> {
         if (attemptsThisArrival === 0) arrivals++;
@@ -119,14 +111,14 @@ function loopingGraph(spec: { failOnArrival: number[] }): {
       },
       branch: () => '',
     },
-    edges: [{ fromNode: 'work', toNode: 'turn' }],
+    edges: [{ from: 'work', to: 'turn' }],
     inputMappings: new Map(),
   };
 
   const turn: CompiledNode = {
     name: 'turn',
-    type: 'BranchingNode',
-    specNode: { componentType: 'BranchingNode', name: 'turn' } as never,
+    type: 'switch',
+    spec: stepSpec(),
     executor: {
       async execute(): Promise<State> {
         laps++;
@@ -135,16 +127,16 @@ function loopingGraph(spec: { failOnArrival: number[] }): {
       branch: () => (laps < 2 ? 'again' : 'out'),
     },
     edges: [
-      { fromNode: 'turn', fromBranch: 'again', toNode: 'work' },
-      { fromNode: 'turn', fromBranch: 'out', toNode: 'done' },
+      { from: 'turn', branch: 'again', to: 'work' },
+      { from: 'turn', branch: 'out', to: 'done' },
     ],
     inputMappings: new Map(),
   };
 
   const done: CompiledNode = {
     name: 'done',
-    type: 'EndNode',
-    specNode: { componentType: 'EndNode', name: 'done' } as never,
+    type: 'outcome',
+    spec: outcomeSpec('done'),
     executor: {
       execute: async (_s: AbortSignal | undefined, input: State) => input,
       branch: () => '',
@@ -159,25 +151,7 @@ function loopingGraph(spec: { failOnArrival: number[] }): {
     ['done', done],
   ]);
 
-  const graph = {
-    name: 'looping',
-    start: 'work',
-    getNode: (name: string) => nodes.get(name),
-    nextNode: (current: CompiledNode, wanted: string) => {
-      let fallback: CompiledNode | undefined;
-      for (const edge of current.edges) {
-        const edgeBranch = edge.fromBranch ?? '';
-        if (wanted && edgeBranch === wanted) {
-          const next = nodes.get(edge.toNode);
-          if (next) return next;
-        }
-        if (!edgeBranch && !fallback) fallback = nodes.get(edge.toNode);
-      }
-      return fallback;
-    },
-  } as unknown as CompiledGraph;
-
-  return { graph, arrivals: () => arrivals };
+  return { graph: new CompiledGraph('looping', nodes, 'work'), arrivals: () => arrivals };
 }
 
 function middleware(
@@ -292,7 +266,7 @@ describe('the nodeError seam', () => {
       ),
     );
 
-    expect(seen?.subject).toEqual({ nodeName: 'work', nodeType: 'ToolNode' });
+    expect(seen?.subject).toEqual({ nodeName: 'work', nodeType: 'tool' });
     expect(seen?.outcome).toEqual({
       ok: false,
       error: { name: 'Error', message: 'work failed on attempt 1' },
@@ -781,7 +755,7 @@ describe('the configuration channel', () => {
     expect(state?.get('budget')).toBe(4);
   });
 
-  it('reads an llm_config written the way the error message asks for it', () => {
+  it('reads a model written the way callModel\'s error message asks for it', async () => {
     const entry = scratch.writeHelperPlugin('cfg-llm', 'serve({});');
     const chain = chainFrom(
       {
@@ -789,7 +763,7 @@ describe('the configuration channel', () => {
         components: [{ ...RETRY_MANIFEST.components[0], schema: undefined }],
       },
       entry,
-      { RetryPolicy: { llm_config: { component_type: 'OpenAiConfig', model_id: 'gpt-4o-mini' } } },
+      { RetryPolicy: { model: { provider: 'openai', model: 'gpt-4o-mini' } } },
     );
 
     expect(chain.describe()).toEqual(['RetryPolicy (resilience) on nodeError']);
@@ -846,8 +820,8 @@ describe('what a middleware is not asked about', () => {
 
     const aborting: CompiledNode = {
       name: 'work',
-      type: 'ToolNode',
-      specNode: { componentType: 'ToolNode', name: 'work' } as never,
+      type: 'tool',
+      spec: stepSpec(),
       executor: {
         async execute(): Promise<State> {
           ac.abort();
@@ -855,16 +829,14 @@ describe('what a middleware is not asked about', () => {
         },
         branch: () => '',
       },
-      edges: [{ fromNode: 'work', toNode: 'done' }],
+      edges: [{ from: 'work', to: 'done' }],
       inputMappings: new Map(),
     };
-    const nodes = new Map([['work', aborting]]);
-    const graph = {
-      name: 'aborting',
-      start: 'work',
-      getNode: (name: string) => nodes.get(name),
-      nextNode: () => undefined,
-    } as unknown as CompiledGraph;
+    const graph = new CompiledGraph(
+      'aborting',
+      new Map([['work', aborting]]),
+      'work',
+    );
 
     const runner = new Runner(graph, {
       ...DEFAULT_RUNNER_OPTIONS,
@@ -883,17 +855,17 @@ describe('what a middleware is not asked about', () => {
   it('names the middleware when a replaced node has no unbranched edge to take', async () => {
     const branching: CompiledNode = {
       name: 'route',
-      type: 'BranchingNode',
-      specNode: { componentType: 'BranchingNode', name: 'route' } as never,
+      type: 'switch',
+      spec: stepSpec(),
       executor: {
         async execute(): Promise<State> {
-          throw new Error('no branching_mapping_key in input');
+          throw new Error('route has no value to branch on');
         },
         branch: () => '',
       },
       edges: [
-        { fromNode: 'route', fromBranch: 'ok', toNode: 'end_ok' },
-        { fromNode: 'route', fromBranch: 'blocked', toNode: 'end_blocked' },
+        { from: 'route', branch: 'ok', to: 'end_ok' },
+        { from: 'route', branch: 'blocked', to: 'end_blocked' },
       ],
       inputMappings: new Map(),
     };
@@ -901,25 +873,18 @@ describe('what a middleware is not asked about', () => {
       name,
       {
         name,
-        type: 'EndNode',
-        specNode: { componentType: 'EndNode', name } as never,
+        type: 'outcome',
+        spec: outcomeSpec(name),
         executor: { execute: async () => new State({}), branch: () => '' },
         edges: [],
         inputMappings: new Map(),
       },
     ]);
-    const nodes = new Map<string, CompiledNode>([['route', branching], ...ends]);
-    const graph = {
-      name: 'branching',
-      start: 'route',
-      getNode: (name: string) => nodes.get(name),
-      nextNode: (current: CompiledNode, wanted: string) => {
-        for (const edge of current.edges) {
-          if (wanted && (edge.fromBranch ?? '') === wanted) return nodes.get(edge.toNode);
-        }
-        return undefined;
-      },
-    } as unknown as CompiledGraph;
+    const graph = new CompiledGraph(
+      'branching',
+      new Map<string, CompiledNode>([['route', branching], ...ends]),
+      'route',
+    );
 
     const { error } = await runWith(
       graph,
@@ -928,7 +893,7 @@ describe('what a middleware is not asked about', () => {
 
     expect(error?.message).toMatch(/middleware "Fallback" supplied a result/);
     expect(error?.message).toMatch(/supplies a result, never a route/);
-    expect(error?.message).toMatch(/no branching_mapping_key/);
+    expect(error?.message).toMatch(/route has no value to branch on/);
   });
 
   it('refuses an in-process subscription the manifest path would have refused', () => {
@@ -958,44 +923,27 @@ describe('what a middleware is not asked about', () => {
       }),
     ).toThrow(/nothing in it/);
   });
-
-  it('cannot be given a component type that names something on Object.prototype', () => {
-    for (const name of ['constructor', 'toString', 'valueOf', 'hasOwnProperty']) {
-      expect(() =>
-        PluginRegistry.fromPlugins([
-          pluginWith(middleware(name, () => ({ action: 'pass' }))),
-        ]),
-      ).toThrow(/builtin Agent Spec type/);
-    }
-  });
 });
 
-describe('a spec that names a middleware', () => {
+describe('a document that names a middleware', () => {
   it('is refused with the reason, rather than as an unknown component type', () => {
     const registry = PluginRegistry.fromPlugins([
       pluginWith(middleware('RetryPolicy', () => ({ action: 'pass' }))),
     ]);
 
     const spec = JSON.stringify({
-      component_type: 'Flow',
+      weave: 1,
       name: 'f',
-      nodes: [
-        { component_type: 'StartNode', name: 'start', outputs: [{ title: 'q', type: 'string' }] },
-        { component_type: 'RetryPolicy', name: 'policy' },
-        { component_type: 'EndNode', name: 'end' },
-      ],
-      control_flow_connections: [
-        { from_node: 'start', to_node: 'policy' },
-        { from_node: 'policy', to_node: 'end' },
-      ],
-      start_node: 'start',
-      end_nodes: ['end'],
+      inputs: { q: 'string' },
+      steps: [{ name: 'policy', use: 'RetryPolicy' }],
     });
 
-    expect(() => parseFlow(spec, registry)).toThrow(/which is a middleware/);
+    expect(() => parseFlow(spec, registry)).toThrow(
+      /as a middleware rather than a node/,
+    );
   });
 
-  it('is not offered as a component type a spec could use', () => {
+  it('is not offered as a component type a document could use', () => {
     const registry = PluginRegistry.fromPlugins([
       pluginWith(middleware('RetryPolicy', () => ({ action: 'pass' }))),
     ]);
@@ -1132,10 +1080,15 @@ describe('an out-of-process middleware', () => {
 
 describe('a flow compiled alongside middleware', () => {
   it('runs exactly as it would without one, when nothing fails', async () => {
-    const spec = readFileSync(
-      join(import.meta.dirname, '../../../testdata/simple_flow.json'),
-      'utf-8',
-    );
+    const spec = JSON.stringify({
+      weave: 1,
+      name: 'simple',
+      inputs: { input: 'string' },
+      steps: [
+        { name: 'route', switch: '{{inputs.input}}', cases: {}, else: 'done' },
+      ],
+      outcomes: { done: { input: '{{inputs.input}}' } },
+    });
 
     const registry = PluginRegistry.fromPlugins([
       pluginWith(

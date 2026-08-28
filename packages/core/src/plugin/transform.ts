@@ -13,11 +13,6 @@ import { pluginReporter } from './executor.js';
 import { PluginModel, toolRunner, type ToolRunner } from './services.js';
 import { PluginError } from '../errors.js';
 
-const UNIMPLEMENTED_BUILTIN_TRANSFORMS = new Set([
-  'MessageSummarizationTransform',
-  'ConversationSummarizationTransform',
-]);
-
 const VALID_ACTIONS = new Set(['pass', 'modify', 'reject']);
 
 const DEFAULT_PHASE: TransformPhase = 'pre';
@@ -52,13 +47,9 @@ export class TransformChain {
     const entries: Entry[] = [];
 
     for (const spec of transforms ?? []) {
-      const def = deps.plugins?.transformDef(spec.componentType);
+      const def = deps.plugins?.transformDef(spec.use);
       if (def) {
         entries.push(buildEntry(spec, def, deps, agentName));
-        continue;
-      }
-      if (UNIMPLEMENTED_BUILTIN_TRANSFORMS.has(spec.componentType)) {
-        warnSkipped(spec, deps, agentName);
         continue;
       }
       throw new PluginError(unknownTransformMessage(spec, deps, agentName));
@@ -105,8 +96,14 @@ function buildEntry(
   deps: Dependencies,
   agentName: string,
 ): Entry {
-  const component = spec as unknown as PluginComponent;
-  const where = `${spec.componentType} "${spec.name}"`;
+  const component: PluginComponent = {
+    ...spec.config,
+    componentType: spec.use,
+    name: spec.use,
+    id: `${agentName}-${spec.use}`,
+    metadata: {},
+  };
+  const where = `${spec.use} on "${agentName}"`;
 
   return {
     component,
@@ -115,7 +112,7 @@ function buildEntry(
     model: new PluginModel(where, component, deps),
     reporter: pluginReporter(deps.eventHandler, {
       nodeName: agentName,
-      componentType: spec.componentType,
+      componentType: spec.use,
     }),
     phases: phasesOf(def, component),
   };
@@ -182,28 +179,14 @@ function modifiedMessages(entry: Entry, result: TransformResult): Message[] {
   return result.messages;
 }
 
-function warnSkipped(
-  spec: TransformSpec,
-  deps: Dependencies,
-  agentName: string,
-): void {
-  deps.eventHandler?.({
-    type: 'warning',
-    nodeName: agentName,
-    message:
-      `agent "${agentName}" declares ${spec.componentType} ` +
-      `"${spec.name}", which heddle does not implement yet — skipping.`,
-  });
-}
-
 function unknownTransformMessage(
   spec: TransformSpec,
   deps: Dependencies,
   agentName: string,
 ): string {
   return (
-    `agent "${agentName}": transform "${spec.name}" has type ` +
-    `"${spec.componentType}", which no plugin provides.\n` +
+    `agent step "${agentName}": the transform "${spec.use}" is a type ` +
+    `no loaded plugin provides.\n` +
     `  Loaded plugins: ${deps.plugins?.describe() ?? 'none'}`
   );
 }

@@ -4,19 +4,20 @@ const chatCompletion = vi.fn();
 
 import { AgentExecutor } from '../agent.js';
 import { State } from '../../state/state.js';
+import { RunError } from '../../errors.js';
 import type { Dependencies } from '../types.js';
-import type { AgentNode } from '../../spec/types.js';
+import type { AgentStep, SchemaMap } from '../../spec/types.js';
+import type { ChatRequest } from '../../llm/types.js';
 import type { Event } from '../../runner/events.js';
 
-const NODE: AgentNode = {
-  componentType: 'AgentNode',
+const STEP: AgentStep = {
+  kind: 'agent',
   name: 'assistant',
   agent: {
-    componentType: 'Agent',
-    name: 'assistant',
-    systemPrompt: 'be useful',
-    llmConfig: { componentType: 'OpenAiConfig', modelId: 'gpt-4o' },
-    tools: [{ componentType: 'ServerTool', name: 'echo', description: 'echoes' }],
+    model: { provider: 'openai', model: 'gpt-4o', extra: {} },
+    prompt: 'be useful',
+    tools: [{ name: 'echo', description: 'echoes', inputs: {}, outputs: {} }],
+    transforms: [],
   },
 };
 
@@ -57,7 +58,7 @@ function harness(args: unknown): Harness {
     events,
     received,
     run: async () => {
-      const executor = new AgentExecutor(NODE, deps);
+      const executor = new AgentExecutor(STEP, deps);
       const state = await executor.execute(undefined, new State({ q: 'hi' }));
       return state.toData();
     },
@@ -157,5 +158,115 @@ describe('tool call arguments', () => {
       .messages;
     const toolMessage = messages.find((m) => m.role === 'tool');
     expect(toolMessage?.content).toMatch(/Send a JSON object of named arguments/);
+  });
+});
+
+/**
+ * Structured output: opt-in through `output:`, enforced rather than guessed.
+ * The old behavior — merging whatever JSON keys the answer happened to carry —
+ * is gone; a step's shape is declared or its output is the one `result` string.
+ */
+describe('a declared output', () => {
+  function structured(
+    answer: string,
+    output: SchemaMap = { status: 'string', note: 'string' } as never,
+  ): { run: () => Promise<Record<string, unknown>>; sent: () => ChatRequest } {
+    chatCompletion.mockResolvedValueOnce({ content: answer, tool_calls: [] });
+
+    const step: AgentStep = {
+      kind: 'agent',
+      name: 'triage',
+      agent: {
+        model: { provider: 'openai', model: 'gpt-4o', extra: {} },
+        prompt: 'triage {{inputs.alert}}',
+        tools: [],
+        transforms: [],
+        output: normalized(output),
+      },
+    };
+
+    const executor = new AgentExecutor(step, {
+      createProvider: () => ({ chatCompletion }),
+    });
+
+    return {
+      run: async () => {
+        const state = await executor.execute(
+          undefined,
+          new State({ 'inputs.alert': 'disk full' }),
+        );
+        return state.toData();
+      },
+      sent: () => chatCompletion.mock.calls[0][1] as ChatRequest,
+    };
+  }
+
+  /** Accepts the shorthand `{ status: 'string' }` for readable cases above. */
+  function normalized(output: SchemaMap): SchemaMap {
+    return Object.fromEntries(
+      Object.entries(output).map(([key, value]) => [
+        key,
+        typeof value === 'string' ? { type: value } : value,
+      ]),
+    ) as SchemaMap;
+  }
+
+  it('writes exactly the declared keys, never result', async () => {
+    const h = structured('{"status": "ok", "note": "disk on db-1"}');
+
+    expect(await h.run()).toEqual({ status: 'ok', note: 'disk on db-1' });
+  });
+
+  it('asks the endpoint for JSON and tells the model the keys', async () => {
+    const h = structured('{"status": "ok", "note": "n"}');
+    await h.run();
+
+    const request = h.sent();
+    expect(request.responseFormat).toBe('json');
+    const system = request.messages[0];
+    expect(system.role).toBe('system');
+    expect(system.content).toMatch(/exactly these keys/);
+    expect(system.content).toContain('"status": string');
+    expect(system.content).toContain('"note": string');
+  });
+
+  it('drops keys the answer smuggled in beside the declared ones', async () => {
+    const h = structured('{"status": "ok", "note": "n", "extra": "no"}');
+
+    expect(await h.run()).toEqual({ status: 'ok', note: 'n' });
+  });
+
+  it('fails the step when a declared key is missing from the answer', async () => {
+    const h = structured('{"status": "ok"}');
+
+    await expect(h.run()).rejects.toThrow(RunError);
+
+    const again = structured('{"status": "ok"}');
+    await expect(again.run()).rejects.toThrow(/missing declared output key "note"/);
+  });
+
+  it('fails the step when the answer is not a JSON object at all', async () => {
+    const h = structured('the disk is full');
+
+    await expect(h.run()).rejects.toThrow(
+      /agent step "triage" declares a structured output/,
+    );
+  });
+
+  it('unfences a ```json answer, the one lenience it allows', async () => {
+    const h = structured('```json\n{"status": "ok", "note": "n"}\n```');
+
+    expect(await h.run()).toEqual({ status: 'ok', note: 'n' });
+  });
+
+  it('sends the referenced values, and only those, as the user message', async () => {
+    const h = structured('{"status": "ok", "note": "n"}');
+    await h.run();
+
+    const user = h.sent().messages.at(-1);
+    expect(user?.role).toBe('user');
+    expect(JSON.parse(user?.content ?? '')).toEqual({
+      'inputs.alert': 'disk full',
+    });
   });
 });

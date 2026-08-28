@@ -15,7 +15,7 @@ There is currently no `--version` flag. Use `heddle --help` to confirm the CLI i
 
 ## heddle run
 
-Execute an Agent Spec flow.
+Execute a Weave flow.
 
 ```bash
 heddle run <flow> [options]
@@ -32,7 +32,7 @@ heddle run <flow> [options]
 | Option | Description |
 |--------|-------------|
 | `--tools-dir <path>` | Directory containing tool executables |
-| `--input <json>` | Input data as a JSON object. Becomes the run's starting state |
+| `--input <json>` | Input data as a JSON object, filling the flow's declared `inputs` |
 | `--format <name>` | Read the flow through a named [input format](/docs/plugins/formats) instead of resolving it from the file extension. `json` and `yaml` are builtin; any other name comes from a plugin |
 | `--session [id]` | Keep this run in a conversation on disk, and give the agent the turns before it. With no id, one is created and its id printed |
 | `--session-dir <path>` | Where sessions are kept (default `$HEDDLE_SESSION_DIR`, then `~/.heddle/sessions`) |
@@ -112,19 +112,19 @@ heddle run flow.yaml --tools-dir ./tools --safe --deny-net --allow-write ./out
 
 ### Output
 
-The final state is printed to stdout as formatted JSON, unless `--protocol` is given, which
-replaces it with a frame stream. Progress, tool activity, and errors go to stderr, so stdout
-stays pipeable:
+The run's answer — the payload of the outcome it ended at, plus `outcome` naming it — is
+printed to stdout as formatted JSON, unless `--protocol` is given, which replaces it with
+a frame stream. Progress, tool activity, and errors go to stderr, so stdout stays
+pipeable:
 
 ```bash
 heddle run flow.json --input '{"query": "hello"}' | jq .result
 ```
 
-`--input` becomes the run's starting state as given. It is not checked against the start
-node's declared outputs: malformed JSON fails immediately, but a key nothing declares is
-carried and is readable, since an agent is sent its whole input state as JSON and `{{key}}`
-substitution reads whatever the state holds. A declared key you omit is simply absent, and
-a prompt referencing it keeps the placeholder.
+`--input` is checked against the flow's declared `inputs` at the first node: a declared
+input you omit fails the run at once, unless it carries a `default`, which is filled in.
+A key the document does not declare is carried but unreachable, since every `{{inputs.…}}`
+reference was already checked against the declaration when the document loaded.
 
 ### Rendering the run in another protocol
 
@@ -139,12 +139,15 @@ heddle run examples/ag-ui/flow.json --plugin ./examples/ag-ui/encoder.json \
 
 ```
 {"data":{"type":"RUN_STARTED","threadId":"5d4ed795-…","runId":"5d4ed795-…"}}
-{"data":{"type":"STEP_STARTED","stepName":"start"}}
-{"data":{"type":"STEP_FINISHED","stepName":"start"}}
+{"data":{"type":"STEP_STARTED","stepName":"inputs"}}
+{"data":{"type":"STEP_FINISHED","stepName":"inputs"}}
 {"data":{"type":"STATE_SNAPSHOT","snapshot":{"query":"hello"}}}
-{"data":{"type":"STEP_STARTED","stepName":"end"}}
-{"data":{"type":"STEP_FINISHED","stepName":"end"}}
+{"data":{"type":"STEP_STARTED","stepName":"inspect"}}
+{"data":{"type":"STEP_FINISHED","stepName":"inspect"}}
 {"data":{"type":"STATE_SNAPSHOT","snapshot":{"query":"hello"}}}
+{"data":{"type":"STEP_STARTED","stepName":"done"}}
+{"data":{"type":"STEP_FINISHED","stepName":"done"}}
+{"data":{"type":"STATE_SNAPSHOT","snapshot":{"query":"hello","outcome":"done"}}}
 {"data":{"type":"RUN_FINISHED","threadId":"5d4ed795-…","runId":"5d4ed795-…"}}
 ```
 
@@ -156,7 +159,7 @@ own frames, with no plugin loaded at all:
 
 ```
 {"event":"flow_start","data":{"type":"flow_start"}}
-{"event":"node_start","data":{"type":"node_start","nodeName":"start","nodeType":"StartNode","attempt":1,"state":{"query":"hello"}}}
+{"event":"node_start","data":{"type":"node_start","nodeName":"inputs","nodeType":"start","attempt":1,"state":{"query":"hello"}}}
 ```
 
 The final state is **not** appended. With a protocol selected stdout is the frame stream, and
@@ -229,7 +232,7 @@ stopped with no way back.
 `-i` opens the terminal chat UI. Alone, the conversation lasts as long as the terminal; with
 `--session` it is kept, and reopening with the same id starts on the conversation so far.
 
-Your message is bound to the first output declared on the flow's start node, falling back to `query` if it declares none. Type `/exit` or `/quit` to leave.
+Your message is bound to the first field declared under the flow's `inputs`, falling back to `query` if it declares none. Type `/exit` or `/quit` to leave.
 
 <Callout type="warn">
 An in-flight run cannot be interrupted. `Ctrl+C` and `/exit` close the session, but a flow already executing keeps running until it finishes or hits the five-minute timeout.
@@ -246,7 +249,7 @@ heddle bundle <flow> [options]
 ```
 
 ```bash
-heddle bundle spec.yaml --tools-dir tools --plugin plugin.json \
+heddle bundle weave.yaml --tools-dir tools --plugin plugin.json \
   --mount skills --input '{"query":"hello"}' -o agent.heddle
 ```
 
@@ -267,7 +270,7 @@ heddle run agent.heddle
 | `--mount <src[:dest][:ro\|:rw]>` | File or directory to ship, landing in every workspace where a `--mount` would put it (repeatable) |
 | `--input <json>` | Default input recorded in the bundle; `heddle run --input` overrides it |
 | `--requires <json\|@file>` | What the receiving machine must already have, as a JSON list of predicates. Checked before a run starts and reported all at once — never installed, fetched or executed. See [requirements](/docs/bundles#what-a-bundle-needs-from-your-machine) |
-| `-o`, `--output <file>` | Where to write the bundle. Default: `<flow name>.heddle`, named for the flow rather than the file, since flow files are usually all called `flow.json` |
+| `-o`, `--output <file>` | Where to write the bundle. Default: `<flow name>.heddle`, named for the flow rather than the file, since flow files are usually all called `weave.yaml` |
 
 ### What a bundle is
 
@@ -350,7 +353,7 @@ All three take `--session-dir <path>`. A session with an unfinished run is liste
 
 ## heddle validate
 
-Validate an Agent Spec component.
+Validate a Weave document.
 
 ```bash
 heddle validate <spec> [options]
@@ -373,27 +376,26 @@ heddle validate <spec> [options]
 
 ### What it checks
 
-1. Schema validation against the Open Agent Specification
-2. Graph compilation and structural validation, for flows
-3. That every tool the flow names resolves, against the composed registry, so this runs
+1. The document's own shape: the `weave` version, the verbs, the schemas, and every key —
+   an unknown key is an error anywhere outside `meta` and a plugin step's `with`
+2. Every reference: models, tools and step targets resolve, every `{{…}}` names a real
+   producer and a key it actually writes, and control flows forward on every path
+3. Plugin components, against the schema their plugin registered — which is why a flow
+   naming a plugin's component types needs that `--plugin` here too
+4. That every tool the flow names resolves, against the composed registry, so this runs
    when `--tools-dir` is given *or* when a loaded plugin contributes tools
 
 **No API key is needed.** Providers are constructed on first use, so compiling a flow, and
-therefore validating it, never reaches a credential. A spec whose `llm_config` names
+therefore validating it, never reaches a credential. A spec whose model config names
 `$OPENAI_API_KEY` validates with nothing in the environment.
 
 A `.json` argument to `--plugin` is read as a manifest, which is data: validating a flow
 that uses an out-of-process plugin starts none of that plugin's code.
 
-<Callout type="warn">
-One case worth knowing in CI. A spec that does not parse exits 1, so does an invalid
-graph, and so does a tool the flow names that nothing provides. Exiting 0 while printing
-the problem is the one outcome a validator must not have. What still exits 0 is a graph
-heddle could not *compile* at all, reported as `Graph validation skipped` with the reason.
-That skip is there so a check which could not run, usually because a node type's plugin was
-not loaded, is not mistaken for a fault in the spec. Read the output as
-well as the status, and treat `Graph validation passed` as the signal you want.
-</Callout>
+There is no partial verdict. A spec that does not parse exits 1, so does a bad reference,
+a component type no loaded plugin provides, and a tool the flow names that nothing
+carries. `Valid` printing and exit 0 mean the whole document was checked and the flow will
+start; there is no `Graph validation skipped` — a check that cannot run is a failed check.
 
 ## heddle init
 
@@ -403,4 +405,4 @@ Scaffold a new project.
 heddle init <project-name>
 ```
 
-Creates a project directory containing a template `flow.json` and a sample tool in `tools/`. Existing files at those paths are overwritten.
+Creates a project directory containing a template `weave.yaml` and a sample tool in `tools/`. Existing files at those paths are overwritten.

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * heddle agent driver — lint, validate and *run* an Agent Spec flow with a stub
+ * heddle agent driver — lint, validate and *run* a Weave flow with a stub
  * model, so a newly authored agent can be exercised end to end without an API
  * key and without spending a token.
  *
@@ -46,23 +46,7 @@ const NO_YAML =
   'or the heddle CLI, so the spec was not read here: lint checks and derived ' +
   'probe values are skipped. Install it (npm install yaml) or use a JSON spec.';
 
-const IMPLICIT_OUTPUTS = {
-  // An LlmNode writes this and only this, whatever its spec declares.
-  LlmNode: ['generated_text'],
-  // An AgentNode always writes `result`; more only if the model answers JSON.
-  AgentNode: ['result'],
-};
-
-/** Node types whose real outputs are fixed, whatever the spec declares. */
-const CLOSED_OUTPUTS = new Set(['LlmNode']);
-
-/** What an agent carrying transforms writes besides its answer. */
-const TRANSFORM_OUTPUTS = [
-  'transform_status',
-  'transform_reason',
-  'transform_name',
-  'transform_phase',
-];
+const STEP_VERBS = ['agent', 'llm', 'tool', 'switch', 'use'];
 
 main().catch((err) => {
   console.error(`driver: ${err?.message ?? err}`);
@@ -95,14 +79,14 @@ function usage() {
       '  node driver.mjs tool  <executable> [--input JSON]',
       '',
       'run options:',
-      '  --input JSON           flow input (default: probe values for the start node)',
+      "  --input JSON           flow input (default: probe values for the flow's inputs)",
       '  --script FILE          scripted model turns, JSON array (default: call each tool once)',
       '  --args FILE            per-tool argument overrides, JSON {toolName: {...}}',
       '  --final TEXT           what the stub answers on its last turn',
       '  --transcript FILE      where to write what the model was sent',
       '  --plugin-config T=JSON passed through to heddle',
       '  --max-tool-calls N     stop the stub calling tools after N (default 8)',
-      '  --allow-placeholders   do not fail on unsubstituted {{var}} in a prompt',
+      '  --allow-placeholders   do not fail on unsubstituted {{ref}} in a prompt',
       '  --timeout MS           kill the run after this long (default 120000)',
     ].join('\n'),
   );
@@ -268,47 +252,58 @@ function loadYaml() {
   return undefined;
 }
 
-/** Nodes by name, with `$component_ref` indirection resolved. */
-function nodesOf(doc) {
-  const referenced = doc?.$referenced_components ?? {};
-  const deref = (entry) =>
-    entry && entry.$component_ref ? referenced[entry.$component_ref] : entry;
-
-  const nodes = new Map();
-  for (const entry of doc?.nodes ?? []) {
-    const node = deref(entry);
-    if (node?.name) nodes.set(node.name, node);
+/**
+ * The document's steps, with the `agent:` sugar unrolled the way heddle
+ * unrolls it: a top-level `agent` is one step named after the flow.
+ */
+function stepsOf(doc) {
+  if (!doc || typeof doc !== 'object') return [];
+  if (Array.isArray(doc.steps)) {
+    return doc.steps.filter((step) => step && typeof step === 'object');
   }
-  // A flow may also reach a node only through an edge; index those too.
-  for (const node of Object.values(referenced)) {
-    if (node?.name && node.component_type?.endsWith('Node')) {
-      if (!nodes.has(node.name)) nodes.set(node.name, node);
+  if (doc.agent && typeof doc.agent === 'object') {
+    const name = String(doc.name ?? 'agent').replaceAll('-', '_');
+    return [{ name, agent: doc.agent }];
+  }
+  return [];
+}
+
+function agentStepsOf(doc) {
+  return stepsOf(doc).filter((step) => step.agent && typeof step.agent === 'object');
+}
+
+/** Every tool name the steps reach for — agent tool lists and tool steps. */
+function toolNamesUsed(doc) {
+  const names = new Set();
+  for (const step of stepsOf(doc)) {
+    if (typeof step.tool === 'string') names.add(step.tool);
+    for (const name of step.agent?.tools ?? []) {
+      if (typeof name === 'string') names.add(name);
     }
   }
-  return { nodes, deref };
+  return [...names];
 }
 
-function titles(properties) {
-  return (properties ?? []).map((property) => property?.title).filter(Boolean);
-}
-
-function outputsOf(node) {
-  const implicit = IMPLICIT_OUTPUTS[node.component_type] ?? [];
-  // An LlmNode writes `generated_text` and nothing else, so anything else its
-  // spec declares is decoration — the SDK's own validation accepts a data edge
-  // reading it, and the runner then delivers nothing.
-  if (CLOSED_OUTPUTS.has(node.component_type)) return implicit;
-
-  const transformed = node.agent?.transforms?.length > 0 ? TRANSFORM_OUTPUTS : [];
-  return [...new Set([...titles(node.outputs), ...implicit, ...transformed])];
-}
-
-function agentsOf(nodes) {
-  const agents = [];
-  for (const node of nodes.values()) {
-    if (node.agent) agents.push({ node, agent: node.agent });
+/**
+ * The keys a step's node writes, or undefined where this file cannot know
+ * (a `use:` step, whose outputs the plugin's manifest declares).
+ *
+ * Only what is *guaranteed*: an agent with transforms always writes
+ * `transform_status`, but the reason/name/phase trio appears on rejection
+ * only, so expecting it would manufacture warnings on clean runs.
+ */
+function expectedKeysOf(step, doc) {
+  if (step.agent) {
+    const keys = step.agent.output ? Object.keys(step.agent.output) : ['result'];
+    const transformed = (step.agent.transforms ?? []).length > 0;
+    return transformed ? [...keys, 'transform_status'] : keys;
   }
-  return agents;
+  if (step.llm) return ['text'];
+  if (typeof step.tool === 'string') {
+    return Object.keys(doc?.tools?.[step.tool]?.outputs ?? {});
+  }
+  if (step.switch !== undefined) return [];
+  return undefined;
 }
 
 /* -------------------------------------------------------------- check/lint */
@@ -325,12 +320,10 @@ async function check(opts) {
   process.stdout.write(heddle.out);
   if (heddle.err.trim()) process.stderr.write(heddle.err);
 
-  // An invalid graph exits 1, but a graph heddle could not compile at all is
-  // still reported as "Graph validation skipped: <reason>" on a 0 status —
-  // the skip is there so a check that could not run is not called a fault, and
-  // here it is one either way. Read the output, not just the status.
-  const skipped = /Graph validation skipped: (.*)/.exec(heddle.out);
-  if (skipped) problems.errors.push(`heddle: graph validation failed — ${skipped[1]}`);
+  // `heddle validate` is the authority: it refuses unknown keys, unresolved
+  // references, backward jumps and unreachable steps at load time, so a spec
+  // that validates is a spec that starts. The lint above only adds what the
+  // document alone cannot prove — executable bits, stubbability.
   if (heddle.code !== 0) {
     problems.errors.push(`heddle validate exited ${heddle.code}`);
   }
@@ -341,84 +334,58 @@ async function check(opts) {
 function lint(doc, opts) {
   const errors = [];
   const warnings = [];
-  const { nodes, deref } = nodesOf(doc);
 
-  if (doc?.component_type !== 'Flow') {
+  if (doc?.weave === undefined) {
     warnings.push(
-      `top-level component_type is "${doc?.component_type}", not "Flow" — ` +
-        `the driver's run command only drives a Flow`,
+      'no top-level "weave: 1" — heddle refuses a document without its ' +
+        'format version',
     );
   }
 
-  for (const edge of doc?.data_flow_connections ?? []) {
-    const from = deref(edge.source_node)?.name ?? edge.source_node?.$component_ref;
-    const to =
-      deref(edge.destination_node)?.name ?? edge.destination_node?.$component_ref;
-    const source = nodes.get(from);
-    const destination = nodes.get(to);
-
-    if (!source) {
-      errors.push(`data edge "${edge.name}": no such source node "${from}"`);
-      continue;
-    }
-    const available = outputsOf(source);
-    if (available.length > 0 && !available.includes(edge.source_output)) {
-      // The runner skips a mapping whose source key is absent, without a word:
-      // the destination simply never receives the input.
-      errors.push(
-        `data edge "${edge.name}": ${source.component_type} "${from}" does not ` +
-          `produce "${edge.source_output}" (it produces ${available.join(', ')}). ` +
-          `The runner drops this mapping silently at run time.`,
+  // The stub reaches the model through OPENAI_BASE_URL, which only works for
+  // configs the OpenAI SDK resolves from the environment: `provider: openai`
+  // (or openai-compatible) with no `url`. A pinned url — and `ollama`, whose
+  // default url is implicit — cannot be redirected, so a driver `run` would
+  // send real requests there.
+  const checkModel = (where, model) => {
+    if (!model || typeof model !== 'object') return;
+    if (model.url) {
+      warnings.push(
+        `${where} pins url ${model.url}. OPENAI_BASE_URL cannot redirect ` +
+          `that, so "driver.mjs run" would send real requests there. Use ` +
+          `provider: openai with no url to keep it stubbable.`,
+      );
+    } else if (model.provider === 'ollama') {
+      warnings.push(
+        `${where} uses provider: ollama, whose implicit url is the local ` +
+          `Ollama server — the driver's stub cannot redirect it.`,
       );
     }
-    if (destination) {
-      const inputs = titles(destination.inputs);
-      if (inputs.length > 0 && !inputs.includes(edge.destination_input)) {
-        warnings.push(
-          `data edge "${edge.name}": "${to}" does not declare an input ` +
-            `"${edge.destination_input}" (declares ${inputs.join(', ') || 'none'})`,
-        );
-      }
+  };
+  for (const [name, model] of Object.entries(doc?.models ?? {})) {
+    checkModel(`models.${name}`, model);
+  }
+  for (const step of stepsOf(doc)) {
+    checkModel(`step "${step.name}"`, step.agent?.model);
+    checkModel(`step "${step.name}"`, step.llm?.model);
+  }
+
+  for (const [name, tool] of Object.entries(doc?.tools ?? {})) {
+    if (!tool?.description) {
+      warnings.push(
+        `tool "${name}" has no description — it is what the model reads to ` +
+          `decide whether to call it`,
+      );
     }
   }
 
-  lintBranches(doc, nodes, deref, errors, warnings);
-
-  for (const { node, agent } of agentsOf(nodes)) {
-    const written = new Set(['result', ...(agent.transforms?.length > 0 ? TRANSFORM_OUTPUTS : [])]);
-    const declared = titles(node.outputs).filter((title) => !written.has(title));
-    if (declared.length > 0) {
-      warnings.push(
-        `AgentNode "${node.name}" declares outputs ${declared.join(', ')} beyond ` +
-          `"result". An agent only writes those if the model's final message is a ` +
-          `JSON object with those keys — otherwise they are missing at run time.`,
+  for (const step of stepsOf(doc)) {
+    const declared = STEP_VERBS.filter((verb) => step[verb] !== undefined);
+    if (declared.length !== 1) {
+      errors.push(
+        `step "${step.name ?? '?'}" declares ${declared.length === 0 ? 'no verb' : declared.join(' and ')} — ` +
+          `a step is exactly one of ${STEP_VERBS.join(', ')}`,
       );
-    }
-
-    const url = agent.llm_config?.url;
-    if (url) {
-      warnings.push(
-        `agent "${agent.name}" pins llm_config.url to ${url}. OPENAI_BASE_URL ` +
-          `cannot redirect that, so "driver.mjs run" would send real requests ` +
-          `there. Use OpenAiConfig (no url) to keep it stubbable.`,
-      );
-    }
-
-    for (const tool of agent.tools ?? []) {
-      if (!tool.description) {
-        warnings.push(
-          `tool "${tool.name}" on agent "${agent.name}" has no description — ` +
-            `it is what the model reads to decide whether to call it`,
-        );
-      }
-      for (const input of tool.inputs ?? []) {
-        if (!input?.title) {
-          errors.push(
-            `tool "${tool.name}" has an input with no title; a tool input needs ` +
-              `one, it becomes the JSON schema property name`,
-          );
-        }
-      }
     }
   }
 
@@ -428,75 +395,24 @@ function lint(doc, opts) {
     // `heddle validate` is the backstop either way: it composes both registries.
     const absent = opts.plugin.length > 0 ? warnings : errors;
 
-    for (const { agent } of agentsOf(nodes)) {
-      for (const tool of agent.tools ?? []) {
-        const found = findExecutable(opts.toolsDir, tool.name);
-        if (!found.found) {
-          absent.push(
-            `no executable for tool "${tool.name}" in ${opts.toolsDir} ` +
-              `(a tool's name is its filename without the extension; a plugin ` +
-              `can also supply one)`,
-          );
-        } else if (!found.executable) {
-          errors.push(
-            `${opts.toolsDir}/${found.file} is not executable — ` +
-              `chmod +x it or heddle will not see tool "${tool.name}"`,
-          );
-        }
+    for (const name of toolNamesUsed(doc)) {
+      const found = findExecutable(opts.toolsDir, name);
+      if (!found.found) {
+        absent.push(
+          `no executable for tool "${name}" in ${opts.toolsDir} ` +
+            `(a tool's name is its filename without the extension; a plugin ` +
+            `can also supply one)`,
+        );
+      } else if (!found.executable) {
+        errors.push(
+          `${opts.toolsDir}/${found.file} is not executable — ` +
+            `chmod +x it or heddle will not see tool "${name}"`,
+        );
       }
     }
   }
 
   return { errors, warnings };
-}
-
-/**
- * Where a branch leads, checked before a run finds out.
- *
- * Neither half of this is caught by `heddle validate`: a BranchingNode may map a
- * key to a branch nothing leaves on, and a control flow edge may name a branch
- * its source never declares. Both validate clean and both end the run mid-flight
- * with `no next node from "<node>"`.
- */
-function lintBranches(doc, nodes, deref, errors, warnings) {
-  const leaving = new Map();
-  for (const edge of doc?.control_flow_connections ?? []) {
-    const from = deref(edge.from_node)?.name;
-    if (!from) continue;
-    if (!leaving.has(from)) leaving.set(from, new Set());
-    if (edge.from_branch) leaving.get(from).add(edge.from_branch);
-  }
-
-  for (const node of nodes.values()) {
-    const declared = new Set(node.branches ?? []);
-    const outgoing = leaving.get(node.name) ?? new Set();
-
-    for (const branch of outgoing) {
-      if (declared.size > 0 && !declared.has(branch)) {
-        errors.push(
-          `a control flow edge leaves "${node.name}" on branch "${branch}", which ` +
-            `it does not declare (declares ${[...declared].join(', ') || 'none'})`,
-        );
-      }
-    }
-
-    if (node.component_type !== 'BranchingNode') continue;
-    for (const [key, branch] of Object.entries(node.mapping ?? {})) {
-      if (!outgoing.has(branch)) {
-        errors.push(
-          `BranchingNode "${node.name}" maps "${key}" to branch "${branch}", but no ` +
-            `control flow edge leaves the node on it — the run ends with ` +
-            `'no next node from "${node.name}"'`,
-        );
-      }
-    }
-    if (!node.mapping?.DEFAULT_BRANCH) {
-      warnings.push(
-        `BranchingNode "${node.name}" has no DEFAULT_BRANCH in its mapping. An ` +
-          `unmapped key falls through to a branch literally named "default".`,
-      );
-    }
-  }
 }
 
 /**
@@ -578,13 +494,12 @@ async function callTool(opts) {
 async function run(opts) {
   const specPath = need(opts.positional[0], 'a spec path');
   const { doc, unparsed } = loadSpec(specPath);
-  const { nodes } = nodesOf(doc);
   if (unparsed) console.log(`note       ${unparsed}`);
 
   const script = opts.script ? JSON.parse(readFileSync(opts.script, 'utf8')) : null;
   const argOverrides = opts.args ? JSON.parse(readFileSync(opts.args, 'utf8')) : {};
-  const input = opts.input ?? JSON.stringify(probeInput(doc, nodes));
-  const finalAnswer = opts.final ?? defaultAnswer(nodes);
+  const input = opts.input ?? JSON.stringify(probeInput(doc));
+  const finalAnswer = opts.final ?? defaultAnswer(doc);
 
   const stub = await startStub({
     script,
@@ -625,23 +540,19 @@ async function run(opts) {
     input,
     frames,
     result,
-    nodes,
+    doc,
     calls: stub.transcript,
     transcriptPath,
     opts,
   });
 }
 
-/** Probe values for whatever the start node says it emits. */
-function probeInput(doc, nodes) {
-  const startRef = doc?.start_node?.$component_ref;
-  const start =
-    [...nodes.values()].find((n) => n.id === startRef) ??
-    [...nodes.values()].find((n) => n.component_type === 'StartNode');
-
+/** Probe values for whatever the flow's `inputs` declare. */
+function probeInput(doc) {
   const values = {};
-  for (const output of start?.outputs ?? []) {
-    if (output?.title) values[output.title] = sample(output, output.title);
+  for (const [name, field] of Object.entries(doc?.inputs ?? {})) {
+    const schema = typeof field === 'string' ? { type: field } : (field ?? {});
+    values[name] = sample(schema, name);
   }
   return Object.keys(values).length > 0 ? values : { query: `${PROBE} query` };
 }
@@ -649,22 +560,27 @@ function probeInput(doc, nodes) {
 /**
  * What the stub answers last.
  *
- * A bare string when the flow only wants `result`; a JSON object when an agent
- * declares more, because merging the model's JSON answer into state is the only
- * way those keys get filled.
+ * A bare string ordinarily; a JSON object carrying every key any agent step's
+ * `output:` schema declares, because a declared output is enforced now — an
+ * answer missing one fails the step.
  */
-function defaultAnswer(nodes) {
-  const extra = new Set();
-  for (const { node } of agentsOf(nodes)) {
-    for (const title of titles(node.outputs)) {
-      if (title !== 'result') extra.add(title);
+function defaultAnswer(doc) {
+  const declared = {};
+  for (const step of agentStepsOf(doc)) {
+    for (const [name, field] of Object.entries(step.agent.output ?? {})) {
+      const schema = typeof field === 'string' ? { type: field } : (field ?? {});
+      declared[name] = sample(schema, name);
     }
   }
   const text = 'stub answer from the heddle driver';
-  if (extra.size === 0) return text;
+  if (Object.keys(declared).length === 0) return text;
 
-  const answer = { result: text };
-  for (const key of extra) answer[key] = text;
+  const answer = { ...declared };
+  for (const key of Object.keys(answer)) {
+    if (typeof answer[key] === 'string' && answer[key].startsWith(`${PROBE}:`)) {
+      answer[key] = text;
+    }
+  }
   return JSON.stringify(answer);
 }
 
@@ -693,9 +609,10 @@ function sample(property, name) {
 /**
  * A local OpenAI-compatible endpoint.
  *
- * Reached because `OpenAiConfig` never sets a base URL on the SDK client, so the
- * SDK falls back to OPENAI_BASE_URL. Serves both the streamed and the buffered
- * shape, since heddle streams unless a post transform is installed.
+ * Reached because an `openai` model with no `url` never sets a base URL on the
+ * SDK client, so the SDK falls back to OPENAI_BASE_URL. Serves both the
+ * streamed and the buffered shape, since heddle streams unless a post
+ * transform is installed.
  */
 async function startStub(config) {
   const transcript = [];
@@ -869,10 +786,11 @@ function systemOf(request) {
 
 /* ----------------------------------------------------------------- summary */
 
-function summarize({ input, frames, result, nodes, calls, transcriptPath, opts }) {
+function summarize({ input, frames, result, doc, calls, transcriptPath, opts }) {
   const errors = [];
   const warnings = [];
   const by = (type) => frames.filter((frame) => frame.event === type);
+  const steps = stepsOf(doc);
 
   console.log(`input      ${input}`);
   console.log(`model calls ${calls.length}, frames ${frames.length}`);
@@ -900,8 +818,9 @@ function summarize({ input, frames, result, nodes, calls, transcriptPath, opts }
     warnings.push(`heddle warning: ${oneLine(frame.data?.message)}`);
   }
 
-  // A prompt still carrying {{key}} is a key the state never had — the usual
-  // cause is a data flow edge that does not deliver, or a typo in the template.
+  // Weave resolves every {{ref}} at load time, so a prompt still carrying one
+  // should be impossible — this check is the belt to that suspender, and
+  // catches a literal `{{` a spec author meant as text.
   const unsubstituted = new Map();
   for (const call of calls) {
     for (const found of String(call.system ?? '').match(/{{\s*[\w.]+\s*}}/g) ?? []) {
@@ -911,25 +830,25 @@ function summarize({ input, frames, result, nodes, calls, transcriptPath, opts }
   for (const [placeholder, count] of unsubstituted) {
     const message =
       `a prompt reached the model still containing ${placeholder} ` +
-      `(${count} of ${calls.length} model calls) — nothing in the node's state had that key`;
+      `(${count} of ${calls.length} model calls) — nothing produced that value`;
     if (opts.allowPlaceholders) warnings.push(message);
     else errors.push(message);
   }
 
-  // What a node promised against what it actually wrote. `node_complete` carries
-  // the node's own output, so a declared output missing from it is a key nothing
-  // downstream can read — an LlmNode declaring anything but `generated_text`,
-  // or an agent whose answer was prose where the spec wanted JSON fields.
+  // What a step is defined to write against what it wrote. The runtime
+  // enforces these itself now (a tool output is a contract, a declared agent
+  // `output` fails the step when missing), so a mismatch here usually means
+  // the run died — this names the step that shorted.
   for (const frame of by('node_complete')) {
-    const node = nodes.get(frame.data?.nodeName);
+    const step = steps.find((entry) => entry.name === frame.data?.nodeName);
+    if (!step) continue;
     const produced = frame.data?.state ?? {};
-    if (!node || node.component_type === 'EndNode') continue;
 
-    for (const title of titles(node.outputs)) {
-      if (!(title in produced)) {
+    for (const key of expectedKeysOf(step, doc) ?? []) {
+      if (!(key in produced)) {
         warnings.push(
-          `${node.component_type} "${node.name}" declares output "${title}" but ` +
-            `produced ${Object.keys(produced).join(', ') || 'nothing'}`,
+          `step "${step.name}" is defined to write "${key}" but produced ` +
+            `${Object.keys(produced).join(', ') || 'nothing'}`,
         );
       }
     }
@@ -950,21 +869,24 @@ function summarize({ input, frames, result, nodes, calls, transcriptPath, opts }
     const state = complete.data?.state ?? {};
     console.log(`final state ${JSON.stringify(state, null, 2)}`);
 
-    // An EndNode's output is its resolved input, so this is the one place a
-    // data flow edge that delivered nothing becomes visible.
-    for (const node of nodes.values()) {
-      if (node.component_type !== 'EndNode') continue;
-      for (const title of titles(node.inputs)) {
-        if (!(title in state) && nodeOrder.includes(node.name)) {
+    // A run ends in an outcome, and the final state is that outcome's payload
+    // plus `outcome: <name>` — so a declared payload key missing here means
+    // the run did not end where it says it did.
+    const outcome = state.outcome;
+    if (typeof outcome !== 'string') {
+      warnings.push('the final state carries no "outcome" key');
+    } else {
+      const payload = doc?.outcomes?.[outcome];
+      for (const key of Object.keys(payload ?? {})) {
+        if (!(key in state)) {
           errors.push(
-            `EndNode "${node.name}" declares input "${title}" but the run ended ` +
-              `without it — nothing delivered that key`,
+            `outcome "${outcome}" declares "${key}" but the run ended without it`,
           );
         }
       }
     }
   } else {
-    errors.push('no flow_complete frame — the run did not reach the end node');
+    errors.push('no flow_complete frame — the run did not reach an outcome');
   }
   if (result.code !== 0) {
     errors.push(`heddle run exited ${result.code}${result.signal ? ` (${result.signal})` : ''}`);

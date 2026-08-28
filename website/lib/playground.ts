@@ -393,61 +393,39 @@ const REVERSE_PLUGIN: RequestPlugin = {
 const TOOL_AND_PLUGIN: Example = {
   id: "tool-and-plugin",
   title: "Tool and plugin",
-  blurb: "A shell tool, then a node type a plugin adds. Both run in their own processes.",
-  flow: `component_type: Flow
+  blurb: "A shell tool, then a step type a plugin adds. Both run in their own processes.",
+  flow: `weave: 1
 name: shout
-start_node: { $component_ref: start }
 
-nodes:
-  - $component_ref: start
-  - $component_ref: shout
-  - $component_ref: reverse
-  - $component_ref: end
+inputs:
+  text: string
 
-control_flow_connections:
-  - component_type: ControlFlowEdge
-    name: start_to_shout
-    from_node: { $component_ref: start }
-    to_node: { $component_ref: shout }
-  - component_type: ControlFlowEdge
-    name: shout_to_reverse
-    from_node: { $component_ref: shout }
-    to_node: { $component_ref: reverse }
-  - component_type: ControlFlowEdge
-    name: reverse_to_end
-    from_node: { $component_ref: reverse }
-    to_node: { $component_ref: end }
-
-$referenced_components:
-  start:
-    component_type: StartNode
-    id: start
-    name: start
-    outputs:
-      - title: text
-        type: string
-
-  # A tool: an executable the engine runs as a subprocess.
+# A tool: an executable the engine runs as a subprocess. The declaration is
+# the contract — a tool step's outputs are checked against it.
+tools:
   shout:
-    component_type: ToolNode
-    id: shout
-    name: shout
-    tool:
-      component_type: ServerTool
-      id: shout_tool
-      name: shout
-      description: Uppercases the text it is given
+    description: Uppercases the text it is given
+    inputs:
+      text: string
+    outputs:
+      shouted: string
 
-  # A plugin node. ReverseNode is not a heddle type — the plugin adds it.
-  reverse:
-    component_type: ReverseNode
-    id: reverse
-    name: reverse
+steps:
+  - name: shout
+    tool: shout
+    with:
+      text: '{{inputs.text}}'
 
-  end:
-    component_type: EndNode
-    id: end
-    name: end
+  # A plugin step. ReverseNode is not a heddle type — the plugin adds it.
+  # It receives the resolved "with" block, nothing else.
+  - name: reverse
+    use: ReverseNode
+    with:
+      shouted: '{{shout.shouted}}'
+
+outcomes:
+  done:
+    reversed: '{{reverse.reversed}}'
 `,
   inputs: `{
   "text": "weave agents from spec"
@@ -463,71 +441,34 @@ const GUARDRAIL: Example = {
   title: "A guardrail that refuses",
   blurb:
     "A transform inspects the agent's messages before the model call. Blocked here — change the input and the model answers.",
-  flow: `component_type: Flow
+  flow: `weave: 1
 name: guarded
-start_node: { $component_ref: start }
 
-nodes:
-  - $component_ref: start
-  - $component_ref: assistant
-  - $component_ref: end
+inputs:
+  query: string
 
-control_flow_connections:
-  - component_type: ControlFlowEdge
-    name: start_to_assistant
-    from_node: { $component_ref: start }
-    to_node: { $component_ref: assistant }
-  - component_type: ControlFlowEdge
-    name: assistant_to_end
-    from_node: { $component_ref: assistant }
-    to_node: { $component_ref: end }
+agent:
+  # Never reached while the guardrail rejects — that is the point: a
+  # blocked prompt costs nothing. Change the input to something allowed
+  # and the model answers for real.
+  model:
+    provider: openai
+    model: openrouter/free
 
-$referenced_components:
-  start:
-    component_type: StartNode
-    id: start
-    name: start
-    outputs:
-      - title: query
-        type: string
+  prompt: |
+    You are a concise, helpful assistant. Answer the question:
 
-  assistant:
-    component_type: AgentNode
-    id: assistant
-    name: assistant
-    agent:
-      component_type: Agent
-      id: inner
-      name: assistant
-      system_prompt: You are a concise, helpful assistant.
+    {{inputs.query}}
 
-      # Never reached while the guardrail rejects — that is the point: a
-      # blocked prompt costs nothing. Change the input to something allowed
-      # and the model answers for real.
-      llm_config:
-        component_type: OpenAiConfig
-        id: llm
-        name: model
-        model_id: openrouter/free
-
-      tools: []
-
-      # Transforms travel with the agent, not the graph.
-      transforms:
-        - component_type: Blocklist
-          id: guard
-          name: guard
-          phase: pre
-          config:
-            patterns:
-              - password
-              - credit card
-            reason: that topic is blocked
-
-  end:
-    component_type: EndNode
-    id: end
-    name: end
+  # Transforms travel with the agent, not the graph. The keys beside
+  # "use" are the transform's own config.
+  transforms:
+    - use: Blocklist
+      phase: pre
+      patterns:
+        - password
+        - credit card
+      reason: that topic is blocked
 `,
   inputs: `{
   "query": "what is my password"
@@ -547,15 +488,17 @@ $referenced_components:
       source: `serve({
   Blocklist: {
     apply(messages, ctx) {
-      const config = ctx.node.config ?? {};
+      // The keys the spec wrote beside "use" arrive spread onto the
+      // component itself, so the config is read straight off ctx.node.
+      const { patterns = [], reason } = ctx.node ?? {};
       const last = messages[messages.length - 1];
       const content = String(last?.content ?? "");
 
-      for (const pattern of config.patterns ?? []) {
+      for (const pattern of patterns) {
         if (new RegExp(pattern, "i").test(content)) {
           return {
             action: "reject",
-            reason: config.reason ?? ("matched /" + pattern + "/"),
+            reason: reason ?? ("matched /" + pattern + "/"),
           };
         }
       }
@@ -571,105 +514,60 @@ $referenced_components:
 
 const BRANCHING: Example = {
   id: "branching",
-  title: "Routing on a branch",
+  title: "Routing on a switch",
   blurb:
-    "A tool classifies the input, then a BranchingNode routes on its answer. No plugin, no model.",
-  flow: `component_type: Flow
+    "A tool classifies the input, then a switch routes on its answer. No plugin, no model.",
+  flow: `weave: 1
 name: triage
-start_node: { $component_ref: start }
 
-nodes:
-  - $component_ref: start
-  - $component_ref: classify
-  - $component_ref: route
-  - $component_ref: urgent
-  - $component_ref: normal
-  - $component_ref: end
+inputs:
+  message: string
 
-control_flow_connections:
-  - component_type: ControlFlowEdge
-    name: start_to_classify
-    from_node: { $component_ref: start }
-    to_node: { $component_ref: classify }
-  - component_type: ControlFlowEdge
-    name: classify_to_route
-    from_node: { $component_ref: classify }
-    to_node: { $component_ref: route }
-
-  # One edge per branch the mapping can produce.
-  - component_type: ControlFlowEdge
-    name: route_urgent
-    from_node: { $component_ref: route }
-    from_branch: urgent
-    to_node: { $component_ref: urgent }
-  - component_type: ControlFlowEdge
-    name: route_normal
-    from_node: { $component_ref: route }
-    from_branch: normal
-    to_node: { $component_ref: normal }
-
-  - component_type: ControlFlowEdge
-    name: urgent_to_end
-    from_node: { $component_ref: urgent }
-    to_node: { $component_ref: end }
-  - component_type: ControlFlowEdge
-    name: normal_to_end
-    from_node: { $component_ref: normal }
-    to_node: { $component_ref: end }
-
-$referenced_components:
-  start:
-    component_type: StartNode
-    id: start
-    name: start
-    outputs:
-      - title: message
-        type: string
-
+tools:
   classify:
-    component_type: ToolNode
-    id: classify
-    name: classify
-    tool:
-      component_type: ServerTool
-      id: classify_tool
-      name: classify
-      description: Labels the message urgent or normal
+    description: Labels the message urgent or normal
+    inputs:
+      message: string
+    outputs:
+      label: string
+  page_oncall:
+    description: Pretends to page whoever is on call
+    outputs:
+      action: string
+  file_ticket:
+    description: Pretends to file an ordinary ticket
+    outputs:
+      action: string
 
-  # Routes on branching_mapping_key, which the tool above sets.
-  route:
-    component_type: BranchingNode
-    id: route
-    name: route
-    mapping:
-      urgent: urgent
-      normal: normal
-      DEFAULT_BRANCH: normal
+steps:
+  - name: classify
+    tool: classify
+    with:
+      message: '{{inputs.message}}'
 
-  urgent:
-    component_type: ToolNode
-    id: urgent
-    name: urgent
-    tool:
-      component_type: ServerTool
-      id: urgent_tool
-      name: page_oncall
-      description: Pretends to page whoever is on call
+  # Routes on the label the tool wrote. "else" is required — a switch says
+  # where every unmatched value goes, there is no implicit default.
+  - name: route
+    switch: '{{classify.label}}'
+    cases:
+      urgent: page
+    else: file
 
-  normal:
-    component_type: ToolNode
-    id: normal
-    name: normal
-    tool:
-      component_type: ServerTool
-      id: normal_tool
-      name: file_ticket
-      description: Pretends to file an ordinary ticket
+  # Without "then" a step falls through to the next one, so each branch
+  # names its own outcome.
+  - name: page
+    tool: page_oncall
+    then: paged
 
-  end:
-    component_type: EndNode
-    id: end
-    name: end
+  - name: file
+    tool: file_ticket
+    then: filed
+
+outcomes:
+  paged:
+    action: '{{page.action}}'
+  filed:
+    action: '{{file.action}}'
 `,
   inputs: `{
   "message": "the database is on fire"
@@ -683,9 +581,9 @@ $referenced_components:
 
 # Anything mentioning fire, outage or down is urgent; everything else is not.
 if printf '%s' "$input" | grep -qiE 'fire|outage|down|urgent'; then
-  printf '{"branching_mapping_key":"urgent"}'
+  printf '{"label":"urgent"}'
 else
-  printf '{"branching_mapping_key":"normal"}'
+  printf '{"label":"normal"}'
 fi
 `,
     },
@@ -713,76 +611,42 @@ const AGENT: Example = {
   title: "An agent",
   blurb:
     "A single agent calling a real model. Runs as-is: the engine supplies a free model when the spec names no credential.",
-  flow: `component_type: Flow
+  flow: `weave: 1
 name: ask
-start_node: { $component_ref: start }
 
-nodes:
-  - $component_ref: start
-  - $component_ref: assistant
-  - $component_ref: end
+inputs:
+  query: string
 
-control_flow_connections:
-  - component_type: ControlFlowEdge
-    name: start_to_assistant
-    from_node: { $component_ref: start }
-    to_node: { $component_ref: assistant }
-  - component_type: ControlFlowEdge
-    name: assistant_to_end
-    from_node: { $component_ref: assistant }
-    to_node: { $component_ref: end }
+# A document with a top-level agent and no steps is a one-step flow.
+agent:
+  # No api_key and no url, so the engine uses the free model it was
+  # configured with. To call your own provider instead, supply both:
+  #
+  #   provider: openai-compatible
+  #   url: https://api.openai.com/v1
+  #   api_key: sk-your-own-key
+  #
+  # Both together, always. A spec naming a url without a key is refused
+  # rather than handed the engine's own, which would post it there.
+  #
+  # Running this file locally, you would instead write
+  #
+  #   api_key: $OPENAI_API_KEY
+  #
+  # which reads your environment. The playground refuses that form: there,
+  # the spec is yours and the environment is yours, so a reference resolves
+  # to your own secret. Here the spec arrives from a stranger and the
+  # environment belongs to the engine, and the reference is not limited to
+  # model keys -- $ANYTHING would be read and sent wherever the same spec
+  # pointed.
+  model:
+    provider: openai
+    model: openrouter/free
 
-$referenced_components:
-  start:
-    component_type: StartNode
-    id: start
-    name: start
-    outputs:
-      - title: query
-        type: string
+  prompt: |
+    Answer in one sentence.
 
-  assistant:
-    component_type: AgentNode
-    id: assistant
-    name: assistant
-    agent:
-      component_type: Agent
-      id: inner
-      name: assistant
-      system_prompt: Answer in one sentence.
-
-      # No api_key and no url, so the engine uses the free model it was
-      # configured with. To call your own provider instead, supply both:
-      #
-      #   component_type: OpenAiCompatibleConfig
-      #   url: https://api.openai.com/v1
-      #   api_key: sk-your-own-key
-      #
-      # Both together, always. A spec naming a url without a key is refused
-      # rather than handed the engine's own, which would post it there.
-      #
-      # Running this file locally, you would instead write
-      #
-      #   api_key: $OPENAI_API_KEY
-      #
-      # which reads your environment. The playground refuses that form: there,
-      # the spec is yours and the environment is yours, so a reference resolves
-      # to your own secret. Here the spec arrives from a stranger and the
-      # environment belongs to the engine, and the reference is not limited to
-      # model keys -- $ANYTHING would be read and sent wherever the same spec
-      # pointed.
-      llm_config:
-        component_type: OpenAiConfig
-        id: llm
-        name: model
-        model_id: openrouter/free
-
-      tools: []
-
-  end:
-    component_type: EndNode
-    id: end
-    name: end
+    {{inputs.query}}
 `,
   inputs: `{
   "query": "what is a heddle on a loom?"
@@ -802,90 +666,44 @@ const RESEARCH: Example = {
   title: "A research assistant",
   blurb:
     "One agent, two typed tools, looping until it has an answer. The comparison writes this one four ways.",
-  flow: `component_type: Flow
+  flow: `weave: 1
 name: research-assistant
-start_node: { $component_ref: start }
 
-nodes:
-  - $component_ref: start
-  - $component_ref: researcher
-  - $component_ref: end
+inputs:
+  question: string
 
-control_flow_connections:
-  - component_type: ControlFlowEdge
-    name: start_to_researcher
-    from_node: { $component_ref: start }
-    to_node: { $component_ref: researcher }
-  - component_type: ControlFlowEdge
-    name: researcher_to_end
-    from_node: { $component_ref: researcher }
-    to_node: { $component_ref: end }
-
-$referenced_components:
-  start:
-    component_type: StartNode
-    id: start
-    name: start
-    outputs:
-      - title: question
-        type: string
-
-  researcher:
-    component_type: AgentNode
-    id: researcher
-    name: researcher
-    outputs:
-      - title: result
-        type: string
-    agent:
-      component_type: Agent
-      id: research_agent
-      name: research-agent
-      system_prompt: >-
-        You are a research assistant. Answer the question. Use web_search
-        when you need current information, and calculator for arithmetic.
-
-      # No api_key and no url, so the engine supplies the free model it was
-      # configured with -- see the agent example for why that pair is
-      # all-or-nothing.
-      llm_config:
-        component_type: OpenAiConfig
-        id: llm
-        name: model
-        model_id: openrouter/free
-
-      # Declaring a tool's inputs is what gives the model a shape to fill in:
-      # they become the function's parameters.
-      tools:
-        - component_type: ServerTool
-          id: web_search_tool
-          name: web_search
-          description: Search the web for information
-          inputs:
-            - title: query
-              type: string
-          outputs:
-            - title: results
-              type: string
-
-        - component_type: ServerTool
-          id: calculator_tool
-          name: calculator
-          description: Evaluate a mathematical expression
-          inputs:
-            - title: expression
-              type: string
-          outputs:
-            - title: result
-              type: string
-
-  end:
-    component_type: EndNode
-    id: end
-    name: end
+# Declaring a tool's inputs is what gives the model a shape to fill in:
+# they become the function's parameters.
+tools:
+  web_search:
+    description: Search the web for information
     inputs:
-      - title: result
-        type: string
+      query: string
+    outputs:
+      results: string
+
+  calculator:
+    description: Evaluate a mathematical expression
+    inputs:
+      expression: string
+    outputs:
+      result: string
+
+agent:
+  # No api_key and no url, so the engine supplies the free model it was
+  # configured with -- see the agent example for why that pair is
+  # all-or-nothing.
+  model:
+    provider: openai
+    model: openrouter/free
+
+  prompt: |
+    You are a research assistant. Answer the question. Use web_search when
+    you need current information, and calculator for arithmetic.
+
+    The question: {{inputs.question}}
+
+  tools: [web_search, calculator]
 `,
   inputs: `{
   "question": "How tall is the Eiffel Tower in feet?"
@@ -972,89 +790,51 @@ const SHELL: Example = {
   title: "An agent with a shell",
   blurb:
     "One tool that runs any command, and a model deciding what to run. Python and Node are on PATH in the sandbox.",
-  flow: `component_type: Flow
+  flow: `weave: 1
 name: shell
-start_node: { $component_ref: start }
 
-nodes:
-  - $component_ref: start
-  - $component_ref: shell
-  - $component_ref: end
+inputs:
+  task: string
 
-control_flow_connections:
-  - component_type: ControlFlowEdge
-    name: start_to_shell
-    from_node: { $component_ref: start }
-    to_node: { $component_ref: shell }
-  - component_type: ControlFlowEdge
-    name: shell_to_end
-    from_node: { $component_ref: shell }
-    to_node: { $component_ref: end }
-
-$referenced_components:
-  start:
-    component_type: StartNode
-    id: start
-    name: start
+# Declaring the inputs is what gives the model a shape to fill in: they
+# become the function's parameters, and a tool with none is a tool it can
+# only call empty.
+tools:
+  bash:
+    description: >-
+      Run a shell command and return its stdout, stderr and exit code.
+      Runs in $HEDDLE_WORKSPACE. python3 and node are on PATH. Each call
+      is a fresh shell and commands are killed after 20 seconds.
+    inputs:
+      command: string
     outputs:
-      - title: task
-        type: string
+      stdout: string
+      stderr: string
+      exit_code: integer
 
-  shell:
-    component_type: AgentNode
-    id: shell
-    name: shell
-    agent:
-      component_type: Agent
-      id: inner
-      name: shell
-      system_prompt: |
-        You run shell commands to answer the task. python3 and node are both on
-        PATH; use whichever suits the work.
+agent:
+  # No api_key and no url, so the engine supplies the free model it was
+  # configured with -- see the agent example for why that pair is
+  # all-or-nothing.
+  model:
+    provider: openai
+    model: openrouter/free
 
-        Each call is a fresh shell, so cd and exported variables do not survive
-        to the next one -- chain what depends on itself into a single command.
-        Read exit_code every time: a zero exit is the only evidence a command
-        did what you meant. Nothing interactive works, and a command is killed
-        after 20 seconds.
+  prompt: |
+    You run shell commands to answer the task. python3 and node are both on
+    PATH; use whichever suits the work.
 
-        Answer in one or two sentences, saying what you ran and what came back.
+    Each call is a fresh shell, so cd and exported variables do not survive
+    to the next one -- chain what depends on itself into a single command.
+    Read exit_code every time: a zero exit is the only evidence a command
+    did what you meant. Nothing interactive works, and a command is killed
+    after 20 seconds.
 
-      # No api_key and no url, so the engine supplies the free model it was
-      # configured with -- see the agent example for why that pair is
-      # all-or-nothing.
-      llm_config:
-        component_type: OpenAiConfig
-        id: llm
-        name: model
-        model_id: openrouter/free
+    Answer in one or two sentences, saying what you ran and what came back.
 
-      # Declaring the inputs is what gives the model a shape to fill in: they
-      # become the function's parameters, and a tool with none is a tool it can
-      # only call empty.
-      tools:
-        - component_type: ServerTool
-          id: bash_tool
-          name: bash
-          description: >-
-            Run a shell command and return its stdout, stderr and exit code.
-            Runs in $HEDDLE_WORKSPACE. python3 and node are on PATH. Each call
-            is a fresh shell and commands are killed after 20 seconds.
-          inputs:
-            - title: command
-              type: string
-          outputs:
-            - title: stdout
-              type: string
-            - title: stderr
-              type: string
-            - title: exit_code
-              type: integer
+    The task: {{inputs.task}}
 
-  end:
-    component_type: EndNode
-    id: end
-    name: end
+  tools: [bash]
 `,
   inputs: `{
   "task": "count the vowels in \\"weave agents from spec\\" with python, then reverse the string with node"
@@ -1080,75 +860,38 @@ const AG_UI: Example = {
   blurb:
     "An encoder plugin renders this run as AG-UI. The protocol beside the run chooses which vocabulary the frames arrive in.",
   protocol: "ag-ui",
-  flow: `component_type: Flow
+  flow: `weave: 1
 name: rendered
-start_node: { $component_ref: start }
 
-nodes:
-  - $component_ref: start
-  - $component_ref: assistant
-  - $component_ref: end
+inputs:
+  question: string
 
-control_flow_connections:
-  - component_type: ControlFlowEdge
-    name: start_to_assistant
-    from_node: { $component_ref: start }
-    to_node: { $component_ref: assistant }
-  - component_type: ControlFlowEdge
-    name: assistant_to_end
-    from_node: { $component_ref: assistant }
-    to_node: { $component_ref: end }
-
-$referenced_components:
-  start:
-    component_type: StartNode
-    id: start
-    name: start
+tools:
+  digest:
+    description: The SHA-256 of a string, as hexadecimal
+    inputs:
+      text: string
     outputs:
-      - title: question
-        type: string
+      sha256: string
 
-  # Nothing in this flow knows it is being rendered. Each node's start and
-  # finish become STEP_STARTED and STEP_FINISHED, its outputs become a
-  # STATE_SNAPSHOT, the tool call becomes TOOL_CALL_START, _ARGS and _END, and
-  # the answer arrives as TEXT_MESSAGE_CONTENT deltas.
-  assistant:
-    component_type: AgentNode
-    id: assistant
-    name: assistant
-    agent:
-      component_type: Agent
-      id: inner
-      name: assistant
-      system_prompt: >-
-        Call digest for a hash rather than guessing one. Answer in one
-        sentence.
+# Nothing in this flow knows it is being rendered. Each step's start and
+# finish become STEP_STARTED and STEP_FINISHED, its outputs become a
+# STATE_SNAPSHOT, the tool call becomes TOOL_CALL_START, _ARGS and _END, and
+# the answer arrives as TEXT_MESSAGE_CONTENT deltas.
+agent:
+  # No api_key and no url, so the engine supplies the free model it was
+  # configured with -- see the agent example for why that pair is
+  # all-or-nothing.
+  model:
+    provider: openai
+    model: openrouter/free
 
-      # No api_key and no url, so the engine supplies the free model it was
-      # configured with -- see the agent example for why that pair is
-      # all-or-nothing.
-      llm_config:
-        component_type: OpenAiConfig
-        id: llm
-        name: model
-        model_id: openrouter/free
+  prompt: |
+    Call digest for a hash rather than guessing one. Answer in one sentence.
 
-      tools:
-        - component_type: ServerTool
-          id: digest_tool
-          name: digest
-          description: The SHA-256 of a string, as hexadecimal
-          inputs:
-            - title: text
-              type: string
-          outputs:
-            - title: sha256
-              type: string
+    The question: {{inputs.question}}
 
-  end:
-    component_type: EndNode
-    id: end
-    name: end
+  tools: [digest]
 `,
   inputs: `{
   "question": "what is the sha-256 of: weave agents from spec"
@@ -1524,154 +1267,97 @@ const SKILLS: Example = {
   title: "An agent with skills",
   blurb:
     "Procedures the model loads only when it decides it needs them. The index is always in context; a body costs a tool call.",
-  flow: `component_type: Flow
+  flow: `weave: 1
 name: skills
-start_node: { $component_ref: start }
 
-nodes:
-  - $component_ref: start
-  - $component_ref: assistant
-  - $component_ref: end
+inputs:
+  task: string
 
-control_flow_connections:
-  - component_type: ControlFlowEdge
-    name: start_to_assistant
-    from_node: { $component_ref: start }
-    to_node: { $component_ref: assistant }
-  - component_type: ControlFlowEdge
-    name: assistant_to_end
-    from_node: { $component_ref: assistant }
-    to_node: { $component_ref: end }
-
-$referenced_components:
-  start:
-    component_type: StartNode
-    id: start
-    name: start
+# All five tools are submitted scripts with no manifest behind them, so each
+# declares its own shape here. The first two are the whole of the skills
+# mechanism: one lists what is in skills/, the other reads one file out of it.
+# Neither knows anything about skills that the directory does not tell it.
+tools:
+  list_skills:
+    description: >-
+      List every skill: its name and one line on when it applies. Call this
+      first.
     outputs:
-      - title: task
-        type: string
+      skills: string
 
-  assistant:
-    component_type: AgentNode
-    id: assistant
-    name: assistant
-    agent:
-      component_type: Agent
-      id: inner
-      name: assistant
+  read_skill:
+    description: >-
+      Return the full text of one skill, by the name list_skills gave.
+    inputs:
+      name: string
+    outputs:
+      body: string
 
-      # The contract, and the only place it is stated. A model that is not told
-      # to look will not look, and a skill nobody reads is a file.
-      system_prompt: |
-        You have skills: short written procedures for jobs like this one. Their
-        text is not in this prompt. list_skills returns every skill's name and
-        description; read_skill returns one body.
+  # write_file and bash together are a shell: whatever the model can write it
+  # can then run. Here that is a throwaway workspace the sandbox deletes when
+  # the agent finishes. Where it would not be, the gate is the toolCall seam --
+  # examples/policies/ ships an ApprovalGate that reads the arguments the model
+  # chose and refuses the call before it is made.
+  write_file:
+    description: >-
+      Write a file in the workspace. The path is relative to it, and a path
+      that climbs out is refused.
+    inputs:
+      path: string
+      content: string
+    outputs:
+      result: string
 
-        Call list_skills first, on every task, before anything else. If a
-        description covers the task, read that skill and follow it exactly: it
-        says how the job is done here, and that outranks how you would otherwise
-        do it. If none covers it, say so in one line and work the task out
-        yourself.
+  read_file:
+    description: Read a file from the workspace, by a path relative to it.
+    inputs:
+      path: string
+    outputs:
+      content: string
 
-        write_file and read_file take a path relative to the workspace. bash
-        runs a command there, with python3 and node on PATH. Each bash call is a
-        fresh shell, so cd does not carry to the next one, and a command is
-        killed after 20 seconds. Read exit_code every time.
+  bash:
+    description: >-
+      Run a shell command in the workspace and return its stdout, stderr and
+      exit code. Each call is a fresh shell and commands are killed after 20
+      seconds.
+    inputs:
+      command: string
+    outputs:
+      stdout: string
+      stderr: string
+      exit_code: integer
 
-        Finish with a short answer that names the skill you followed.
+agent:
+  # No api_key and no url, so the engine supplies the free model it was
+  # configured with -- see the agent example for why that pair is
+  # all-or-nothing.
+  model:
+    provider: openai
+    model: openrouter/free
 
-      # No api_key and no url, so the engine supplies the free model it was
-      # configured with -- see the agent example for why that pair is
-      # all-or-nothing.
-      llm_config:
-        component_type: OpenAiConfig
-        id: llm
-        name: model
-        model_id: openrouter/free
+  # The contract, and the only place it is stated. A model that is not told
+  # to look will not look, and a skill nobody reads is a file.
+  prompt: |
+    You have skills: short written procedures for jobs like this one. Their
+    text is not in this prompt. list_skills returns every skill's name and
+    description; read_skill returns one body.
 
-      tools:
-        # All five are submitted scripts with no manifest behind them, so each
-        # declares its own shape here. These first two are the whole of the
-        # skills mechanism: one lists what is in skills/, the other reads one
-        # file out of it. Neither knows anything about skills that the
-        # directory does not tell it.
-        - component_type: ServerTool
-          id: list_skills_tool
-          name: list_skills
-          description: >-
-            List every skill: its name and one line on when it applies. Call
-            this first.
-          outputs:
-            - title: skills
-              type: string
+    Call list_skills first, on every task, before anything else. If a
+    description covers the task, read that skill and follow it exactly: it
+    says how the job is done here, and that outranks how you would otherwise
+    do it. If none covers it, say so in one line and work the task out
+    yourself.
 
-        - component_type: ServerTool
-          id: read_skill_tool
-          name: read_skill
-          description: >-
-            Return the full text of one skill, by the name list_skills gave.
-          inputs:
-            - title: name
-              type: string
-          outputs:
-            - title: body
-              type: string
+    write_file and read_file take a path relative to the workspace. bash
+    runs a command there, with python3 and node on PATH. Each bash call is a
+    fresh shell, so cd does not carry to the next one, and a command is
+    killed after 20 seconds. Read exit_code every time.
 
-        # write_file and bash together are a shell: whatever the model can write
-        # it can then run. Here that is a throwaway workspace the sandbox
-        # deletes when the agent finishes. Where it would not be, the gate is
-        # the toolCall seam -- examples/policies/ ships an ApprovalGate that
-        # reads the arguments the model chose and refuses the call before it is
-        # made.
-        - component_type: ServerTool
-          id: write_file_tool
-          name: write_file
-          description: >-
-            Write a file in the workspace. The path is relative to it, and a
-            path that climbs out is refused.
-          inputs:
-            - title: path
-              type: string
-            - title: content
-              type: string
-          outputs:
-            - title: result
-              type: string
+    Finish with a short answer that names the skill you followed.
 
-        - component_type: ServerTool
-          id: read_file_tool
-          name: read_file
-          description: Read a file from the workspace, by a path relative to it.
-          inputs:
-            - title: path
-              type: string
-          outputs:
-            - title: content
-              type: string
+    The task: {{inputs.task}}
 
-        - component_type: ServerTool
-          id: bash_tool
-          name: bash
-          description: >-
-            Run a shell command in the workspace and return its stdout, stderr
-            and exit code. Each call is a fresh shell and commands are killed
-            after 20 seconds.
-          inputs:
-            - title: command
-              type: string
-          outputs:
-            - title: stdout
-              type: string
-            - title: stderr
-              type: string
-            - title: exit_code
-              type: integer
-
-  end:
-    component_type: EndNode
-    id: end
-    name: end
+  tools: [list_skills, read_skill, write_file, read_file, bash]
 `,
   inputs: `{
   "task": "Total these expenses by category and say which category cost the most.\\n\\ndate,category,amount\\n2026-03-02,travel,412.50\\n2026-03-04,meals,38.20\\n2026-03-09,travel,96.00\\n2026-03-11,software,240.00\\n2026-03-18,meals,52.75"

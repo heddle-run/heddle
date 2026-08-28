@@ -1,42 +1,40 @@
+# Converted from one of Oracle's Agent Spec examples (a bare `Agent`
+# document), which carried this notice:
+#
 # Copyright © 2025 Oracle and/or its affiliates.
 #
 # This software is under the Apache License 2.0
 # (LICENSE-APACHE or http://www.apache.org/licenses/LICENSE-2.0) or Universal Permissive License
 # (UPL) 1.0 (LICENSE-UPL or https://oss.oracle.com/licenses/upl), at your option.
 
-component_type: Agent
-id: 7d3f3251-8d66-42d3-aff8-0e0d0d9486a8
-name: adaptive_expert_agent
-description: null
-metadata: {}
-inputs:
-- title: domain_of_expertise
-  type: string
-outputs: []
-llm_config:
-  component_type: VllmConfig
-  id: 301ea6c6-17b7-46ab-967f-e354c15ba97b
-  name: Llama 3.1 8B instruct
-  description: null
-  metadata: {}
-  default_generation_parameters: {}
-  url: LLAMA_PLACEHOLDER_LINK
-  model_id: meta-llama/Meta-Llama-3.1-8B-Instruct
-system_prompt: 'You are an expert in {{domain_of_expertise}}.
+weave: 1
+name: adaptive-expert-agent
+description: An expert assistant whose domain arrives as an input, with one retrieval tool.
 
-  Please help the users with their requests.'
+inputs:
+  domain_of_expertise: string
+  request: string
+
 tools:
-- component_type: ServerTool
-  id: 5c38a0ba-8ac4-4712-bf26-39759fe48ccb
-  name: rag_tool
-  description: Tool that performs RAG
-  metadata: {}
-  inputs:
-  - title: query
-    type: string
-  outputs:
-  - items:
-      type: string
-    title: results
-    type: array
-agentspec_version: 25.4.1
+  rag_tool:
+    description: Tool that performs RAG
+    inputs:
+      query: string
+    outputs:
+      results:
+        type: array
+        items: { type: string }
+
+agent:
+  model:
+    provider: vllm
+    # A placeholder, exactly as in Oracle's original: point it at a live
+    # vLLM endpoint to run.
+    url: LLAMA_PLACEHOLDER_LINK
+    model: meta-llama/Meta-Llama-3.1-8B-Instruct
+  tools: [rag_tool]
+  prompt: |
+    You are an expert in {{inputs.domain_of_expertise}}.
+    Please help the users with their requests.
+
+    The request: {{inputs.request}}

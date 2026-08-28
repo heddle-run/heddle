@@ -1,202 +1,30 @@
 {
-  "component_type": "Flow",
-  "agentspec_version": "26.2.0",
-  "id": "6fba03ef-c8dd-4cb8-9b43-f3a729373ae5",
+  "weave": 1,
   "name": "research-flow",
-  "metadata": {},
-  "inputs": [],
-  "outputs": [],
-  "start_node": {
-    "$component_ref": "d623da07-109e-440b-af13-d239cad0be6e"
+  "description": "The smallest complete flow: one agent, two stub tools, input to output.",
+  "inputs": {
+    "query": "string"
   },
-  "nodes": [
-    {
-      "$component_ref": "d623da07-109e-440b-af13-d239cad0be6e"
+  "tools": {
+    "web_search": {
+      "description": "Search the web for information",
+      "inputs": { "query": "string" },
+      "outputs": { "results": "string" }
     },
-    {
-      "$component_ref": "09edaf66-8e97-45e5-9a9f-670d6c419638"
-    },
-    {
-      "$component_ref": "2a587602-a86b-4609-827c-c9cb596cd0bb"
+    "calculator": {
+      "description": "Perform mathematical calculations",
+      "inputs": { "expression": "string" },
+      "outputs": { "result": "string" }
     }
-  ],
-  "control_flow_connections": [
+  },
+  "steps": [
     {
-      "component_type": "ControlFlowEdge",
-      "id": "129208e0-cfe3-41bb-acfa-b6a50dd9e15e",
-      "name": "control_edge_start_researcher_null",
-      "metadata": {},
-      "from_node": {
-        "$component_ref": "d623da07-109e-440b-af13-d239cad0be6e"
-      },
-      "from_branch": null,
-      "to_node": {
-        "$component_ref": "09edaf66-8e97-45e5-9a9f-670d6c419638"
-      }
-    },
-    {
-      "component_type": "ControlFlowEdge",
-      "id": "8822461d-5ac9-457b-8ea1-9b5ab85a22bf",
-      "name": "control_edge_researcher_end_null",
-      "metadata": {},
-      "from_node": {
-        "$component_ref": "09edaf66-8e97-45e5-9a9f-670d6c419638"
-      },
-      "from_branch": null,
-      "to_node": {
-        "$component_ref": "2a587602-a86b-4609-827c-c9cb596cd0bb"
-      }
-    }
-  ],
-  "data_flow_connections": [
-    {
-      "component_type": "DataFlowEdge",
-      "id": "a21823d0-91d7-487c-8965-e579b04bd682",
-      "name": "data_flow_edge",
-      "metadata": {},
-      "source_node": {
-        "$component_ref": "d623da07-109e-440b-af13-d239cad0be6e"
-      },
-      "source_output": "query",
-      "destination_node": {
-        "$component_ref": "09edaf66-8e97-45e5-9a9f-670d6c419638"
-      },
-      "destination_input": "query"
-    },
-    {
-      "component_type": "DataFlowEdge",
-      "id": "91ea20dd-9ebe-4a80-b5d2-a86db05c4389",
-      "name": "data_flow_edge",
-      "metadata": {},
-      "source_node": {
-        "$component_ref": "09edaf66-8e97-45e5-9a9f-670d6c419638"
-      },
-      "source_output": "result",
-      "destination_node": {
-        "$component_ref": "2a587602-a86b-4609-827c-c9cb596cd0bb"
-      },
-      "destination_input": "result"
-    }
-  ],
-  "$referenced_components": {
-    "d623da07-109e-440b-af13-d239cad0be6e": {
-      "component_type": "StartNode",
-      "id": "d623da07-109e-440b-af13-d239cad0be6e",
-      "name": "start",
-      "metadata": {},
-      "inputs": [],
-      "outputs": [
-        {
-          "title": "query",
-          "type": "string"
-        }
-      ],
-      "branches": [
-        "next"
-      ]
-    },
-    "09edaf66-8e97-45e5-9a9f-670d6c419638": {
-      "component_type": "AgentNode",
-      "id": "09edaf66-8e97-45e5-9a9f-670d6c419638",
       "name": "researcher",
-      "metadata": {},
-      "inputs": [
-        {
-          "title": "query",
-          "type": "string"
-        }
-      ],
-      "outputs": [
-        {
-          "title": "result",
-          "type": "string"
-        }
-      ],
-      "branches": [
-        "next"
-      ],
       "agent": {
-        "component_type": "Agent",
-        "id": "19bcf156-56d8-4d22-adee-eecc860edab5",
-        "name": "research-agent",
-        "metadata": {},
-        "inputs": [
-          {
-            "title": "query",
-            "type": "string"
-          }
-        ],
-        "outputs": [],
-        "llm_config": {
-          "component_type": "OpenAiConfig",
-          "id": "9b50a23e-b3c9-48a3-9b8e-69fa7e2289bb",
-          "name": "openai",
-          "metadata": {},
-          "model_id": "gpt-4o",
-          "api_type": "chat_completions"
-        },
-        "system_prompt": "You are a research assistant. Use tools to find information about: {{query}}",
-        "tools": [
-          {
-            "component_type": "ServerTool",
-            "id": "3dede831-66a5-4bbd-820e-4e185d935b4e",
-            "name": "web_search",
-            "description": "Search the web for information",
-            "metadata": {},
-            "inputs": [
-              {
-                "title": "query",
-                "type": "string"
-              }
-            ],
-            "outputs": [
-              {
-                "title": "results",
-                "type": "string"
-              }
-            ],
-            "requires_confirmation": false
-          },
-          {
-            "component_type": "ServerTool",
-            "id": "1b00315a-039d-4d30-9f71-ae4e7bb4fb6a",
-            "name": "calculator",
-            "description": "Perform mathematical calculations",
-            "metadata": {},
-            "inputs": [
-              {
-                "title": "expression",
-                "type": "string"
-              }
-            ],
-            "outputs": [
-              {
-                "title": "result",
-                "type": "string"
-              }
-            ],
-            "requires_confirmation": false
-          }
-        ],
-        "toolboxes": [],
-        "human_in_the_loop": true,
-        "transforms": []
+        "model": { "provider": "openai", "model": "gpt-4o" },
+        "prompt": "You are a research assistant. Use tools to find information about: {{inputs.query}}",
+        "tools": ["web_search", "calculator"]
       }
-    },
-    "2a587602-a86b-4609-827c-c9cb596cd0bb": {
-      "component_type": "EndNode",
-      "id": "2a587602-a86b-4609-827c-c9cb596cd0bb",
-      "name": "end",
-      "metadata": {},
-      "inputs": [
-        {
-          "title": "result",
-          "type": "string"
-        }
-      ],
-      "outputs": [],
-      "branches": [],
-      "branch_name": "next"
     }
-  }
+  ]
 }

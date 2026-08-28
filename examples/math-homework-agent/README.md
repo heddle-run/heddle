@@ -1,29 +1,35 @@
-# math-homework-agent: a spec written somewhere else
+# math-homework-agent: the one-agent sugar
 
-`spec.yaml` is one of Oracle's own [Agent Spec](https://oracle.github.io/agent-spec/)
-examples, carried here unmodified (it keeps Oracle's copyright header). It is a
-bare `Agent`: a system prompt for a math homework assistant, a vLLM-served
-Llama model, and one `multiplication_tool`, with no flow around it.
+`spec.yaml` began as one of Oracle's own [Agent Spec](https://oracle.github.io/agent-spec/)
+examples — a bare `Agent` with no flow around it — and is carried here
+converted to Weave (the original's copyright notice travels in the file's
+header). It is the smallest document shape Weave has: `inputs`, a `tools`
+declaration, and a top-level `agent:`, which is sugar for a one-step flow
+named after the document.
 
-Its job in this repo is to show portability: a document authored against a
-different runtime, parsed and checked by heddle as-is.
+Under the old format a bare `Agent` validated but could not run. Under Weave
+the same idea *is* a runnable flow, which is the point of the sugar.
 
 ```bash
 heddle validate examples/math-homework-agent/spec.yaml
 ```
 
 ```
-  Parsed Agent: Math homework assistant
+  Parsed flow: math-homework-agent
+  Graph validation passed
 Valid: examples/math-homework-agent/spec.yaml
 ```
 
 From a source checkout, use `node packages/cli/dist/heddle.js validate …`
 after `pnpm install && pnpm build`.
 
-It is not runnable as it stands, for two honest reasons: `heddle run` executes
-flows, and a bare `Agent` is refused with `expected componentType 'Flow'`; and
-the spec's `url` is the placeholder `LLAMA_PUBLIC_ENDPOINT`, not a real
-endpoint. To run it, wrap the agent in a flow, an `AgentNode` between a
-`StartNode` and an `EndNode`, as [research-assistant](../research-assistant)
-does. Point `url` at a live server, and provide a `multiplication_tool`
-executable in a `--tools-dir`.
+Running it still takes two things the document leaves open, on purpose: the
+model `url` is the placeholder `LLAMA_PUBLIC_ENDPOINT`, not a real endpoint,
+and there is no `multiplication_tool` executable here. Point `url` at a live
+vLLM server, provide the tool in a `--tools-dir`, and it runs:
+
+```bash
+heddle run examples/math-homework-agent/spec.yaml \
+  --tools-dir <your-tools> \
+  --input '{"question": "what is 12 times 34?"}'
+```

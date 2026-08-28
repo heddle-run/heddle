@@ -14,27 +14,26 @@ import { TransformChain } from '../../plugin/transform.js';
 import { LLMExecutor } from '../llm.js';
 import { State } from '../../state/state.js';
 import type { Dependencies } from '../types.js';
-import type { AgentNode, LLMNode } from '../../spec/types.js';
+import type { AgentStep, LlmStep } from '../../spec/types.js';
 import type { Event } from '../../runner/events.js';
 import type { ChatChunk, Provider } from '../../llm/types.js';
 
-const NODE: AgentNode = {
-  componentType: 'AgentNode',
+const STEP: AgentStep = {
+  kind: 'agent',
   name: 'assistant',
   agent: {
-    componentType: 'Agent',
-    name: 'assistant',
-    systemPrompt: 'be useful',
-    llmConfig: { componentType: 'OpenAiConfig', modelId: 'gpt-4o' },
-    tools: [{ componentType: 'ServerTool', name: 'echo', description: 'echoes' }],
+    model: { provider: 'openai', model: 'gpt-4o', extra: {} },
+    prompt: 'be useful',
+    tools: [{ name: 'echo', description: 'echoes', inputs: {}, outputs: {} }],
+    transforms: [],
   },
 };
 
-const LLM_NODE: LLMNode = {
-  componentType: 'LlmNode',
+const LLM_STEP: LlmStep = {
+  kind: 'llm',
   name: 'writer',
-  promptTemplate: 'write about {{q}}',
-  llmConfig: { componentType: 'OpenAiConfig', modelId: 'gpt-4o' },
+  model: { provider: 'openai', model: 'gpt-4o', extra: {} },
+  prompt: 'write about {{inputs.q}}',
 };
 
 function chunks(parts: ChatChunk[], failWith?: Error): AsyncIterable<ChatChunk> {
@@ -82,7 +81,7 @@ function harness(): Harness {
     deltas: () =>
       events.filter((e) => e.type === 'token_delta').map((e) => e.delta ?? ''),
     run: async () => {
-      const executor = new AgentExecutor(NODE, deps);
+      const executor = new AgentExecutor(STEP, deps);
       const state = await executor.execute(undefined, new State({ q: 'hi' }));
       return state.toData();
     },
@@ -235,17 +234,17 @@ describe('a streamed agent turn', () => {
     expect(chatCompletion).toHaveBeenCalledOnce();
   });
 
-  it('streams an LlmNode too, and still writes generated_text', async () => {
+  it('streams an llm step too, and still writes text', async () => {
     chatCompletionStream.mockReturnValueOnce(chunks(words('a poem about hi')));
 
     const events: Event[] = [];
-    const executor = new LLMExecutor(LLM_NODE, {
+    const executor = new LLMExecutor(LLM_STEP, {
       createProvider: stubProvider,
       eventHandler: (e) => events.push(e),
     });
-    const out = await executor.execute(undefined, new State({ q: 'hi' }));
+    const out = await executor.execute(undefined, new State({ 'inputs.q': 'hi' }));
 
-    expect(out.toData()).toEqual({ generated_text: 'a poem about hi' });
+    expect(out.toData()).toEqual({ text: 'a poem about hi' });
     expect(events.filter((e) => e.type === 'token_delta').map((e) => e.delta)).toEqual([
       'a ',
       'poem ',

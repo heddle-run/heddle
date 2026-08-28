@@ -72,7 +72,7 @@ unrelated calls. The answer should end by naming the skill it followed.
 ## Files
 
 ```
-spec.yaml              the flow: start → agent → end, and the prompt that is the contract
+spec.yaml              the flow: one assistant step, and the prompt that is the contract
 plugin.json            files: skills;  tools: list_skills, read_skill
 bin/list_skills.py     the index: name + first line, per skill
 bin/read_skill.py      one body, by name, refusing a name that climbs out

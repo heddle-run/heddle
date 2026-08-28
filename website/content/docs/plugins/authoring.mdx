@@ -30,8 +30,9 @@ identity function that only adds types, so `export default definePlugin({...})` 
 same object with its shape checked. Take it or leave it; nothing at run time knows the
 difference.
 
-`name` and `version` are written into a spec as `component_plugin_name` and
-`component_plugin_version` when one is serialised, so they are not decorative.
+`name` and `version` are not decorative: a document that pins a component type with
+top-level `requires` is checked against `version`, so a flow can say which release of
+your plugin it was written for.
 
 ## Out of process
 
@@ -81,7 +82,7 @@ component may do follows from the component rather than from where it was writte
 |---|---|---|
 | `signal` | all | An `AbortSignal`, fired when heddle cancels the call or stops the plugin |
 | `runTool(name, input)` | node, transform, middleware | Run one of the flow's tools |
-| `callModel(request)` | node, transform, middleware | Ask this component's `llm_config` for an answer |
+| `callModel(request)` | node, transform, middleware | Ask this component's `model` config for an answer |
 | `emitEvent(name, data)` | all | Publish `plugin:<componentType>:<name>` on the run's stream |
 | `log(level, message)` | all | A line for whoever is watching the run |
 | `node` / `component` | node, transform, provider | The component's own spec fields |
@@ -143,7 +144,7 @@ process, declare them in the manifest as `branches`.
 
 ## A transform
 
-A transform hangs off `Agent.transforms` and sees the agent's messages: `pre` on their
+A transform hangs off an agent's `transforms` and sees the agent's messages: `pre` on their
 way to the model, `post` on the answer's way back. It returns `pass`, `modify` or
 `reject`.
 
@@ -162,12 +163,13 @@ serve({
 
 `reject` is what makes a transform usable as a guardrail. In the `pre` phase heddle skips
 the model call entirely, so a blocked prompt costs nothing, and the agent returns
-`transform_status: "rejected"`, which a builtin `BranchingNode` can route on.
+`transform_status: "rejected"`, which a builtin [`switch` step](/docs/nodes#switch) can
+route on.
 
 ## A provider
 
-A provider answers model calls itself, so a spec writes your component type where it
-would write `OpenAiConfig`. You *are* the endpoint, so you receive the whole request
+A provider answers model calls itself, so a spec writes your component type as a model's
+`provider`, beside the builtins. You *are* the endpoint, so you receive the whole request
 including `model`.
 
 ```js
@@ -187,14 +189,14 @@ serve({
 });
 ```
 
-`ctx.component` is the `llm_config` the spec wrote, which is where a key or a url the
+`ctx.component` is the model config the spec wrote, which is where a key or a url the
 flow brought will be. **heddle does not resolve `$VAR` for you.** It will not read its
 own environment on your behalf, least of all when `--safe` has confined you precisely so
 you cannot read it either. Take a credential from your own component's fields, or from
 the environment the operator granted your process.
 
-A plugin may not claim a type the SDK ships. A flow writing `OpenAiConfig` reaches
-heddle's own client whatever plugins are loaded.
+A plugin cannot take a builtin provider's name. A flow writing `provider: openai`
+reaches heddle's own client whatever plugins are loaded.
 
 To stream, add `"stream": true` to the component in your manifest and send each piece
 with `ctx.partial`:

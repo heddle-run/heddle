@@ -26,7 +26,7 @@ import { checkpointSink, positionOf } from '../../session/checkpoint.js';
 import { openTurn, resumeTurn } from '../../session/turn.js';
 import { resumeInputs, isSuspended, RunSuspended } from '../../session/suspend.js';
 import { RunError } from '../../errors.js';
-import type { AgentNode } from '../../spec/types.js';
+import type { AgentStep } from '../../spec/types.js';
 import type { Message, Provider, ToolCall } from '../../llm/types.js';
 import type { Dependencies } from '../../node/types.js';
 import type { PluginMiddlewareDef } from '../types.js';
@@ -122,25 +122,29 @@ function agentNode(
     },
   };
 
-  const spec = {
+  const step: AgentStep = {
+    kind: 'agent',
     name: 'assistant',
-    componentType: 'AgentNode',
     agent: {
-      name: 'assistant',
-      systemPrompt: 'do the thing',
-      llmConfig: { componentType: 'OpenAiConfig', modelId: 'gpt-4o', name: 'llm' },
-      tools: calls.map((call) => ({ name: call.name, description: '' })),
+      model: { provider: 'openai', model: 'gpt-4o', extra: {} },
+      prompt: 'do the thing',
+      tools: calls.map((call) => ({
+        name: call.name,
+        description: '',
+        inputs: {},
+        outputs: {},
+      })),
       transforms: [],
     },
-  } as unknown as AgentNode;
+  };
 
   return {
     node: {
       name: 'assistant',
-      type: 'AgentNode',
-      specNode: spec as never,
-      executor: new AgentExecutor(spec, deps),
-      edges: [{ fromNode: 'assistant', toNode: 'end' }],
+      type: 'agent',
+      spec: { role: 'step', step },
+      executor: new AgentExecutor(step, deps),
+      edges: [{ from: 'assistant', to: 'end' }],
       inputMappings: new Map(),
     },
     ran,
@@ -152,8 +156,8 @@ function agentNode(
 function graphWith(node: CompiledNode): CompiledGraph {
   const end: CompiledNode = {
     name: 'end',
-    type: 'EndNode',
-    specNode: { componentType: 'EndNode', name: 'end' } as never,
+    type: 'outcome',
+    spec: { role: 'outcome', outcome: { name: 'done' } },
     executor: { execute: async (_s, input) => input, branch: () => '' },
     edges: [],
     inputMappings: new Map(),
@@ -166,7 +170,6 @@ function graphWith(node: CompiledNode): CompiledGraph {
       ['end', end],
     ]),
     'assistant',
-    [],
   );
 }
 

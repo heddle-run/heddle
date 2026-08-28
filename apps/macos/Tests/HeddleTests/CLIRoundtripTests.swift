@@ -45,7 +45,7 @@ final class CLIRoundtripTests: XCTestCase {
         )
         XCTAssertTrue(
             record.items.contains {
-                $0.kind == .nodeStart(name: "start")
+                $0.kind == .nodeStart(name: "inputs")
             },
             "transcript should carry the node starts"
         )
@@ -78,24 +78,18 @@ final class CLIRoundtripTests: XCTestCase {
 
     private func fixtureFlow() throws -> URL {
         let yaml = """
-            component_type: Flow
+            weave: 1
             name: fixture-flow
-            start_node: { $component_ref: start }
-            nodes:
-              - { $component_ref: start }
-              - { $component_ref: end }
-            control_flow_connections:
-              - component_type: ControlFlowEdge
-                name: start_to_end
-                from_node: { $component_ref: start }
-                to_node: { $component_ref: end }
-            $referenced_components:
-              start:
-                component_type: StartNode
-                id: start
-                name: start
-                outputs: [{ title: query, type: string }]
-              end: { component_type: EndNode, id: end, name: end }
+            inputs:
+              query: string
+            steps:
+              - name: inspect
+                switch: '{{inputs.query}}'
+                cases: {}
+                else: done
+            outcomes:
+              done:
+                query: '{{inputs.query}}'
             """
         let url = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("heddle-fixture-\(UUID().uuidString).yaml")

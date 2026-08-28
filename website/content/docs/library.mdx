@@ -17,7 +17,7 @@ it directly. Three surfaces, one rule of thumb:
 
 Using the library is the one case where your project *does* depend on heddle, and the
 inversion the [introduction](/docs) describes is the document's, not the embedder's. The
-flow stays a plain Agent Spec document either way; what you are importing is the runtime,
+flow stays a plain Weave document either way; what you are importing is the runtime,
 not abstractions the document needs.
 
 ```bash
@@ -31,7 +31,7 @@ npm install @heddle-run/core
 Four calls: `loadFlow` reads the document, `compile` turns it into an executable graph,
 `validate` refuses a graph that is not well-formed, and `Runner` walks it.
 
-Scaffold something to run (`npx @heddle-run/cli init my-agent` gives you a `flow.json` and a
+Scaffold something to run (`npx @heddle-run/cli init my-agent` gives you a `weave.yaml` and a
 `tools/` directory), or point at a project you already have. Then, in `run.mjs`:
 
 ```js
@@ -56,7 +56,7 @@ const deps = {
   eventHandler: handleEvent,
 };
 
-const flow = loadFlow("my-agent/flow.json");
+const flow = loadFlow("my-agent/weave.yaml");
 const graph = compile(flow, deps);
 validate(graph);
 
@@ -66,7 +66,7 @@ const runner = new Runner(graph, {
 });
 const state = await runner.run(
   undefined,
-  { query: "What is the Open Agent Specification?" },
+  { query: "What is a heddle on a loom?" },
 );
 
 console.log(JSON.stringify(state.toData(), null, 2));
@@ -79,21 +79,21 @@ node run.mjs
 
 Walking through it:
 
-- **`loadFlow(path)`** reads JSON or YAML (detected by extension) and resolves every
-  `$component_ref`. A flow naming a plugin's component types needs the plugins at parse
+- **`loadFlow(path)`** reads JSON or YAML (detected by extension) and runs both
+  validation passes: the document's own shape, then every reference, target and plugin
+  component. A flow naming a plugin's component types needs the plugins at load
   time: `loadFlow(path, plugins)`; see [plugins](#plugins-middleware-and-tools-from-plugins)
   below.
 - **`compile(flow, deps)`** builds the graph, constructing an executor per node from the
   `Dependencies` you pass. Providers are constructed on first use, so compiling, and
   therefore validating, never reaches a credential.
-- **`validate(graph)`** throws on a graph that is not well-formed: unreachable nodes, a
-  branch with no edge, a data edge reading an output nothing declares. This is the second
-  of the two validation passes `heddle validate` runs; the schema pass happens inside
-  `loadFlow`.
+- **`validate(graph)`** is the backstop over heddle's own lowering: it throws on a
+  compiled graph with an unreachable node or a dead end. A document `loadFlow` accepted
+  will pass it; keep the call anyway, as `heddle validate` itself does.
 - **`runner.run(signal, inputs, from?)`** walks the graph and resolves to the final
   [`State`](#state). `signal` is an optional `AbortSignal` for cancelling the run from
   outside; the run's own timeout applies either way. `inputs` is what `--input` is on
-  the CLI: a plain object that becomes the run's starting state. `from` resumes a
+  the CLI: a plain object filling the flow's declared `inputs`. `from` resumes a
   checkpointed run and is normally left out; see [Sessions](/docs/sessions).
 
 The handler is passed twice on purpose. `RunnerOptions.eventHandler` receives the walk's
@@ -114,8 +114,8 @@ optional; `compile(flow, {})` is legal and enough for a flow that calls no tools
 | `plugins` | A `PluginRegistry` from `loadPlugins`, providing custom component types |
 | `middleware` | A `MiddlewareChain`, for the seams inside a node (`toolCall`). Pass the same chain here and on `RunnerOptions`, since they reach different call sites |
 | `stream` | `false` asks providers for one buffered response instead of a token stream; the library's `--no-stream` |
-| `allowEnvRefs` | Whether `$VAR` in a spec's `llm_config` is resolved from the process environment. Defaults to true; a host running *submitted* specs sets it false |
-| `defaultLlmKey`, `defaultLlmUrl` | Fallback credential and base URL for a spec whose `llm_config` carries neither, which is what the server's default-credential flags feed |
+| `allowEnvRefs` | Whether `$VAR` in a spec's model config is resolved from the process environment. Defaults to true; a host running *submitted* specs sets it false |
+| `defaultLlmKey`, `defaultLlmUrl` | Fallback credential and base URL for a spec whose model config carries neither, which is what the server's default-credential flags feed |
 | `createProvider` | Replace how providers are constructed entirely. For tests and hosts; a custom model backend is better written as a [provider plugin](/docs/plugins/authoring#a-provider) |
 | `egress` | An `EgressPolicy` restricting where specs you did not write may send model requests. Set it if you accept submitted specs; leave it out for your own, where it would refuse a local Ollama for nothing |
 
@@ -158,7 +158,7 @@ Both event handlers receive `Event` objects: a `type` plus the fields that type 
 | `node_start` | A node is entered, with its `state` |
 | `node_complete` | A node finished, with its output `state` |
 | `node_error` | A node failed; with middleware retrying, one per attempt |
-| `tool_call` | An agent or `ToolNode` invokes a tool, with `toolName` and `toolArgs` |
+| `tool_call` | An agent or `tool` step invokes a tool, with `toolName` and `toolArgs` |
 | `tool_result` | That call returned, with `toolResult` |
 | `token_delta` | One piece of a streamed model answer, in `delta` |
 | `plugin_log` | A plugin said something via `log`, with `level` and `message` |

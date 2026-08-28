@@ -1,19 +1,19 @@
 # research-assistant: the first flow to run
 
-The smallest complete agent flow: `start → researcher → end`. The researcher is
-an `AgentNode`: an agent with a system prompt, an OpenAI model, and two tools
-it can call in a loop until it has an answer.
+The smallest complete agent flow: one `agent` step. The researcher is an agent
+with a system prompt, an OpenAI model, and two tools it can call in a loop
+until it has an answer.
 
 | File | What it is |
 |------|------------|
-| `flow.json` | The flow: three nodes, two control edges, two data edges |
+| `flow.json` | The flow: one input, two tool declarations, one agent step |
 | `tools/web_search.py` | A stub search tool; returns canned results, calls no real API |
 | `tools/calculator.sh` | Evaluates an arithmetic expression with Python |
 
 The tools are deliberately trivial. `web_search` fabricates its results, so the
 example demonstrates the *mechanics*, meaning how a model asks for a tool, how
-the answer comes back and how the result reaches the end node, without needing a
-search API key. The only credential it needs is the model's.
+the answer comes back and how the result reaches the run's output, without
+needing a search API key. The only credential it needs is the model's.
 
 ## Run it
 
@@ -38,33 +38,34 @@ node packages/cli/dist/heddle.js run examples/research-assistant/flow.json \
 
 ## What you will see
 
-Progress goes to stderr, one line per node, plus each tool call the model
-makes. The final state is printed to stdout as JSON:
+Progress goes to stderr, one line per step, plus each tool call the model
+makes. The run's result is printed to stdout as JSON:
 
 ```json
 {
   "query": "what is a heddle",
-  "result": "A heddle is a component of a loom. ..."
+  "result": "A heddle is a component of a loom. ...",
+  "outcome": "done"
 }
 ```
 
-`result` is the researcher's answer, written there because a data flow edge
-carries the agent's `result` output to the end node.
+`result` is the researcher's answer. The document declares no `outcomes`, so
+the run ends at the implicit outcome `done`, which echoes what the flow
+accumulated — the input and the agent's answer.
 
 ## What to look at in the flow
 
-`flow.json` is a plain [Agent Spec](https://oracle.github.io/agent-spec/)
-document, and the shape repeats in every larger example:
+`flow.json` is a plain [Weave](https://heddle.run/docs) document, and the
+shape repeats in every larger example:
 
-- **`$referenced_components`** holds each node's definition once; the `nodes`
-  and edge lists point into it by id.
-- **The `StartNode`** declares one output, `query`, which is why
+- **`inputs`** declares one field, `query`, which is why
   `--input '{"query": ...}'` is the shape the run accepts.
-- **`control_flow_connections`** say what runs after what;
-  **`data_flow_connections`** say which output lands in which input. The two
-  are separate on purpose: `query` flows from start to researcher, `result`
-  from researcher to end.
-- **The agent's tools** are declared inline as `ServerTool` components: name,
+- **`{{inputs.query}}`** in the prompt is the data flow. A template reference
+  is the whole wiring: the step receives exactly the values its templates
+  name, and an unresolvable reference is a load-time error, not a silent hole.
+- **`steps`** is an ordered list; control flow falls through in list order,
+  and a one-step flow ends at `done` when the step finishes.
+- **The agent's tools** are names into the document's `tools` map: name,
   inputs, outputs. At runtime each is matched by name to an executable in
   `--tools-dir`: `web_search` to `web_search.py`, `calculator` to
   `calculator.sh`. The extension is stripped; the name is the contract.

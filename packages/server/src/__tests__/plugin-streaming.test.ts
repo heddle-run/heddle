@@ -6,44 +6,10 @@ import type { Server } from 'node:http';
 import { createServer } from '../server.js';
 
 const FLOW = {
-  component_type: 'Flow',
+  weave: 1,
   name: 'reporting-flow',
-  start_node: { $component_ref: 'start' },
-  nodes: [
-    { $component_ref: 'start' },
-    { $component_ref: 'p' },
-    { $component_ref: 'end' },
-  ],
-  control_flow_connections: [
-    {
-      component_type: 'ControlFlowEdge',
-      name: 'start_to_p',
-      from_node: { $component_ref: 'start' },
-      to_node: { $component_ref: 'p' },
-    },
-    {
-      component_type: 'ControlFlowEdge',
-      name: 'p_to_end',
-      from_node: { $component_ref: 'p' },
-      to_node: { $component_ref: 'end' },
-    },
-  ],
-  $referenced_components: {
-    start: {
-      component_type: 'StartNode',
-      id: 'start',
-      name: 'start',
-      outputs: [{ title: 'text', type: 'string' }],
-    },
-    p: {
-      component_type: 'ProgressNode',
-      id: 'p',
-      name: 'p',
-      component_plugin_name: 'reporter-plugin',
-      component_plugin_version: '1.0.0',
-    },
-    end: { component_type: 'EndNode', id: 'end', name: 'end' },
-  },
+  inputs: { text: 'string' },
+  steps: [{ name: 'p', use: 'ProgressNode', with: { text: '{{inputs.text}}' } }],
 };
 
 const PLUGIN = {

@@ -16,6 +16,14 @@ which is the only anchor that survives a phase landing. That rule is enforced, n
 > the present tense describes the tree as it now is. Phases 5, 7, 9 and V tier 2 are still proposals,
 > and where a phase landed differently from what §7 proposed, the proposal has been replaced by
 > what was built, not annotated alongside it.
+>
+> Since then the **Weave migration** (docs/weave-spec-design.md) landed: heddle's spec format is now
+> Weave, and `vendor/agentspec` plus the deserializer and placeholder machinery
+> (`plugin/deserializer.ts`, `plugin/flow-preprocess.ts`, `spec/adapter.ts`, `spec/open-unions.ts`)
+> are gone from the tree. That supersedes the closed-union analysis in §2.4/§3 and §8, and the
+> interop constraint in "What stays closed" (§10): a heddle spec is no longer an Agent Spec
+> document. Passages describing that layer are marked historical where they occur rather than
+> rewritten.
 
 ---
 
@@ -63,13 +71,22 @@ What the goal does **not** mean:
   is typed against (`packages/core/src/node/types.ts`), the sandbox deliberately stays inside the
   executor (`packages/core/src/sandbox/types.ts`), and neither is on the table. See §10.
 - **Not an Agent Spec conformance goal.** Agent Spec has nothing to say about any of this; see §2.
-  It does not follow that the SDK is immovable: `vendor/agentspec` is a local tree and §8.1 proposes
-  extending it. The conformance that matters is the *format*, a heddle spec stays a valid Agent Spec
-  document, not the current TypeScript SDK's export list.
+  It did not follow that the SDK was immovable: `vendor/agentspec` was a local tree and §8.1
+  proposed extending it. The conformance that mattered was the *format*, a heddle spec stayed a
+  valid Agent Spec document, not the current TypeScript SDK's export list. [Superseded by the Weave
+  migration — heddle specs are now Weave documents and `vendor/agentspec` is gone; see
+  docs/weave-spec-design.md.]
 
 ---
 
 ## 2. What Agent Spec's plugin system actually is
+
+> **Historical.** The Weave migration (docs/weave-spec-design.md) removed this whole seam:
+> `vendor/agentspec` was deleted from the tree, along with `plugin/deserializer.ts` and
+> `plugin/flow-preprocess.ts`. Plugin components are now validated against the manifest's `schema`
+> by `spec/resolve.ts`, and no SDK deserializer exists to teach. The section is kept as the record
+> of what the SDK was and why heddle left it; the files it cites into that tree no longer exist, so
+> their citations name the file alone, without line anchors.
 
 ### 2.1 The published scope, in the spec's own words
 
@@ -98,10 +115,10 @@ codebase's own voice, and it is correct.
 
 ### 2.2 The exact interfaces, from the vendored source
 
-The vendored SDK is upstream at commit `f8b5b034…` plus the additive patch series recorded under
-*Local modifications* in `vendor/agentspec/VENDOR.md`; every interface quoted below is upstream's,
-unmodified. That is a starting condition, not a constraint, §8.1 proposes patching it, and every
-limit described in §2.4 is a limit of *this commit* rather than of the format.
+The vendored SDK was upstream at commit `f8b5b034…` plus the additive patch series recorded under
+*Local modifications* in `vendor/agentspec/VENDOR.md`; every interface quoted below was upstream's,
+unmodified. That was a starting condition, not a constraint, §8.1 proposed patching it, and every
+limit described in §2.4 was a limit of *that commit* rather than of the format.
 
 ```ts
 // vendor/agentspec/src/serialization/deserialization-plugin.ts:10-22
@@ -126,12 +143,12 @@ export interface ComponentSerializationPlugin {
 Four members each. There is no `execute`, no lifecycle, no `init`, no capability negotiation, no
 manifest. That is the entire extension surface Agent Spec defines.
 
-**Dispatch is by `component_type` string and nothing else.** The deserializer builds a
-`Map<componentType, plugin>` from every plugin's `supportedComponentTypes()` and throws on collision
-(`vendor/agentspec/src/serialization/deserialization-context.ts:56-59`), with the builtin plugin
-appended last (`vendor/agentspec/src/serialization/deserializer.ts:40`). An unclaimed type is
+**Dispatch was by `component_type` string and nothing else.** The deserializer built a
+`Map<componentType, plugin>` from every plugin's `supportedComponentTypes()` and threw on collision
+(`vendor/agentspec/src/serialization/deserialization-context.ts`), with the builtin plugin
+appended last (`vendor/agentspec/src/serialization/deserializer.ts`). An unclaimed type was
 `No plugin to deserialize component type "X"`
-(`vendor/agentspec/src/serialization/deserialization-context.ts:174`).
+(`vendor/agentspec/src/serialization/deserialization-context.ts`).
 
 **`component_plugin_name` / `component_plugin_version` are write-only provenance.** They are stamped
 onto output only for non-builtin types:
@@ -144,10 +161,10 @@ if (!isBuiltinComponentType(componentType)) {
 }
 ```
 
-Nothing reads them back. heddle's own deserializer treats them as envelope and drops them
-(`packages/core/src/plugin/deserializer.ts`). **There is no plugin version enforcement
-anywhere in the system**, loading a spec that records version `1.0` against a plugin at version
-`9.0` produces no warning. If heddle wants version compatibility, heddle invents it.
+Nothing read them back. heddle's own deserializer treated them as envelope and dropped them
+(`packages/core/src/plugin/deserializer.ts`, since removed). **There was no plugin version
+enforcement anywhere in the system**, loading a spec that recorded version `1.0` against a plugin at
+version `9.0` produced no warning. If heddle wants version compatibility, heddle invents it.
 
 The language spec's one structural rule is prose, not schema:
 
@@ -162,26 +179,26 @@ Additive-only, enforced socially.
 |---|---|---|---|
 | Language | Python-first throughout; `grep -ci typescript` over the language spec page returns **0** | `vendor/agentspec/` exists and is what heddle imports | The documented workflow is not the one heddle runs. Treat the docs as intent, the source as contract. |
 | Base class vs interface | Two ABCs (`ComponentSerializationPlugin`, `ComponentDeserializationPlugin`) you subclass | Two structural `interface`s; nothing to extend, just satisfy the shape | heddle's `HeddleDeserializationPlugin` (`packages/core/src/plugin/deserializer.ts`) is a hand-written class, correctly. |
-| The easy path | `PydanticComponentSerializationPlugin(component_types_and_models={...})`, a ~8-line, logic-free plugin | **No equivalent exists.** There is no zod-driven "give me a schema map" plugin. | Every heddle custom type needs a hand-written deserializer. That is what `packages/core/src/plugin/deserializer.ts` is, 207 lines re-declaring the SDK's protocol/dangerous/opaque field sets and hand-rolling the field walk. The SDK's `snakeToCamel` and `propertyFromJsonSchema` *are* exported from the root (`vendor/agentspec/src/index.ts:306` and `:30`) and are reused (`packages/core/src/plugin/deserializer.ts`, called at `:125` and `:66`/`:205`); what cannot be reused is the builtin plugin's own field-filtering logic; see the row below. |
-| Reusing the builtin plugin | n/a | `BuiltinsComponentDeserializationPlugin` is exported from `vendor/agentspec/src/serialization/index.ts` but **not** from `vendor/agentspec/src/index.ts:300-312` | Cannot wrap or delegate to it. Hence the local re-declaration of `PROTOCOL_FIELDS` / `DANGEROUS_KEYS` / `OPAQUE_FIELDS` at `packages/core/src/plugin/deserializer.ts`. |
-| Implementation types | n/a | `SerializedDict` / `SerializedFields` are used by the exported interfaces but are **not** exported (`vendor/agentspec/src/index.ts:300-312`) | `packages/core/src/plugin/deserializer.ts` recovers it with `Parameters<ComponentDeserializationPlugin['deserialize']>[0]`. Worth upstreaming. |
+| The easy path | `PydanticComponentSerializationPlugin(component_types_and_models={...})`, a ~8-line, logic-free plugin | **No equivalent exists.** There is no zod-driven "give me a schema map" plugin. | Every heddle custom type needs a hand-written deserializer. That is what `packages/core/src/plugin/deserializer.ts` is, 207 lines re-declaring the SDK's protocol/dangerous/opaque field sets and hand-rolling the field walk. The SDK's `snakeToCamel` and `propertyFromJsonSchema` *are* exported from the root (`vendor/agentspec/src/index.ts`) and are reused (`packages/core/src/plugin/deserializer.ts`, called at `:125` and `:66`/`:205`); what cannot be reused is the builtin plugin's own field-filtering logic; see the row below. |
+| Reusing the builtin plugin | n/a | `BuiltinsComponentDeserializationPlugin` is exported from `vendor/agentspec/src/serialization/index.ts` but **not** from `vendor/agentspec/src/index.ts` | Cannot wrap or delegate to it. Hence the local re-declaration of `PROTOCOL_FIELDS` / `DANGEROUS_KEYS` / `OPAQUE_FIELDS` at `packages/core/src/plugin/deserializer.ts`. |
+| Implementation types | n/a | `SerializedDict` / `SerializedFields` are used by the exported interfaces but are **not** exported (`vendor/agentspec/src/index.ts`) | `packages/core/src/plugin/deserializer.ts` recovers it with `Parameters<ComponentDeserializationPlugin['deserialize']>[0]`. Worth upstreaming. |
 | Runtime binding | The how-to's execution snippet has the loader construction **commented out**, so `agentspec_loader` is undefined | n/a | The runtime side of Agent Spec plugins is the least-exercised part of the whole system. There is no prior art to copy. |
 
 ### 2.4 The closed-union problem
 
 Every union in the SDK is a `z.discriminatedUnion("componentType", [...])` fixed at module load.
 None is extensible from outside the package: the one registration function that exists
-(`registerNodeUnionSchema`, `vendor/agentspec/src/flows/lazy-schemas.ts:28`) is exported from its own
+(`registerNodeUnionSchema`, `vendor/agentspec/src/flows/lazy-schemas.ts`) is exported from its own
 module but not re-exported from `src/index.ts`, and the other four unions have no registration
 function at all.
 
 | Union | Definition | Members | Gates |
 |---|---|---|---|
-| `NodeUnion` | `vendor/agentspec/src/flows/nodes/index.ts:22-37` | 14 | `Flow.startNode`, `Flow.nodes`, and both edge endpoint types, via `LazyNodeRef` |
-| `MessageTransformUnion` | `vendor/agentspec/src/transforms/message-transform.ts:75-78` | 2 | `Agent.transforms` (`vendor/agentspec/src/agents/agent.ts:22`) |
-| `LlmConfigUnion` | `vendor/agentspec/src/llms/index.ts:12-18` | 5 | `Agent.llmConfig` (`agents/agent.ts`), `LlmNode.llmConfig`, both transforms' `llm` (`transforms/message-transform.ts:29,53`) |
-| `ToolUnion` | `vendor/agentspec/src/tools/index.ts:12-18` | 5 | `Agent.tools` (`agents/agent.ts`), `ToolNode.tool` (`flows/nodes/tool-node.ts`), `AgentSpecializationParameters.additionalTools` (`agents/specialized-agent.ts`) |
-| `SupportedDatastoresSchema` | `vendor/agentspec/src/transforms/message-transform.ts:16-20` | 3 | transform `datastore`; not exported from the package root |
+| `NodeUnion` | `vendor/agentspec/src/flows/nodes/index.ts` | 14 | `Flow.startNode`, `Flow.nodes`, and both edge endpoint types, via `LazyNodeRef` |
+| `MessageTransformUnion` | `vendor/agentspec/src/transforms/message-transform.ts` | 2 | `Agent.transforms` (`vendor/agentspec/src/agents/agent.ts`) |
+| `LlmConfigUnion` | `vendor/agentspec/src/llms/index.ts` | 5 | `Agent.llmConfig` (`agents/agent.ts`), `LlmNode.llmConfig`, both transforms' `llm` (`transforms/message-transform.ts:29,53`) |
+| `ToolUnion` | `vendor/agentspec/src/tools/index.ts` | 5 | `Agent.tools` (`agents/agent.ts`), `ToolNode.tool` (`flows/nodes/tool-node.ts`), `AgentSpecializationParameters.additionalTools` (`agents/specialized-agent.ts`) |
+| `SupportedDatastoresSchema` | `vendor/agentspec/src/transforms/message-transform.ts` | 3 | transform `datastore`; not exported from the package root |
 
 There is no base `MessageTransformSchema` at all, both transforms extend `ComponentBaseSchema`
 directly (`vendor/agentspec/src/transforms/message-transform.ts:27,50-51`). `NodeBaseSchema` and
@@ -214,8 +231,8 @@ Given the above, the split heddle already implements is the only one available:
 
 | Concern | Owner | Where |
 |---|---|---|
-| Read a custom `component_type` into an object | Agent Spec plugin | `packages/core/src/plugin/deserializer.ts` |
-| Make a `Flow` containing one pass zod validation | heddle workaround | `packages/core/src/plugin/flow-preprocess.ts` |
+| Read a custom `component_type` into an object | Agent Spec plugin | `packages/core/src/plugin/deserializer.ts` [removed with Weave] |
+| Make a `Flow` containing one pass zod validation | heddle workaround | `packages/core/src/plugin/flow-preprocess.ts` [removed with Weave] |
 | Decide what kind of thing it is | heddle | `packages/core/src/plugin/registry.ts:20,127` |
 | Run it | heddle | `packages/core/src/plugin/executor.ts`, `packages/core/src/plugin/transform.ts` |
 | Confine it | heddle | `packages/core/src/plugin/host.ts` |
@@ -257,7 +274,10 @@ rejects it before any plugin code runs. Nothing documents that constraint, and t
 > baseline the redesign was argued against rather than rewritten. The stand-in machinery is gone
 > (Phase V), so a `component` survives because the widened unions admit it in place; and
 > `Agent.llmConfig` is no longer a closed slot (Phase 5), which is what a `provider` is written
-> into. `Agent.tools` is still closed, `ToolUnion` was deliberately left alone, see §7.7.
+> into. `Agent.tools` is still closed, `ToolUnion` was deliberately left alone, see §7.7. [With the
+> Weave migration the unions themselves are gone: a plugin component now survives because
+> `spec/resolve.ts` validates it against the manifest's `schema`, not because a widened union
+> admits it.]
 
 ### 3.2 The RPC verbs
 
@@ -329,6 +349,11 @@ only tests of `loadRemotePlugin` wrote a non-executable `.mjs` and exercised the
 `[process.execPath, entry]` branch alone.
 
 ### 3.4 The placeholder-substitution workaround
+
+> [Removed with the Weave format — `plugin/flow-preprocess.ts` and `spec/adapter.ts` are gone, and
+> documents now resolve through `spec/resolve.ts` against manifest schemas; see
+> docs/weave-spec-design.md. Kept in the present tense it was written in, as the baseline §8 argues
+> against.]
 
 `packages/core/src/plugin/flow-preprocess.ts` explains it. Deserialize each custom component on
 its own (where the SDK's plugin path does work), hand the SDK an inert builtin stand-in carrying the
@@ -410,7 +435,8 @@ What happens next:
 2. Add `providers?: PluginProviderDef[]`. Now `PluginRegistry.add` (`registry.ts`) groups it
    and `kindOf` reports it. Fine so far.
 3. `flow-preprocess.ts` has no arm for it, so the component has no stand-in and
-   `LlmConfigUnion` rejects the document (`vendor/agentspec/src/llms/index.ts:12-18`). Add a third
+   `LlmConfigUnion` rejects the document (`vendor/agentspec/src/llms/index.ts`, since deleted with
+   the SDK in the Weave migration). Add a third
    placeholder; see §8.
 4. Now the component parses. `createProvider` is a free function imported directly at
    `node/agent.ts` and `node/llm.ts`; it gates on a module-level `Set`
@@ -593,7 +619,7 @@ a handful of call sites; **L** = touches the protocol, the event system, or the 
 | 18 | Input resolution | `runner/runner.ts` | strict mode: a node sees only its declared `inputs`; fail loudly on a missing source | middleware | S |
 | 19 | Flow termination | `runner/runner.ts`; `branchName` unread (`spec/types.ts`) | a plugin `AbortNode`; reporting *which* exit a multi-exit flow took | capability flag | S |
 | 20 | Template engine | `substituteTemplate` (`node/agent.ts`); `getString` (`state/state.ts`) | dotted paths, loops, rendering objects instead of blanking them | component | S |
-| 21 | Branch matcher | `node/branching.ts:6,25,28-34,42-48` | numeric ranges, regex, LLM-decided routing. Also fixes the order-dependent fallback at `:28-34` | component | S |
+| 21 | Branch matcher | `node/branching.ts` [replaced by `node/switch.ts` in the Weave migration] | numeric ranges, regex, LLM-decided routing. Also fixes the order-dependent fallback it had | component | S |
 | 22 | Graph rewrite | `graph/compile.ts` | wrap every `AgentNode` in a guardrail; insert checkpoints. The generic escape hatch | middleware | M |
 | 23 | Graph validation | `graph/validate.ts` | org policy rules; warnings that don't block | component | S |
 | 24 | Event emission | `runner/events.ts`, `EventHandler`, 9 emit sites | any two-way hook at all, a plugin that *observes* or intercepts the engine's events (Phase 6). ~~`EventType` is closed so a plugin cannot even emit~~ **emission landed, Phase 3**: `EventType = BuiltinEventType \| PluginEventType` (`runner/events.ts`), `pluginReporter` (`plugin/executor.ts`), the `emitEvent`/`log` verbs (`plugin/protocol.ts`'s `PluginMethods`, served in `plugin/host.ts`'s `serve`) | protocol | M |
@@ -604,7 +630,7 @@ a handful of call sites; **L** = touches the protocol, the event system, or the 
 | 29 | Sandbox policy | global at startup (`server/runs.ts`) | "fetch needs network, file-writer must not", unexpressible | middleware | M |
 | 30 | Spec format / source | `spec/parser.ts:21,71`; `spec/load.ts:13-15,22` | TOML, a DSL; load from a URL or a git ref | component | S |
 | 31 | Builtin override | `plugin/registry.ts`; skip list `plugin/transform.ts`, `BUILTIN_TRANSFORMS` | ship a real `MessageSummarizationTransform`; "AgentNode with retries" | precedence rule | M |
-| 32 | Placeholder slots | `plugin/flow-preprocess.ts:32,39,107,118` | **the ceiling on every "component" row above** | vendored SDK | M |
+| 32 | Placeholder slots | `plugin/flow-preprocess.ts` [gone — see §8 and the Weave migration] | **the ceiling on every "component" row above** | vendored SDK | M |
 | 33 | Wire protocol / event encoding | `serializeEvent` (`packages/server/src/sse.ts`, `serializeEvent`), `SseStream.send` | render a run as AG-UI, OpenAI-compatible chunks, or OTLP spans instead of heddle's own frames | encoder | S |
 
 ### Ranked shortlist
@@ -1402,12 +1428,13 @@ Everything below describes the cost of making a provider *spec-named* (a flow wr
 `component_type: AnthropicConfig`) **under the placeholder mechanism**. None of it was paid: vendor
 patch 3 opened `LlmConfigUnion` behind a lazy reference, `spec/open-unions.ts` widens it with the
 same plugin-independent schema the other two use, and a plugin config now deserializes in place. The
-analysis stays because it is the sharpest illustration of why the placeholder approach did not scale; one registration replaced all four restore paths described below.
+analysis stays because it is the sharpest illustration of why the placeholder approach did not scale; one registration replaced all four restore paths described below. [The Weave migration later
+removed that mechanism too, along with the vendored SDK it patched — see docs/weave-spec-design.md.]
 
 Under placeholders, this would have been the most expensive stand-in yet:
 
-- `LlmConfigUnion` gates three distinct positions: `Agent.llmConfig` (`vendor/agentspec/src/agents/agent.ts:17`),
-  `LlmNode.llmConfig`, and both transforms' `llm` (`vendor/agentspec/src/transforms/message-transform.ts:29,53`).
+- `LlmConfigUnion` gates three distinct positions: `Agent.llmConfig` (`vendor/agentspec/src/agents/agent.ts`),
+  `LlmNode.llmConfig`, and both transforms' `llm` (`vendor/agentspec/src/transforms/message-transform.ts`).
 - The stand-in must be a real member of that union with its required fields synthesized, exactly
   what `PLACEHOLDER_LLM` already does (`plugin/flow-preprocess.ts`, an `OllamaConfig` with a
   fake `url` and `model_id`).
@@ -2038,7 +2065,9 @@ disposition, since the alternative is a field an author believes is doing someth
 > `LlmConfigUnion`, which is the row this section prices as the worst of them. No placeholder was
 > ever built for a config, and the substitution machinery for the other two is deleted. The section
 > is kept because it is the argument that decided the approach, and because the last row,
-> `ToolUnion`, is the one case still unpriced.
+> `ToolUnion`, is the one case still unpriced. The Weave migration has since deleted
+> `vendor/agentspec` outright (docs/weave-spec-design.md), so there is no union left to extend and
+> §8.1's patch programme is moot.
 
 Every new **component** kind, as opposed to a middleware or a `PluginMethod`, needed a hand-picked
 placeholder, because the SDK's unions were closed (§2.4) and heddle's only tool was substitution.
@@ -2112,10 +2141,10 @@ be assumed away:
   implementing a runtime on the TS SDK. But **do not sequence anything behind Oracle merging them**;
   that was the original error in scheduling this work last.
 
-One exception worth noting because it costs zero tax either way: a custom **Tool** may not need a
-placeholder *or* a union change. `BuiltinTool` has a free-form `toolType: z.string()` and an opaque
-`configuration: z.record(z.unknown())` (`vendor/agentspec/src/tools/builtin-tool.ts:8-14`), and
-opaque fields round-trip untouched. It is a union-safe channel that upstream appears to have
+One exception worth noting because it cost zero tax either way: a custom **Tool** may not have
+needed a placeholder *or* a union change. `BuiltinTool` had a free-form `toolType: z.string()` and
+an opaque `configuration: z.record(z.unknown())` (`vendor/agentspec/src/tools/builtin-tool.ts`),
+and opaque fields round-tripped untouched. It was a union-safe channel that upstream appears to have
 intended for exactly this. Worth evaluating before designing a `kind: 'tool'`.
 
 ---
@@ -2374,7 +2403,7 @@ running.
 | The `chat` verb, `readChatResponse`, `readChatChunk` | `plugin/protocol.ts` |
 | `remoteProviderDef` and `pullFrom`, the push-to-pull bridge | `plugin/remote.ts` |
 | `kind: 'provider'` and `stream` in a manifest; `ctx.partial` in the inlined runtime | `plugin/manifest.ts`, `plugin/runtime-source.ts` |
-| Vendor patch 3: lazy indirection for `LlmConfigUnion`, one registration, four slots | `vendor/agentspec/src/llms/lazy-schemas.ts` and four files it touches |
+| Vendor patch 3: lazy indirection for `LlmConfigUnion`, one registration, four slots | `vendor/agentspec/src/llms/lazy-schemas.ts` and four files it touched [tree since deleted with Weave] |
 | `LLMExecutor` memoizes its provider and reads generation params once | `node/llm.ts` |
 | Four test files off `vi.mock('llm/provider.js')` and onto `Dependencies` | `node/__tests__`, `plugin/__tests__` |
 
@@ -2500,6 +2529,10 @@ tool descriptions.
 Cost: low as predicted for the manifest half; the union refactor was the real work.
 
 ### Phase V: Vendored SDK extension (formerly Phase 8), **landed**
+
+> [This entire layer — the vendored SDK and its patches, `spec/open-unions.ts`,
+> `plugin/flow-preprocess.ts`, `spec/adapter.ts` — was later deleted by the Weave migration; see
+> docs/weave-spec-design.md. The record below describes the tree as this phase left it.]
 
 **Tier 1** exported `registerNodeUnionSchema` and `registerFlowSchema` and nothing called them, so
 `NodeUnion` stayed closed in practice. **Tier 2** calls the seam, adds the matching one for
@@ -2897,10 +2930,11 @@ Two new contracts appear in this revision and both are easy to create by acciden
   written to catch, one level up. Phase 9 typed it `Required<Event>`, so a field added to `Event` and
   not added here is now a compile error. A test that guards an enumeration has to be exhaustive by
   construction, or it is an enumeration too.
-- **A patched `vendor/agentspec` is a fork** (§8.1). It is a cheap one, the package is unpublished
-  and bundled via `noExternal`, so there is no downstream consumer, but the refresh workflow in
-  `VENDOR.md` assumes a verbatim copy and will silently revert the patches if it is followed as
-  written. The bookkeeping change is part of the work, not a follow-up.
+- **A patched `vendor/agentspec` was a fork** (§8.1). It was a cheap one, the package was
+  unpublished and bundled via `noExternal`, so there was no downstream consumer, but the refresh
+  workflow in `VENDOR.md` assumed a verbatim copy and would silently revert the patches if followed
+  as written. The bookkeeping change was part of the work, not a follow-up. [The risk retired
+  itself: the Weave migration deleted the vendored tree entirely.]
 
 ### A hook that runs on every node can break every flow
 
@@ -2961,11 +2995,11 @@ better than this paragraph can.
 | `State` as a replaceable type | `state/state.ts`; `NodeExecutor` is typed against the concrete class (`node/types.ts`) | A merge-*policy* slot (seam #17) gets the value at one call site (`runner.ts`). Replacing `State` wholesale touches every executor for no proportionate gain. |
 | Sandbox confinement moving out of the executor | `sandbox/types.ts` | The design's whole point is that nothing in the graph, node or spec layers knows a sandbox exists. Per-tool *policy* (seam #29) is reachable without breaking that. **The workspace moved out and that is not this row**: a workspace decides where a program works, confinement decides what it may touch, and the two were one thing only because the code that made a directory happened to live in `sandbox/`. The dependency runs one way, `workspace/` may not import from `sandbox/`, and if that inverts, this row has been broken for real. |
 | `toolCall` as an enforcement boundary | `node/agent.ts`, `runToolCall`; `plugin/middleware.ts`; `workspace/bin.ts` | The seam is consulted where the model's calls are dispatched, and every tool is on `$PATH` inside the node's workspace, so a tool that exec's a peer never reaches it. Widening the seam to cover that would mean heddle sitting between a subprocess and `execve`, which is the kernel's job and is what `--safe` already buys. A `before` verdict governs what the model may *ask for*; the sandbox governs what any of it may *do*. `--no-mount-tools` is the escape hatch for an operator who needs the narrower guarantee, and it is a flag rather than the default because a procedure a model can run as a script is the thing tools-in-a-workspace exists for. |
-| Prototype-pollution key filtering | `plugin/deserializer.ts:50,124-126` | Applied both before and after camelCasing, on a path that parses caller-supplied JSON. Not negotiable. |
+| Prototype-pollution key filtering | was `plugin/deserializer.ts` [that file, and its `DANGEROUS_KEYS` filter, went with the Weave migration — whether the Weave parser needs an equivalent is that design's question, not settled here] | Applied both before and after camelCasing, on a path that parsed caller-supplied JSON. The property, not the file, was the point. |
 | Builtin type shadowing | `plugin/registry.ts` | Only with an explicit `implements: "builtin"` opt-in and a stated precedence rule (§7.10 Q7). The default stays: a plugin cannot silently become `AgentNode`. |
 | `$VAR` dereference for submitted specs | `llm/provider.ts` | The reference is not restricted to model credentials, and the "is not set" error is an enumeration oracle. |
 | Plugins in the server's process | `packages/server/src/plugins.ts` | Everything above is designed *around* this constraint. If a proposal is easier in-process, that is a reason to reject the proposal. |
 | Environment inheritance | `PluginHost.resolveCommand` (`plugin/host.ts`, `resolveCommand`), `packages/server/src/plugins.ts` | Named capabilities grant heddle-mediated *operations*, never raw process access. There is no `getEnv`, and there should not be one. |
 | An encoder that can alter the run | §7.9; `plugin/types.ts`, `PluginEncoder` | `Event → WireFrame[]` is one-directional on purpose. An encoder renders what happened; giving it a return path would make it middleware with none of §7.4's ordering rules, and a rendering layer that can change the thing it renders is not a rendering layer. Held after Phase 9, and it paid: AG-UI's mutually exclusive terminal events forced the example to *infer* the outcome from the stream, which works because `flow_complete` is emitted only on success. The one place an encoder does affect the run is by failing, the stream and the run end together, and that is the transport reporting a broken response, not a verdict. |
 | A plugin answering for heddle's own protocol | `plugin/registry.ts`, `claimProtocol`; `server/encoders.ts`, `resolveEncoder` | `?protocol=heddle` is a client asking for the frames heddle documents, and a browser written against `flow_complete` is switching on them. Refused at load *and* unreachable by lookup order, which is the same two-sided guarantee Phase 5 gave a builtin `llm_config` type. |
-| Divergence from the Agent Spec *format* | §8.1 | Extending the SDK's unions is in scope; inventing fields or semantics that make a heddle spec unreadable to another Agent Spec implementation is not. Every patch should be one upstream would plausibly accept. |
+| Divergence from the Agent Spec *format* | §8.1 | [Superseded by the Weave migration (docs/weave-spec-design.md): heddle's format is now its own, and this row no longer binds anything.] Extending the SDK's unions was in scope; inventing fields or semantics that made a heddle spec unreadable to another Agent Spec implementation was not. Every patch was to be one upstream would plausibly accept. |

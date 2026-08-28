@@ -1,17 +1,22 @@
 import { describe, it, expect } from 'vitest';
-import type { AnyNode, ParsedFlow } from '@heddle-run/core';
+import { parseFlowObject, type ParsedFlow } from '@heddle-run/core';
 import { askForEnvRefs } from '../env-prompt.js';
 
-/** A flow that only `collectEnvRefs` will read, so only its nodes are real. */
+/** A flow whose steps read these variables, through their models' api_key. */
 function flowReading(...keys: string[]): ParsedFlow {
-  const nodes = keys.map((key, index) => ({
-    componentType: 'LlmNode',
+  const steps = (keys.length > 0 ? keys : [undefined]).map((key, index) => ({
     name: `n${index}`,
-    promptTemplate: 'hi',
-    llmConfig: { modelId: 'gpt-4o-mini', apiKey: `$${key}` },
+    llm: {
+      model: {
+        provider: 'openai',
+        model: 'gpt-4o-mini',
+        ...(key === undefined ? {} : { api_key: `$${key}` }),
+      },
+      prompt: 'hi',
+    },
   }));
 
-  return { parsedNodes: nodes as unknown as AnyNode[] } as ParsedFlow;
+  return parseFlowObject({ weave: 1, name: 't', steps });
 }
 
 /** An answering terminal: what it was asked, and what it says back. */

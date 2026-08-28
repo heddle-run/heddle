@@ -54,31 +54,32 @@ This creates:
 
 ```
 my-agent/
-├── flow.json      # Your workflow definition
+├── weave.yaml     # Your workflow definition
 └── tools/
     └── example_tool.sh   # A sample tool
 ```
 
-The generated flow is a single agent wired between a start and an end node. It takes one input, `query`, and its system prompt interpolates that value with `{{query}}`.
+The generated document is a single agent with one tool. It declares one input, `query`,
+and its prompt interpolates that value with `{{inputs.query}}`.
 
 ## Run the workflow
 
 ```bash
-heddle run my-agent/flow.json \
+heddle run my-agent/weave.yaml \
   --tools-dir my-agent/tools \
-  --input '{"query": "What is the Open Agent Specification?"}'
+  --input '{"query": "What is the Weave format?"}'
 ```
 
-`--input` is a JSON object that becomes the run's starting state. It is not checked
-against the start node: a key nothing declares is carried anyway, and a declared key you
-omit is simply absent, so a prompt referencing `{{missing}}` reaches the model with the
-placeholder still in it. The final state is printed to stdout as JSON; progress and errors
-go to stderr.
+`--input` is a JSON object carrying the flow's declared inputs, and it is checked: an
+input the document declares without a default is required, and a run missing one fails
+before anything executes, naming the field. The run's result — the outcome's payload,
+plus `outcome` saying which way the flow ended — is printed to stdout as JSON; progress
+and errors go to stderr.
 
-Add `--verbose` for per-node logging:
+Add `--verbose` for per-step logging:
 
 ```bash
-heddle --verbose run my-agent/flow.json --tools-dir my-agent/tools --input '{"query": "hello"}'
+heddle --verbose run my-agent/weave.yaml --tools-dir my-agent/tools --input '{"query": "hello"}'
 ```
 
 ## Conversations
@@ -86,8 +87,8 @@ heddle --verbose run my-agent/flow.json --tools-dir my-agent/tools --input '{"qu
 `--session` keeps a run in a conversation and hands the agent the turns before it. Each command is one turn:
 
 ```bash
-heddle run my-agent/flow.json --tools-dir my-agent/tools --session my-first --input '{"query": "hello"}'
-heddle run my-agent/flow.json --tools-dir my-agent/tools --session my-first --input '{"query": "and again?"}'
+heddle run my-agent/weave.yaml --tools-dir my-agent/tools --session my-first --input '{"query": "hello"}'
+heddle run my-agent/weave.yaml --tools-dir my-agent/tools --session my-first --input '{"query": "and again?"}'
 ```
 
 Sessions live in `~/.heddle/sessions/`. `heddle sessions ls` lists them and `heddle sessions show <id>` prints a transcript. [Sessions](/docs/sessions) covers the rest: what is on disk, runs that survive a dead process, and runs that stop to wait for a person.
@@ -97,31 +98,27 @@ Sessions live in `~/.heddle/sessions/`. `heddle sessions ls` lists them and `hed
 For debugging and exploration, add `-i`:
 
 ```bash
-heddle run my-agent/flow.json --tools-dir my-agent/tools -i
+heddle run my-agent/weave.yaml --tools-dir my-agent/tools -i
 ```
 
 That conversation lasts as long as the terminal. Add `--session <id>` to keep it, and reopening with the same id starts on the conversation so far. Type `/exit` to quit.
 
-Your message is bound to the first output declared on the start node, falling back to `query` if the start node declares none.
+Your message is bound to the first input the flow declares, falling back to `query` if it
+declares none.
 
 ## Validate a spec
 
 Check your workflow before running it:
 
 ```bash
-heddle validate my-agent/flow.json --tools-dir my-agent/tools
+heddle validate my-agent/weave.yaml --tools-dir my-agent/tools
 ```
 
-This validates the spec against the Agent Spec schema, compiles it, checks the graph, and
-checks that an executable exists for every tool the flow names.
-
-<Callout type="warn">
-One case worth knowing in CI. A spec that does not parse exits 1, as does an invalid graph
-and a tool a flow names that nothing provides. The exception is a graph heddle could not
-*compile* at all: `validate` prints `Graph validation skipped` with the reason and exits 0,
-so that a check which could not run is not mistaken for a fault. Read the output as well
-as the status.
-</Callout>
+This runs the whole validation the format defines: the document's own shape, then every
+reference — branch targets, template producers, plugin components — then the graph, and
+finally that an executable exists for every tool the flow names. A flow that validates is
+a flow that starts; anything discoverable at load time fails here, with exit code 1,
+rather than mid-run.
 
 ## Share it
 
@@ -129,7 +126,7 @@ Once the agent works, hand it to someone as one file: the spec, the tools and th
 executable bits, everything.
 
 ```bash
-heddle bundle my-agent/flow.json --tools-dir my-agent/tools -o my-agent.heddle
+heddle bundle my-agent/weave.yaml --tools-dir my-agent/tools -o my-agent.heddle
 ```
 
 ```bash
@@ -143,7 +140,7 @@ the machine that runs, so credentials never travel. See [Bundles](/docs/bundles)
 
 <Cards>
   <Card title="Flows" href="/docs/flows">
-    The document itself: nodes, edges, and how state moves between them.
+    The document itself: steps, outcomes, and how data moves between them.
   </Card>
   <Card title="Sessions" href="/docs/sessions">
     Conversations that outlive the process, and human-in-the-loop runs.

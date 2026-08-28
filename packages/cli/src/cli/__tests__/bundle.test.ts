@@ -244,7 +244,7 @@ describe('heddle run <bundle>', () => {
     const { out } = await pack();
 
     const { stdout } = await invoke(runCommand, [out]);
-    expect(JSON.parse(stdout)).toEqual({ query: 'from-bundle' });
+    expect(JSON.parse(stdout)).toEqual({ query: 'from-bundle', outcome: 'done' });
   });
 
   it('lets the caller\'s --input override the recorded one', async () => {
@@ -255,7 +255,7 @@ describe('heddle run <bundle>', () => {
       '--input',
       '{"query":"mine"}',
     ]);
-    expect(JSON.parse(stdout)).toEqual({ query: 'mine' });
+    expect(JSON.parse(stdout)).toEqual({ query: 'mine', outcome: 'done' });
   });
 
   it('refuses a file with the extension but not the format', async () => {
@@ -273,7 +273,7 @@ describe('heddle validate <bundle>', () => {
     const { out } = await pack();
 
     const { stdout } = await invoke(validateCommand, [out]);
-    expect(stdout).toContain('Parsed Flow: ag-ui-demo');
+    expect(stdout).toContain('Parsed flow: ag-ui-demo');
     expect(stdout).toContain('Graph validation passed');
     // The verdict names the bundle the caller typed, not the temp directory
     // it was opened into.

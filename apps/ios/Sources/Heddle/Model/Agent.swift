@@ -22,9 +22,10 @@ struct Agent: Identifiable, Codable, Equatable, Hashable, RunAgent {
     var name: String
     var source: Source
     /// The key chat messages are sent under. The CLI derives it from the
-    /// flow's StartNode (`detectInputKey`, `packages/cli/src/cli/run.ts`);
-    /// the app cannot compile the flow, so the person names it, and the
-    /// CLI's default `query` is the default here too.
+    /// first key of the document's `inputs` (`detectInputKey`,
+    /// `packages/cli/src/cli/run.ts`); the app cannot compile the flow, so
+    /// the person names it, and the CLI's default `query` is the default
+    /// here too.
     var inputKey = "query"
 
     var sourceLabel: String {

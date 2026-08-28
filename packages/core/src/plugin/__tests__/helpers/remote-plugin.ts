@@ -160,39 +160,18 @@ export function manifest(
   };
 }
 
-/** start → p → end, where `p` is the plugin's node under test. */
+/**
+ * A one-step Weave flow whose step `p` is the plugin's node under test.
+ * `config` becomes the step's `with:` block — the plugin's input.
+ */
 export function flowUsing(
   componentType: string,
-  node: Record<string, unknown> = {},
+  config: Record<string, unknown> = {},
 ): string {
   return JSON.stringify({
-    component_type: 'Flow',
+    weave: 1,
     name: 'plugin-flow',
-    start_node: { $component_ref: 's' },
-    nodes: [{ $component_ref: 's' }, { $component_ref: 'p' }, { $component_ref: 'e' }],
-    control_flow_connections: [
-      {
-        component_type: 'ControlFlowEdge',
-        name: 'a',
-        from_node: { $component_ref: 's' },
-        to_node: { $component_ref: 'p' },
-      },
-      {
-        component_type: 'ControlFlowEdge',
-        name: 'b',
-        from_node: { $component_ref: 'p' },
-        to_node: { $component_ref: 'e' },
-      },
-    ],
-    $referenced_components: {
-      s: {
-        component_type: 'StartNode',
-        id: 's',
-        name: 's',
-        outputs: [{ title: 'text', type: 'string' }],
-      },
-      p: { component_type: componentType, id: 'p', name: 'p', ...node },
-      e: { component_type: 'EndNode', id: 'e', name: 'e' },
-    },
+    inputs: { text: 'string' },
+    steps: [{ name: 'p', use: componentType, with: config }],
   });
 }

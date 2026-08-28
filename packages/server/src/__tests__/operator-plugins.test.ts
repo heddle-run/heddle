@@ -76,44 +76,10 @@ const MANIFEST = {
 };
 
 const FLOW = {
-  component_type: 'Flow',
+  weave: 1,
   name: 'policy-flow',
-  start_node: { $component_ref: 'start' },
-  nodes: [
-    { $component_ref: 'start' },
-    { $component_ref: 'boom' },
-    { $component_ref: 'end' },
-  ],
-  control_flow_connections: [
-    {
-      component_type: 'ControlFlowEdge',
-      name: 'start_to_boom',
-      from_node: { $component_ref: 'start' },
-      to_node: { $component_ref: 'boom' },
-    },
-    {
-      component_type: 'ControlFlowEdge',
-      name: 'boom_to_end',
-      from_node: { $component_ref: 'boom' },
-      to_node: { $component_ref: 'end' },
-    },
-  ],
-  $referenced_components: {
-    start: {
-      component_type: 'StartNode',
-      id: 'start',
-      name: 'start',
-      outputs: [{ title: 'text', type: 'string' }],
-    },
-    boom: {
-      component_type: 'Boom',
-      id: 'boom',
-      name: 'boom',
-      component_plugin_name: 'policies',
-      component_plugin_version: '1.0.0',
-    },
-    end: { component_type: 'EndNode', id: 'end', name: 'end' },
-  },
+  inputs: { text: 'string' },
+  steps: [{ name: 'boom', use: 'Boom', with: { text: '{{inputs.text}}' } }],
 };
 
 let scratch: string;

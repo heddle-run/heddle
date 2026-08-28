@@ -8,16 +8,16 @@ export const initCommand = new Command('init')
     generate(dir);
 
     console.log(`Created project in ${dir}/`);
-    console.log('  flow.json              - Agent Spec flow definition');
+    console.log('  weave.yaml             - the agent, in the Weave format');
     console.log('  tools/example_tool.sh  - Example tool script');
     console.log();
     console.log('Next steps:');
-    console.log(`  1. Edit ${dir}/flow.json to define your workflow`);
+    console.log(`  1. Edit ${dir}/weave.yaml to define your agent`);
     console.log(`  2. Add tool scripts to ${dir}/tools/`);
     console.log(
       '  3. Set the model credential: export OPENAI_API_KEY=sk-...',
     );
     console.log(
-      `  4. Run: heddle run ${dir}/flow.json --tools-dir ${dir}/tools --input '{"query": "hello"}'`,
+      `  4. Run: heddle run ${dir}/weave.yaml --tools-dir ${dir}/tools --input '{"query": "hello"}'`,
     );
   });

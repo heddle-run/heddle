@@ -35,9 +35,9 @@ final class ChatController {
     private let runs: RunStore
 
     /// The key each message is sent under: the CLI's chat derives it from
-    /// the flow's StartNode (`detectInputKey`, `run.ts`). The app cannot
-    /// parse the flow, so it approximates: a single recorded input key is
-    /// that key, anything else is the CLI's default `query`.
+    /// the first key of the document's `inputs` (`detectInputKey`, `run.ts`).
+    /// The app cannot parse the flow, so it approximates: a single recorded
+    /// input key is that key, anything else is the CLI's default `query`.
     let inputKey: String
 
     init(agent: Agent, runs: RunStore) {

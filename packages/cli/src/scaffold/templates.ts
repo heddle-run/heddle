@@ -1,16 +1,5 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
-import {
-  createStartNode,
-  createEndNode,
-  createAgentNode,
-  createAgent,
-  createOpenAiConfig,
-  createServerTool,
-  stringProperty,
-  FlowBuilder,
-  AgentSpecSerializer,
-} from 'agentspec';
+import { basename, join } from 'node:path';
 
 const FLOW_FILE_MODE = 0o644;
 const TOOL_FILE_MODE = 0o755;
@@ -30,8 +19,8 @@ export function generate(dir: string): void {
   attempt('failed to create directory', () =>
     mkdirSync(toolsDir, { recursive: true }),
   );
-  attempt('failed to write flow.json', () =>
-    writeFileSync(join(dir, 'flow.json'), `${generateFlowJson()}\n`, {
+  attempt('failed to write weave.yaml', () =>
+    writeFileSync(join(dir, 'weave.yaml'), weaveTemplate(projectName(dir)), {
       mode: FLOW_FILE_MODE,
     }),
   );
@@ -42,50 +31,39 @@ export function generate(dir: string): void {
   );
 }
 
-function generateFlowJson(): string {
-  const start = createStartNode({
-    name: 'start',
-    outputs: [stringProperty({ title: 'query' })],
-  });
-  const assistant = createAgentNode({
-    name: 'assistant',
-    agent: createExampleAgent(),
-    inputs: [stringProperty({ title: 'query' })],
-    outputs: [stringProperty({ title: 'result' })],
-  });
-  const end = createEndNode({
-    name: 'end',
-    inputs: [stringProperty({ title: 'result' })],
-  });
-
-  const builder = new FlowBuilder();
-  builder.addNode(start);
-  builder.addNode(assistant);
-  builder.addNode(end);
-  builder.addEdge(start, assistant);
-  builder.addEdge(assistant, end);
-  builder.addDataEdge(start, assistant, 'query');
-  builder.addDataEdge(assistant, end, 'result');
-
-  const serializer = new AgentSpecSerializer();
-  return serializer.toJson(builder.build('my-flow'), { indent: 2 }) as string;
+function projectName(dir: string): string {
+  const name = basename(dir)
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/^[^a-z]+/, '');
+  return name || 'my-flow';
 }
 
-function createExampleAgent() {
-  return createAgent({
-    name: 'assistant-agent',
-    systemPrompt:
-      "You are a helpful assistant. Answer the user's question: {{query}}",
-    llmConfig: createOpenAiConfig({ name: 'openai', modelId: 'gpt-4o' }),
-    tools: [
-      createServerTool({
-        name: 'example_tool',
-        description: 'An example tool that echoes input',
-        inputs: [stringProperty({ title: 'message' })],
-        outputs: [stringProperty({ title: 'response' })],
-      }),
-    ],
-  });
+function weaveTemplate(name: string): string {
+  return `weave: 1
+name: ${name}
+description: A starter agent that answers a question, with one tool to call.
+
+inputs:
+  query: string
+
+tools:
+  example_tool:
+    description: An example tool that echoes input.
+    inputs:
+      message: string
+    outputs:
+      response: string
+
+agent:
+  model:
+    provider: openai
+    model: gpt-4o
+    api_key: $OPENAI_API_KEY
+  prompt: |
+    You are a helpful assistant. Answer the user's question: {{inputs.query}}
+  tools: [example_tool]
+`;
 }
 
 function attempt(message: string, action: () => void): void {

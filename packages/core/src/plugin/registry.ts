@@ -1,5 +1,3 @@
-import { AgentSpecDeserializer, isBuiltinComponentType } from 'agentspec';
-import type { ComponentDeserializationPlugin } from 'agentspec';
 import type {
   HeddlePlugin,
   PluginComponentDef,
@@ -12,7 +10,6 @@ import type {
 } from './types.js';
 import type { SessionStore } from '../session/store.js';
 import { BUILTIN_PROTOCOL, PROTOCOL_NAME } from './encoder.js';
-import { HeddleDeserializationPlugin } from './deserializer.js';
 import type { PluginHost } from './host.js';
 import type { Registry, ToolDef } from '../tool/types.js';
 import { assertNoCollisions, type Mount } from '../workspace/index.js';
@@ -61,6 +58,8 @@ export const SUBMITTABLE_KINDS: ReadonlySet<ComponentKind> =
 interface Registered {
   kind: ComponentKind;
   def: PluginComponentDef;
+  /** The providing plugin's version — what a document's `requires` checks. */
+  version: string;
 }
 
 export interface RegisteredMiddleware {
@@ -85,7 +84,6 @@ interface RegisteredInputFormat {
 
 export class PluginRegistry {
   private readonly defs = new Map<string, Registered>();
-  private readonly sdkPlugins: ComponentDeserializationPlugin[] = [];
   private readonly pluginNames: string[] = [];
   private readonly middlewares: RegisteredMiddleware[] = [];
   private readonly encoders = new Map<string, RegisteredEncoder>();
@@ -96,7 +94,6 @@ export class PluginRegistry {
   private readonly toolOwners = new Map<string, string>();
   private readonly mounts: Mount[] = [];
   private hosts: PluginHost[] = [];
-  private deserializerInstance: AgentSpecDeserializer | undefined;
 
   static empty(): PluginRegistry {
     return new PluginRegistry();
@@ -119,9 +116,7 @@ export class PluginRegistry {
     this.registerTools(plugin);
     this.registerFiles(plugin);
 
-    this.sdkPlugins.push(new HeddleDeserializationPlugin(plugin));
     this.pluginNames.push(`${plugin.name}@${plugin.version}`);
-    this.deserializerInstance = undefined;
   }
 
   addRemote(remote: { plugin: HeddlePlugin; host: PluginHost }): void {
@@ -159,7 +154,6 @@ export class PluginRegistry {
     for (const [extension, name] of this.formatExtensions) {
       copy.formatExtensions.set(extension, name);
     }
-    copy.sdkPlugins.push(...this.sdkPlugins);
     copy.pluginNames.push(...this.pluginNames);
     copy.middlewares.push(...this.middlewares);
     copy.toolDefs.push(...this.toolDefs);
@@ -179,6 +173,14 @@ export class PluginRegistry {
 
   kindOf(componentType: string): ComponentKind | undefined {
     return this.defs.get(componentType)?.kind;
+  }
+
+  /**
+   * The version of the plugin providing a component type — what a document's
+   * `requires` pin is checked against.
+   */
+  versionOf(componentType: string): string | undefined {
+    return this.defs.get(componentType)?.version;
   }
 
   nodeDef(componentType: string): PluginNodeDef | undefined {
@@ -256,11 +258,6 @@ export class PluginRegistry {
     return this.pluginNames.length > 0 ? this.pluginNames.join(', ') : 'none';
   }
 
-  deserializer(): AgentSpecDeserializer {
-    this.deserializerInstance ??= new AgentSpecDeserializer(this.sdkPlugins);
-    return this.deserializerInstance;
-  }
-
   private registerSpecComponents(plugin: HeddlePlugin): void {
     const groups: Array<[ComponentKind, PluginComponentDef[]]> = [
       ['node', plugin.nodes ?? []],
@@ -270,20 +267,20 @@ export class PluginRegistry {
     ];
 
     for (const [kind, defs] of groups) {
-      for (const def of defs) this.register(kind, def, plugin.name);
+      for (const def of defs) this.register(kind, def, plugin);
     }
   }
 
   private registerMiddleware(plugin: HeddlePlugin): void {
     for (const def of plugin.middleware ?? []) {
-      this.register('middleware', def, plugin.name);
+      this.register('middleware', def, plugin);
       this.middlewares.push({ plugin: plugin.name, def });
     }
   }
 
   private registerEncoders(plugin: HeddlePlugin): void {
     for (const def of plugin.encoders ?? []) {
-      this.register('encoder', def, plugin.name);
+      this.register('encoder', def, plugin);
       this.claimProtocol(def, plugin.name);
       this.encoders.set(def.protocol, { plugin: plugin.name, def });
     }
@@ -322,7 +319,7 @@ export class PluginRegistry {
         );
       }
 
-      this.register('store', def, plugin.name);
+      this.register('store', def, plugin);
       this.stores.set(def.componentType, { plugin: plugin.name, def });
     }
   }
@@ -373,22 +370,17 @@ export class PluginRegistry {
   private register(
     kind: ComponentKind,
     def: PluginComponentDef | PluginMiddlewareDef,
-    pluginName: string,
+    plugin: HeddlePlugin,
   ): void {
-    this.claim(def.componentType, pluginName);
+    this.claim(def.componentType, plugin.name);
     this.defs.set(def.componentType, {
       kind,
       def: def as PluginComponentDef,
+      version: plugin.version,
     });
   }
 
   private claim(componentType: string, pluginName: string): void {
-    if (isBuiltinComponentType(componentType)) {
-      throw new PluginError(
-        `plugin "${pluginName}" declares component type "${componentType}", ` +
-          `which is a builtin Agent Spec type. Choose a different name.`,
-      );
-    }
     if (this.defs.has(componentType)) {
       throw new PluginError(
         `component type "${componentType}" is provided by more than one plugin ` +

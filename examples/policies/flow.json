@@ -1,49 +1,22 @@
 {
-  "component_type": "Flow",
+  "weave": 1,
   "name": "policies-demo",
   "description": "A flow that names no policy, because no flow ever does. The tool it calls fails on purpose, so there is something for a nodeError policy to decide about.",
-  "start_node": { "$component_ref": "start" },
-  "nodes": [
-    { "$component_ref": "start" },
-    { "$component_ref": "lookup" },
-    { "$component_ref": "end" }
-  ],
-  "control_flow_connections": [
-    {
-      "component_type": "ControlFlowEdge",
-      "name": "start_to_lookup",
-      "from_node": { "$component_ref": "start" },
-      "to_node": { "$component_ref": "lookup" }
-    },
-    {
-      "component_type": "ControlFlowEdge",
-      "name": "lookup_to_end",
-      "from_node": { "$component_ref": "lookup" },
-      "to_node": { "$component_ref": "end" }
+  "inputs": {
+    "query": "string"
+  },
+  "tools": {
+    "flaky": {
+      "description": "A lookup against a service that is having a bad day.",
+      "inputs": { "query": "string" },
+      "outputs": { "answer": "string" }
     }
-  ],
-  "$referenced_components": {
-    "start": {
-      "component_type": "StartNode",
-      "id": "start",
-      "name": "start",
-      "outputs": [{ "title": "query", "type": "string" }]
-    },
-    "lookup": {
-      "component_type": "ToolNode",
-      "id": "lookup",
+  },
+  "steps": [
+    {
       "name": "lookup",
-      "inputs": [{ "title": "query", "type": "string" }],
-      "outputs": [{ "title": "answer", "type": "string" }],
-      "tool": {
-        "component_type": "ServerTool",
-        "id": "flaky-tool",
-        "name": "flaky",
-        "description": "A lookup against a service that is having a bad day.",
-        "inputs": [{ "title": "query", "type": "string" }],
-        "outputs": [{ "title": "answer", "type": "string" }]
-      }
-    },
-    "end": { "component_type": "EndNode", "id": "end", "name": "end" }
-  }
+      "tool": "flaky",
+      "with": { "query": "{{inputs.query}}" }
+    }
+  ]
 }

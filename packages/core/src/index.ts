@@ -3,14 +3,9 @@ export {
   parseFlowObject,
   parseFlowWith,
   parseFlowYaml,
-  parseAgent,
-  parseComponent,
-  parseComponentJson,
-  parseComponentWith,
-  parseComponentYaml,
 } from './spec/parser.js';
 
-export { loadFlow, loadComponent } from './spec/load.js';
+export { loadFlow } from './spec/load.js';
 export type { LoadOptions } from './spec/load.js';
 
 // The input side of the wire: how a spec document reaches heddle as text.
@@ -26,35 +21,56 @@ export {
 } from './spec/input-format.js';
 export type { InputFormatDef } from './spec/input-format.js';
 
-export { validateFlow, validateAgent } from './spec/validate.js';
-
-export { collectToolNames, propertyTitle } from './spec/types.js';
+export {
+  BUILTIN_PROVIDERS,
+  DEFAULT_OUTCOME,
+  INPUTS_NODE,
+  OUTCOME_KEY,
+  WEAVE_VERSION,
+  collectToolNames,
+  targetNames,
+} from './spec/types.js';
 
 export type {
-  Agent,
-  AgentNode,
-  BranchingNode,
-  ControlFlowEdge,
-  DataFlowEdge,
-  EndNode,
-  Flow,
-  LLMConfig,
-  LLMNode,
-  AnyNode,
-  CustomNode,
+  AgentSpec,
+  AgentStep,
+  FieldSchema,
+  FieldType,
+  LlmStep,
+  ModelSpec,
+  Outcome,
   ParsedFlow,
-  Property,
-  SpecNode,
-  TransformSpec,
-  StartNode,
-  ToolNode,
+  SchemaMap,
+  Step,
+  StepKind,
+  SwitchStep,
   ToolSpec,
+  ToolStep,
+  TransformSpec,
+  UseStep,
 } from './spec/types.js';
+
+export {
+  flowEdges,
+  producedKeys,
+  refsOf,
+  refsOfOutcome,
+  satisfies,
+} from './spec/resolve.js';
+export type { SpecEdge } from './spec/resolve.js';
+
+export {
+  collectRefs,
+  collectRefsDeep,
+  renderTemplate,
+  resolveValues,
+  REF_PATTERN,
+} from './spec/template.js';
 
 export { compile } from './graph/compile.js';
 export { validate } from './graph/validate.js';
 export { CompiledGraph } from './graph/types.js';
-export type { CompiledNode, DataSource } from './graph/types.js';
+export type { CompiledNode, DataSource, GraphNodeSpec } from './graph/types.js';
 
 export { Runner } from './runner/runner.js';
 export { runFlow } from './run-flow.js';
@@ -372,7 +388,7 @@ export type {
 export {
   createProvider,
   generationParams,
-  isBuiltinConfigType,
+  isBuiltinProvider,
   providerFor,
 } from './llm/provider.js';
 export type { ProviderOptions } from './llm/provider.js';

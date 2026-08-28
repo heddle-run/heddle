@@ -1,10 +1,10 @@
 // An input format that reads a Docker agent file (cagent's YAML configuration,
-// https://docs.docker.com/ai/docker-agent/configuration/overview/) and emits an
-// Agent Spec flow. The format is the whole integration: everything downstream
+// https://docs.docker.com/ai/docker-agent/configuration/overview/) and emits a
+// Weave document. The format is the whole integration: everything downstream
 // of `parse` — validation, compilation, the run — never learns the spec was
-// not Agent Spec to begin with.
+// not Weave to begin with.
 //
-// The translation covers the core a Docker agent file shares with Agent Spec:
+// The translation covers the core a Docker agent file shares with Weave:
 // the root agent, its instruction, and its model. What it cannot carry, it
 // refuses by name rather than dropping — a toolset silently discarded would
 // run a different agent than the file describes.
@@ -25,15 +25,15 @@ export default {
 };
 
 // ---------------------------------------------------------------------------
-// The translation: Docker agent document in, Agent Spec document out.
+// The translation: Docker agent document in, Weave document out.
 // ---------------------------------------------------------------------------
 
 // Docker providers heddle's builtin (OpenAI-compatible) client can reach. DMR
 // is Docker Model Runner, whose engine speaks the OpenAI API on localhost.
 const PROVIDERS = {
-  openai: { component_type: 'OpenAiConfig' },
+  openai: { provider: 'openai' },
   dmr: {
-    component_type: 'OpenAiCompatibleConfig',
+    provider: 'openai-compatible',
     url: 'http://localhost:12434/engines/v1',
   },
 };
@@ -75,18 +75,26 @@ function translate(doc) {
       : 'You are a helpful assistant.';
   const name = slug(doc.metadata?.name ?? 'docker-agent');
 
-  return flowDocument({
+  return {
+    weave: 1,
     name,
-    description: root.description,
-    llmConfig: llmConfigOf(root.model, doc.models ?? {}),
-    // The visible seam between the two models: a Docker agent receives the
-    // user's message as chat, an Agent Spec agent receives flow inputs and
-    // templates them into its prompt. The translator bridges it explicitly.
-    systemPrompt: `${instruction}\n\nThe user's request: {{query}}`,
-  });
+    ...(typeof root.description === 'string'
+      ? { description: root.description }
+      : {}),
+    inputs: { query: 'string' },
+    // Top-level `agent:` is Weave's one-step sugar, which is exactly the
+    // shape a Docker agent file describes.
+    agent: {
+      model: modelOf(root.model, doc.models ?? {}),
+      // The visible seam between the two models: a Docker agent receives the
+      // user's message as chat, a Weave agent receives flow inputs and
+      // templates them into its prompt. The translator bridges it explicitly.
+      prompt: `${instruction}\n\nThe user's request: {{inputs.query}}`,
+    },
+  };
 }
 
-function llmConfigOf(modelRef, models) {
+function modelOf(modelRef, models) {
   let provider;
   let entry;
 
@@ -113,83 +121,17 @@ function llmConfigOf(modelRef, models) {
     );
   }
 
-  const generation = {};
+  const params = {};
   for (const key of ['temperature', 'max_tokens', 'top_p']) {
-    if (entry[key] !== undefined) generation[key] = entry[key];
+    if (entry[key] !== undefined) params[key] = entry[key];
   }
 
   return {
-    component_type: known.component_type,
-    id: 'llm',
-    name: provider,
-    model_id: expectString(entry.model, `the model of provider "${provider}"`),
+    provider: known.provider,
+    model: expectString(entry.model, `the model of provider "${provider}"`),
     ...(known.url ? { url: entry.base_url ?? known.url } : {}),
     ...(entry.base_url && !known.url ? { url: entry.base_url } : {}),
-    ...(Object.keys(generation).length > 0
-      ? { default_generation_parameters: generation }
-      : {}),
-  };
-}
-
-function flowDocument({ name, description, llmConfig, systemPrompt }) {
-  const ref = (id) => ({ $component_ref: id });
-  const edge = (edgeName, from, to) => ({
-    component_type: 'ControlFlowEdge',
-    name: edgeName,
-    from_node: ref(from),
-    to_node: ref(to),
-  });
-  const dataEdge = (from, output, to, input) => ({
-    component_type: 'DataFlowEdge',
-    name: `data_${from}_${to}`,
-    source_node: ref(from),
-    source_output: output,
-    destination_node: ref(to),
-    destination_input: input,
-  });
-
-  return {
-    component_type: 'Flow',
-    name,
-    ...(description ? { description } : {}),
-    start_node: ref('start'),
-    nodes: [ref('start'), ref('agent'), ref('end')],
-    control_flow_connections: [
-      edge('start_to_agent', 'start', 'agent'),
-      edge('agent_to_end', 'agent', 'end'),
-    ],
-    data_flow_connections: [
-      dataEdge('start', 'query', 'agent', 'query'),
-      dataEdge('agent', 'response', 'end', 'response'),
-    ],
-    $referenced_components: {
-      start: {
-        component_type: 'StartNode',
-        id: 'start',
-        name: 'start',
-        outputs: [{ title: 'query', type: 'string' }],
-      },
-      agent: {
-        component_type: 'AgentNode',
-        id: 'agent',
-        name: 'agent',
-        inputs: [{ title: 'query', type: 'string' }],
-        outputs: [{ title: 'response', type: 'string' }],
-        agent: {
-          component_type: 'Agent',
-          id: 'root',
-          name: name,
-          system_prompt: systemPrompt,
-          llm_config: llmConfig,
-        },
-      },
-      end: {
-        component_type: 'EndNode',
-        id: 'end',
-        name: 'end',
-        inputs: [{ title: 'response', type: 'string' }],
-      },
-    },
+    ...(Object.keys(params).length > 0 ? { params } : {}),
   };
 }
 
