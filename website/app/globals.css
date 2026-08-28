@@ -900,3 +900,66 @@ html.dark {
   --focus-ring: #8f8f8f;
   --surface-accent-soft: #1f1f22;
 }
+
+/* ── The landing is single-theme black ────────────────────────────────────
+   Whatever the site theme says — returning visitors carry a stored light
+   preference from before the redesign — the landing renders the dark
+   palette. Two mechanisms, because Tailwind's utilities live in a cascade
+   layer and the vendored element styles do not, so `text-white` on an <h1>
+   loses to base.css's `h1 { color: var(--text-strong) }` however specific
+   the class is (this is exactly how the light theme once inked the hero
+   headline navy over the video):
+
+   1. The theme tokens those element rules resolve are pinned dark on the
+      landing root, so body inheritance, ::selection and the skip link all
+      come out on the dark palette inside it.
+   2. The colors the landing puts on headings and anchors are stated here,
+      unlayered — where they can win — instead of as utilities in the JSX. */
+.plety-landing {
+  color-scheme: dark;
+  --surface-page: #000000;
+  --text-strong: #ffffff;
+  --text-body: #d4d4d4;
+  --text-muted: #a1a1a1;
+  --text-subtle: #8f8f8f;
+  --text-accent: #ffffff;
+  --text-link: #d1d5db;
+  --text-link-hover: #ffffff;
+  --border-hairline: #262626;
+  --action-primary-bg: #ffffff;
+  --action-primary-bg-hover: #e6e6e6;
+  --action-primary-fg: #000000;
+  --focus-ring: #8f8f8f;
+}
+
+.plety-landing :is(h1, h2, h3, h4) {
+  color: #ffffff;
+}
+
+/* Pills and nav links must never grow the vendored a:hover underline. */
+.plety-landing a,
+.plety-landing a:hover {
+  text-decoration: none;
+}
+
+.plety-landing .pl-navlink {
+  color: #d1d5db; /* gray-300 */
+}
+.plety-landing .pl-navlink:hover {
+  color: #ffffff;
+}
+.plety-landing .pl-footlink {
+  color: #9ca3af; /* gray-400 */
+}
+.plety-landing .pl-footlink:hover {
+  color: #ffffff;
+}
+.plety-landing .pl-btn-light {
+  color: #000000;
+}
+.plety-landing .pl-btn-dark {
+  color: #ffffff;
+}
+.plety-landing .pl-brand {
+  color: #ffffff;
+}
