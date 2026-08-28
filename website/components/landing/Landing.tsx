@@ -104,7 +104,7 @@ function GetStartedButton({ href = DOCS_URL }: { href?: string }) {
   return (
     <a
       href={href}
-      className="bg-white hover:bg-gray-200 text-black text-sm font-medium px-5 py-2.5 rounded-full transition-colors"
+      className="pl-btn-light bg-white hover:bg-gray-200 text-sm font-medium px-5 py-2.5 rounded-full transition-colors"
     >
       Get started
     </a>
@@ -115,7 +115,7 @@ function LearnMoreButton({ href = "#features" }: { href?: string }) {
   return (
     <a
       href={href}
-      className="bg-[#1F1F22] hover:bg-[#2A2A2D] text-white text-sm font-medium px-5 py-2.5 rounded-full border border-white/5 transition-colors"
+      className="pl-btn-dark bg-[#1F1F22] hover:bg-[#2A2A2D] text-sm font-medium px-5 py-2.5 rounded-full border border-white/5 transition-colors"
     >
       Learn more
     </a>
@@ -156,7 +156,7 @@ function NavBar() {
         <nav className="relative flex items-center justify-between h-16">
           <a
             href="#about"
-            className="flex items-center gap-2.5 text-white"
+            className="pl-brand flex items-center gap-2.5"
             aria-label="heddle — home"
           >
             <Logo />
@@ -173,7 +173,7 @@ function NavBar() {
               <a
                 key={link.href}
                 href={link.href}
-                className="text-sm font-medium text-gray-300 hover:text-white transition-colors"
+                className="pl-navlink text-sm font-medium transition-colors"
               >
                 {link.label}
               </a>
@@ -183,7 +183,7 @@ function NavBar() {
           <div className="flex items-center gap-3">
             <a
               href={DOCS_URL}
-              className="hidden md:inline-block bg-[#1F1F22] hover:bg-[#2A2A2D] text-white text-sm font-medium px-5 py-2.5 rounded-full border border-white/5 transition-colors"
+              className="pl-btn-dark hidden md:inline-block bg-[#1F1F22] hover:bg-[#2A2A2D] text-sm font-medium px-5 py-2.5 rounded-full border border-white/5 transition-colors"
             >
               Get started
             </a>
@@ -226,7 +226,7 @@ function NavBar() {
               key={link.href}
               href={link.href}
               onClick={() => setOpen(false)}
-              className="py-3 text-sm font-medium text-gray-300 hover:text-white transition-colors"
+              className="pl-navlink py-3 text-sm font-medium transition-colors"
             >
               {link.label}
             </a>
@@ -234,7 +234,7 @@ function NavBar() {
           <a
             href={DOCS_URL}
             onClick={() => setOpen(false)}
-            className="mt-3 self-start bg-[#1F1F22] hover:bg-[#2A2A2D] text-white text-sm font-medium px-5 py-2.5 rounded-full border border-white/5 transition-colors"
+            className="pl-btn-dark mt-3 self-start bg-[#1F1F22] hover:bg-[#2A2A2D] text-sm font-medium px-5 py-2.5 rounded-full border border-white/5 transition-colors"
           >
             Get started
           </a>
@@ -753,7 +753,7 @@ function Footer() {
                 <li key={link.label}>
                   <a
                     href={link.href}
-                    className="text-sm text-gray-400 hover:text-white transition-colors"
+                    className="pl-footlink text-sm transition-colors"
                     {...(link.href.startsWith("http")
                       ? { target: "_blank", rel: "noreferrer" }
                       : {})}
@@ -789,7 +789,7 @@ function Footer() {
 export default function Landing() {
   return (
     <div
-      className="bg-black text-white min-h-screen"
+      className="plety-landing bg-black text-white min-h-screen"
       style={{ fontFamily: "var(--font-sans)" }}
     >
       <a href="#main" className="skip-link">
