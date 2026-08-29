@@ -32,10 +32,12 @@ const DOCS_URL = "/docs";
    served from public/media rather than a third-party CDN. Also the footer's
    backdrop, so it downloads once and plays twice. */
 const HERO_VIDEO = "/media/hero-threads.mp4";
-const CHAT_VIDEO =
-  "https://cdn.sceneai.art/Hero%20Section%20Video/1bcc8fa3-37f6-4c53-8591-0347e4c7f8ac.mp4";
-const NOTES_VIDEO =
-  "https://cdn.sceneai.art/Hero%20Section%20Video/736fd4a0-70ac-4f44-9633-55769ead6aca.mp4";
+/* The feature backdrops, generated as siblings of the hero: two strands —
+   amber and steel — twisting into one braid behind the chat card, and the
+   finished emerald cloth with a gold thread rippling behind the notetaker.
+   Threads, braid, cloth: the loom story in order down the page. */
+const CHAT_VIDEO = "/media/chat-braid.mp4";
+const NOTES_VIDEO = "/media/woven-cloth.mp4";
 
 const serif = { fontFamily: "var(--font-serif)" };
 
