@@ -6,6 +6,7 @@ import {
   GITHUB_URL,
   NPM_URL,
   PLAYGROUND_URL,
+  bundle,
   faqItems,
 } from "@/lib/constants";
 
@@ -15,9 +16,15 @@ import {
    white type, hairline white/10 rules, pill controls; the serif italic
    accent inside each display headline is Newsreader via --font-serif.
    Copy still comes from lib/constants.ts wherever a section says something
-   checkable — the FAQ answers and the notetaker claims are quoted, not
-   re-invented. The marquee names platforms heddle actually runs on, never
-   invented customers. */
+   checkable — the FAQ answers, the notetaker claims and every line of the
+   bundle transcript are quoted, not re-invented. The marquee names platforms
+   heddle actually runs on, never invented customers.
+
+   What the page argues, in order: an agent is a file (hero), the file
+   travels and runs wherever heddle is (sharing), and here is what one of
+   them does (chat, notetaker). The sharing chapter is the pivot — it is the
+   reason the marquee's platform list means anything — so it leads the
+   features and owns the #features anchor. */
 
 const DOCS_URL = "/docs";
 
@@ -283,7 +290,7 @@ function Marquee() {
   return (
     <div className="w-full mt-24">
       <p className="text-sm text-gray-500 font-medium mb-8 text-center">
-        Runs where you already work
+        One file. Runs where you already work
       </p>
       <div
         className="overflow-hidden"
@@ -358,10 +365,10 @@ function Hero() {
         </h1>
 
         <p className="text-[16px] text-gray-400 max-w-2xl text-center mb-10">
-          heddle runs multi-step AI jobs described in a plain text file — one
-          free, open-source program on your own computer, with a sandbox,
-          sessions and a server included. The file is an open format you are
-          not locked into.
+          An agent is a plain text file — the steps, the instructions, the
+          tools. heddle is the free, open-source program that reads one and
+          does the job. Send the file to anyone and it runs on their machine
+          the way it ran on yours; nothing is installed into anything.
         </p>
 
         <div className="flex flex-row items-center gap-3">
@@ -424,7 +431,121 @@ function MockupFrame({
   );
 }
 
-/* ── 3 · Feature: interactive chat ────────────────────────────────────── */
+/* ── 3 · Feature: the file that travels ───────────────────────────────── */
+/* The mock is a terminal rather than a device card, because the argument
+   here is a transcript: what packing prints, and the three addresses one
+   command opens. Both come from `bundle` in lib/constants.ts, which is the
+   real CLI's output — re-pack library/local-notetaker before touching a
+   character. The window keeps the page's own surfaces (black glass, white/10
+   hairline) rather than importing a code theme the rest of the page does not
+   use. */
+function BundleMockCard() {
+  return (
+    <div className="relative w-full bg-[#1C1C1E]/90 backdrop-blur-xl border border-white/10 rounded-2xl overflow-hidden">
+      <div className="flex items-center gap-2 px-4 py-3 border-b border-white/10">
+        <span className="w-2.5 h-2.5 rounded-full bg-white/20" />
+        <span className="w-2.5 h-2.5 rounded-full bg-white/20" />
+        <span className="w-2.5 h-2.5 rounded-full bg-white/20" />
+        <span
+          className="ml-2 text-xs text-gray-500"
+          style={{ fontFamily: "var(--font-mono)" }}
+        >
+          zsh — heddle
+        </span>
+      </div>
+      {/* Size and leading are inline, not utilities: ds-heddle/styles.css
+          styles bare `pre` and loads after globals.css unlayered, so it beats
+          any Tailwind text-* class here (a text-[11px] silently rendered at
+          15px). 11px is what makes the CLI's longest line — its own "Run it
+          anywhere with: …" — fit the half-width column instead of leaving an
+          11px horizontal scroll to discover; re-measure if the transcript
+          changes. */}
+      <pre
+        className="px-4 py-4 text-gray-400 overflow-x-auto"
+        style={{
+          fontFamily: "var(--font-mono)",
+          fontSize: 11,
+          lineHeight: 1.65,
+          margin: 0,
+        }}
+      >
+        {bundle.pack}
+      </pre>
+      <div className="px-4 pb-4 pt-1 border-t border-white/10">
+        <p className="text-[11px] text-gray-500 mt-3 mb-2">
+          One command opens all three:
+        </p>
+        {/* One scroll container around all three, not one each: on a phone
+            the lines are wider than the card, and three separate scrollbars
+            stacked three rows deep read as damage rather than as a
+            terminal. */}
+        <div
+          className="overflow-x-auto"
+          style={{ fontFamily: "var(--font-mono)", fontSize: 11.5 }}
+        >
+          {bundle.send.map((cmd) => (
+            <div key={cmd} className="text-gray-300 whitespace-pre">
+              <span className="text-gray-600">$ </span>
+              {cmd}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FeatureBundle() {
+  return (
+    <section id="features" className="scroll-mt-16">
+      <div className="grid lg:grid-cols-2 gap-16 pt-24 pb-12 px-6 max-w-7xl mx-auto">
+        <FadeInUp className="min-w-0">
+          <FeatureText
+            badge="✨ One file"
+            badgeClass="text-orange-200"
+            headline={
+              <>
+                An agent you can{" "}
+                <span className="italic font-normal" style={serif}>
+                  send.
+                </span>
+              </>
+            }
+            copy="An agent is rarely just its instructions: by the time it works it is a flow, a folder of tools, the files those tools read and the settings they run with. heddle packs all of it into a single .heddle file — and that file is the agent. Email it, put it at an address, or publish it to the library."
+          />
+        </FadeInUp>
+        <FadeInUp delay={150} className="min-w-0">
+          <MockupFrame video={HERO_VIDEO}>
+            <BundleMockCard />
+          </MockupFrame>
+        </FadeInUp>
+      </div>
+
+      {/* What travels, what does not, and what the file asks of whoever
+          opens it — the three questions a person asks the moment sending
+          becomes the point. Hairline-ruled rather than carded: it is a
+          footnote to the chapter above, not a third pitch. */}
+      <div className="max-w-7xl mx-auto px-6 pb-24">
+        <FadeInUp delay={100}>
+          <div className="grid md:grid-cols-3 gap-px bg-white/10 border border-white/10 rounded-2xl overflow-hidden">
+            {bundle.travels.map((fact) => (
+              <div key={fact.title} className="bg-black p-6">
+                <h3 className="text-sm font-medium text-white mb-2">
+                  {fact.title}
+                </h3>
+                <p className="text-sm text-gray-400 leading-relaxed">
+                  {fact.detail}
+                </p>
+              </div>
+            ))}
+          </div>
+        </FadeInUp>
+      </div>
+    </section>
+  );
+}
+
+/* ── 4 · Feature: interactive chat ────────────────────────────────────── */
 function ChatMockCard() {
   return (
     <div className="relative w-full bg-[#1C1C1E]/90 backdrop-blur-xl border border-white/10 rounded-2xl p-4">
@@ -476,9 +597,9 @@ function ChatMockCard() {
 
 function FeatureChat() {
   return (
-    <section id="features" className="scroll-mt-16">
+    <section>
       <div className="grid lg:grid-cols-2 gap-16 py-24 px-6 max-w-7xl mx-auto">
-        <FadeInUp>
+        <FadeInUp delay={150} className="order-last lg:order-last min-w-0">
           <FeatureText
             badge="✨ Interactive chat"
             badgeClass="text-yellow-200"
@@ -493,7 +614,7 @@ function FeatureChat() {
             copy="Open any flow as a conversation. heddle keeps the transcript on your own disk, shows exactly what was said and which tools ran, and picks the session back up later — on your machine or over the server."
           />
         </FadeInUp>
-        <FadeInUp delay={150}>
+        <FadeInUp className="order-first lg:order-first min-w-0">
           <MockupFrame video={CHAT_VIDEO}>
             <ChatMockCard />
           </MockupFrame>
@@ -503,7 +624,7 @@ function FeatureChat() {
   );
 }
 
-/* ── 4 · Feature: the local notetaker ─────────────────────────────────── */
+/* ── 5 · Feature: the local notetaker ─────────────────────────────────── */
 function NotesMockCard() {
   const bars = [
     5, 9, 14, 8, 16, 11, 18, 7, 12, 17, 9, 14, 6, 11, 16, 8, 13, 18, 10, 15,
@@ -551,12 +672,7 @@ function FeatureNotes() {
   return (
     <section>
       <div className="grid lg:grid-cols-2 gap-16 py-24 px-6 max-w-7xl mx-auto">
-        <FadeInUp className="order-last lg:order-first">
-          <MockupFrame video={NOTES_VIDEO}>
-            <NotesMockCard />
-          </MockupFrame>
-        </FadeInUp>
-        <FadeInUp delay={150}>
+        <FadeInUp className="min-w-0">
           <FeatureText
             badge="✨ Local notetaker"
             badgeClass="text-green-300"
@@ -568,20 +684,32 @@ function FeatureNotes() {
                 </span>
               </>
             }
-            copy="It listens from your own computer — no bot joins the call, and the audio never leaves your machine. Stop it when the meeting ends and you get the summary, the decisions, the action items and the open questions."
+            copy="It listens from your own computer — no bot joins the call, and the audio never leaves your machine. Stop it when the meeting ends and you get the summary, the decisions, the action items and the open questions. It is one of the library's files: run it by name, or open it and change a line."
           />
+        </FadeInUp>
+        <FadeInUp delay={150} className="min-w-0">
+          <MockupFrame video={NOTES_VIDEO}>
+            <NotesMockCard />
+          </MockupFrame>
         </FadeInUp>
       </div>
     </section>
   );
 }
 
-/* ── 5 · FAQ ──────────────────────────────────────────────────────────────
-   Five of the real answers from lib/constants.ts, quoted in full. The
+/* ── 6 · FAQ ──────────────────────────────────────────────────────────────
+   Seven of the real answers from lib/constants.ts, quoted in full. The
    accordion animates with the grid-template-rows 0fr→1fr trick, and the
-   plus rotates 45° into a close. */
+   plus rotates 45° into a close.
+
+   Two of the seven exist because the page now says "send this to people":
+   how you hand an agent over, and what it means to be handed one. A page
+   that invites a file to travel and does not say what a received file can
+   do has left its reader with the question it created. */
 const FAQ_QUESTIONS = [
   "What is heddle?",
+  "How do I give an agent to someone else?",
+  "Someone sent me a .heddle file. Is it safe to run?",
   "Do I need to know how to program?",
   "Where does my data go?",
   "What does it cost to run?",
@@ -671,7 +799,7 @@ function Faq() {
   );
 }
 
-/* ── 6 · Footer ───────────────────────────────────────────────────────── */
+/* ── 7 · Footer ───────────────────────────────────────────────────────── */
 const FOOTER_COLUMNS: {
   title: string;
   links: { label: string; href: string }[];
@@ -723,9 +851,9 @@ function Footer() {
 
       <FadeInUp className="flex flex-col items-center text-center mb-32">
         <h2 className="text-4xl md:text-5xl font-semibold tracking-tight mb-8 text-white">
-          Ready to automate{" "}
+          One file. Runs{" "}
           <span className="italic font-normal" style={serif}>
-            everything?
+            anywhere.
           </span>
         </h2>
         <div className="flex flex-row items-center gap-3">
@@ -800,6 +928,7 @@ export default function Landing() {
       <NavBar />
       <main id="main">
         <Hero />
+        <FeatureBundle />
         <FeatureChat />
         <FeatureNotes />
         <Faq />
