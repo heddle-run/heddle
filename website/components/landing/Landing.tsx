@@ -21,8 +21,10 @@ import {
 
 const DOCS_URL = "/docs";
 
-const HERO_VIDEO =
-  "https://cdn.sceneai.art/Hero%20Section%20Video/50b4f304-cdca-4e12-8735-580d225834be.mp4";
+/* Self-hosted: an AI-generated weave — glowing warp threads on black —
+   served from public/media rather than a third-party CDN. Also the footer's
+   backdrop, so it downloads once and plays twice. */
+const HERO_VIDEO = "/media/hero-threads.mp4";
 const CHAT_VIDEO =
   "https://cdn.sceneai.art/Hero%20Section%20Video/1bcc8fa3-37f6-4c53-8591-0347e4c7f8ac.mp4";
 const NOTES_VIDEO =
