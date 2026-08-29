@@ -242,6 +242,51 @@ $referenced_components:
   ],
 };
 
+/* The sharing chapter's specimen, and the page's pivot: an agent is a file,
+   and the file travels. Every command and every printed line here was
+   produced by running the real CLI against library/local-notetaker — the
+   report fields, their order, the size, the entry count and the closing
+   "Run it anywhere with:" line are packages/cli/src/cli/bundle.ts's own
+   output, not a transcript written to look plausible. Re-pack the entry
+   before editing any of it. The three addresses `heddle run` accepts are
+   verbatim from docs/bundles.mdx; what does and does not travel is that
+   page's "What deliberately does not travel" section in this reader's
+   words. */
+export const bundle = {
+  pack: `$ heddle bundle spec.yaml --tools-dir ./tools \\
+    --requires @requires.json -o local-notetaker.heddle
+
+  Flow: local-notetaker (spec.yaml)
+  Tools: ./tools
+  Requires: OPENAI_API_KEY, ffmpeg, whisper-cli
+Wrote local-notetaker.heddle (11.8 KiB, 5 entries)
+Run it anywhere with: heddle run local-notetaker.heddle`,
+  /* The three addresses one command opens: a file that arrived, an address,
+     and a library entry's bare name. */
+  send: [
+    "heddle run local-notetaker.heddle",
+    "heddle run https://example.com/agent.heddle",
+    "heddle run coding-agent",
+  ],
+  travels: [
+    {
+      title: "What travels",
+      detail:
+        "The flow, the tools with their executable bits, any plugin's whole folder, the files you attached, the settings, and a default input — so their first run needs no arguments.",
+    },
+    {
+      title: "What stays behind",
+      detail:
+        "Your keys. The file names them and they are read on the machine that runs, never the one that packed. Your sandbox settings and your conversations stay too.",
+    },
+    {
+      title: "What it asks of them",
+      detail:
+        "An author can list what the machine must already have — a program, a variable, a version of Node. heddle reports everything missing at once, before it starts anything.",
+    },
+  ],
+};
+
 /* The FAQ, ordered by what a technically confident non-developer actually
    asks, and in their vocabulary. The framework comparisons (LangGraph,
    CrewAI, Docker Agent, ADK) moved to the compare view of the playground —
@@ -252,12 +297,22 @@ export const faqItems = [
   {
     question: "What is heddle?",
     answer:
-      "A free, open-source program that runs multi-step AI jobs described in a plain text file. You write down the steps and the instructions; heddle reads the file, checks it, and carries the job out with the AI model you chose — using tools, repeatedly, until the job is done. It runs on your own computer, and the same file can later run on a server.",
+      "A free, open-source program that runs multi-step AI jobs described in a plain text file. You write down the steps and the instructions; heddle reads the file, checks it, and carries the job out with the AI model you chose — using tools, repeatedly, until the job is done. The agent is the file, so it goes where you send it: the same one runs on your computer, in a container, or behind a server, and on anyone else's machine that has heddle.",
   },
   {
     question: "Do I need to know how to program?",
     answer:
       "Not to run an agent, and not to own one. The library agents run as they are, and the file that defines a job is a list of steps and instructions in English — editing it is closer to editing a settings file than to writing software. Code enters in one place: a tool is a short script, so a job that needs a tool heddle does not already have needs you, or a colleague, to write one. That split works in practice — the person who understands the job owns the file, and a developer supplies a tool on the day one is missing.",
+  },
+  {
+    question: "How do I give an agent to someone else?",
+    answer:
+      "heddle bundle packs the whole thing — the flow, the tools it calls, the files it reads, the settings, and a starting input — into a single .heddle file. Send that file however you send any file, or put it at a web address. Whoever has it runs it with heddle run and needs nothing else installed. The library works exactly this way: a bare name like coding-agent is shorthand for the library's own .heddle at its own address.",
+  },
+  {
+    question: "Someone sent me a .heddle file. Is it safe to run?",
+    answer:
+      "Treat it as you would any file from that person, with three things in your favour. It cannot hide code: the flow is instructions heddle reads, not a program it runs, and the file is an ordinary compressed archive you can list with your own tools first. It cannot take your keys: a key is named in the file and read from your machine at the moment it is used, so nothing about it travelled. And it does not get to decide its own limits — run it with --safe and every tool it calls is boxed in by the operating system, which is your decision and not the file's. Read the flow before you run it; that it can be read is the point.",
   },
   {
     question: "What does it cost to run?",
@@ -307,6 +362,6 @@ export const faqItems = [
   {
     question: "Am I locked in?",
     answer:
-      "No. The file format is a published open standard that heddle implements rather than owns, and other conforming runtimes read the same files. If this project disappeared tomorrow, your agents would still run somewhere else.",
+      "No, and in two separate ways. There is nothing to be locked into: heddle installs into no project of yours, has no account and no service, and npx fetches it for the length of one command. And the file format is a published open standard that heddle implements rather than owns, so other conforming runtimes read the same files. If this project disappeared tomorrow, your agents would still run somewhere else.",
   },
 ];

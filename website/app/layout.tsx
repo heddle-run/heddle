@@ -71,7 +71,7 @@ export const metadata: Metadata = {
     template: "%s — heddle",
   },
   description:
-    "heddle runs multi-step AI jobs described in a plain text file: read these files, decide what matters, write the summary. One free, open-source program on your own computer — with an OS-enforced sandbox, sessions, and the same file runnable behind a server. Flows are written in a published open format, portable to any conforming runtime.",
+    "An agent is a plain text file — the steps, the instructions, the tools — and heddle is the free, open-source program that runs it. Pack a whole agent into one .heddle file, send it to anyone, and it runs on their machine, in a container, or behind a server. Nothing is installed into anything, and the format is a published open standard.",
   keywords: [
     "heddle",
     "declarative agent runtime",
@@ -83,6 +83,10 @@ export const metadata: Metadata = {
     "agentic workflows",
     "no sdk",
     "declarative agents",
+    "shareable agents",
+    "agent bundle",
+    "portable agents",
+    "run agents anywhere",
     "agent sandbox",
     "yaml agents",
     "cli",
@@ -91,7 +95,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "heddle — A batteries-included declarative agent runtime",
     description:
-      "Multi-step AI jobs described in a plain text file, run by one free program on your own computer. Sandbox, sessions and a server included; the file is an open format you are not locked into.",
+      "An agent is one file you can send. Pack the flow, its tools and its data into a .heddle and it runs anywhere heddle is — your machine, a container, a server — with nothing installed into anything.",
     url: "https://heddle.run",
     siteName: "heddle",
     type: "website",

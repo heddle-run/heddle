@@ -37,6 +37,29 @@ and identifiers. One scoped exception since the redesign: the ✨ sparkle that
 opens the hero badge and the two feature eyebrows — it is part of the vendored
 badge pattern, appears nowhere else, and is the only emoji on the site.
 
+**What the landing page argues (2026-08).** An agent is a file, the file
+travels, and it runs wherever heddle is. `heddle bundle` packs a flow, its
+tools, its mounts and its settings into one `.heddle`; `heddle run` opens
+that file, an `https://` address or a library entry's bare name; and the
+places it lands — a laptop, a container, a server — are what the marquee's
+platform list is evidence for. Before this, the page argued only that the
+file was *readable*; the whole share loop lived in `docs/bundles.mdx` and
+appeared nowhere on the landing page, which is the gap this positioning
+closes. Two consequences that are not optional:
+
+- **The sharing chapter is the pivot**, so it leads the features and owns
+  `#features`. Everything after it is an example of a thing you can be
+  handed.
+- **Sending creates a security question the page must answer.** Once a file
+  travels, the reader's question stops being "what can this do to my
+  computer" and becomes "someone sent me one — what can it do to me". The
+  FAQ answers it directly ("Someone sent me a `.heddle` file. Is it safe to
+  run?") with the mechanisms from `docs/bundles.mdx`: a flow is read and
+  never executed, the archive is inspectable with ordinary tools, keys
+  resolve on the running machine, and `--safe` is the receiver's decision
+  and not the file's. A page that invites a file to travel and does not
+  answer this has left its reader with the question it created.
+
 **The audience the landing page addresses.** Technically confident
 non-developers: IT and ops people, analysts, automation builders who have hit
 the ceiling of Zapier or n8n, serious hobbyists. They can open a terminal,
@@ -50,9 +73,13 @@ now); an early-release marker visible in the hero — it lives in the badge
 ("✨ Early release — …"), and there is still no version number anywhere in the
 app (removed deliberately). The H1 keeps the descriptor — "A
 batteries-included declarative agent runtime." was chosen deliberately in
-2026-08 and survived the Plety redesign, with "runtime." as the serif italic
-accent word — and the lede beneath it is the descriptor's plain-language
-translation, which is what carries the page for the non-developer reader.
+2026-08 and survived both the Plety redesign and the run-anywhere retarget,
+with "runtime." as the serif italic accent word. The lede beneath it is
+where the positioning lives, because the descriptor is a property claim and
+says nothing about sending or running anywhere: it now states the loop
+plainly ("An agent is a plain text file … Send the file to anyone and it
+runs on their machine the way it ran on yours"). If the H1 is ever
+reopened, that lede is the sentence it has to beat.
 
 **The claim for developers still exists — it just moved.** heddle is a
 batteries-included declarative agent runtime, and both halves of that
@@ -65,8 +92,10 @@ so the same equipment costs the project nothing. That argument now lives in
 the docs (getting-started keeps it) and in the playground's compare view —
 wherever it appears, never let the descriptor stand without the
 runtime-vs-library wedge in the next breath. On the landing page the same
-facts surface in this reader's terms: the hero lede's "one free, open-source
-program on your own computer" and "an open format you are not locked into".
+facts surface in this reader's terms: "nothing is installed into anything",
+the one file that runs on a laptop, in a container or behind a server, and
+the FAQ's two-part "am I locked in" (nothing to be locked into, and an open
+format other runtimes read).
 
 **Security copy is load-bearing.** The site makes falsifiable claims about
 sandboxing. They live in `safeMode` in `lib/constants.ts` and are checked
@@ -255,8 +284,10 @@ The landing page is a single file — `components/landing/Landing.tsx`
 layout's metadata applies. Single-file is deliberate, from the reference
 prompt: the FadeInUp wrapper, the nav, every section and the logo live
 together. Checkable copy still comes from `lib/constants.ts` (the FAQ picks
-five `faqItems` by question string; the notetaker copy quotes `useCases`).
-Six sections, in order:
+seven `faqItems` by question string; the sharing chapter's transcript is
+`bundle`, which is the real CLI's output — re-pack `library/local-notetaker`
+before editing a character of it).
+Seven sections, in order:
 
 1. **Nav** — fixed, `z-50`, transparent until 20px of scroll then
    `bg-black/80 backdrop-blur-md` (also when the mobile menu is open).
@@ -270,32 +301,52 @@ Six sections, in order:
    scrim. Badge pill ("✨ Early release — now with an agent library"), the
    descriptor H1 with "runtime." in serif italic, the plain-language lede
    at exactly `text-[16px] text-gray-400`, then white "Get started" and
-   dark "Learn more" pills. `mt-24` below: the platform marquee ("Runs
-   where you already work").
-3. **Feature: interactive chat** (`id="features"`) — two columns
-   (`lg:grid-cols-2 gap-16 py-24`), text left / mockup right. Yellow
+   dark "Learn more" pills. `mt-24` below: the platform marquee ("One
+   file. Runs where you already work") — macOS, Linux, Docker, Kubernetes,
+   npx, all of them things heddle actually runs on.
+3. **Feature: one file you can send** (`id="features"`) — the pivot, and
+   the reason the marquee means anything. Two columns, text left / mockup
+   right; orange eyebrow "✨ One file", headline with serif "send.". The
+   mockup reuses the hero video (no new CDN dependency) behind a terminal
+   card: the real `heddle bundle` report, then the three addresses one
+   `heddle run` opens. Below the columns, a three-up hairline strip — what
+   travels, what stays behind, what it asks of the receiver. The `pre` sets
+   its own 11px inline, because `ds-heddle` styles bare `pre` unlayered and
+   beats any Tailwind `text-*` class here.
+4. **Feature: interactive chat** — two columns
+   (`lg:grid-cols-2 gap-16 py-24`), **mockup left / text right** (it gave
+   up `#features` and flipped so the three feature chapters alternate).
+   Yellow
    eyebrow, headline with serif "conversation.", session-transcript copy,
    "Get started". The mockup is a `rounded-3xl` video frame with a glass
    chat card: suggestion chips, "Ask anything..." input, mic and soundwave
    strokes.
-4. **Feature: local notetaker** — mirrored (mockup left, text right; the
-   mockup drops below the text on mobile via `order-last lg:order-first`).
-   Green eyebrow, headline with serif "machine.", the `useCases` detail
-   quoted. Card: play button, "11:06 AM – Chris", waveform bars, a dummy
-   transcript line.
-5. **FAQ** (`id="faq"`) — `max-w-3xl`, centred "We've got answers" with
+5. **Feature: local notetaker** — text left / mockup right, closing the
+   alternation. Green eyebrow, headline with serif "machine.", and the
+   detail now ends by naming it as one of the library's files. Card: play
+   button, "11:06 AM – Chris", waveform bars, a dummy transcript line.
+6. **FAQ** (`id="faq"`) — `max-w-3xl`, centred "We've got answers" with
    serif "answers", one transparent `border-white/10 rounded-xl` container,
-   five real questions (`border-b` between items, none after the last),
+   seven real questions (`border-b` between items, none after the last),
    plus-rotates-to-close, grid-rows height animation. First item open by
-   default.
-6. **Footer** (`id="contact"`) — the same hero video at opacity-40 under a
-   strong `from-black via-black/60 to-black` scrim. Centred CTA "Ready to
-   automate everything?" with serif italic "everything?", the two pills,
+   default. Two of the seven — how you hand an agent over, and what a
+   received file can do — exist because the page now says "send this".
+7. **Footer** (`id="contact"`) — the same hero video at opacity-40 under a
+   strong `from-black via-black/60 to-black` scrim. Centred CTA "One file.
+   Runs anywhere." with serif italic "anywhere.", the two pills,
    `mb-32`; then the four-column link grid (brand + "Weave agents from
    spec." / Product / Source / Standard), `mb-24`; then the bottom bar —
    "© 2026 heddle. All rights reserved · Woven by agents · Heddled by
    humans", the words "agents" and "humans" one step brighter
    (`text-gray-300`).
+
+**Every feature grid item carries `min-w-0`.** A grid item's default
+min-width is `auto`, so a child wider than its column — the terminal's
+`pre`, the notetaker card's `whitespace-nowrap` timestamp — widens the
+column rather than scrolling inside it, and at 375px that pushed the copy
+beside it off the screen with nothing to scroll to. Measure
+`element.getBoundingClientRect().right` against `clientWidth` at 375 before
+adding a card; `document.scrollWidth` stays honest and will not tell you.
 
 Anchor targets carry `scroll-mt-16` for the fixed nav. The shared
 `components/Nav.tsx` and `components/Footer.tsx` still serve /library and
