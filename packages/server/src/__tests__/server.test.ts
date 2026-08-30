@@ -248,12 +248,24 @@ describe('POST /v1/runs', () => {
   });
 
   it('rejects a body larger than the configured ceiling', async () => {
-    const res = await fetch(`${base}/v1/runs`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ flow: simpleFlow(), pad: 'x'.repeat(2 * 1024 * 1024) }),
-    });
-    expect(res.status).toBe(413);
+    // On a server with bundles refused, because with them accepted this
+    // route's cap deliberately rises by the base64 cost of one archive — see
+    // `runBodyLimit`, and bundles.test.ts for the raised cap's own tests.
+    const bare = createServer({ bundles: false, log: () => {} });
+    await new Promise<void>((resolve) => bare.listen(0, '127.0.0.1', resolve));
+    const address = bare.address();
+    const port = typeof address === 'object' && address ? address.port : 0;
+
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/v1/runs`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ flow: simpleFlow(), pad: 'x'.repeat(2 * 1024 * 1024) }),
+      });
+      expect(res.status).toBe(413);
+    } finally {
+      await new Promise<void>((resolve) => bare.close(() => resolve()));
+    }
   });
 
   it('rejects GET', async () => {

@@ -3,8 +3,7 @@ import type { Dependencies, NodeExecutor } from '../node/types.js';
 import type { EventHandler } from '../runner/events.js';
 import { pluginEventType } from '../runner/events.js';
 import type { Executor, ExecutorScope } from '../tool/types.js';
-import { createScratchWorkspace } from '../workspace/index.js';
-import type { Workspace } from '../workspace/index.js';
+import type { Workspace } from '../workspace/types.js';
 import type {
   PluginContext,
   PluginNode,
@@ -168,7 +167,14 @@ export class PluginNodeAdapter implements NodeExecutor {
   private workspace(scope: ExecutorScope | undefined): string {
     if (scope !== undefined) return scope.workspace;
 
-    this.ownWorkspace ??= createScratchWorkspace(this.node.name);
+    if (this.deps.scratchWorkspace === undefined) {
+      throw new PluginError(
+        `${this.describe()} asked for a workspace, but this host has no tool ` +
+          `executor and injected no "scratchWorkspace" into its Dependencies. ` +
+          `A host without a filesystem has to say where a plugin's files go.`,
+      );
+    }
+    this.ownWorkspace ??= this.deps.scratchWorkspace(this.node.name);
     return this.ownWorkspace.root;
   }
 

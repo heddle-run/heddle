@@ -19,6 +19,7 @@ import {
   resumeInputs,
   withoutReserved,
   workspaceTools,
+  createScratchWorkspace,
   resumeTurn,
   RunSuspended,
   PluginRegistry,
@@ -331,6 +332,7 @@ async function runFlow(
     eventHandler: (event: Event) => runnerOpts.eventHandler?.(event),
     stream: options.stream,
     maxToolRounds: runnerOpts.maxToolRounds,
+    scratchWorkspace: createScratchWorkspace,
   };
 
   runnerOpts.middleware = MiddlewareChain.build(

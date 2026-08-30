@@ -41,6 +41,15 @@ export function handleCapabilities(
         enabled: Boolean(config.sessionStore),
         store: config.sessionStoreName ?? null,
       },
+      // Whether a caller can hand this server a whole program, said for the
+      // same reason `sessions` is. `store` says the upload routes are open —
+      // today they travel together, but a client choosing between run-by-id
+      // and inline bytes is asking about the store, so the store answers.
+      bundles: {
+        enabled: config.bundles,
+        maxBytes: config.maxBundleBytes,
+        store: config.bundles,
+      },
       eventContract: EVENT_CONTRACT_VERSION,
       limits: {
         maxIterations: config.maxIterations,
@@ -51,6 +60,7 @@ export function handleCapabilities(
         maxRequestFiles: config.maxRequestFiles,
         maxRequestCodeBytes: config.maxRequestCodeBytes,
         maxConcurrentRuns: config.maxConcurrentRuns,
+        maxBundleBytes: config.maxBundleBytes,
       },
       runsInFlight: gate.inFlight,
       runSaturation:

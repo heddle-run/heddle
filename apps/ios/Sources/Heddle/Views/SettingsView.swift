@@ -1,8 +1,10 @@
 import SwiftUI
 
-/// Where the runs go, and whether it answers.
+/// Where the runs go, and whether it answers — plus the API keys bundles
+/// running on this iPhone read their `$ENV` refs from.
 struct SettingsView: View {
     @Environment(ServerSettings.self) private var settings
+    @Environment(EnvKeyStore.self) private var envKeys
 
     private enum Check: Equatable {
         case idle
@@ -12,6 +14,7 @@ struct SettingsView: View {
     }
 
     @State private var check = Check.idle
+    @State private var newKeyName = ""
 
     var body: some View {
         @Bindable var settings = settings
@@ -49,6 +52,55 @@ struct SettingsView: View {
                             + "an authenticating proxy. Kept in the Keychain. "
                             + "A stock heddle-server ignores it — and trusts "
                             + "everyone who can reach it."
+                    )
+                }
+
+                Section {
+                    ForEach(envKeys.names, id: \.self) { name in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(name)
+                                .font(.caption.monospaced())
+                                .foregroundStyle(.secondary)
+                            SecureField(
+                                "not set",
+                                text: Binding(
+                                    get: { envKeys.value(of: name) },
+                                    set: { envKeys.set($0, for: name) }
+                                )
+                            )
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
+                        }
+                    }
+                    .onDelete { offsets in
+                        for name in offsets.compactMap({
+                            envKeys.names.indices.contains($0) ? envKeys.names[$0] : nil
+                        }) {
+                            envKeys.remove(name: name)
+                        }
+                    }
+
+                    HStack {
+                        TextField("ANOTHER_API_KEY", text: $newKeyName)
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
+                            .font(.body.monospaced())
+                        Button("Add") {
+                            envKeys.add(name: newKeyName)
+                            newKeyName = ""
+                        }
+                        .disabled(
+                            newKeyName.trimmingCharacters(in: .whitespaces).isEmpty
+                        )
+                    }
+                } header: {
+                    Text("API keys")
+                } footer: {
+                    Text(
+                        "What a bundle's $ENV references resolve to when it "
+                            + "runs on this iPhone. Kept in the Keychain, sent "
+                            + "only to the provider the flow itself names. "
+                            + "Swipe a row to delete it."
                     )
                 }
 

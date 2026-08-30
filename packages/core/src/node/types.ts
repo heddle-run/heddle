@@ -7,6 +7,7 @@ import type { ProviderOptions } from '../llm/provider.js';
 import type { EgressPolicy } from '../llm/egress.js';
 import type { PluginRegistry } from '../plugin/registry.js';
 import type { MiddlewareChain } from '../plugin/middleware.js';
+import type { Workspace } from '../workspace/types.js';
 
 export interface NodeExecutor {
   execute(signal: AbortSignal | undefined, input: State): Promise<State>;
@@ -25,6 +26,15 @@ export interface NodeExecutor {
 export interface Dependencies {
   toolExecutor?: Executor;
   toolRegistry?: Registry;
+  /**
+   * Where a plugin node's `getWorkspace()` lands when no tool executor opened
+   * a scope for it. Injected rather than imported so the engine itself never
+   * touches a filesystem module: a Node host passes `createScratchWorkspace`,
+   * a portable host passes a directory of its own making, and a host that
+   * passes nothing gets a refusal naming this field the first time a plugin
+   * asks.
+   */
+  scratchWorkspace?: (label: string) => Workspace;
   plugins?: PluginRegistry;
   eventHandler?: EventHandler;
   /**

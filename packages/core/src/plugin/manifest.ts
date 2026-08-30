@@ -1,4 +1,3 @@
-import { basename } from 'node:path';
 import { PluginError } from '../errors.js';
 import { PROTOCOL_NAME } from './encoder.js';
 import {
@@ -519,7 +518,7 @@ function asFiles(plugin: string, raw: unknown): ManifestFile[] {
       );
     }
 
-    const dest = (file.dest as string | undefined) ?? basename(file.path);
+    const dest = (file.dest as string | undefined) ?? lastSegment(file.path);
     if (claimed.has(dest)) {
       fail(
         `plugin "${plugin}" declares two files landing on "${dest}". One would ` +
@@ -769,6 +768,18 @@ function depthOf(value: unknown, depth = 1): number {
     deepest = Math.max(deepest, depthOf(nested, depth + 1));
   }
   return deepest;
+}
+
+/**
+ * `basename`, for a path that is manifest data rather than a machine's.
+ *
+ * A manifest path is declared with `/` whatever machine wrote it, and this
+ * module validates data — reaching for `node:path` here would tie a pure
+ * validator to a platform for one default value.
+ */
+function lastSegment(path: string): string {
+  const segments = path.split(/[/\\]/).filter((part) => part.length > 0);
+  return segments[segments.length - 1] ?? path;
 }
 
 function listOf(options: readonly string[]): string {

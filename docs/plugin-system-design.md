@@ -2213,7 +2213,7 @@ proposed; see §7.3 for why the two messages have to stay distinct.
 | `cancel`, with the caller's promise rejected first and the kill armed before the frame | `plugin/host.ts`, `abandon` / `cancelRemotely` |
 | `RpcPartial`, `isPartial` routing, and the timeout becoming a silence budget | `plugin/protocol.ts`, `plugin/host.ts`'s `progress` |
 | `HostLifecycleMethods` / `HostVerbs` / `hostRequest`, so the frames with no caller are still typed | `plugin/protocol.ts` |
-| `ctx.signal`, `serve(handlers, { shutdown })`, and the version the runtime answers `init` with | `plugin/runtime-source.ts` |
+| `ctx.signal`, `serve(handlers, { shutdown })`, and the version the runtime answers `init` with | `plugin/serve-impl.ts` (`makeServe`, one dispatch for both transports); `plugin/runtime-source.ts` embeds it into the stdio runtime, `plugin/serve-local.ts` drives it in-process for hosts that cannot spawn — the iOS engine runs a manifest plugin through the same dispatch the pipe would |
 | `chatCompletionStream?` on `Provider`, `ChatChunk`, `ToolCallDelta` | `llm/types.ts`, `llm/openai.ts` |
 | `completeChat` / `collectStream`: stream or buffer, same `ChatResponse` either way | `node/agent.ts`, used by `node/llm.ts` too |
 | `token_delta` events, and a `warning` when a failed stream abandons deltas already sent | `runner/events.ts`, `node/agent.ts` |

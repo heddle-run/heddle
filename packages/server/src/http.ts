@@ -53,6 +53,57 @@ export function readJsonBody(
   });
 }
 
+/**
+ * The body as its own bytes, under the same discipline `readJsonBody` applies:
+ * a declared length over the cap is refused before a byte arrives, and a body
+ * that grows past it mid-stream is refused where it stands. For the one route
+ * whose payload is not JSON — a `.heddle` archive is gzip, and parsing it as
+ * text would be reading it wrong twice.
+ */
+export function readRawBody(
+  req: IncomingMessage,
+  maxBytes: number,
+): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const tooLarge = (): HttpError =>
+      new HttpError(
+        413,
+        `request body exceeds ${maxBytes} bytes`,
+        'PayloadTooLarge',
+      );
+
+    const declared = Number(req.headers['content-length']);
+    if (Number.isFinite(declared) && declared > maxBytes) {
+      reject(tooLarge());
+      return;
+    }
+
+    const chunks: Buffer[] = [];
+    let size = 0;
+    let settled = false;
+
+    req.on('data', (chunk: Buffer) => {
+      if (settled) return;
+
+      size += chunk.length;
+      if (size > maxBytes) {
+        settled = true;
+        req.pause();
+        reject(tooLarge());
+        return;
+      }
+      chunks.push(chunk);
+    });
+
+    req.on('error', reject);
+
+    req.on('end', () => {
+      if (settled) return;
+      resolve(Buffer.concat(chunks));
+    });
+  });
+}
+
 export function sendJson(
   res: ServerResponse,
   status: number,

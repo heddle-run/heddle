@@ -196,6 +196,15 @@ Whoever receives it needs nothing else:
 heddle run agent.heddle
 ```
 
+And "anywhere" means anywhere: the CLI (and its Docker image), a
+`heddle-server` (`POST /v1/bundles` stores one to run by id, or a run request
+carries it inline — see `packages/server/README.md`), and the phone in your
+pocket — a bundle whose tools are plugin-provided JavaScript is **portable**,
+and the iOS app runs it on-device inside JavaScriptCore, same engine, same
+frames. `heddle bundle` prints the portability verdict at pack time; a bundle
+that ships executables instead runs on your server, and the app knows to send
+it there.
+
 The bundle is checked before it is written: the spec must parse, the graph must
 hold, and every tool the flow names must be carried. A bundle that packs is a
 bundle that runs. Flags still win at run time: `--input` overrides the recorded

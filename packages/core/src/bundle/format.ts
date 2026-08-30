@@ -1,5 +1,7 @@
 import { BundleError } from '../errors.js';
-import { parseRequirements, type Requirement } from '../preflight.js';
+// The parse half directly: a portable host validates manifests too, and the
+// check half would drag the filesystem along for nothing.
+import { parseRequirements, type Requirement } from '../preflight/parse.js';
 import type { MountMode } from '../workspace/types.js';
 
 /**

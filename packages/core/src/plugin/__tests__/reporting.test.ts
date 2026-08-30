@@ -9,6 +9,7 @@ import { describe, it, expect } from 'vitest';
 import { existsSync } from 'node:fs';
 import { loadRemotePlugin } from '../remote-loader.js';
 import { PluginRegistry } from '../registry.js';
+import { createScratchWorkspace } from '../../workspace/index.js';
 import { compile } from '../../graph/compile.js';
 import { validate } from '../../graph/validate.js';
 import { parseFlow } from '../../spec/parser.js';
@@ -81,6 +82,7 @@ async function run(
   const graph = compile(parseFlow(flow, registry), {
     plugins: registry,
     eventHandler: collect,
+    scratchWorkspace: createScratchWorkspace,
   });
   validate(graph);
 

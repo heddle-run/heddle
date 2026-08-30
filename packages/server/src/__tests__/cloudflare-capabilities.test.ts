@@ -67,4 +67,17 @@ describe('what the playground advertises', () => {
     expect(ENGINE_MAX_REQUEST_FILES).toBe(DEFAULT_MAX_REQUEST_FILES);
     expect(ENGINE_MAX_REQUEST_CODE_BYTES).toBe(DEFAULT_MAX_REQUEST_CODE_BYTES);
   });
+
+  it('starts the engine with bundles refused', () => {
+    // Bundles run with the server's full rights, and this engine serves
+    // anonymous internet callers — the exact deployment --no-bundles is for.
+    // ENGINE_MAX_BODY_BYTES above also depends on this: with bundles on, the
+    // run route's body cap would rise past what the broker advertises.
+    const dockerfile = readFileSync(
+      join(packageRoot, 'Dockerfile.cloudflare'),
+      'utf-8',
+    );
+    const unwrapped = dockerfile.replace(/\\\r?\n/g, ' ');
+    expect(unwrapped).toMatch(/"--no-bundles"/);
+  });
 });

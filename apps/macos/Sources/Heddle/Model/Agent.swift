@@ -1,19 +1,6 @@
 import Foundation
 import HeddleCore
 
-/// The slice of a bundle's `heddle.json` the app acts on.
-///
-/// Mirrors `BundleManifest` in `packages/core/src/bundle/format.ts`, minus the
-/// archive-layout fields (`flow`, `tools`, `plugins`, …) that only the CLI —
-/// which does the unpacking — needs to see.
-struct AgentManifest: Decodable {
-    var name: String
-    var input: [String: JSONValue]?
-    var interactive: Bool?
-    var session: Bool?
-    var requires: [JSONValue]?
-}
-
 /// Something the menu can run: a `.heddle` bundle, or a bare flow file.
 ///
 /// `RunAgent` is heddle-core's view of it — the name a run record shows.
@@ -48,7 +35,9 @@ enum AgentLoading {
     static func agent(at url: URL) -> Agent? {
         let ext = url.pathExtension.lowercased()
         if ext == "heddle" {
-            let manifest = try? bundleManifest(at: url)
+            // HeddleCore's own reader — the same gzip+ustar rules the CLI
+            // applies, so what opens here opens there. No tar subprocess.
+            let manifest = try? BundleReader.manifest(at: url)
             return Agent(
                 url: url,
                 kind: .bundle,
@@ -68,33 +57,5 @@ enum AgentLoading {
             )
         }
         return nil
-    }
-
-    /// The manifest at the root of a `.heddle` archive.
-    ///
-    /// A bundle is a gzipped ustar (`packages/core/src/bundle/format.ts`), and
-    /// macOS ships bsdtar at `/usr/bin/tar`, which reads exactly that —
-    /// `-xOzf` prints one entry to stdout. Shelling out keeps the app free of
-    /// an archive dependency, the same zero-dep stance the writer takes.
-    static func bundleManifest(at url: URL) throws -> AgentManifest {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/tar")
-        process.arguments = ["-xOzf", url.path, "heddle.json"]
-
-        let stdout = Pipe()
-        process.standardOutput = stdout
-        process.standardError = FileHandle.nullDevice
-        try process.run()
-
-        let data = stdout.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-
-        guard process.terminationStatus == 0 else {
-            throw CocoaError(.fileReadCorruptFile, userInfo: [
-                NSFilePathErrorKey: url.path,
-                NSLocalizedDescriptionKey: "not a readable .heddle bundle",
-            ])
-        }
-        return try JSONDecoder().decode(AgentManifest.self, from: data)
     }
 }

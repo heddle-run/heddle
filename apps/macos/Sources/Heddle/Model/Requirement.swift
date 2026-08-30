@@ -1,60 +1,9 @@
 import Foundation
 import HeddleCore
 
-/// A bundle's `requires` entry, mirroring `Requirement` in
-/// `packages/core/src/preflight.ts`: binary / env / file / node, plus a hint.
-///
-/// The same contract too: checking is pure observation. Nothing here writes,
-/// downloads, or spawns — the CLI's preflight remains the authority at run
-/// time; this exists so the app can ask for what is missing *before* the run,
-/// which for a GUI mostly means API keys.
-enum Requirement: Equatable {
-    case binary(names: [String], hint: String?)
-    case env(name: String, hint: String?)
-    case file(path: String, hint: String?)
-    case node(range: String, hint: String?)
-
-    /// Decoded from the loose JSON the manifest carries. An entry this app
-    /// does not recognize decodes to nil rather than failing the bundle —
-    /// the CLI will still judge it; the panel just cannot ask about it.
-    init?(json: JSONValue) {
-        guard let object = json.objectValue else { return nil }
-        let hint = object["hint"]?.stringValue
-
-        if let env = object["env"]?.stringValue {
-            self = .env(name: env, hint: hint)
-        } else if let file = object["file"]?.stringValue {
-            self = .file(path: file, hint: hint)
-        } else if let node = object["node"]?.stringValue {
-            self = .node(range: node, hint: hint)
-        } else if case .array(let entries)? = object["binary"] {
-            let names = entries.compactMap(\.stringValue)
-            guard !names.isEmpty else { return nil }
-            self = .binary(names: names, hint: hint)
-        } else if let name = object["binary"]?.stringValue {
-            self = .binary(names: [name], hint: hint)
-        } else {
-            return nil
-        }
-    }
-
-    var hint: String? {
-        switch self {
-        case .binary(_, let hint), .env(_, let hint),
-             .file(_, let hint), .node(_, let hint):
-            return hint
-        }
-    }
-
-    var label: String {
-        switch self {
-        case .binary(let names, _): return names.joined(separator: " or ")
-        case .env(let name, _): return name
-        case .file(let path, _): return path
-        case .node(let range, _): return "node \(range)"
-        }
-    }
-}
+// `Requirement` itself — the reading half, shared with iOS — lives in
+// HeddleCore. What follows is the macOS half of the contract: observing this
+// machine, which means this Mac's PATH, filesystem, and Keychain.
 
 /// One requirement, observed on this machine.
 struct CheckedRequirement: Identifiable {
@@ -68,6 +17,11 @@ struct CheckedRequirement: Identifiable {
 
 enum Preflight {
     /// Observe every declared requirement.
+    ///
+    /// The same contract as `preflight.ts`: pure observation, nothing
+    /// written, downloaded, or spawned — the CLI's preflight remains the
+    /// authority at run time; this exists so the app can ask for what is
+    /// missing *before* the run, which for a GUI mostly means API keys.
     ///
     /// `env` holds when the Keychain has the key (the app injects it at
     /// spawn) or the app's own environment carries it. `node` always holds:

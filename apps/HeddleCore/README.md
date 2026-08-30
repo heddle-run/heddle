@@ -22,6 +22,10 @@ package is those files, kept once:
 | `TranscriptItem` / `Suspension` | What a transcript renders; what a stopped-for-a-person frame carries |
 | `SSEParser` / `SSEEvent` | The server-sent-events parse, fed lines, transport-agnostic |
 | `RunAgent` / `RunRecord` | One run of one agent as the UI sees it: status, transcript, final state, the summary and answer-rendering rules |
+| `BundleArchive` / `BundleReader` | The `.heddle` reader — gzip (Apple's zlib, via the `CZlib` system-library target) plus a hand-rolled ustar parse porting `packages/core/src/bundle/tar.ts` rule for rule, and the safe extraction of `unpack.ts` |
+| `BundleManifest` | The full `heddle.json`, validated as `format.ts` validates it |
+| `BundlePortability` | Whether an extracted bundle can run inside an embedded JS engine, with a typed reason for every way it cannot |
+| `Requirement` | A `requires` entry as the manifest carries it; each app's preflight observes its own machine |
 
 What deliberately stays out: transports and stores. Spawning processes
 (`HeddleCLI`, macOS), HTTP + SSE plumbing (`ServerClient`, iOS), each app's

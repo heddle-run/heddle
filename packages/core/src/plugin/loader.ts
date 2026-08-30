@@ -78,6 +78,26 @@ export async function loadPlugins(
   options: LoadPluginsOptions = {},
 ): Promise<PluginRegistry> {
   const registry = PluginRegistry.empty();
+  await loadPluginsInto(registry, specifiers, options);
+  return registry;
+}
+
+/**
+ * {@link loadPlugins} into a registry the caller already holds.
+ *
+ * For a host that layers loaded plugins over installed ones — a server running
+ * a bundle extends its operator's registry and loads the bundle's plugins into
+ * the copy. On failure everything *this call* prepared is disposed, registered
+ * or not; what the registry held before the call is untouched, because those
+ * processes belong to whoever put them there. Disposing a host twice is safe,
+ * so the caller disposing the whole registry afterwards sweeps nothing that
+ * matters twice.
+ */
+export async function loadPluginsInto(
+  registry: PluginRegistry,
+  specifiers: string[] | undefined,
+  options: LoadPluginsOptions = {},
+): Promise<void> {
   const discovery = options.discovery ?? false;
 
   // Prepared concurrently — each installed plugin's discovery awaits its own
@@ -97,14 +117,12 @@ export async function loadPlugins(
       if (result.value.remote) registry.addRemote(result.value.remote);
       else registry.add(result.value.plugin);
     }
-    return registry;
   } catch (err) {
     // Torn down: everything loaded before the one that failed, and everything
     // prepared after it. The same disposition `buildPlugins` takes on the
-    // server — a partial registry is not returned or abandoned. Disposing a
-    // host twice is safe, so the registered and the merely prepared can both
-    // be swept.
-    registry.dispose();
+    // server — a partial registry is not returned or abandoned. Only this
+    // call's hosts, though: every process this call started came out of
+    // `prepared`, so sweeping those is sweeping exactly what this call owes.
     for (const result of prepared) {
       if (result.status === 'fulfilled') result.value.remote?.host.dispose();
     }
@@ -236,7 +254,7 @@ function needsProcess(manifest: PluginManifest): boolean {
   return manifest.tools.some((tool) => tool.path === undefined);
 }
 
-function entryFor(
+export function entryFor(
   manifestPath: string,
   manifest: PluginManifest,
 ): string | undefined {

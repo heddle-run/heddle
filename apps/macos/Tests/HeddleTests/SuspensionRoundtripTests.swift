@@ -55,7 +55,7 @@ final class SuspensionRoundtripTests: XCTestCase {
         )
     }
 
-    private func settle(_ record: RunRecord) async throws {
+    private func settle(_ record: Heddle.RunRecord) async throws {
         let deadline = Date().addingTimeInterval(90)
         while record.isRunning && Date() < deadline {
             try await Task.sleep(for: .milliseconds(50))

@@ -10,20 +10,15 @@ import {
   type ManifestTool,
   type PluginManifest,
 } from './manifest.js';
-import type { ToolDef } from '../tool/types.js';
 import type { PluginMethod } from './protocol.js';
 import {
-  remoteComponentDef,
-  remoteEncoderDef,
-  remoteMiddlewareDef,
-  remoteStoreDef,
-  remoteNodeDef,
-  remoteProviderDef,
-  remoteToolDef,
-  remoteTransformDef,
+  admittedVerdicts,
+  buildPlugin,
+  checkGrant,
+  toolDefFor,
+  type ShippedResolvers,
 } from './remote.js';
 import { PLUGIN_RUNTIME_JS } from './runtime-source.js';
-import { SEAMS, type AfterAction, type Seam } from './seams.js';
 import type { HeddlePlugin, WorkspaceFile } from './types.js';
 
 const EXECUTABLE_BITS = 0o111;
@@ -116,7 +111,26 @@ export function remotePlugin(
   );
   const getHost = (): PluginHost => host;
 
-  return { plugin: buildPlugin(manifest, root, getHost), host };
+  return {
+    plugin: buildPlugin(manifest, getHost, diskResolvers(manifest, root)),
+    host,
+  };
+}
+
+/**
+ * The fs-touching half of assembling a plugin: paths a manifest declares,
+ * checked against what actually ships beside it on disk. The in-process host
+ * (`serve-local.ts`) injects refusers here instead — these two branches are
+ * exactly what cannot run without a filesystem and a process to start.
+ */
+function diskResolvers(
+  manifest: PluginManifest,
+  root: string,
+): ShippedResolvers {
+  return {
+    executableTool: (tool) => resolveShippedExecutable(manifest, tool, root),
+    files: () => resolveShippedFiles(manifest, root),
+  };
 }
 
 export function readManifest(path: string): PluginManifest {
@@ -200,60 +214,6 @@ function defaultCommand(entry: string): string[] {
   );
 }
 
-function buildPlugin(
-  manifest: PluginManifest,
-  root: string,
-  getHost: () => PluginHost,
-): HeddlePlugin {
-  const plugin: HeddlePlugin = {
-    name: manifest.name,
-    version: manifest.version,
-    nodes: [],
-    transforms: [],
-    components: [],
-    providers: [],
-    middleware: [],
-    encoders: [],
-    stores: [],
-    tools: manifest.tools.map((tool) =>
-      toolDefFor(manifest, tool, root, getHost),
-    ),
-    files: resolveShippedFiles(manifest, root),
-  };
-
-  for (const component of manifest.components) {
-    switch (component.kind ?? 'node') {
-      case 'node':
-        plugin.nodes?.push(remoteNodeDef(manifest, component, getHost));
-        break;
-      case 'transform':
-        plugin.transforms?.push(
-          remoteTransformDef(manifest, component, getHost),
-        );
-        break;
-      case 'component':
-        plugin.components?.push(remoteComponentDef(component));
-        break;
-      case 'provider':
-        plugin.providers?.push(remoteProviderDef(manifest, component, getHost));
-        break;
-      case 'middleware':
-        plugin.middleware?.push(
-          remoteMiddlewareDef(manifest, component, getHost),
-        );
-        break;
-      case 'encoder':
-        plugin.encoders?.push(remoteEncoderDef(manifest, component, getHost));
-        break;
-      case 'store':
-        plugin.stores?.push(remoteStoreDef(manifest, component, getHost));
-        break;
-    }
-  }
-
-  return plugin;
-}
-
 /**
  * Ask a plugin what tools it has, and add them to what it already declared.
  *
@@ -302,44 +262,10 @@ export async function discoverTools(
   );
 
   const getHost = (): PluginHost => remote.host;
+  const resolvers = diskResolvers(manifest, root);
   remote.plugin.tools = all.map((tool) =>
-    toolDefFor(manifest, tool, root, getHost),
+    toolDefFor(manifest, tool, getHost, resolvers),
   );
-}
-
-function admittedVerdicts(
-  manifest: PluginManifest,
-): Record<string, AfterAction[]> | undefined {
-  const admitted: Record<string, AfterAction[]> = {};
-
-  for (const component of manifest.components) {
-    for (const seam of Object.keys(component.seams ?? {}) as Seam[]) {
-      admitted[seam] = SEAMS[seam].after;
-    }
-  }
-
-  return Object.keys(admitted).length > 0 ? admitted : undefined;
-}
-
-function toolDefFor(
-  manifest: PluginManifest,
-  tool: ManifestTool,
-  root: string,
-  getHost: () => PluginHost,
-): ToolDef {
-  if (tool.componentType !== undefined) {
-    return remoteToolDef(manifest, tool, getHost);
-  }
-
-  return {
-    name: tool.name,
-    description: tool.description ?? '',
-    origin: `plugin:${manifest.name}`,
-    inputSchema: tool.inputSchema,
-    outputSchema: tool.outputSchema,
-    shadows: tool.shadows,
-    impl: { kind: 'path', path: resolveShippedExecutable(manifest, tool, root) },
-  };
 }
 
 function resolveShippedExecutable(
@@ -439,39 +365,4 @@ function resolveShippedFiles(
     ),
     dest: file.dest ?? basename(file.path),
   }));
-}
-
-function checkGrant(
-  manifest: PluginManifest,
-  granted: PluginMethod[],
-  reasons: Partial<Record<PluginMethod, string>>,
-): void {
-  const allowed = new Set(granted);
-  const refused = manifest.capabilities.filter(
-    (capability) => !allowed.has(capability),
-  );
-  if (refused.length === 0) return;
-
-  throw new PluginError(refusedGrantMessage(manifest, granted, refused, reasons));
-}
-
-function refusedGrantMessage(
-  manifest: PluginManifest,
-  granted: PluginMethod[],
-  refused: PluginMethod[],
-  reasons: Partial<Record<PluginMethod, string>>,
-): string {
-  const why = refused
-    .map((capability) => reasons[capability])
-    .filter((reason): reason is string => reason !== undefined);
-  const explanation = why.length > 0 ? `\n\n${why.join('\n\n')}` : '';
-
-  return (
-    `plugin "${manifest.name}" requests ${refused.map((c) => `"${c}"`).join(', ')}, ` +
-    `which this host does not grant. Granted here: ` +
-    `${granted.length > 0 ? granted.join(', ') : 'nothing'}. ` +
-    `A capability is the operator's to give, so the plugin cannot obtain it by ` +
-    `asking differently — drop it from the manifest, or run the plugin somewhere ` +
-    `it is granted.${explanation}`
-  );
 }

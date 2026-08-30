@@ -51,12 +51,39 @@ targets:
           NSAllowsArbitraryLoads: true
         NSLocalNetworkUsageDescription: >-
           Heddle connects to your heddle-server to run agents.
+        # The `.heddle` type, imported (the macOS app's make-app.sh exports
+        # the same identifier). A bundle is a gzipped tar, but it conforms to
+        # public.data rather than any archive UTI: conforming to
+        # public.zip-archive or friends would invite the system to treat it
+        # as an archive to unpack instead of a document to open.
+        UTImportedTypeDeclarations:
+          - UTTypeIdentifier: run.heddle.bundle
+            UTTypeDescription: Heddle agent bundle
+            UTTypeConformsTo:
+              - public.data
+            UTTypeTagSpecification:
+              public.filename-extension:
+                - heddle
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Heddle agent bundle
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Owner
+            LSItemContentTypes:
+              - run.heddle.bundle
+        # Copy-in on open: the app keeps its own verbatim copy of the
+        # archive next to the extraction, so in-place access would add
+        # security-scope bookkeeping and no capability.
+        LSSupportsOpeningDocumentsInPlace: false
 
   HeddleTests:
     type: bundle.unit-test
     platform: iOS
     sources:
       - Tests/HeddleTests
+      # The cross-implementation bundle fixture, shared with HeddleCore's
+      # own suite rather than copied into this one.
+      - path: ../HeddleCore/Tests/HeddleCoreTests/Fixtures/mini.heddle
+        buildPhase: resources
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES

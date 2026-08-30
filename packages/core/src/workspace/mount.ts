@@ -116,31 +116,3 @@ export function checkedDest(
   return normalized;
 }
 
-/**
- * Refuse two mounts that would land on top of each other.
- *
- * By prefix rather than by string equality, so `skills` and `skills/extra`
- * collide: the second would be written inside the first, and which one a tool
- * then reads depends on the order they were copied. Naming both origins matters
- * because one of them is often a plugin the operator did not write.
- */
-export function assertNoCollisions(mounts: Mount[]): void {
-  const claimed: Mount[] = [];
-
-  for (const mount of mounts) {
-    const clash = claimed.find((other) => overlaps(other.dest, mount.dest));
-    if (clash) {
-      throw new WorkspaceError(
-        `two things want "${mount.dest}" in the workspace: ${clash.origin} ` +
-          `(from "${clash.source}") and ${mount.origin} (from "${mount.source}"). ` +
-          `One would be written inside or over the other, so heddle refuses ` +
-          `rather than picking.`,
-      );
-    }
-    claimed.push(mount);
-  }
-}
-
-function overlaps(a: string, b: string): boolean {
-  return a === b || a.startsWith(`${b}${sep}`) || b.startsWith(`${a}${sep}`);
-}

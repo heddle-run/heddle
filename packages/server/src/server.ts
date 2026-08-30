@@ -12,6 +12,11 @@ import {
   type ServerOptions,
 } from './config.js';
 import { authorized } from './auth.js';
+import {
+  handleDeleteBundle,
+  handleReadBundle,
+  handleUploadBundle,
+} from './bundles.js';
 import { handleCapabilities } from './capabilities.js';
 import { corsHeaders, handlePreflight } from './cors.js';
 import { toErrorResponse, HttpError } from './errors.js';
@@ -278,6 +283,29 @@ async function route(
     );
   }
 
+  if (path === '/v1/bundles') {
+    requireMethod(method, 'POST');
+    await handleUploadBundle(req, res, config, headers);
+    return;
+  }
+
+  const bundleId = bundlePath(path);
+  if (bundleId) {
+    if (method === 'GET') {
+      handleReadBundle(res, config, bundleId, headers);
+      return;
+    }
+    if (method === 'DELETE') {
+      handleDeleteBundle(res, config, bundleId, headers);
+      return;
+    }
+    throw new HttpError(
+      405,
+      `method ${method} not allowed; use GET or DELETE`,
+      'MethodNotAllowed',
+    );
+  }
+
   throw new HttpError(404, `no route for ${method} ${path}`, 'NotFound');
 }
 
@@ -300,6 +328,27 @@ function sessionPath(path: string): string | undefined {
     return decodeURIComponent(raw);
   } catch {
     throw new HttpError(400, 'session id is not valid percent-encoding');
+  }
+}
+
+/**
+ * The id in `/v1/bundles/<id>`, decoded, or nothing if this is another route.
+ *
+ * The same decoding stance as {@link sessionPath}, for the same reason: the id
+ * is checked against the store's own rule downstream, and that rule is written
+ * about the characters a percent-encoded id would eventually become.
+ */
+function bundlePath(path: string): string | undefined {
+  const prefix = '/v1/bundles/';
+  if (!path.startsWith(prefix)) return undefined;
+
+  const raw = path.slice(prefix.length);
+  if (raw.length === 0) return undefined;
+
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    throw new HttpError(400, 'bundle id is not valid percent-encoding');
   }
 }
 
@@ -362,6 +411,7 @@ function announce(config: ServerConfig, port: number): void {
   config.log(
     `  request code: ${config.allowRequestCode ? 'accepted' : 'refused'}`,
   );
+  config.log(`  bundles: ${describeBundles(config)}`);
   config.log(
     `  cors: ${config.corsOrigins.length > 0 ? config.corsOrigins.join(', ') : '(none)'}`,
   );
@@ -400,6 +450,19 @@ function describeSessions(config: ServerConfig): string {
     ? `${name} — kept on this host only, so replicas do not share them; ` +
         `a session id is a bearer capability`
     : `${name} — a session id is a bearer capability`;
+}
+
+/**
+ * Whether this server takes programs from its callers, said the way the
+ * request-code line is said — because a bundle is the stronger grant of the
+ * two, and the operator reading this log is the person who owns that decision.
+ */
+function describeBundles(config: ServerConfig): string {
+  if (!config.bundles) return 'refused (--no-bundles)';
+  return (
+    `accepted, and they run with this server's full rights; ` +
+    `store: ${config.bundlesDir}`
+  );
 }
 
 function publicBindWarning(host: string, port: number): string {

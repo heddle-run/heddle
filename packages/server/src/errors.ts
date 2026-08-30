@@ -1,4 +1,5 @@
 import {
+  BundleError,
   CompileError,
   LLMError,
   messageOf,
@@ -30,7 +31,11 @@ export interface ErrorBody {
   };
 }
 
-const CALLER_FAULT_ERRORS = [SpecError, CompileError, PluginError];
+// `BundleError` is caller-fault here even though the CLI treats it as its
+// user's: over HTTP a bundle only ever arrives in a request, so a manifest
+// that will not validate or an archive that will not extract is the sender's
+// to fix.
+const CALLER_FAULT_ERRORS = [SpecError, CompileError, PluginError, BundleError];
 
 const SERVER_FAULT_ERRORS = [
   MiddlewareError,

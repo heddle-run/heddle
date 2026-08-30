@@ -7,6 +7,7 @@ import {
   parseFlowObject,
   parseFlowWith,
   validateFlow,
+  type OpenedBundle,
   type ParsedFlow,
   type PluginRegistry,
 } from '@heddle-run/core';
@@ -46,6 +47,22 @@ export function resolveFlow(
   return path
     ? flowFromPath(body.flowPath as string, body.format, config, plugins)
     : flowFromBody(body.flow, body.format, plugins);
+}
+
+/**
+ * The flow a bundle carries, loaded from its extraction directory.
+ *
+ * Not confined to `flowsRoot`: the path came out of the archive's own manifest
+ * — already validated to stay inside the extraction directory — not out of the
+ * request. The same 400 discipline as an inline flow, though, because the
+ * archive did arrive in a request, and a flow that will not parse is the
+ * sender's to fix.
+ */
+export function resolveBundleFlow(
+  bundle: OpenedBundle,
+  plugins?: PluginRegistry,
+): ParsedFlow {
+  return specErrorAsBadRequest(() => loadFlow(bundle.flowPath, plugins));
 }
 
 export function resolveFlowPath(flowsRoot: string, requested: string): string {

@@ -9,13 +9,22 @@ struct ServerCapabilities: Decodable {
         var store: String?
     }
 
+    struct Bundles: Decodable {
+        var enabled: Bool
+        var maxBytes: Int?
+        var store: Bool?
+    }
+
     var version: String
     var sessions: Sessions?
     var acceptsFlowPath: Bool?
     var protocols: [String]?
     var formats: [String]?
+    var bundles: Bundles?
 
     var sessionsEnabled: Bool { sessions?.enabled == true }
+    /// Absent means an older server that predates `/v1/bundles`.
+    var bundlesEnabled: Bool { bundles?.enabled == true }
 }
 
 /// The body of `POST /v1/runs` (`RunRequest`, `packages/server/src/runs.ts`).
@@ -28,10 +37,22 @@ struct RunRequest: Encodable {
     var flow: JSONValue?
     var flowPath: String?
     var format: String?
+    /// A stored bundle's id from `POST /v1/bundles` — the server runs what
+    /// it extracted at upload. Exclusive with `flow`/`flowPath`; a resumed
+    /// bundle conversation must carry it again (`packages/server/src/runs.ts`).
+    var bundle: String?
     var inputs: [String: JSONValue]?
     var session: String?
     var resume: Bool?
     var answer: JSONValue?
+}
+
+/// What `POST /v1/bundles` answers: the content-addressed id to run by,
+/// and the server's own read of the archive.
+struct BundleUpload: Decodable {
+    var id: String
+    var name: String?
+    var portable: Bool?
 }
 
 enum ServerClientError: LocalizedError {
@@ -85,6 +106,21 @@ struct ServerClient {
         let (data, response) = try await URLSession.shared.data(for: req)
         try Self.check(response, data: data)
         return try Self.decoder.decode(Minted.self, from: data).id
+    }
+
+    /// Sends a `.heddle` archive to the server's store; the id that comes
+    /// back is content-addressed, so re-uploading the same bytes is free and
+    /// answers the same id (`packages/server/src/bundles.ts`).
+    func uploadBundle(_ archive: Data) async throws -> BundleUpload {
+        var req = request(path: "/v1/bundles")
+        req.httpMethod = "POST"
+        req.setValue("application/x-heddle", forHTTPHeaderField: "content-type")
+        req.httpBody = archive
+        req.timeoutInterval = 300
+
+        let (data, response) = try await URLSession.shared.data(for: req)
+        try Self.check(response, data: data)
+        return try Self.decoder.decode(BundleUpload.self, from: data)
     }
 
     /// Starts a run and yields its frames as the server writes them.

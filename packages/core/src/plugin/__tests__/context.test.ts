@@ -8,6 +8,7 @@ import type { TransformSpec } from '../../spec/types.js';
 import type { Dependencies } from '../../node/types.js';
 import type { ExecResult, Executor, ExecutorScope } from '../../tool/types.js';
 import { PluginError } from '../../errors.js';
+import { createScratchWorkspace } from '../../workspace/index.js';
 import { PluginNodeAdapter } from '../executor.js';
 import { PluginRegistry } from '../registry.js';
 import { TransformChain } from '../transform.js';
@@ -36,7 +37,12 @@ function adapterFor(
     componentType: node.componentType,
     createExecutor: () => ({ execute: (_input, ctx) => body(ctx) }),
   };
-  return new PluginNodeAdapter(node, def, deps);
+  // What every Node host injects — the engine itself no longer imports the
+  // workspace factory, so the fallback is the caller's to provide.
+  return new PluginNodeAdapter(node, def, {
+    scratchWorkspace: createScratchWorkspace,
+    ...deps,
+  });
 }
 
 async function runNode(
@@ -279,6 +285,20 @@ describe('the directory a plugin node writes to', () => {
       'the plugin gave up halfway',
     );
     expect(existsSync(path)).toBe(false);
+  });
+
+  it('is refused, by name, on a host that injected no way to make one', async () => {
+    const adapter = adapterFor(
+      (ctx) => {
+        ctx.getWorkspace();
+        return { output: {} };
+      },
+      { scratchWorkspace: undefined },
+    );
+
+    await expect(adapter.execute(undefined, new State({}))).rejects.toThrow(
+      /scratchWorkspace/,
+    );
   });
 
   it('is a fresh directory each time a loop comes back to the node', async () => {
