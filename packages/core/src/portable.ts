@@ -158,6 +158,12 @@ export type { ComponentKind, RegisteredMiddleware } from './plugin/registry.js';
 export { servePlugin } from './plugin/serve-local.js';
 export type { LocalPluginServices } from './plugin/serve-local.js';
 export {
+  evaluateLinked,
+  linkEntry,
+  usesModuleSyntax,
+} from './plugin/esm-link.js';
+export type { LinkedModule, LinkResult } from './plugin/esm-link.js';
+export {
   MiddlewareChain,
   MiddlewareError,
   checkMiddlewareConfig,

@@ -21,9 +21,14 @@ public struct PortabilityReport: Equatable {
         /// A plugin's entry point is not a `.js`/`.mjs` file the engine could
         /// evaluate.
         case pluginEntryNotJS(plugin: String)
-        /// A plugin's entry imports other modules — classic-script evaluation
-        /// cannot resolve a module graph.
+        /// A plugin's entry imports other modules and no link judge was
+        /// available to ask whether the engine's linker can serve them — the
+        /// conservative verdict for a host checking without an engine.
         case pluginMultiFile(plugin: String)
+        /// A plugin's entry imports modules the engine's linker refuses —
+        /// something outside the plugin, a cycle, a shape it cannot read.
+        /// `problem` is the linker's own sentence.
+        case pluginUnlinkable(plugin: String, problem: String)
         /// A `requires` entry of a kind only a real machine satisfies
         /// (binary / node / file; `env` is fine — every host can hold a key).
         case unsupportedRequirement(kind: String, name: String)
@@ -43,6 +48,8 @@ public struct PortabilityReport: Equatable {
                 return "plugin \"\(plugin)\" is not JavaScript"
             case .pluginMultiFile(let plugin):
                 return "plugin \"\(plugin)\" is more than one JavaScript file"
+            case .pluginUnlinkable(let plugin, let problem):
+                return "plugin \"\(plugin)\": \(problem)"
             case .unsupportedRequirement(let kind, let name):
                 return "needs \(kind == "env" ? "" : "a \(kind) on the machine: ")\(name)"
             case .unsupportedCapability(let plugin, let capability):
@@ -71,12 +78,26 @@ public enum BundlePortability {
 
     private static let scriptExtensions = ["mjs", "js"]
 
+    /// Asks the engine's linker whether an entry that imports sibling
+    /// modules would evaluate: the entry's source and every shipped module
+    /// (keyed by plugin-dir-relative path) go in, the linker's problems come
+    /// back — empty meaning it links. `HeddleEngine.linkCheck` is this
+    /// closure's intended body; keeping it a closure keeps this check usable
+    /// where no JavaScript engine exists.
+    public typealias LinkCheck = (
+        _ entrySource: String, _ files: [String: String]
+    ) throws -> [String]
+
     /// Judge an extracted bundle. `extractedAt` is what `BundleReader.extract`
     /// produced — the plugin manifests and entry sources are read from disk,
     /// because the judgment is about what actually shipped, not what the
-    /// bundle manifest promises.
+    /// bundle manifest promises. Without a `linkCheck`, an entry that
+    /// imports sibling modules is refused outright; with one, the engine's
+    /// own linker settles it — the same judgment core's `checkPortability`
+    /// reaches, because it is the same linker.
     public static func check(
-        manifest: BundleManifest, extractedAt dir: URL
+        manifest: BundleManifest, extractedAt dir: URL,
+        linkCheck: LinkCheck? = nil
     ) throws -> PortabilityReport {
         var reasons: [PortabilityReport.Reason] = []
 
@@ -92,7 +113,8 @@ public enum BundlePortability {
         for path in manifest.plugins {
             reasons.append(
                 contentsOf: try pluginReasons(
-                    manifestPath: dir.appendingPathComponent(path)
+                    manifestPath: dir.appendingPathComponent(path),
+                    linkCheck: linkCheck
                 ))
         }
 
@@ -117,7 +139,8 @@ public enum BundlePortability {
 
     /// One plugin, judged from its shipped manifest and entry source.
     private static func pluginReasons(
-        manifestPath: URL
+        manifestPath: URL,
+        linkCheck: LinkCheck?
     ) throws -> [PortabilityReport.Reason] {
         let raw: JSONValue
         do {
@@ -173,11 +196,73 @@ public enum BundlePortability {
             return reasons
         }
 
-        if hasTopLevelModuleSyntax(try entrySource(entry)) {
-            reasons.append(.pluginMultiFile(plugin: plugin))
+        let source = try entrySource(entry)
+        if hasTopLevelModuleSyntax(source) {
+            reasons.append(
+                contentsOf: linkReasons(
+                    plugin: plugin, entry: entry, source: source,
+                    linkCheck: linkCheck
+                ))
         }
 
         return reasons
+    }
+
+    /// An entry that imports sibling modules, judged by the engine's linker
+    /// when one was offered. Every failure to ask — no judge, unreadable
+    /// files, a judge that throws — lands on `.pluginMultiFile`, the refusal
+    /// this case always was: on doubt, the bundle goes to a real host.
+    private static func linkReasons(
+        plugin: String, entry: URL, source: String, linkCheck: LinkCheck?
+    ) -> [PortabilityReport.Reason] {
+        guard let linkCheck else {
+            return [.pluginMultiFile(plugin: plugin)]
+        }
+
+        let problems: [String]
+        do {
+            problems = try linkCheck(source, siblingModules(of: entry))
+        } catch {
+            return [.pluginMultiFile(plugin: plugin)]
+        }
+        return problems.map {
+            .pluginUnlinkable(plugin: plugin, problem: $0)
+        }
+    }
+
+    /// Every JavaScript module the plugin ships, keyed by its path relative
+    /// to the plugin's directory — what the linker may resolve imports
+    /// against. A file that fails to read is left out, and an import of it
+    /// then fails the link check, which is the safe direction.
+    private static func siblingModules(of entry: URL) -> [String: String] {
+        let dir = entry.deletingLastPathComponent()
+        var files: [String: String] = [:]
+
+        let enumerated = FileManager.default.enumerator(
+            at: dir, includingPropertiesForKeys: [.isRegularFileKey]
+        )
+        while let item = enumerated?.nextObject() as? URL {
+            guard scriptExtensions.contains(item.pathExtension.lowercased()),
+                (try? item.resourceValues(forKeys: [.isRegularFileKey]))?
+                    .isRegularFile == true
+            else { continue }
+            let relative = relativePath(of: item, under: dir)
+            guard !relative.isEmpty,
+                let source = try? String(contentsOf: item, encoding: .utf8)
+            else { continue }
+            files[relative] = source
+        }
+        return files
+    }
+
+    /// `item`'s path under `dir`, `/`-joined — the linker's path alphabet.
+    private static func relativePath(of item: URL, under dir: URL) -> String {
+        let base = dir.standardizedFileURL.pathComponents
+        let full = item.standardizedFileURL.pathComponents
+        guard full.count > base.count,
+            Array(full.prefix(base.count)) == base
+        else { return "" }
+        return full.dropFirst(base.count).joined(separator: "/")
     }
 
     /// Whether anything could ever ask this plugin to run — `needsProcess`

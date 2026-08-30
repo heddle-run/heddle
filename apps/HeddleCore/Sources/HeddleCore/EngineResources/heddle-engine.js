@@ -9535,9 +9535,9 @@ ${end.comment}` : end.comment;
       }
     }
     *parseQuotedScalar() {
-      const quote = this.charAt(0);
-      let end = this.buffer.indexOf(quote, this.pos + 1);
-      if (quote === "'") {
+      const quote2 = this.charAt(0);
+      let end = this.buffer.indexOf(quote2, this.pos + 1);
+      if (quote2 === "'") {
         while (end !== -1 && this.buffer[end + 1] === "'")
           end = this.buffer.indexOf("'", end + 2);
       } else {
@@ -17106,6 +17106,581 @@ The node's own failure, which is what the middleware was asked about: ${nodeErro
 A middleware is installed by whoever runs heddle and is named nowhere in the flow, so this is not a fault in the document \u2014 it is removed the same way it was loaded.`;
   }
 
+  // src/plugin/esm-link.ts
+  var ENTRY_PATH = "";
+  var MAX_MODULES = 64;
+  var MODULE_SYNTAX = /^\s*(import[\s"'{*]|export\s+.*\bfrom\b)/;
+  function usesModuleSyntax(source) {
+    return source.split("\n").some((line) => MODULE_SYNTAX.test(line));
+  }
+  function linkEntry(options) {
+    const modules = [];
+    const problems = [];
+    const state = /* @__PURE__ */ new Map();
+    const visit3 = (path, source) => {
+      state.set(path, "linking");
+      const label = path === ENTRY_PATH ? "the entry" : `"${path}"`;
+      const transformed = transformModule(source, dirOf(path));
+      problems.push(...transformed.problems.map((p) => `${label} ${p}`));
+      for (const dep of transformed.deps) {
+        const seen = state.get(dep);
+        if (seen === "done") continue;
+        if (seen === "linking") {
+          problems.push(
+            `${label} imports "${dep}" in a cycle, which the portable linker does not order`
+          );
+          continue;
+        }
+        if (state.size > MAX_MODULES) {
+          problems.push(
+            `${label} grows the import graph past ${MAX_MODULES} modules`
+          );
+          continue;
+        }
+        const depSource = options.read(dep);
+        if (depSource === null) {
+          problems.push(
+            `${label} imports "${dep}", which is not a file the plugin ships`
+          );
+          continue;
+        }
+        visit3(dep, depSource);
+      }
+      state.set(path, "done");
+      modules.push({ path, body: transformed.body });
+    };
+    visit3(ENTRY_PATH, options.source);
+    return problems.length > 0 ? { ok: false, problems: [...new Set(problems)] } : { ok: true, modules };
+  }
+  function evaluateLinked(modules, extras = {}) {
+    const exportsByPath = /* @__PURE__ */ new Map();
+    const importOf = (path) => {
+      const found = exportsByPath.get(path);
+      if (!found) {
+        throw new Error(`module "${path}" was imported before it was linked`);
+      }
+      return found;
+    };
+    const names = Object.keys(extras);
+    const values = names.map((name) => extras[name]);
+    for (const module of modules) {
+      const exports = {};
+      exportsByPath.set(module.path, exports);
+      new Function(
+        ...names,
+        "__heddle_import",
+        "__heddle_exports",
+        `"use strict";${module.body}`
+      )(...values, importOf, exports);
+    }
+  }
+  var STATEMENT_KEYWORDS = /* @__PURE__ */ new Set([
+    "import",
+    "export",
+    "const",
+    "let",
+    "var",
+    "function",
+    "class"
+  ]);
+  function transformModule(source, dir) {
+    const tokens = lex(source);
+    const deps = [];
+    const problems = [];
+    const edits = [];
+    const trailing = [];
+    const resolveSpec = (spec) => {
+      const resolved = resolvePath(dir, spec);
+      if ("problem" in resolved) {
+        problems.push(resolved.problem);
+        return void 0;
+      }
+      if (!deps.includes(resolved.path)) deps.push(resolved.path);
+      return resolved.path;
+    };
+    const cursor = new TokenCursor(tokens);
+    for (; ; ) {
+      const preceding = cursor.previous();
+      const token = cursor.next();
+      if (!token) break;
+      if (token.type !== "ident") continue;
+      if (token.text !== "import" && token.text !== "export") continue;
+      if (preceding?.type === "punct" && preceding.text === ".") continue;
+      const after = cursor.peek();
+      if (token.text === "import" && after?.type === "punct" && after.text === ".") {
+        problems.push("uses import.meta, which only a module loader defines");
+        continue;
+      }
+      if (token.depth > 0) continue;
+      if (after?.type === "punct" && after.text === "(") {
+        continue;
+      }
+      const parsed = token.text === "import" ? parseImport(token, cursor, resolveSpec) : parseExport(token, cursor, resolveSpec, trailing);
+      if (parsed === "malformed") {
+        problems.push(
+          `has an ${token.text} statement the portable linker cannot read`
+        );
+      } else if (parsed) {
+        edits.push(parsed);
+      }
+    }
+    return { body: applyEdits(source, edits, trailing), deps, problems };
+  }
+  function applyEdits(source, edits, trailing) {
+    let body = "";
+    let at = 0;
+    for (const edit of [...edits].sort((a, b) => a.start - b.start)) {
+      body += source.slice(at, edit.start);
+      body += edit.code;
+      const dropped = source.slice(edit.start, edit.end);
+      body += "\n".repeat(dropped.split("\n").length - 1);
+      at = edit.end;
+    }
+    body += source.slice(at);
+    for (const line of trailing) body += `
+${line}`;
+    return body;
+  }
+  function quote(path) {
+    return JSON.stringify(path);
+  }
+  function parseImport(start, cursor, resolveSpec) {
+    let token = cursor.next();
+    if (!token) return "malformed";
+    if (token.type === "string") {
+      const path2 = resolveSpec(token.value ?? "");
+      const end2 = endOfStatement(cursor, token);
+      if (path2 === void 0) return void 0;
+      return { start: start.start, end: end2, code: `__heddle_import(${quote(path2)});` };
+    }
+    const named = [];
+    let star;
+    if (token.type === "ident") {
+      named.push({ imported: "default", local: token.text });
+      if (isPunct(cursor.peek(), ",")) cursor.next();
+      token = cursor.next();
+      if (!token) return "malformed";
+    }
+    if (token.type === "punct" && token.text === "*") {
+      if (!cursor.nextIsIdent("as")) return "malformed";
+      const local = cursor.next();
+      if (local?.type !== "ident") return "malformed";
+      star = local.text;
+      token = cursor.next();
+      if (!token) return "malformed";
+    } else if (token.type === "punct" && token.text === "{") {
+      for (; ; ) {
+        const name = cursor.next();
+        if (!name) return "malformed";
+        if (name.type === "punct" && name.text === "}") break;
+        if (name.type !== "ident") return "malformed";
+        let local = name.text;
+        if (cursor.peekIsIdent("as")) {
+          cursor.next();
+          const alias = cursor.next();
+          if (alias?.type !== "ident") return "malformed";
+          local = alias.text;
+        }
+        named.push({ imported: name.text, local });
+        const sep = cursor.next();
+        if (!sep) return "malformed";
+        if (sep.type === "punct" && sep.text === "}") break;
+        if (!(sep.type === "punct" && sep.text === ",")) return "malformed";
+      }
+      token = cursor.next();
+      if (!token) return "malformed";
+    }
+    if (!(token.type === "ident" && token.text === "from")) return "malformed";
+    const spec = cursor.next();
+    if (spec?.type !== "string") return "malformed";
+    const path = resolveSpec(spec.value ?? "");
+    const end = endOfStatement(cursor, spec);
+    if (path === void 0) return void 0;
+    const pieces = [];
+    if (star) pieces.push(`const ${star} = __heddle_import(${quote(path)});`);
+    if (named.length > 0) {
+      const bindings = named.map((entry) => `${entry.imported}: ${entry.local}`).join(", ");
+      pieces.push(`const { ${bindings} } = __heddle_import(${quote(path)});`);
+    }
+    if (pieces.length === 0) pieces.push(`__heddle_import(${quote(path)});`);
+    return { start: start.start, end, code: pieces.join(" ") };
+  }
+  function parseExport(start, cursor, resolveSpec, trailing) {
+    const token = cursor.next();
+    if (!token) return "malformed";
+    if (token.type === "ident" && token.text === "default") {
+      return {
+        start: start.start,
+        end: token.end,
+        code: "__heddle_exports.default ="
+      };
+    }
+    if (token.type === "punct" && token.text === "{") {
+      const entries = [];
+      for (; ; ) {
+        const name = cursor.next();
+        if (!name) return "malformed";
+        if (name.type === "punct" && name.text === "}") break;
+        if (name.type !== "ident") return "malformed";
+        let exported = name.text;
+        if (cursor.peekIsIdent("as")) {
+          cursor.next();
+          const alias = cursor.next();
+          if (alias?.type !== "ident") return "malformed";
+          exported = alias.text;
+        }
+        entries.push({ local: name.text, exported });
+        const sep = cursor.next();
+        if (!sep) return "malformed";
+        if (sep.type === "punct" && sep.text === "}") break;
+        if (!(sep.type === "punct" && sep.text === ",")) return "malformed";
+      }
+      if (cursor.peekIsIdent("from")) {
+        cursor.next();
+        const spec = cursor.next();
+        if (spec?.type !== "string") return "malformed";
+        const path = resolveSpec(spec.value ?? "");
+        const end2 = endOfStatement(cursor, spec);
+        if (path === void 0) return void 0;
+        const copies = entries.map((e) => `__heddle_exports.${e.exported} = __m.${e.local};`).join(" ");
+        return {
+          start: start.start,
+          end: end2,
+          code: `{ const __m = __heddle_import(${quote(path)}); ${copies} }`
+        };
+      }
+      const end = endOfStatement(cursor, cursor.previous() ?? token);
+      for (const entry of entries) {
+        trailing.push(`__heddle_exports.${entry.exported} = ${entry.local};`);
+      }
+      return { start: start.start, end, code: "" };
+    }
+    if (token.type === "punct" && token.text === "*") {
+      let ns;
+      if (cursor.peekIsIdent("as")) {
+        cursor.next();
+        const alias = cursor.next();
+        if (alias?.type !== "ident") return "malformed";
+        ns = alias.text;
+      }
+      if (!cursor.nextIsIdent("from")) return "malformed";
+      const spec = cursor.next();
+      if (spec?.type !== "string") return "malformed";
+      const path = resolveSpec(spec.value ?? "");
+      const end = endOfStatement(cursor, spec);
+      if (path === void 0) return void 0;
+      if (ns) {
+        return {
+          start: start.start,
+          end,
+          code: `__heddle_exports.${ns} = __heddle_import(${quote(path)});`
+        };
+      }
+      return {
+        start: start.start,
+        end,
+        code: `{ const __m = __heddle_import(${quote(path)}); for (const __k of Object.keys(__m)) if (__k !== "default") __heddle_exports[__k] = __m[__k]; }`
+      };
+    }
+    if (token.type === "ident" && (token.text === "function" || token.text === "class" || token.text === "async")) {
+      if (token.text === "async" && !cursor.nextIsIdent("function")) {
+        return "malformed";
+      }
+      if (isPunct(cursor.peek(), "*")) cursor.next();
+      const name = cursor.next();
+      if (name?.type !== "ident") return "malformed";
+      trailing.push(`__heddle_exports.${name.text} = ${name.text};`);
+      return { start: start.start, end: token.start, code: "" };
+    }
+    if (token.type === "ident" && (token.text === "const" || token.text === "let" || token.text === "var")) {
+      for (; ; ) {
+        const name = cursor.next();
+        if (name?.type !== "ident") return "malformed";
+        trailing.push(`__heddle_exports.${name.text} = ${name.text};`);
+        if (!skipToNextDeclarator(cursor)) break;
+      }
+      return { start: start.start, end: token.start, code: "" };
+    }
+    return "malformed";
+  }
+  function skipToNextDeclarator(cursor) {
+    for (; ; ) {
+      const token = cursor.peek();
+      if (!token) return false;
+      if (token.depth === 0) {
+        if (token.type === "punct" && token.text === ";") {
+          cursor.next();
+          return false;
+        }
+        if (token.type === "punct" && token.text === ",") {
+          cursor.next();
+          return true;
+        }
+        if (token.type === "ident" && STATEMENT_KEYWORDS.has(token.text)) {
+          return false;
+        }
+      }
+      cursor.next();
+    }
+  }
+  function endOfStatement(cursor, last) {
+    const token = cursor.peek();
+    if (token?.type === "punct" && token.text === ";") {
+      cursor.next();
+      return token.end;
+    }
+    return last.end;
+  }
+  function isPunct(token, ...texts) {
+    return token?.type === "punct" && texts.includes(token.text);
+  }
+  function dirOf(path) {
+    const cut = path.lastIndexOf("/");
+    return cut === -1 ? "" : path.slice(0, cut);
+  }
+  function resolvePath(dir, spec) {
+    if (spec.includes("\\")) {
+      return { problem: `imports "${spec}", which is not a /-separated path` };
+    }
+    if (!spec.startsWith("./") && !spec.startsWith("../")) {
+      return {
+        problem: `imports "${spec}", which is not a file the plugin ships \u2014 only relative imports can be linked without a module loader`
+      };
+    }
+    const segments = dir === "" ? [] : dir.split("/");
+    for (const part of spec.split("/")) {
+      if (part === "" || part === ".") continue;
+      if (part === "..") {
+        if (segments.length === 0) {
+          return {
+            problem: `imports "${spec}", which climbs out of the plugin's directory`
+          };
+        }
+        segments.pop();
+        continue;
+      }
+      segments.push(part);
+    }
+    const path = segments.join("/");
+    if (!path.endsWith(".js") && !path.endsWith(".mjs")) {
+      return {
+        problem: `imports "${spec}", which is not a .js/.mjs module`
+      };
+    }
+    return { path };
+  }
+  var OPERAND_EXPECTED = /* @__PURE__ */ new Set([
+    "return",
+    "typeof",
+    "instanceof",
+    "in",
+    "of",
+    "new",
+    "delete",
+    "void",
+    "throw",
+    "case",
+    "do",
+    "else",
+    "yield",
+    "await"
+  ]);
+  function isIdentStart(ch) {
+    return /[A-Za-z_$]/.test(ch) || ch.charCodeAt(0) > 127;
+  }
+  function isIdentPart(ch) {
+    return /[A-Za-z0-9_$]/.test(ch) || ch.charCodeAt(0) > 127;
+  }
+  function lex(source) {
+    const tokens = [];
+    const holes = [];
+    let depth = 0;
+    let i = 0;
+    const last = () => tokens[tokens.length - 1];
+    const push = (type, start, value) => {
+      tokens.push({
+        type,
+        start,
+        end: i,
+        text: source.slice(start, i),
+        ...value === void 0 ? {} : { value },
+        depth: 0
+        // patched below; depth is measured before open, after close
+      });
+    };
+    const readString = (quoteChar) => {
+      let value = "";
+      while (i < source.length) {
+        const ch = source[i];
+        if (ch === "\\") {
+          const next = source[i + 1];
+          value += next === "n" ? "\n" : next === "t" ? "	" : next ?? "";
+          i += 2;
+          continue;
+        }
+        if (ch === quoteChar || ch === "\n") break;
+        value += ch;
+        i += 1;
+      }
+      if (source[i] === quoteChar) i += 1;
+      return value;
+    };
+    const readTemplate = () => {
+      while (i < source.length) {
+        const ch = source[i];
+        if (ch === "\\") {
+          i += 2;
+          continue;
+        }
+        if (ch === "`") {
+          i += 1;
+          return "closed";
+        }
+        if (ch === "$" && source[i + 1] === "{") {
+          i += 2;
+          return "hole";
+        }
+        i += 1;
+      }
+      return "closed";
+    };
+    const regexAllowed = () => {
+      const prev = last();
+      if (!prev) return true;
+      if (prev.type === "ident") return OPERAND_EXPECTED.has(prev.text);
+      if (prev.type === "punct") return !")]".includes(prev.text);
+      return false;
+    };
+    const readRegex = () => {
+      let inClass = false;
+      while (i < source.length) {
+        const ch = source[i];
+        if (ch === "\\") {
+          i += 2;
+          continue;
+        }
+        if (ch === "\n") break;
+        i += 1;
+        if (ch === "[") inClass = true;
+        else if (ch === "]") inClass = false;
+        else if (ch === "/" && !inClass) break;
+      }
+      while (i < source.length && isIdentPart(source[i])) i += 1;
+    };
+    while (i < source.length) {
+      const ch = source[i];
+      const start = i;
+      if (ch === " " || ch === "	" || ch === "\n" || ch === "\r" || ch === "\f") {
+        i += 1;
+        continue;
+      }
+      if (ch === "/" && source[i + 1] === "/") {
+        while (i < source.length && source[i] !== "\n") i += 1;
+        continue;
+      }
+      if (ch === "/" && source[i + 1] === "*") {
+        const close = source.indexOf("*/", i + 2);
+        i = close === -1 ? source.length : close + 2;
+        continue;
+      }
+      if (ch === '"' || ch === "'") {
+        i += 1;
+        const value = readString(ch);
+        push("string", start, value);
+        last().depth = depth;
+        continue;
+      }
+      if (ch === "`") {
+        i += 1;
+        if (readTemplate() === "hole") {
+          holes.push(0);
+          depth += 1;
+          continue;
+        }
+        push("template", start);
+        last().depth = depth;
+        continue;
+      }
+      if (ch === "/" && regexAllowed()) {
+        i += 1;
+        readRegex();
+        push("regex", start);
+        last().depth = depth;
+        continue;
+      }
+      if (isIdentStart(ch)) {
+        i += 1;
+        while (i < source.length && isIdentPart(source[i])) i += 1;
+        push("ident", start);
+        last().depth = depth;
+        continue;
+      }
+      if (/[0-9]/.test(ch)) {
+        i += 1;
+        while (i < source.length && /[A-Za-z0-9_.]/.test(source[i])) i += 1;
+        push("number", start);
+        last().depth = depth;
+        continue;
+      }
+      i += 1;
+      if (ch === "{" || ch === "(" || ch === "[") {
+        push("punct", start);
+        last().depth = depth;
+        depth += 1;
+        if (ch === "{" && holes.length > 0) holes[holes.length - 1] += 1;
+        continue;
+      }
+      if (ch === "}" && holes.length > 0 && holes[holes.length - 1] === 0) {
+        holes.pop();
+        depth = Math.max(0, depth - 1);
+        if (readTemplate() === "hole") {
+          holes.push(0);
+          depth += 1;
+        } else {
+          push("template", start);
+          last().depth = depth;
+        }
+        continue;
+      }
+      if (ch === "}" || ch === ")" || ch === "]") {
+        depth = Math.max(0, depth - 1);
+        if (ch === "}" && holes.length > 0) {
+          holes[holes.length - 1] = Math.max(0, holes[holes.length - 1] - 1);
+        }
+        push("punct", start);
+        last().depth = depth;
+        continue;
+      }
+      push("punct", start);
+      last().depth = depth;
+    }
+    return tokens;
+  }
+  var TokenCursor = class {
+    constructor(tokens) {
+      this.tokens = tokens;
+    }
+    at = 0;
+    next() {
+      return this.tokens[this.at++];
+    }
+    peek() {
+      return this.tokens[this.at];
+    }
+    /** The most recently consumed token. */
+    previous() {
+      return this.tokens[this.at - 1];
+    }
+    peekIsIdent(text) {
+      const token = this.peek();
+      return token?.type === "ident" && token.text === text;
+    }
+    nextIsIdent(text) {
+      const token = this.next();
+      return token?.type === "ident" && token.text === text;
+    }
+  };
+
   // src/plugin/schema.ts
   function checkSchema(value, schema4, where) {
     walk2(value, schema4, where);
@@ -19516,11 +20091,28 @@ ${why.join("\n\n")}` : "";
     for (const entry of config.plugins) {
       const manifest = validateManifest(entry.manifest);
       const plugin = servePlugin(manifest, (serve) => {
-        new Function("serve", entry.entrySource)(serve);
+        evaluateEntry(manifest.name, entry, serve);
       });
       registry.add(plugin);
     }
     return registry;
+  }
+  function evaluateEntry(name, entry, serve) {
+    if (!usesModuleSyntax(entry.entrySource)) {
+      new Function("serve", entry.entrySource)(serve);
+      return;
+    }
+    const root = entry.dir.replace(/\/+$/, "");
+    const linked = linkEntry({
+      source: entry.entrySource,
+      read: (path) => host.__host_readFile(`${root}/${path}`)
+    });
+    if (!linked.ok) {
+      throw new PluginError(
+        `plugin "${name}" cannot run in-process: ${linked.problems.join("; ")}`
+      );
+    }
+    evaluateLinked(linked.modules, { serve });
   }
   async function execute(config) {
     const controller = new AbortController();
@@ -19629,6 +20221,35 @@ ${why.join("\n\n")}` : "";
     version: true ? "0.2.0-beta.1" : "dev",
     protocolVersion: EVENT_CONTRACT_VERSION,
     inspect,
+    /**
+     * Judge whether a plugin entry would evaluate here — the linker half of
+     * `checkPortability`, offered to hosts whose portability check runs in
+     * another language. Runs nothing. `pluginJSON` decodes to
+     * `{entrySource, files: {path: source}}`; the answer is a JSON string,
+     * `{ok: true}` or `{ok: false, problems: [...]}`.
+     */
+    linkCheck(pluginJSON) {
+      let plugin;
+      try {
+        plugin = JSON.parse(pluginJSON);
+      } catch (err) {
+        throw new Error(`linkCheck input is not JSON: ${messageOf(err)}`);
+      }
+      if (typeof plugin.entrySource !== "string") {
+        throw new Error("linkCheck input has no entrySource");
+      }
+      if (!usesModuleSyntax(plugin.entrySource)) {
+        return JSON.stringify({ ok: true });
+      }
+      const files = plugin.files ?? {};
+      const linked = linkEntry({
+        source: plugin.entrySource,
+        read: (path) => typeof files[path] === "string" ? files[path] : null
+      });
+      return JSON.stringify(
+        linked.ok ? { ok: true } : { ok: false, problems: linked.problems }
+      );
+    },
     run(configJSON) {
       let config;
       try {

@@ -173,6 +173,12 @@ export {
 export type { RemotePlugin, RemotePluginOptions } from './plugin/remote-loader.js';
 export { localPlugin, servePlugin } from './plugin/serve-local.js';
 export type { LocalPlugin, LocalPluginServices } from './plugin/serve-local.js';
+export {
+  evaluateLinked,
+  linkEntry,
+  usesModuleSyntax,
+} from './plugin/esm-link.js';
+export type { LinkedModule, LinkResult } from './plugin/esm-link.js';
 export { makeServe } from './plugin/serve-impl.js';
 export type { ServeFn, ServeIO, ServeOptions } from './plugin/serve-impl.js';
 export type { PluginCaller } from './plugin/host.js';

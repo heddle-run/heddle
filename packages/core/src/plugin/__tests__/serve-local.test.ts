@@ -18,6 +18,7 @@ import { DEFAULT_RUNNER_OPTIONS } from '../../runner/options.js';
 import { Runner } from '../../runner/runner.js';
 import { parseFlow } from '../../spec/parser.js';
 import { createScratchWorkspace } from '../../workspace/index.js';
+import { evaluateLinked, linkEntry } from '../esm-link.js';
 import type { PluginCaller } from '../host.js';
 import { validateManifest } from '../manifest.js';
 import type { ExecuteParams } from '../protocol.js';
@@ -579,6 +580,93 @@ describe('conformance with the subprocess host', () => {
       'plugin "conformance-plugin": deliberate conformance failure',
     );
 
+    expect(inProcess).toEqual(overPipe);
+  });
+});
+
+describe('a multi-file entry: linked in-process vs node’s loader', () => {
+  const MULTI_MANIFEST = {
+    name: 'multi-file-plugin',
+    version: '1.0.0',
+    capabilities: ['runTool', 'emitEvent'],
+    components: [{ componentType: 'ShoutNode' }],
+  };
+
+  // The entry imports its handlers, which import a helper of their own —
+  // deep enough to prove resolution is per-module, not per-entry.
+  const FORMAT_SOURCE =
+    `export function shout(text) { return text.toUpperCase() + '!'; }\n` +
+    `export const tag = 'fmt';\n`;
+  const HANDLERS_SOURCE =
+    `import { shout, tag } from './format-lib.mjs';\n` +
+    `export function makeHandlers() {\n` +
+    `  return {\n` +
+    `    ShoutNode: {\n` +
+    `      async execute(input, ctx) {\n` +
+    `        const tool = await ctx.runTool('echo', { v: shout(input.text) });\n` +
+    `        ctx.emitEvent('made', { by: tag });\n` +
+    `        return { output: { loud: shout(input.text), viaTool: tool.echoed } };\n` +
+    `      },\n` +
+    `    },\n` +
+    `  };\n` +
+    `}\n`;
+  const MULTI_ENTRY =
+    `import { makeHandlers } from './handlers-lib.mjs';\nserve(makeHandlers());`;
+  const SIBLINGS: Record<string, string> = {
+    'handlers-lib.mjs': HANDLERS_SOURCE,
+    'format-lib.mjs': FORMAT_SOURCE,
+  };
+
+  async function drive(host: PluginCaller) {
+    const events: Array<{ name: string; data: unknown }> = [];
+    const result = await host.call(
+      'execute',
+      executeParams('ShoutNode', { text: 'quiet' }),
+      {
+        reporter: {
+          emitEvent: (name: string, data?: unknown) => {
+            events.push({ name, data });
+          },
+          log: () => {},
+        },
+        runTool: async (name: string, input: Record<string, unknown>) => ({
+          echoed: `${name} saw ${String(input.v)}`,
+        }),
+      },
+    );
+    return { result, events };
+  }
+
+  it('answers identically through both module systems', { timeout: 30_000 }, async () => {
+    // The stdio half: real files, node's own ESM loader linking them.
+    scratch.writeRawPlugin('handlers-lib', HANDLERS_SOURCE);
+    scratch.writeRawPlugin('format-lib', FORMAT_SOURCE);
+    const entry = scratch.writeHelperPlugin('multi-entry', MULTI_ENTRY);
+    const remote = loadRemotePlugin(MULTI_MANIFEST, entry, {
+      timeout: 20_000,
+      capabilities: [...ALL_CAPABILITIES],
+    });
+    open.track(remote.host);
+
+    // The in-process half: the same sources, linked by `linkEntry` and
+    // evaluated the way a portable host evaluates them.
+    const local = localPlugin(validateManifest(MULTI_MANIFEST), (serve) => {
+      const linked = linkEntry({
+        source: MULTI_ENTRY,
+        read: (path) => SIBLINGS[path] ?? null,
+      });
+      if (!linked.ok) throw new Error(linked.problems.join('; '));
+      evaluateLinked(linked.modules, { serve });
+    });
+    open.track(local.host);
+
+    const overPipe = await drive(remote.host);
+    const inProcess = await drive(local.host);
+
+    expect(overPipe.result).toEqual({
+      output: { loud: 'QUIET!', viaTool: 'echo saw QUIET!' },
+    });
+    expect(overPipe.events).toEqual([{ name: 'made', data: { by: 'fmt' } }]);
     expect(inProcess).toEqual(overPipe);
   });
 });

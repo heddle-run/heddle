@@ -1,3 +1,4 @@
+import { linkEntry, usesModuleSyntax } from '../plugin/esm-link.js';
 import type { PluginManifest } from '../plugin/manifest.js';
 import type { Requirement } from '../preflight/parse.js';
 import type { BundleManifest } from './format.js';
@@ -27,16 +28,16 @@ export interface PortablePluginInput {
   entry?: string;
   /** The entry's source text, when the host read it. */
   entrySource?: string;
+  /**
+   * Read a sibling module by plugin-dir-relative path, `null` when it is not
+   * there. With this, an entry that imports its own files is judged by the
+   * same linker a portable host runs it through; without it, any module
+   * syntax is refused — the conservative answer for a host that cannot look.
+   */
+  readFile?: (path: string) => string | null;
 }
 
 const SCRIPT_EXTENSIONS = ['.mjs', '.js'];
-
-/**
- * Top-level ESM syntax the classic-script evaluation a portable host uses
- * cannot link. Scanned per line rather than parsed: a false positive only
- * sends the bundle to a host with a module loader, never runs it wrong.
- */
-const MODULE_SYNTAX = /^\s*(import[\s"'{*]|export\s+.*\bfrom\b)/;
 
 export function checkPortability(
   manifest: BundleManifest,
@@ -116,15 +117,25 @@ function pluginReasons(plugin: PortablePluginInput): string[] {
     );
   }
   if (plugin.entrySource !== undefined && usesModuleSyntax(plugin.entrySource)) {
-    reasons.push(
-      `plugin "${name}" imports sibling modules, which a portable host ` +
-        `cannot link yet`,
-    );
+    if (plugin.readFile === undefined) {
+      reasons.push(
+        `plugin "${name}" imports sibling modules, and this host cannot ` +
+          `read them to link`,
+      );
+    } else {
+      const linked = linkEntry({
+        source: plugin.entrySource,
+        read: plugin.readFile,
+      });
+      if (!linked.ok) {
+        reasons.push(
+          ...linked.problems.map(
+            (problem) => `plugin "${name}": ${problem}`,
+          ),
+        );
+      }
+    }
   }
 
   return reasons;
-}
-
-function usesModuleSyntax(source: string): boolean {
-  return source.split('\n').some((line) => MODULE_SYNTAX.test(line));
 }

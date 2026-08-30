@@ -336,6 +336,108 @@ final class EngineSmokeTests: XCTestCase {
             request?.headers["authorization"], "Bearer test-key-123")
     }
 
+    /// The shipped linker, asked the way `BundlePortability.check` asks: a
+    /// linkable graph comes back clean, a bare specifier comes back as the
+    /// problem core's `checkPortability` would report — same linker, so the
+    /// Swift check can never disagree with the TypeScript one.
+    func testTheShippedArtifactJudgesPluginLinks() throws {
+        let engine = try HeddleEngine(host: MockEngineHost())
+
+        XCTAssertEqual(
+            try engine.linkCheck(
+                entrySource: "import { h } from './lib.js';\nserve(h);",
+                files: ["lib.js": "export const h = {};"]
+            ),
+            []
+        )
+
+        let problems = try engine.linkCheck(
+            entrySource: "import fs from 'node:fs';\nserve({});",
+            files: [:]
+        )
+        XCTAssertEqual(problems.count, 1)
+        XCTAssertTrue(
+            problems[0].contains("\"node:fs\""), "unexpected: \(problems)")
+    }
+
+    /// A plugin whose entry imports a sibling module, run for real: the
+    /// artifact links it by reading the sibling over `__host_readFile` from
+    /// the plugin's directory — the on-device shape, end to end.
+    func testTheShippedArtifactRunsAMultiFilePluginFlow() async throws {
+        let bundleDir = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("heddle-engine-multifile-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(
+            at: bundleDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: bundleDir) }
+        try Data("export function shout(t) { return t.toUpperCase() + '!'; }\n".utf8)
+            .write(to: bundleDir.appendingPathComponent("fmt.mjs"))
+
+        let host = MockEngineHost()
+        host.roots = [bundleDir]
+        let engine = try HeddleEngine(host: host)
+
+        let manifest = try JSONDecoder().decode(
+            JSONValue.self,
+            from: Data(
+                """
+                {"name": "shouter", "version": "1.0.0",
+                 "components": [{"componentType": "Shout"}]}
+                """.utf8)
+        )
+        let entry = """
+            import { shout } from './fmt.mjs';
+            serve({
+              Shout: {
+                async execute(input) {
+                  return { output: { loud: shout(input.text) } };
+                },
+              },
+            });
+            """
+
+        let runConfig = HeddleEngine.RunConfig(
+            runId: "multifile-1",
+            flow: .init(text: Self.pluginFlowJSON, format: .json),
+            bundleDir: bundleDir.path,
+            scratchDir: bundleDir.path,
+            plugins: [
+                .init(manifest: manifest, entrySource: entry, dir: bundleDir.path)
+            ],
+            inputs: ["text": .string("quiet")]
+        )
+
+        var sawFlowComplete = false
+        var sawShout = false
+        for try await line in engine.run(runConfig) {
+            XCTAssertFalse(
+                line.contains("\"event\":\"error\""), "run failed: \(line)")
+            if line.contains("\"flow_complete\"") { sawFlowComplete = true }
+            if line.contains("QUIET!") { sawShout = true }
+        }
+        XCTAssertTrue(sawFlowComplete)
+        XCTAssertTrue(sawShout)
+    }
+
+    /// start → Shout → end, in the agentspec JSON the engine parses.
+    private static let pluginFlowJSON = """
+        {"component_type": "Flow", "name": "plugin-flow",
+         "start_node": {"$component_ref": "s"},
+         "nodes": [{"$component_ref": "s"}, {"$component_ref": "p"},
+                   {"$component_ref": "e"}],
+         "control_flow_connections": [
+           {"component_type": "ControlFlowEdge", "name": "a",
+            "from_node": {"$component_ref": "s"},
+            "to_node": {"$component_ref": "p"}},
+           {"component_type": "ControlFlowEdge", "name": "b",
+            "from_node": {"$component_ref": "p"},
+            "to_node": {"$component_ref": "e"}}],
+         "$referenced_components": {
+           "s": {"component_type": "StartNode", "id": "s", "name": "s",
+                 "outputs": [{"title": "text", "type": "string"}]},
+           "p": {"component_type": "Shout", "id": "p", "name": "p"},
+           "e": {"component_type": "EndNode", "id": "e", "name": "e"}}}
+        """
+
     private static let agentFlowYAML = """
         component_type: Flow
         name: smoke-flow

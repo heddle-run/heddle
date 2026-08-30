@@ -56,6 +56,15 @@ globalThis.HeddleEngine = {
   // and the host already read the manifest natively.
   inspect(flowText: string, format: 'yaml' | 'json'): string,
 
+  // Judge whether a plugin entry would evaluate here — runs nothing. The
+  // linker half of core's `checkPortability`, offered so a host whose
+  // portability check lives in another language never re-implements the
+  // linker's rules. pluginJSON decodes to
+  //   { entrySource: string, files: { [pluginDirRelativePath]: source } }
+  // and the reply is a JSON string: { ok: true } or
+  // { ok: false, problems: string[] } — one plain sentence per blocker.
+  linkCheck(pluginJSON: string): string,
+
   // Starts a run and returns immediately; progress arrives via __host_emit,
   // completion via __host_runEnded. configJSON decodes to RunConfig below.
   run(configJSON: string): void,
@@ -81,7 +90,7 @@ globalThis.__engine_fetchError(id, message);
   scratchDir: string,                  // absolute; this run's writable root
   plugins: [{
     manifest: object,                  // the plugin's parsed .json manifest
-    entrySource: string,               // single-file, import-free entry
+    entrySource: string,               // the entry's source text
     dir: string,                       // its directory under bundleDir
   }],
   pluginConfig: { [componentType: string]: object },
@@ -116,7 +125,10 @@ followed by `__host_runEnded(runId)`.
 - Plugins load via `servePlugin` from `@heddle-run/core/portable`: the entry
   source is evaluated with the in-process `serve` injected; capability
   grants, event-name rules and error texts match the subprocess runtime by
-  construction.
+  construction. An entry that imports its own sibling files is linked first
+  (`linkEntry`, the same walk `linkCheck` exposes), the siblings read
+  through `__host_readFile` at paths under the plugin's `dir` — which is why
+  `dir` sits inside `bundleDir`, a root the host has declared for the run.
 - The model provider is the artifact's own, over `__host_fetch*`: an
   OpenAI-compatible chat-completions client (JSON request, SSE stream
   parsing) honoring the flow's `LLMConfig` the way core's builtin provider
