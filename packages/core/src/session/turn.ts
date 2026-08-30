@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import { SessionError } from '../errors.js';
 import type { HistoryMessage } from './history.js';
 import { CHAT_HISTORY_KEY, withoutReserved } from './reserved.js';
@@ -71,7 +70,7 @@ export async function openTurn(
   const history = historyFromTurns(record?.turns ?? []);
 
   return {
-    runId: options.runId ?? randomUUID(),
+    runId: options.runId ?? globalThis.crypto.randomUUID(),
     version: record?.version ?? 0,
     input,
     inputs:

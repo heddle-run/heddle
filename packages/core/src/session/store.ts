@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import { SessionError } from '../errors.js';
 import type {
   Checkpoint,
@@ -69,7 +68,7 @@ export interface SessionStore {
  * rule that ids there are never client-supplied.
  */
 export function newSessionId(): string {
-  return randomUUID();
+  return globalThis.crypto.randomUUID();
 }
 
 /**

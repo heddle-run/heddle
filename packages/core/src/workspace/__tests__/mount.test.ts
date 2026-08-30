@@ -12,7 +12,8 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createWorkspaceFactory } from '../factory.js';
-import { assertNoCollisions, parseMount } from '../mount.js';
+import { parseMount } from '../mount.js';
+import { assertNoCollisions } from '../collisions.js';
 import type { Mount, Workspace, WorkspaceFactory } from '../types.js';
 import { WorkspaceError } from '../../errors.js';
 

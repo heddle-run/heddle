@@ -15,7 +15,8 @@ import { BUILTIN_PROTOCOL, PROTOCOL_NAME } from './encoder.js';
 import { HeddleDeserializationPlugin } from './deserializer.js';
 import type { PluginHost } from './host.js';
 import type { Registry, ToolDef } from '../tool/types.js';
-import { assertNoCollisions, type Mount } from '../workspace/index.js';
+import { assertNoCollisions } from '../workspace/collisions.js';
+import type { Mount } from '../workspace/types.js';
 import {
   BUILTIN_INPUT_FORMATS,
   INPUT_FORMAT_NAME,

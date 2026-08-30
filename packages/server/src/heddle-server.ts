@@ -18,6 +18,7 @@ import { startServer, VERSION, type StartedServer } from './server.js';
 import {
   DEFAULT_HOST,
   DEFAULT_PORT,
+  DEFAULT_MAX_BUNDLE_BYTES,
   DEFAULT_MAX_CONCURRENT_RUNS,
   DEFAULT_DRAIN_TIMEOUT,
   DEFAULT_PLUGIN_CALL_TIMEOUT,
@@ -103,6 +104,20 @@ Options:
   --allow-write <path>   Grant sandboxed tools write access to a path (repeatable)
   --allow-env <name>     Forward an environment variable into the sandbox (repeatable)
   --deny-net             Block network access for sandboxed tools
+  --no-bundles           Refuse .heddle bundles: the /v1/bundles routes and the
+                         "bundle"/"bundleData" run fields. Bundles run with this
+                         server's full rights — see SECURITY below — so this is
+                         the flag for a deployment that should execute only
+                         operator-installed code
+  --bundles-dir <dir>    Where uploaded bundles are kept, one extracted
+                         directory per content id (default: heddle-bundles
+                         under --work-dir, or under $TMPDIR without one).
+                         There is no eviction; what is kept, and for how long,
+                         is yours
+  --max-bundle-bytes <n> Largest .heddle archive accepted, uploaded or inline
+                         (default: ${DEFAULT_MAX_BUNDLE_BYTES}). With bundles on, the run
+                         route's body cap rises by the base64 cost of one
+                         archive this size
   --auth-token <token>   Refuse any request not carrying this bearer token as
                          "Authorization: Bearer <token>". Health probes stay
                          open. Prefer $HEDDLE_AUTH_TOKEN, which stays out of
@@ -143,6 +158,14 @@ many concurrent untrusted runs.
 What that option does not change: this server still executes computation its
 callers choose and makes outbound requests to hosts they name. Restrict egress
 and terminate authentication in front of it. See DEPLOYMENT.md.
+
+Bundles are the opposite arrangement, and they are on by default. A .heddle
+bundle runs with this server's FULL RIGHTS: its plugins are processes, its
+tools are executables, its mounts land in every workspace — none of the
+request-code refusals apply, because accepting a bundle is trusting whoever
+sent it the way your own flags are trusted. Whoever can reach this server can
+hand it a program. Run --no-bundles on any deployment that should execute only
+operator-installed code.
 `;
 
 async function main(): Promise<void> {
@@ -181,6 +204,9 @@ async function main(): Promise<void> {
       'allow-env': { type: 'string', multiple: true },
       'deny-net': { type: 'boolean' },
       'auth-token': { type: 'string' },
+      'no-bundles': { type: 'boolean' },
+      'bundles-dir': { type: 'string' },
+      'max-bundle-bytes': { type: 'string' },
       version: { type: 'boolean' },
       help: { type: 'boolean', short: 'h' },
     },
@@ -279,6 +305,9 @@ async function main(): Promise<void> {
       stream: boolEnv('HEDDLE_STREAM', process.env.HEDDLE_STREAM),
       authToken:
         values['auth-token'] || process.env.HEDDLE_AUTH_TOKEN || undefined,
+      bundles: values['no-bundles'] !== true,
+      bundlesDir: values['bundles-dir'],
+      maxBundleBytes: toInt(values['max-bundle-bytes'], '--max-bundle-bytes'),
       sandbox,
     });
   } catch (err) {

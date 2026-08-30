@@ -1,10 +1,12 @@
 import {
   createScratchWorkspace,
+  loadPluginsInto,
   messageOf,
   remotePlugin,
   PluginRegistry,
   SUBMITTABLE_KINDS,
   type ManifestComponent,
+  type OpenedBundle,
   type PluginManifest,
   type PluginMethod,
   type SessionStore,
@@ -118,6 +120,44 @@ export function buildPlugins(
     registry.dispose();
     if (err instanceof HttpError) throw err;
     throw new HttpError(400, messageOf(err), 'PluginError');
+  }
+
+  return registry;
+}
+
+/**
+ * The registry a bundle's run resolves against: the operator's layer, with the
+ * bundle's plugins loaded on top.
+ *
+ * Loaded the way the CLI loads them, not the way {@link buildPlugins} takes a
+ * request's: full grants, middleware and stores and files accepted, discovery
+ * allowed. A bundle is not request code — it is the operator's trust decision
+ * made portable, and `--no-bundles` (checked long before this) is where a
+ * deployment that disagrees says so. The layering rule survives, though: a
+ * bundle plugin claiming a component type the installed layer already provides
+ * is refused rather than shadowing it.
+ */
+export async function bundlePlugins(
+  config: ServerConfig,
+  bundle: OpenedBundle,
+): Promise<PluginRegistry> {
+  if (bundle.plugins.length === 0) {
+    return config.plugins ?? PluginRegistry.empty();
+  }
+
+  const registry = config.plugins?.extend() ?? PluginRegistry.empty();
+  try {
+    await loadPluginsInto(registry, bundle.plugins, {
+      discovery: true,
+      timeout: Math.min(config.pluginCallTimeout, config.timeout),
+      sandbox: config.sandbox,
+      log: config.log,
+    });
+  } catch (err) {
+    // The copy, never the operator's layer underneath — `extend` leaves the
+    // shared hosts behind, so this stops only what this bundle started.
+    registry.dispose();
+    throw err;
   }
 
   return registry;

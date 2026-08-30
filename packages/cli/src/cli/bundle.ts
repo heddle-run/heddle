@@ -2,6 +2,7 @@ import { basename, extname } from 'node:path';
 import { Command } from 'commander';
 import {
   BundleError,
+  bundlePortability,
   collectToolNames,
   compile,
   composeRegistries,
@@ -10,6 +11,7 @@ import {
   loadFlow,
   loadPlugins,
   missingTools,
+  openBundle,
   packBundle,
   parseMount,
   parsePluginConfig,
@@ -20,6 +22,7 @@ import {
   type PackedBundle,
   type ParsedFlow,
   type PluginRegistry,
+  type PortabilityReport,
 } from '@heddle-run/core';
 import { readRequiresOption } from './bundles.js';
 
@@ -139,8 +142,24 @@ export const bundleCommand = new Command('bundle')
     };
 
     const outPath = options.output ?? defaultOutput(flow.name, flowPath);
-    report(packBundle(plan, outPath), plan);
+    report(packBundle(plan, outPath), plan, portabilityOf(outPath));
   });
+
+/**
+ * Whether the packed archive could run on a host that starts no processes.
+ *
+ * Judged by re-opening what was written rather than from the plan, so the
+ * verdict is about the artifact being shipped — the same round trip the
+ * recipient's machine will make.
+ */
+function portabilityOf(outPath: string): PortabilityReport {
+  const bundle = openBundle(outPath);
+  try {
+    return bundlePortability(bundle);
+  } finally {
+    bundle.dispose();
+  }
+}
 
 /**
  * A recorded `--max-tool-rounds`, kept as the number or the word it names.
@@ -239,7 +258,11 @@ function defaultOutput(flowName: string, flowPath: string): string {
   return `${safe.length > 0 ? safe : fallback}${BUNDLE_EXTENSION}`;
 }
 
-function report(packed: PackedBundle, plan: BundlePlan): void {
+function report(
+  packed: PackedBundle,
+  plan: BundlePlan,
+  portability: PortabilityReport,
+): void {
   console.log(`  Flow: ${plan.name} (${basename(plan.flowPath)})`);
   if (plan.toolsDir !== undefined) {
     console.log(`  Tools: ${plan.toolsDir}`);
@@ -260,6 +283,15 @@ function report(packed: PackedBundle, plan: BundlePlan): void {
   if (plan.requires?.length) {
     console.log(`  Requires: ${plan.requires.map(requirementLabel).join(', ')}`);
   }
+  // "Portable" means: runnable by a host that starts no processes — the iOS
+  // app, or any embedder without an exec. Said at pack time because it is a
+  // property of what the author chose to ship, and this is when they can
+  // still choose differently.
+  console.log(
+    portability.portable
+      ? '  Portable: yes — runs without starting processes'
+      : `  Portable: no — ${portability.reasons.join('; ')}`,
+  );
   console.log(
     `Wrote ${packed.path} (${size(packed.bytes)}, ${packed.entries} entries)`,
   );

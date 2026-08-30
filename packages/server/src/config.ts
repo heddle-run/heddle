@@ -1,3 +1,5 @@
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   createWorkspaceFactory,
   DEFAULT_RUNNER_OPTIONS,
@@ -137,6 +139,38 @@ export interface ServerConfig {
    * stays open (health probes) and how the comparison is made.
    */
   authToken?: string;
+  /**
+   * Whether `.heddle` bundles are accepted — uploaded to the store, or inline
+   * on a run.
+   *
+   * On by default, and deliberately *not* behind `--allow-request-code`: that
+   * flag is a policy for untrusted callers, and a bundle is the opposite
+   * arrangement. A bundle runs with this server's full rights — its plugins
+   * are processes, its tools are executables, its mounts land in every
+   * workspace — so accepting one is trusting whoever sent it the way the
+   * operator's own flags are trusted. `--no-bundles` is for deployments that
+   * execute only operator-installed code.
+   */
+  bundles: boolean;
+  /**
+   * Where uploaded bundles live, one extracted directory per content id.
+   *
+   * Under the work directory by default, so a deployment that pointed its
+   * per-run scratch somewhere deliberate holds its bundles there too — and
+   * under the OS temp dir otherwise, which is the honest default for a store
+   * with no eviction: the operator who wants bundles to survive a reboot
+   * names a directory that does.
+   */
+  bundlesDir: string;
+  /**
+   * Largest archive accepted, uploaded or inline.
+   *
+   * Its own limit rather than `maxBodyBytes`, because a bundle is the one
+   * body that is legitimately large — and because the inline form rides in a
+   * JSON field, this also raises the run route's body cap by the base64 cost
+   * of one archive. See `handleRun`.
+   */
+  maxBundleBytes: number;
 }
 
 export type ServerOptions = Partial<ServerConfig>;
@@ -153,6 +187,7 @@ export const DEFAULT_MAX_REQUEST_CODE_BYTES = 256 * 1024;
 export const DEFAULT_MAX_CONCURRENT_RUNS = 4;
 export const DEFAULT_PLUGIN_CALL_TIMEOUT = 30_000;
 export const DEFAULT_DRAIN_TIMEOUT = 30_000;
+export const DEFAULT_MAX_BUNDLE_BYTES = 64 * ONE_MEBIBYTE;
 
 const LOOPBACK_HOSTS = ['127.0.0.1', 'localhost', '::1', '::ffff:127.0.0.1'];
 
@@ -200,6 +235,11 @@ export function resolveConfig(options: ServerOptions = {}): ServerConfig {
       options.maxConcurrentRuns ?? DEFAULT_MAX_CONCURRENT_RUNS,
     drainTimeout: options.drainTimeout ?? DEFAULT_DRAIN_TIMEOUT,
     authToken: options.authToken,
+    bundles: options.bundles ?? true,
+    bundlesDir:
+      options.bundlesDir ??
+      join(options.workDir ?? tmpdir(), 'heddle-bundles'),
+    maxBundleBytes: options.maxBundleBytes ?? DEFAULT_MAX_BUNDLE_BYTES,
   };
 }
 

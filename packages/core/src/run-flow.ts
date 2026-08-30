@@ -10,7 +10,7 @@ import type { EventHandler } from './runner/events.js';
 import type { Dependencies } from './node/types.js';
 import { State } from './state/state.js';
 import { SubprocessExecutor } from './tool/executor.js';
-import { workspaceTools } from './workspace/index.js';
+import { createScratchWorkspace, workspaceTools } from './workspace/index.js';
 import { assertToolsAvailable, standardRegistry } from './runenv.js';
 import { assertRequirements, type Requirement } from './preflight.js';
 
@@ -95,6 +95,7 @@ export async function runFlow(options: RunFlowOptions): Promise<State> {
       eventHandler: onEvent,
       middleware: runnerOpts.middleware,
       maxToolRounds: runnerOpts.maxToolRounds,
+      scratchWorkspace: createScratchWorkspace,
     };
 
     const graph = compile(parsed, deps);

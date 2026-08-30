@@ -1,4 +1,5 @@
 import Foundation
+import HeddleCore
 import Observation
 
 /// The agents folder, watched: what the menu lists.
@@ -111,7 +112,7 @@ final class AgentStore {
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
             throw installError("the server answered \(http.statusCode)")
         }
-        guard (try? AgentLoading.bundleManifest(at: temporary)) != nil else {
+        guard (try? BundleReader.manifest(at: temporary)) != nil else {
             throw installError("what that URL serves is not a readable .heddle bundle")
         }
 
@@ -147,7 +148,7 @@ final class AgentStore {
     ///
     /// Coarser than FSEvents — any write to the directory triggers a full
     /// rescan — and exactly enough: the folder holds tens of files, and a
-    /// rescan is a readdir plus a `tar -xO` per new bundle.
+    /// rescan is a readdir plus a manifest read per new bundle.
     private func watch() {
         let fd = open(directory.path, O_EVTONLY)
         guard fd >= 0 else { return }

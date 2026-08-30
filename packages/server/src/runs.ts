@@ -24,22 +24,29 @@ import {
   type CompiledGraph,
   type Dependencies,
   type Event,
+  type OpenedBundle,
   type OpenedTurn,
   type ParsedFlow,
   type Registry,
   type RunnerOptions,
   type RunPosition,
   type RunSuspended,
+  type SessionRecord,
   type SessionStore,
   type TurnOutcome,
   type WorkspaceFactory,
 } from '@heddle-run/core';
+import { materializeBundle, rejectBundleConflicts } from './bundles.js';
 import type { ServerConfig } from './config.js';
 import { HttpError, toErrorResponse } from './errors.js';
-import { resolveFlow, type FlowRequest } from './flow-source.js';
+import {
+  resolveBundleFlow,
+  resolveFlow,
+  type FlowRequest,
+} from './flow-source.js';
 import { readJsonBody, sendJson } from './http.js';
 import type { ConcurrencyGate } from './limits.js';
-import { buildPlugins } from './plugins.js';
+import { buildPlugins, bundlePlugins } from './plugins.js';
 import {
   asBadRequest,
   materializeRequestCode,
@@ -60,6 +67,10 @@ interface RunRequest extends FlowRequest, RequestCode {
   resume?: boolean;
   /** What to tell a run that stopped on a human, with "resume". */
   answer?: Record<string, unknown>;
+  /** A stored bundle's id, as `POST /v1/bundles` returned it. */
+  bundle?: string;
+  /** A one-shot `.heddle` archive, base64. Extracted for this run, then gone. */
+  bundleData?: string;
 }
 
 /** The conversation a run belongs to, once its turn has been opened. */
@@ -87,6 +98,8 @@ interface RunPlan {
   abort: AbortController;
   headers: Record<string, string>;
   session?: SessionTurn;
+  /** The bundle this run is, when the request named one. */
+  bundle?: OpenedBundle;
 }
 
 const SERVER_SIDE_FIELDS = [
@@ -114,40 +127,54 @@ export async function handleRun(
   protocol: string | null,
   headers: Record<string, string> = {},
 ): Promise<void> {
-  const body = await readJsonBody(req, config.maxBodyBytes);
+  const body = await readJsonBody(req, runBodyLimit(config));
   rejectServerSideFields(body);
+  rejectBundleConflicts(body, config);
   if (!config.allowRequestCode) rejectRequestCode(body);
   requireStreamFor(protocol, stream);
 
   const runBody = body as RunRequest;
-  const inputs = readInputs(runBody);
   const release = gate.acquire();
   const abort = abortWhenClientHangsUp(res);
 
+  let bundle: OpenedBundle | undefined;
   let code: MaterializedCode = NO_CODE;
   let plugins = PluginRegistry.empty();
   let workspaces = config.workspaces;
 
   try {
+    bundle = materializeBundle(runBody, config);
+    // Underneath the caller's own, so a bundle's recorded input is what the
+    // run starts from and the body's is what the caller changed their mind
+    // about. The bundle's `interactive` is deliberately not read: a wish for a
+    // conversation means nothing on one HTTP request.
+    const inputs = bundle
+      ? { ...bundle.input, ...readInputs(runBody) }
+      : readInputs(runBody);
+
     if (config.allowRequestCode) code = materializeRequestCode(runBody, config);
-    // Unconditionally, because a run resolves against the installed plugins
-    // whether or not it brought any of its own. `NO_CODE` contributes nothing,
-    // so with request code refused this is the operator's layer alone.
-    plugins = buildPlugins(config, code);
+    // A bundle's plugins are loaded with full rights; a request's are refused
+    // everything `buildPlugins` refuses. The two cannot meet — the field
+    // collision was rejected above — and with neither, both branches resolve
+    // to the operator's layer alone.
+    plugins = bundle
+      ? await bundlePlugins(config, bundle)
+      : buildPlugins(config, code);
     // The same shape, for the same reason: the server's factory is built once
     // at startup and this layers the request's own files onto a copy of it. A
     // collision with something the operator mounted is refused here rather than
     // shadowing it, which is why it can be the caller's 400. With nothing to
     // layer, the operator's factory is used as it is — the dispose guard below
     // already knows not to touch it.
-    if (code.mounts.length > 0) {
-      workspaces = asBadRequest(() => config.workspaces.extend(code.mounts));
+    const mounts = bundle?.mounts ?? code.mounts;
+    if (mounts.length > 0) {
+      workspaces = asBadRequest(() => config.workspaces.extend(mounts));
     }
 
     // Before anything is compiled, so a session that is busy or unknown is
     // refused without the request having spent a graph on it — and so the
     // history is in the inputs the graph is then given.
-    const session = await openSession(config, runBody, inputs);
+    const session = await openSession(config, runBody, inputs, bundle);
 
     const plan: RunPlan = {
       config,
@@ -159,6 +186,7 @@ export async function handleRun(
       abort: abort.controller,
       headers,
       session,
+      bundle,
     };
 
     if (stream) await runStreaming(res, plan, protocol);
@@ -175,14 +203,31 @@ export async function handleRun(
     // would delete what every later run starts from.
     if (workspaces !== config.workspaces) workspaces.dispose();
     code.dispose();
+    // A no-op for a stored bundle, whose directory is the store's; for inline
+    // bytes this removes everything the request carried in.
+    bundle?.dispose();
     release();
   }
+}
+
+/**
+ * The body cap for this route, which is the one route a bundle rides through.
+ *
+ * With bundles on, room for `maxBodyBytes` of request plus the base64 cost of
+ * one archive at the bundle limit — the inline form is a JSON field, and a cap
+ * sized for JSON alone would refuse every archive the bundle limit allows.
+ * `--no-bundles` puts it back exactly where it was.
+ */
+function runBodyLimit(config: ServerConfig): number {
+  if (!config.bundles) return config.maxBodyBytes;
+  return config.maxBodyBytes + Math.ceil((config.maxBundleBytes * 4) / 3);
 }
 
 async function openSession(
   config: ServerConfig,
   body: RunRequest,
   inputs: Record<string, unknown>,
+  bundle?: OpenedBundle,
 ): Promise<SessionTurn | undefined> {
   if (body.session === undefined) {
     assertNoSessionOnlyFields(body);
@@ -192,6 +237,7 @@ async function openSession(
   const { store, id, record } = await resolveSession(config, body.session);
 
   if (body.resume === true) {
+    assertBundleRepeated(record, body);
     const resumed = await resumeTurn(store, id);
     const { suspension } = resumed.checkpoint;
 
@@ -204,10 +250,66 @@ async function openSession(
   }
 
   const opened = await openTurn(store, id, inputs, {
-    flow: flowLabel(body),
+    flow: flowLabel(body, bundle),
     record,
   });
   return { store, id, opened };
+}
+
+/** How a turn records that its flow came out of a bundle. */
+const BUNDLE_LABEL = 'bundle:';
+const INLINE_BUNDLE_LABEL = 'bundle:inline:';
+
+/**
+ * Refuse a resume that would continue a bundle's conversation with a
+ * different program.
+ *
+ * The mirror of the CLI's repeat-your-plugin-flags rule: a resumed run needs
+ * the bundle's flow, tools and plugins as much as the first turn did, and
+ * nothing but the request can bring them back. Checked against what the
+ * conversation recorded, before the checkpoint is read, so the refusal names
+ * the bundle rather than surfacing as whatever a bundleless resume broke
+ * first.
+ */
+function assertBundleRepeated(record: SessionRecord, body: RunRequest): void {
+  const recorded = lastFlowLabel(record);
+  if (recorded === undefined || !recorded.startsWith(BUNDLE_LABEL)) return;
+
+  if (recorded.startsWith(INLINE_BUNDLE_LABEL)) {
+    if (body.bundleData !== undefined) return;
+    throw new HttpError(
+      400,
+      `this conversation was opened by a bundle sent inline ` +
+        `("${recorded.slice(INLINE_BUNDLE_LABEL.length)}"). Resuming it needs ` +
+        `the bundle's flow, tools and plugins — send the archive again as ` +
+        `"bundleData".`,
+    );
+  }
+
+  const id = recorded.slice(BUNDLE_LABEL.length);
+  if (body.bundle === id) return;
+  throw new HttpError(
+    400,
+    `this conversation belongs to bundle "${id}". Resume it with ` +
+      `"bundle": "${id}" — the run needs the bundle's flow, tools and ` +
+      `plugins, and a resume that brought its own would continue the ` +
+      `conversation with a different program.`,
+  );
+}
+
+/**
+ * What this conversation was last run with, as its turns wrote it down.
+ *
+ * The most recent turn that has a label, because that is the program the
+ * checkpoint being resumed came out of; the record's own `flow` is only a
+ * creation-time hint and stands in when no turn has closed yet.
+ */
+function lastFlowLabel(record: SessionRecord): string | undefined {
+  for (let i = record.turns.length - 1; i >= 0; i--) {
+    const { flow } = record.turns[i];
+    if (typeof flow === 'string') return flow;
+  }
+  return record.flow;
 }
 
 /**
@@ -303,8 +405,19 @@ function sendSuspended(
  * the document — never the document itself. A transcript is read back by
  * somebody asking what this conversation was with, and a spec pasted into every
  * turn answers that question at the cost of making the file unreadable.
+ *
+ * A bundle is labelled by its id when the store holds it — the one name that
+ * gets the same program back — and by its own name when it arrived inline,
+ * where there is no id to repeat. {@link assertBundleRepeated} reads these
+ * back.
  */
-function flowLabel(body: RunRequest): string | undefined {
+function flowLabel(body: RunRequest, bundle?: OpenedBundle): string | undefined {
+  if (bundle) {
+    return typeof body.bundle === 'string'
+      ? `${BUNDLE_LABEL}${body.bundle}`
+      : `${INLINE_BUNDLE_LABEL}${bundle.name}`;
+  }
+
   const path = (body as { flowPath?: unknown }).flowPath;
   if (typeof path === 'string') return path;
 
@@ -460,7 +573,9 @@ async function prepare(
   plan: RunPlan,
   eventHandler: (event: Event) => void,
 ): Promise<Prepared> {
-  const flow = resolveFlow(plan.body, plan.config, plan.plugins);
+  const flow = plan.bundle
+    ? resolveBundleFlow(plan.bundle, plan.plugins)
+    : resolveFlow(plan.body, plan.config, plan.plugins);
   const { deps, middleware } = buildDependencies(flow, plan, eventHandler);
 
   const graph = compile(flow, deps);
@@ -474,7 +589,7 @@ function buildDependencies(
   eventHandler: (event: Event) => void,
 ): { deps: Dependencies; middleware: MiddlewareChain } {
   const { config } = plan;
-  const registry = buildRegistry(config, plan.code, plan.plugins);
+  const registry = buildRegistry(config, plan);
 
   const toolNames = collectToolNames(flow);
   if (toolNames.length > 0) assertToolsAvailable(registry, toolNames);
@@ -508,11 +623,12 @@ function buildDependencies(
   // and shared — but the processes behind it were, which is what an installed
   // plugin buys. Built from `plan.plugins` rather than `config.plugins` only
   // because that is the registry in hand; a submitted plugin declaring
-  // middleware never reaches here, having been refused in `buildPlugins`.
+  // middleware never reaches here, having been refused in `buildPlugins` — a
+  // bundle's may, which is one of the rights a bundle runs with.
   const middleware = MiddlewareChain.build(
     plan.plugins,
     deps,
-    config.pluginConfig,
+    pluginConfigFor(plan),
   );
   // On both, because the two reach different call sites — see the field's own
   // comment in `Dependencies`. Assigned after the build since the chain is made
@@ -522,16 +638,32 @@ function buildDependencies(
   return { deps, middleware };
 }
 
-function buildRegistry(
-  config: ServerConfig,
-  code: MaterializedCode,
-  plugins: PluginRegistry,
-): Registry {
+function buildRegistry(config: ServerConfig, plan: RunPlan): Registry {
+  // A bundle's tools directory rides where a request's would — the two are
+  // mutually exclusive, so this is whichever one this run has, or neither.
+  const toolsDir = plan.bundle?.toolsDir ?? plan.code.toolsDir;
+
   return standardRegistry({
-    plugins,
+    plugins: plan.plugins,
     toolsDir: config.toolsRegistry(),
-    extra: code.toolsDir ? [FileRegistry.create(code.toolsDir)] : undefined,
+    extra: toolsDir ? [FileRegistry.create(toolsDir)] : undefined,
   });
+}
+
+/**
+ * The component settings this run's middleware is built from.
+ *
+ * A bundle's recorded settings underneath the operator's, so a bundle can
+ * configure the middleware it carried while the operator's word stays final on
+ * anything both name. `SERVER_SIDE_FIELDS` is untouched by this: what it
+ * refuses is `pluginConfig` in the request *body*, and a bundle's arrived
+ * inside the archive.
+ */
+function pluginConfigFor(
+  plan: RunPlan,
+): Record<string, Record<string, unknown>> {
+  if (!plan.bundle) return plan.config.pluginConfig;
+  return { ...plan.bundle.pluginConfig, ...plan.config.pluginConfig };
 }
 
 function runnerOptions(
@@ -546,11 +678,30 @@ function runnerOptions(
     verbose: false,
     eventHandler,
     maxNodeAttempts: config.maxNodeAttempts,
-    maxToolRounds: config.maxToolRounds,
+    maxToolRounds: cappedToolRounds(plan.bundle, config.maxToolRounds),
     middleware,
     checkpoints: checkpointsFor(plan),
     durable: plan.body.durable === true || plan.body.resume === true,
   };
+}
+
+/**
+ * The tool-round ceiling a bundle asked for, held under the operator's.
+ *
+ * Rights are not budget: a bundle runs with this server's full rights, but
+ * `--max-tool-rounds` bounds what a run may spend of the server's own money,
+ * and that stays the operator's whoever wrote the flow. A recorded number is
+ * honored up to the cap; a recorded word ("unlimited" and its synonyms, which
+ * the CLI would read as no ceiling at all) gets the cap itself — the closest
+ * thing to unlimited this server sells.
+ */
+function cappedToolRounds(
+  bundle: OpenedBundle | undefined,
+  cap: number,
+): number {
+  const requested = bundle?.maxToolRounds;
+  if (typeof requested !== 'number') return cap;
+  return Math.min(requested, cap);
 }
 
 function readInputs(body: RunRequest): Record<string, unknown> {

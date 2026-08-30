@@ -4,7 +4,8 @@ import type {
   PluginManifest,
 } from './manifest.js';
 import type { ToolDef } from '../tool/types.js';
-import type { PluginHost } from './host.js';
+import type { PluginCaller } from './host.js';
+import { SEAMS, type AfterAction, type Seam } from './seams.js';
 import { toolRunner } from './services.js';
 import { checkSchema } from './schema.js';
 import { PluginError, SessionConflictError } from '../errors.js';
@@ -16,6 +17,7 @@ import type {
   SessionSummary,
 } from '../session/types.js';
 import type {
+  HeddlePlugin,
   PluginComponent,
   PluginComponentDef,
   PluginEncoder,
@@ -33,6 +35,7 @@ import type {
   TransformPhase,
   TransformResult,
   WireFrame,
+  WorkspaceFile,
 } from './types.js';
 import {
   readAfterVerdict,
@@ -47,6 +50,7 @@ import {
   type AfterVerdict,
   type BeforeVerdict,
   type HostMethod,
+  type PluginMethod,
 } from './protocol.js';
 import { serializeEvent } from './encoder.js';
 import type { Event } from '../runner/events.js';
@@ -65,7 +69,7 @@ export type { TransformPhase };
 export function remoteNodeDef(
   manifest: PluginManifest,
   entry: ManifestComponent,
-  host: () => PluginHost,
+  host: () => PluginCaller,
 ): PluginNodeDef {
   const def: PluginNodeDef = {
     componentType: entry.componentType,
@@ -113,7 +117,7 @@ export function remoteNodeDef(
 export function remoteTransformDef(
   manifest: PluginManifest,
   entry: ManifestComponent,
-  host: () => PluginHost,
+  host: () => PluginCaller,
 ): PluginTransformDef {
   const def: PluginTransformDef = {
     componentType: entry.componentType,
@@ -164,7 +168,7 @@ export function remoteTransformDef(
 export function remoteMiddlewareDef(
   manifest: PluginManifest,
   entry: ManifestComponent,
-  host: () => PluginHost,
+  host: () => PluginCaller,
 ): PluginMiddlewareDef {
   const where = `middleware "${entry.componentType}" (plugin "${manifest.name}")`;
 
@@ -241,7 +245,7 @@ export function remoteMiddlewareDef(
 export function remoteProviderDef(
   manifest: PluginManifest,
   entry: ManifestComponent,
-  host: () => PluginHost,
+  host: () => PluginCaller,
 ): PluginProviderDef {
   const def: PluginProviderDef = {
     componentType: entry.componentType,
@@ -305,7 +309,7 @@ export function remoteProviderDef(
 export function remoteEncoderDef(
   manifest: PluginManifest,
   entry: ManifestComponent,
-  host: () => PluginHost,
+  host: () => PluginCaller,
 ): PluginEncoderDef {
   const componentType = entry.componentType;
   const protocol = entry.protocol as string;
@@ -352,7 +356,7 @@ export function remoteEncoderDef(
 export function remoteStoreDef(
   manifest: PluginManifest,
   entry: ManifestComponent,
-  host: () => PluginHost,
+  host: () => PluginCaller,
 ): PluginStoreDef {
   const componentType = entry.componentType;
   const where = `store "${componentType}" (plugin "${manifest.name}")`;
@@ -476,7 +480,7 @@ export function remoteComponentDef(
 export function remoteToolDef(
   manifest: PluginManifest,
   tool: ManifestTool,
-  host: () => PluginHost,
+  host: () => PluginCaller,
 ): ToolDef {
   const where = `plugin "${manifest.name}": tool "${tool.name}"`;
 
@@ -636,3 +640,150 @@ function nameOf(
   return `plugin "${plugin}": ${componentType} "${componentName}"`;
 }
 
+
+/**
+ * The two places assembling a plugin has to touch something outside the
+ * manifest: a tool shipped as an executable, and files copied into every
+ * workspace. Both name paths, so resolving them is the host's business —
+ * the Node loader checks them against the plugin's own directory on disk,
+ * and an in-process host refuses them, because there is no process to run
+ * an executable in and no directory the plugin ships.
+ */
+export interface ShippedResolvers {
+  /** The absolute path a `path` tool runs at. */
+  executableTool(tool: ManifestTool): string;
+  /** The workspace files this plugin ships, resolved to host paths. */
+  files(): WorkspaceFile[];
+}
+
+/**
+ * Assemble the {@link HeddlePlugin} a validated manifest describes, with every
+ * component definition calling back through `getHost`.
+ *
+ * Shared by the subprocess loader (`remote-loader.ts`) and the in-process
+ * host (`serve-local.ts`); the transport difference lives entirely in what
+ * `getHost` returns and what the resolvers do.
+ */
+export function buildPlugin(
+  manifest: PluginManifest,
+  getHost: () => PluginCaller,
+  resolvers: ShippedResolvers,
+): HeddlePlugin {
+  const plugin: HeddlePlugin = {
+    name: manifest.name,
+    version: manifest.version,
+    nodes: [],
+    transforms: [],
+    components: [],
+    providers: [],
+    middleware: [],
+    encoders: [],
+    stores: [],
+    tools: manifest.tools.map((tool) =>
+      toolDefFor(manifest, tool, getHost, resolvers),
+    ),
+    files: resolvers.files(),
+  };
+
+  for (const component of manifest.components) {
+    switch (component.kind ?? 'node') {
+      case 'node':
+        plugin.nodes?.push(remoteNodeDef(manifest, component, getHost));
+        break;
+      case 'transform':
+        plugin.transforms?.push(
+          remoteTransformDef(manifest, component, getHost),
+        );
+        break;
+      case 'component':
+        plugin.components?.push(remoteComponentDef(component));
+        break;
+      case 'provider':
+        plugin.providers?.push(remoteProviderDef(manifest, component, getHost));
+        break;
+      case 'middleware':
+        plugin.middleware?.push(
+          remoteMiddlewareDef(manifest, component, getHost),
+        );
+        break;
+      case 'encoder':
+        plugin.encoders?.push(remoteEncoderDef(manifest, component, getHost));
+        break;
+      case 'store':
+        plugin.stores?.push(remoteStoreDef(manifest, component, getHost));
+        break;
+    }
+  }
+
+  return plugin;
+}
+
+export function toolDefFor(
+  manifest: PluginManifest,
+  tool: ManifestTool,
+  getHost: () => PluginCaller,
+  resolvers: ShippedResolvers,
+): ToolDef {
+  if (tool.componentType !== undefined) {
+    return remoteToolDef(manifest, tool, getHost);
+  }
+
+  return {
+    name: tool.name,
+    description: tool.description ?? '',
+    origin: `plugin:${manifest.name}`,
+    inputSchema: tool.inputSchema,
+    outputSchema: tool.outputSchema,
+    shadows: tool.shadows,
+    impl: { kind: 'path', path: resolvers.executableTool(tool) },
+  };
+}
+
+export function admittedVerdicts(
+  manifest: PluginManifest,
+): Record<string, AfterAction[]> | undefined {
+  const admitted: Record<string, AfterAction[]> = {};
+
+  for (const component of manifest.components) {
+    for (const seam of Object.keys(component.seams ?? {}) as Seam[]) {
+      admitted[seam] = SEAMS[seam].after;
+    }
+  }
+
+  return Object.keys(admitted).length > 0 ? admitted : undefined;
+}
+
+export function checkGrant(
+  manifest: PluginManifest,
+  granted: PluginMethod[],
+  reasons: Partial<Record<PluginMethod, string>>,
+): void {
+  const allowed = new Set(granted);
+  const refused = manifest.capabilities.filter(
+    (capability) => !allowed.has(capability),
+  );
+  if (refused.length === 0) return;
+
+  throw new PluginError(refusedGrantMessage(manifest, granted, refused, reasons));
+}
+
+function refusedGrantMessage(
+  manifest: PluginManifest,
+  granted: PluginMethod[],
+  refused: PluginMethod[],
+  reasons: Partial<Record<PluginMethod, string>>,
+): string {
+  const why = refused
+    .map((capability) => reasons[capability])
+    .filter((reason): reason is string => reason !== undefined);
+  const explanation = why.length > 0 ? `\n\n${why.join('\n\n')}` : '';
+
+  return (
+    `plugin "${manifest.name}" requests ${refused.map((c) => `"${c}"`).join(', ')}, ` +
+    `which this host does not grant. Granted here: ` +
+    `${granted.length > 0 ? granted.join(', ') : 'nothing'}. ` +
+    `A capability is the operator's to give, so the plugin cannot obtain it by ` +
+    `asking differently — drop it from the manifest, or run the plugin somewhere ` +
+    `it is granted.${explanation}`
+  );
+}

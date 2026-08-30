@@ -89,9 +89,16 @@ ENTRYPOINT ["node", "/app/dist/heddle-server.js"]
 # --max-concurrent is therefore a ceiling this topology never approaches, not a
 # description of it. The broker advertises the real figure — 1 — in its
 # capabilities response; see packages/broker/src/index.ts.
+#
+# --no-bundles because this is exactly the hardened deployment that flag is
+# for: a bundle runs with the server's full rights — plugins as processes,
+# middleware, stores, mounts in every workspace — where request code runs with
+# none of them. This engine serves anonymous internet callers, who get the
+# request-code policy and nothing more.
 CMD ["--host", "0.0.0.0", \
      "--port", "4319", \
      "--allow-request-code", \
+     "--no-bundles", \
      "--work-dir", "/var/heddle/runs", \
      "--max-concurrent", "8", \
      "--max-iterations", "25", \

@@ -21,6 +21,41 @@ final class ServerClientTests: XCTestCase {
         XCTAssertEqual(json.objectValue?["flowPath"]?.stringValue, "flows/demo.yaml")
     }
 
+    func testRunRequestCarriesAServerBundleID() throws {
+        var body = RunRequest()
+        body.bundle = "a".padding(toLength: 8, withPad: "a", startingAt: 0)
+        body.session = "s-1"
+        body.resume = true
+
+        let json = try encoded(body)
+        XCTAssertEqual(json.objectValue?.keys.sorted(), ["bundle", "resume", "session"])
+        XCTAssertEqual(json.objectValue?["bundle"]?.stringValue, "aaaaaaaa")
+    }
+
+    func testCapabilitiesReadTheBundlesBlock() throws {
+        let data = Data(
+            #"{"version":"1","bundles":{"enabled":true,"maxBytes":67108864,"store":true}}"#
+                .utf8)
+        let caps = try JSONDecoder().decode(ServerCapabilities.self, from: data)
+        XCTAssertTrue(caps.bundlesEnabled)
+        XCTAssertEqual(caps.bundles?.maxBytes, 67_108_864)
+
+        // An older server that predates /v1/bundles: absent means off.
+        let old = try JSONDecoder().decode(
+            ServerCapabilities.self, from: Data(#"{"version":"1"}"#.utf8))
+        XCTAssertFalse(old.bundlesEnabled)
+    }
+
+    func testBundleUploadDecodesTheStoreAnswer() throws {
+        let data = Data(
+            #"{"id":"deadbeef","name":"coding-agent","portable":false,"reasons":["x"]}"#
+                .utf8)
+        let upload = try JSONDecoder().decode(BundleUpload.self, from: data)
+        XCTAssertEqual(upload.id, "deadbeef")
+        XCTAssertEqual(upload.name, "coding-agent")
+        XCTAssertEqual(upload.portable, false)
+    }
+
     func testRunRequestSendsInlineFlowAndAnswerVerbatim() throws {
         var body = RunRequest()
         body.flow = .string("component_type: Flow")

@@ -3,6 +3,7 @@ import { chmodSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadRemotePlugin } from '../remote-loader.js';
 import { PluginRegistry } from '../registry.js';
+import { createScratchWorkspace } from '../../workspace/index.js';
 import { compile } from '../../graph/compile.js';
 import { validate } from '../../graph/validate.js';
 import { parseFlow } from '../../spec/parser.js';
@@ -38,7 +39,11 @@ async function runFlow(
   );
 
   const pf = parseFlow(flow, registry);
-  const graph = compile(pf, { plugins: registry, ...deps });
+  const graph = compile(pf, {
+    plugins: registry,
+    scratchWorkspace: createScratchWorkspace,
+    ...deps,
+  });
   validate(graph);
 
   const runner = new Runner(graph, {
@@ -788,7 +793,10 @@ function hangingGraph(componentType: string, name: string) {
   registry.addRemote(loadRemotePlugin(manifest(componentType), entry, { timeout: 60_000 }));
 
   const pf = parseFlow(flowUsing(componentType), registry);
-  const graph = compile(pf, { plugins: registry });
+  const graph = compile(pf, {
+    plugins: registry,
+    scratchWorkspace: createScratchWorkspace,
+  });
   validate(graph);
   return graph;
 }
@@ -1148,7 +1156,11 @@ async function runTransform(
   );
 
   const pf = parseFlow(agentFlowWithTransform(componentType, component), registry);
-  const graph = compile(pf, { plugins: registry, ...deps });
+  const graph = compile(pf, {
+    plugins: registry,
+    scratchWorkspace: createScratchWorkspace,
+    ...deps,
+  });
   validate(graph);
 
   const runner = new Runner(graph, { ...DEFAULT_RUNNER_OPTIONS, verbose: false });

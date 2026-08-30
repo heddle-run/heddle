@@ -143,6 +143,7 @@ export type { ComponentKind, RegisteredMiddleware } from './plugin/registry.js';
 export {
   loadPlugin,
   loadPlugins,
+  loadPluginsInto,
   type LoadPluginsOptions,
 } from './plugin/loader.js';
 export { parsePluginConfig } from './plugin/config.js';
@@ -170,6 +171,11 @@ export {
   remotePlugin,
 } from './plugin/remote-loader.js';
 export type { RemotePlugin, RemotePluginOptions } from './plugin/remote-loader.js';
+export { localPlugin, servePlugin } from './plugin/serve-local.js';
+export type { LocalPlugin, LocalPluginServices } from './plugin/serve-local.js';
+export { makeServe } from './plugin/serve-impl.js';
+export type { ServeFn, ServeIO, ServeOptions } from './plugin/serve-impl.js';
+export type { PluginCaller } from './plugin/host.js';
 export { PluginHost } from './plugin/host.js';
 export type {
   CallOptions,
@@ -421,6 +427,32 @@ export type { BundleManifest, BundleMount } from './bundle/format.js';
 export { packBundle } from './bundle/pack.js';
 export type { BundlePlan, PackedBundle } from './bundle/pack.js';
 export { extractBundle } from './bundle/unpack.js';
+// Opening is the other half of packing, and it lives here for the same
+// reason: the CLI, the server and any embedder taking bundles resolve one
+// through a single translation, so what a bundle means does not depend on
+// who opened it.
+export {
+  bundlePortability,
+  openBundle,
+  resolveExtractedBundle,
+} from './bundle/open.js';
+export type { OpenBundleOptions, OpenedBundle } from './bundle/open.js';
+export {
+  isLibraryName,
+  isRemotePath,
+  LIBRARY,
+  libraryUrl,
+} from './bundle/library.js';
+export { downloadBundle, fetchRemoteBundle } from './bundle/fetch.js';
+export type {
+  FetchedBundle,
+  FetchRemoteBundleOptions,
+} from './bundle/fetch.js';
+export { checkPortability } from './bundle/portable.js';
+export type {
+  PortabilityReport,
+  PortablePluginInput,
+} from './bundle/portable.js';
 
 export {
   BundleError,

@@ -17,6 +17,7 @@ const stubProvider = (config: LLMConfig, options: ProviderOptions): Provider => 
 import type { Provider } from '../../llm/types.js';
 import type { ProviderOptions } from '../../llm/provider.js';
 import { PluginRegistry } from '../registry.js';
+import { createScratchWorkspace } from '../../workspace/index.js';
 import { TransformChain } from '../transform.js';
 import { loadRemotePlugin } from '../remote-loader.js';
 import { withRuntime } from '../runtime-source.js';
@@ -107,6 +108,7 @@ async function run(
   const graph = compile(parseFlow(flow, registry), {
     plugins: registry,
     createProvider: stubProvider,
+    scratchWorkspace: createScratchWorkspace,
     ...deps,
   });
   validate(graph);

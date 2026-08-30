@@ -76,6 +76,9 @@ heddle-server --tools-dir ./tools
 | `--allow-env <name>` | none | Environment variable to forward into the sandbox. Repeatable. |
 | `--deny-net` | off | Block network access for sandboxed tools. |
 | `--auth-token <token>` | none | Refuse any request not carrying `Authorization: Bearer <token>`; health probes stay open. Prefer `$HEDDLE_AUTH_TOKEN`, which stays out of `ps` output. One shared secret for a local front end holding its own loopback server — not accounts, and not a reason to bind beyond loopback. |
+| `--no-bundles` | off | Refuse `.heddle` bundles: the `/v1/bundles` routes and the `bundle`/`bundleData` run fields. A bundle runs with this server's full rights, so this is the flag for a deployment that should execute only operator-installed code. |
+| `--bundles-dir <dir>` | `heddle-bundles` under `--work-dir` | Where uploaded bundles are kept, one extracted directory per content id. No eviction: what is kept, and for how long, is yours. |
+| `--max-bundle-bytes <n>` | `67108864` | Largest `.heddle` archive accepted, uploaded or inline. With bundles on, the run route's body cap rises by the base64 cost of one archive this size. |
 | `--version` | — | Print the server version and exit. |
 
 | Environment variable | Default | Meaning |

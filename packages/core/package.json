@@ -33,6 +33,11 @@
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
+    "./portable": {
+      "types": "./dist/portable.d.ts",
+      "import": "./dist/portable.js",
+      "default": "./dist/portable.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
@@ -41,7 +46,8 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsup",
+    "build": "tsup && node scripts/build-portable.mjs",
+    "build:portable": "node scripts/build-portable.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
@@ -52,8 +58,9 @@
     "zod": "^3.23.0"
   },
   "devDependencies": {
-    "agentspec": "workspace:*",
     "@types/node": "^22.13.0",
+    "agentspec": "workspace:*",
+    "esbuild": "^0.25.12",
     "tsup": "^8.4.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"

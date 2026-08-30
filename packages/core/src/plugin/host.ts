@@ -89,6 +89,31 @@ export interface CallOptions {
   callModel?: ModelCaller;
 }
 
+/**
+ * The surface a remote component definition needs from whatever hosts its
+ * plugin.
+ *
+ * Extracted from {@link PluginHost} so that hosting is a choice of transport:
+ * a subprocess behind a pipe (`PluginHost`) or the same dispatch running
+ * in-process (`serve-local.ts`). `remote.ts` builds its definitions against
+ * this rather than the class, and everything here means what the class's
+ * member of the same name means.
+ */
+export interface PluginCaller {
+  /**
+   * Whether the plugin runs somewhere it cannot see the workspace.
+   * Always false in-process — the plugin shares the host's own view.
+   */
+  readonly confined: boolean;
+  call<M extends HostMethod>(
+    method: M,
+    params: HostMethods[M],
+    options?: CallOptions,
+  ): Promise<unknown>;
+  setToolRunner(run: ToolRunner): void;
+  dispose(): void;
+}
+
 type Respond = (response: Omit<RpcResponse, 'id'>) => void;
 
 interface LaunchCommand {
@@ -111,7 +136,7 @@ interface Pending {
   lifecycle?: true;
 }
 
-export class PluginHost {
+export class PluginHost implements PluginCaller {
   private readonly pending = new Map<number, Pending>();
   private readonly decoder = new LineDecoder();
   private readonly granted: ReadonlySet<PluginMethod>;

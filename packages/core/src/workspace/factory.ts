@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createWorkspace, removeDir, slug } from './dir.js';
 import { copyTree, stampTree, type CopyBudget } from './copy.js';
-import { assertNoCollisions } from './mount.js';
+import { assertNoCollisions } from './collisions.js';
 import { ScopeWorkspace, mountParent, type WritableMount } from './workspace.js';
 import type {
   Mount,
