@@ -22,6 +22,11 @@ import { Runner } from './runner/runner.js';
 import { DEFAULT_RUNNER_OPTIONS, type RunnerOptions } from './runner/options.js';
 import { EVENT_CONTRACT_VERSION, type Event } from './runner/events.js';
 import { serializeEvent } from './plugin/encoder.js';
+import {
+  evaluateLinked,
+  linkEntry,
+  usesModuleSyntax,
+} from './plugin/esm-link.js';
 import { PluginRegistry } from './plugin/registry.js';
 import { servePlugin } from './plugin/serve-local.js';
 import { validateManifest } from './plugin/manifest.js';
@@ -51,7 +56,7 @@ import type {
 } from './llm/types.js';
 import type { ProviderOptions } from './llm/provider.js';
 import { envRefKey, isEnvRef } from './llm/env-refs.js';
-import { LLMError, messageOf, SessionConflictError } from './errors.js';
+import { LLMError, messageOf, PluginError, SessionConflictError } from './errors.js';
 
 declare const __HEDDLE_CORE_VERSION__: string | undefined;
 
@@ -742,16 +747,45 @@ function buildRegistry(config: RunConfig): PluginRegistry {
   for (const entry of config.plugins) {
     const manifest = validateManifest(entry.manifest);
     const plugin = servePlugin(manifest, (serve: unknown) => {
-      // The entry is single-file and import-free — checkPortability said so
-      // before this bundle was allowed here — so classic evaluation with the
-      // in-process serve injected is exactly what `node --import runtime`
-      // gives the same file.
-      new Function('serve', entry.entrySource)(serve);
+      evaluateEntry(manifest.name, entry, serve);
     });
     registry.add(plugin);
   }
 
   return registry;
+}
+
+/**
+ * Run a plugin's entry with the in-process `serve` injected.
+ *
+ * An import-free entry gets classic evaluation — exactly what
+ * `node --import runtime` gives the same file. One that imports sibling
+ * modules goes through the linker, its files read over the host bridge from
+ * the plugin's directory (registered as a run root along with the rest of
+ * the bundle). `checkPortability` ran this same linker before the bundle was
+ * allowed here, so a refusal below means the extracted files changed since.
+ */
+function evaluateEntry(
+  name: string,
+  entry: RunConfig['plugins'][number],
+  serve: unknown,
+): void {
+  if (!usesModuleSyntax(entry.entrySource)) {
+    new Function('serve', entry.entrySource)(serve);
+    return;
+  }
+
+  const root = entry.dir.replace(/\/+$/, '');
+  const linked = linkEntry({
+    source: entry.entrySource,
+    read: (path) => host.__host_readFile(`${root}/${path}`),
+  });
+  if (!linked.ok) {
+    throw new PluginError(
+      `plugin "${name}" cannot run in-process: ${linked.problems.join('; ')}`,
+    );
+  }
+  evaluateLinked(linked.modules, { serve });
 }
 
 async function execute(config: RunConfig): Promise<void> {
@@ -906,6 +940,39 @@ function applyMaxToolRounds(
   protocolVersion: EVENT_CONTRACT_VERSION,
 
   inspect,
+
+  /**
+   * Judge whether a plugin entry would evaluate here — the linker half of
+   * `checkPortability`, offered to hosts whose portability check runs in
+   * another language. Runs nothing. `pluginJSON` decodes to
+   * `{entrySource, files: {path: source}}`; the answer is a JSON string,
+   * `{ok: true}` or `{ok: false, problems: [...]}`.
+   */
+  linkCheck(pluginJSON: string): string {
+    let plugin: { entrySource: string; files: Record<string, string> };
+    try {
+      plugin = JSON.parse(pluginJSON) as typeof plugin;
+    } catch (err) {
+      throw new Error(`linkCheck input is not JSON: ${messageOf(err)}`);
+    }
+    if (typeof plugin.entrySource !== 'string') {
+      throw new Error('linkCheck input has no entrySource');
+    }
+
+    // The same gate `checkPortability` applies: an import-free entry never
+    // meets the linker, so the linker has no opinion on it.
+    if (!usesModuleSyntax(plugin.entrySource)) {
+      return JSON.stringify({ ok: true });
+    }
+    const files = plugin.files ?? {};
+    const linked = linkEntry({
+      source: plugin.entrySource,
+      read: (path) => (typeof files[path] === 'string' ? files[path] : null),
+    });
+    return JSON.stringify(
+      linked.ok ? { ok: true } : { ok: false, problems: linked.problems },
+    );
+  },
 
   run(configJSON: string): void {
     let config: RunConfig;

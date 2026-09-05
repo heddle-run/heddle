@@ -62,7 +62,9 @@ public final class HeddleEngine: @unchecked Sendable {
         }
 
         /// One plugin, already extracted and read: its parsed manifest, its
-        /// single-file entry source, and its directory under `bundleDir`.
+        /// entry source, and its directory under `bundleDir`. An entry that
+        /// imports sibling files is linked by the artifact, which reads them
+        /// through the file bridge at paths under `dir`.
         public struct PluginCode: Encodable {
             public var manifest: JSONValue
             public var entrySource: String
@@ -263,6 +265,45 @@ public final class HeddleEngine: @unchecked Sendable {
                 throw EngineError.badEngineReply(json)
             }
             return FlowInfo(name: name, inputs: decoded.inputs ?? [])
+        }
+    }
+
+    /// Ask the artifact's linker whether a plugin entry would evaluate in
+    /// this engine — runs nothing, per the contract. `files` maps the
+    /// plugin-dir-relative path of every sibling module to its source; the
+    /// answer is the list of problems, empty when the entry links.
+    public func linkCheck(
+        entrySource: String, files: [String: String]
+    ) throws -> [String] {
+        try queue.sync {
+            struct Request: Encodable {
+                var entrySource: String
+                var files: [String: String]
+            }
+            let json = String(
+                decoding: try JSONEncoder().encode(
+                    Request(entrySource: entrySource, files: files)),
+                as: UTF8.self
+            )
+
+            let reply = context.objectForKeyedSubscript("HeddleEngine")?
+                .invokeMethod("linkCheck", withArguments: [json])
+            if let error = takeException() { throw error }
+            guard let text = reply?.toString(), reply?.isString == true else {
+                throw EngineError.badEngineReply(reply?.toString() ?? "undefined")
+            }
+
+            struct Reply: Decodable {
+                var ok: Bool
+                var problems: [String]?
+            }
+            guard let decoded = try? JSONDecoder().decode(
+                Reply.self, from: Data(text.utf8)
+            ) else {
+                throw EngineError.badEngineReply(text)
+            }
+            if decoded.ok { return [] }
+            return decoded.problems ?? ["the entry could not be linked"]
         }
     }
 

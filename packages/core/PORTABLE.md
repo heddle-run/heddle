@@ -72,5 +72,9 @@ The host extracts the archive natively and hands this entry the pieces:
 flow text, each plugin's manifest JSON and entry source, `pluginConfig`,
 recorded `input`. `validateBundleManifest` and `checkPortability` are
 exported so the host judges what it holds with the same rules the CLI and
-server use. Portable plugin entries are single-file and import-free in v1 —
-`checkPortability` flags module syntax rather than pretending to link it.
+server use. A plugin entry that imports its own sibling files is linked by
+`linkEntry` — a conservative rewrite of static `import`/`export` onto plain
+classic-script evaluation — and `checkPortability` runs the same linker to
+judge it, so the check and the run cannot disagree. What the linker refuses
+(bare specifiers, cycles, shapes it cannot read) makes the bundle
+non-portable rather than running wrong.

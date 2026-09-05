@@ -26,9 +26,14 @@ final class LocalRunTests: XCTestCase {
     // MARK: - Plumbing
 
     private func bundles() -> BundleStore {
-        BundleStore(baseDirectory: base) { _, _ in
-            throw HeddleEngine.EngineError.inspectFailed("no engine in this test")
-        }
+        // `inspect:` spelled out: a bare `{ _, _ in throw … }` also fits the
+        // init's `linkCheck` closure, and must not land there.
+        BundleStore(
+            baseDirectory: base,
+            inspect: { _, _ in
+                throw HeddleEngine.EngineError.inspectFailed("no engine in this test")
+            }
+        )
     }
 
     private func importFixture(into store: BundleStore) throws -> Agent {

@@ -159,6 +159,97 @@ final class BundlePortabilityTests: XCTestCase {
         )
     }
 
+    private func writeModularPlugin() throws -> String {
+        try write(
+            """
+            {"name": "modular", "version": "1.0.0",
+             "components": [{"componentType": "M"}]}
+            """,
+            at: "plugins/modular/plugin.json"
+        )
+        try write(
+            """
+            import { handlers } from './handlers.mjs';
+            serve(handlers);
+            """,
+            at: "plugins/modular/plugin.mjs"
+        )
+        try write(
+            "export const handlers = {};\n",
+            at: "plugins/modular/handlers.mjs"
+        )
+        return "plugins/modular/plugin.json"
+    }
+
+    func testALinkJudgeThatApprovesMakesAModularEntryPortable() throws {
+        let plugin = try writeModularPlugin()
+
+        var sawEntry: String?
+        var sawFiles: [String: String] = [:]
+        let report = try BundlePortability.check(
+            manifest: manifest(plugins: [plugin]), extractedAt: dir,
+            linkCheck: { entrySource, files in
+                sawEntry = entrySource
+                sawFiles = files
+                return []
+            }
+        )
+
+        XCTAssertTrue(report.portable, "\(report.reasons)")
+        XCTAssertEqual(sawEntry?.contains("import { handlers }"), true)
+        // The judge received every shipped module by plugin-relative path.
+        XCTAssertEqual(sawFiles["handlers.mjs"], "export const handlers = {};\n")
+        XCTAssertNotNil(sawFiles["plugin.mjs"])
+        XCTAssertNil(sawFiles["plugin.json"], "manifests are not modules")
+    }
+
+    func testALinkJudgeProblemBecomesAnUnlinkableReason() throws {
+        let plugin = try writeModularPlugin()
+
+        let report = try BundlePortability.check(
+            manifest: manifest(plugins: [plugin]), extractedAt: dir,
+            linkCheck: { _, _ in
+                ["the entry imports \"node:fs\", which is not a file the plugin ships"]
+            }
+        )
+
+        XCTAssertEqual(
+            report.reasons,
+            [
+                .pluginUnlinkable(
+                    plugin: "modular",
+                    problem: "the entry imports \"node:fs\", which is not a file "
+                        + "the plugin ships"
+                )
+            ]
+        )
+    }
+
+    func testAThrowingLinkJudgeFallsBackToTheConservativeRefusal() throws {
+        let plugin = try writeModularPlugin()
+
+        let report = try BundlePortability.check(
+            manifest: manifest(plugins: [plugin]), extractedAt: dir,
+            linkCheck: { _, _ in throw BundleError("no engine here") }
+        )
+
+        XCTAssertEqual(report.reasons, [.pluginMultiFile(plugin: "modular")])
+    }
+
+    func testAnImportFreeEntryNeverMeetsTheLinkJudge() throws {
+        let plugin = try writePureJSPlugin()
+
+        let report = try BundlePortability.check(
+            manifest: manifest(plugins: [plugin]), extractedAt: dir,
+            linkCheck: { _, _ in
+                XCTFail("an import-free entry needs no linker")
+                return []
+            }
+        )
+
+        XCTAssertTrue(report.portable)
+    }
+
     func testBinaryFileAndNodeRequirementsAreReasonsButEnvIsFine() throws {
         let report = try check(
             manifest(requires: [
@@ -225,6 +316,7 @@ final class BundlePortabilityTests: XCTestCase {
             .hasTools, .hasMounts,
             .pluginCommand(plugin: "p"), .pluginEntryNotJS(plugin: "p"),
             .pluginMultiFile(plugin: "p"),
+            .pluginUnlinkable(plugin: "p", problem: "imports the moon"),
             .unsupportedRequirement(kind: "binary", name: "ffmpeg"),
             .unsupportedCapability(plugin: "p", capability: "c"),
         ]

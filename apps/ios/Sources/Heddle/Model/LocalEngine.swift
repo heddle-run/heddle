@@ -45,6 +45,14 @@ final class LocalEngine: EngineHost, @unchecked Sendable {
         try liveEngine().inspect(flowText: flowText, format: format)
     }
 
+    /// Ask the engine's linker whether a plugin entry would evaluate here —
+    /// runs nothing. Empty means it links; each entry is one problem.
+    func linkCheck(
+        entrySource: String, files: [String: String]
+    ) throws -> [String] {
+        try liveEngine().linkCheck(entrySource: entrySource, files: files)
+    }
+
     /// Start a run whose file bridge may touch `roots` (the extracted bundle
     /// and the run's scratch), registered for exactly the stream's lifetime.
     func run(

@@ -1,6 +1,6 @@
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { checkedMount } from '../workspace/index.js';
 import type { Mount } from '../workspace/index.js';
 import { entryFor } from '../plugin/loader.js';
@@ -150,11 +150,21 @@ export function bundlePortability(bundle: OpenedBundle): PortabilityReport {
     const isScript =
       entry !== undefined &&
       (entry.endsWith('.mjs') || entry.endsWith('.js'));
+    const pluginDir = dirname(path);
 
     return {
       manifest,
       entry,
       entrySource: isScript ? readFileSync(entry, 'utf-8') : undefined,
+      // The linker hands back normalized plugin-dir-relative paths (never
+      // climbing), so a plain join stays inside the extraction directory.
+      readFile: (relative: string): string | null => {
+        try {
+          return readFileSync(join(pluginDir, ...relative.split('/')), 'utf-8');
+        } catch {
+          return null;
+        }
+      },
     };
   });
 

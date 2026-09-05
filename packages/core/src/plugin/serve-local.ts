@@ -98,8 +98,10 @@ export interface LocalPlugin {
  *
  * `register` is handed the `serve` function and is expected to evaluate the
  * plugin's entry source with it injected — `new Function('serve', source)`
- * for a single-file, import-free entry — so that the entry's own
- * `serve(handlers, …)` call lands here instead of on stdio.
+ * for a single-file, import-free entry, or `linkEntry`/`evaluateLinked`
+ * (`plugin/esm-link.ts`) for one that imports its own sibling files — so
+ * that the entry's own `serve(handlers, …)` call lands here instead of on
+ * stdio.
  */
 export function servePlugin(
   manifest: PluginManifest,

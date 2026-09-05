@@ -32,9 +32,14 @@ final class BundleImportTests: XCTestCase {
     /// A store whose engine never answers — the stub artifact's behavior,
     /// and any flow the shipped engine cannot parse.
     private func storeWithoutEngine() -> BundleStore {
-        BundleStore(baseDirectory: base) { _, _ in
-            throw HeddleEngine.EngineError.inspectFailed("no engine in this test")
-        }
+        // `inspect:` spelled out: a bare `{ _, _ in throw … }` also fits the
+        // init's `linkCheck` closure, and must not land there.
+        BundleStore(
+            baseDirectory: base,
+            inspect: { _, _ in
+                throw HeddleEngine.EngineError.inspectFailed("no engine in this test")
+            }
+        )
     }
 
     func testImportFallsBackToTheManifestInputsWhenInspectRefuses() throws {

@@ -11,13 +11,20 @@ struct BundleStore {
     /// The engine's `inspect`, injectable: tests answer without JavaScript,
     /// and the import path survives an artifact that refuses to parse.
     var inspect: (String, HeddleEngine.FlowFormat) throws -> HeddleEngine.FlowInfo
+    /// The engine's `linkCheck`, injectable the same way. Judges plugin
+    /// entries that import sibling modules; `BundlePortability.check` treats
+    /// a throw here as "cannot ask" and refuses conservatively.
+    var linkCheck: BundlePortability.LinkCheck
 
     init(
         baseDirectory: URL? = nil,
         inspect: @escaping (String, HeddleEngine.FlowFormat) throws
             -> HeddleEngine.FlowInfo = { text, format in
                 try LocalEngine.shared.inspect(flowText: text, format: format)
-            }
+            },
+        linkCheck: @escaping BundlePortability.LinkCheck = { entrySource, files in
+            try LocalEngine.shared.linkCheck(entrySource: entrySource, files: files)
+        }
     ) {
         self.baseDirectory =
             baseDirectory
@@ -25,6 +32,7 @@ struct BundleStore {
                 for: .applicationSupportDirectory, in: .userDomainMask
             )[0].appendingPathComponent("Bundles")
         self.inspect = inspect
+        self.linkCheck = linkCheck
     }
 
     func directory(forBundleID id: String) -> URL {
@@ -72,7 +80,7 @@ struct BundleStore {
             let extracted = extractedDir(forBundleID: id)
             let manifest = try BundleReader.extract(archive: archive, into: extracted)
             let report = try BundlePortability.check(
-                manifest: manifest, extractedAt: extracted
+                manifest: manifest, extractedAt: extracted, linkCheck: linkCheck
             )
             let fields = inputFields(manifest: manifest, extractedDir: extracted)
 
