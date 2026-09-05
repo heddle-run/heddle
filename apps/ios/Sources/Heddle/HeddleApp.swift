@@ -2,7 +2,7 @@ import SwiftUI
 
 @main
 struct HeddleApp: App {
-    @State private var model = AppModel()
+    @State private var model = AppModel.shared
     /// A `.heddle` handed to the app — AirDrop, Files, Mail. The system
     /// copies the file in (`LSSupportsOpeningDocumentsInPlace` is false);
     /// the sheet imports from that copy.
@@ -31,9 +31,17 @@ struct HeddleApp: App {
 }
 
 /// The app's stores, built once and handed to every screen.
+///
+/// Shared rather than owned by the scene because the app is no longer the
+/// only thing that starts runs: an App Intent performs in this same process
+/// with no window in sight, and a second set of stores over the same
+/// `agents.json` would mean two writers racing for the file. One set means
+/// an intent's run also lands in the Runs tab, where it can be read back.
 @MainActor
 @Observable
 final class AppModel {
+    static let shared = AppModel()
+
     let settings: ServerSettings
     let agents: AgentStore
     let runs: RunStore
