@@ -59,7 +59,7 @@ describe('bundle-level blockers', () => {
       bundleManifest({
         tools: 'tools',
         mounts: [{ path: 'data', dest: 'data', mode: 'ro' }],
-        requires: [{ binary: 'python3' }],
+        requires: [{ binary: ['python3'] }],
       }),
       [],
     );
