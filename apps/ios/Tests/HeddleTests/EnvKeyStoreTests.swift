@@ -58,6 +58,16 @@ final class EnvKeyStoreTests: XCTestCase {
         XCTAssertEqual(reloaded.value(of: "MY_PROVIDER_KEY"), "v-1")
     }
 
+    /// The accessibility class itself is the Keychain's business and cannot
+    /// be observed through the in-memory double — but *whether the app asks
+    /// for the migration at all* is this app's, and dropping the call would
+    /// otherwise fail silently, months later, on a locked phone.
+    func testStoredSecretsAreMigratedOnLaunch() {
+        let spy = MigrationSpySecretStore()
+        _ = EnvKeyStore(secrets: spy, defaults: defaults)
+        XCTAssertEqual(spy.migrations, 1)
+    }
+
     func testRemoveDeletesTheNameAndItsSecret() {
         let secrets = InMemorySecretStore()
         let store = EnvKeyStore(secrets: secrets, defaults: defaults)
@@ -72,4 +82,20 @@ final class EnvKeyStoreTests: XCTestCase {
         let reloaded = EnvKeyStore(secrets: secrets, defaults: defaults)
         XCTAssertFalse(reloaded.names.contains("DOOMED"))
     }
+}
+
+/// `InMemorySecretStore` plus a count of migration calls.
+private final class MigrationSpySecretStore: SecretStore {
+    private var values: [String: String] = [:]
+    private(set) var migrations = 0
+
+    func read(account: String) -> String? { values[account] }
+
+    func write(_ value: String, account: String) {
+        if value.isEmpty { values[account] = nil } else { values[account] = value }
+    }
+
+    func delete(account: String) { values[account] = nil }
+
+    func migrateAccessibility() { migrations += 1 }
 }

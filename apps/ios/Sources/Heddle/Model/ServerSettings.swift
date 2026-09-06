@@ -25,6 +25,7 @@ final class ServerSettings {
     init() {
         urlString =
             UserDefaults.standard.string(forKey: Self.urlKey) ?? Self.defaultURL
+        Keychain.migrateAccessibility()
         token = Keychain.read(account: Self.tokenAccount) ?? ""
     }
 

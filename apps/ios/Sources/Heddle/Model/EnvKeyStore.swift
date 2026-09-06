@@ -7,6 +7,14 @@ protocol SecretStore {
     func read(account: String) -> String?
     func write(_ value: String, account: String)
     func delete(account: String)
+    /// Bring already-stored items up to the current accessibility class.
+    /// Only the Keychain has one; the default is the no-op every other
+    /// store wants.
+    func migrateAccessibility()
+}
+
+extension SecretStore {
+    func migrateAccessibility() {}
 }
 
 /// Generic-password items under one service — the same calls as
@@ -17,6 +25,14 @@ struct KeychainSecretStore: SecretStore {
     /// `LocalEngine.resolveEnv` on the engine's queue — the Keychain is
     /// thread-safe where an `@Observable` store is not.
     static let envService = "run.heddle.env"
+
+    /// `AfterFirstUnlock`, not the `WhenUnlocked` default: a run started by
+    /// a Shortcuts automation reads these with the screen locked and nobody
+    /// watching, and the default would fail that read — an agent dying at
+    /// env resolution because the phone was in a pocket. The weaker class
+    /// still requires the device to have been unlocked once since boot, and
+    /// the item never leaves this device.
+    private static let accessibility = kSecAttrAccessibleAfterFirstUnlock
 
     let service: String
 
@@ -45,13 +61,35 @@ struct KeychainSecretStore: SecretStore {
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
         ]
+        // The accessibility rides on the update too, not just the add: an
+        // item written before this class was pinned is migrated the next
+        // time its value is saved, without a separate pass.
         let attributes: [String: Any] = [
-            kSecValueData as String: Data(value.utf8)
+            kSecValueData as String: Data(value.utf8),
+            kSecAttrAccessible as String: Self.accessibility,
         ]
         let status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
         if status == errSecItemNotFound {
             SecItemAdd(query.merging(attributes) { _, new in new } as CFDictionary, nil)
         }
+    }
+
+    /// Re-file every item under this service at the current accessibility
+    /// class. Items written by an older build are `WhenUnlocked` and would
+    /// stay that way until they were next edited — a key pasted once, months
+    /// ago, is exactly the key a background run needs. One update covers
+    /// them all: the query names the service and no account.
+    ///
+    /// `errSecItemNotFound` is the ordinary answer on a fresh install.
+    func migrateAccessibility() {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+        ]
+        let attributes: [String: Any] = [
+            kSecAttrAccessible as String: Self.accessibility
+        ]
+        _ = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
     }
 
     func delete(account: String) {
@@ -110,6 +148,10 @@ final class EnvKeyStore {
     ) {
         self.secrets = secrets
         self.defaults = defaults
+
+        // Foreground launch is the one moment the device is certainly
+        // unlocked, so it is where items from an older build get re-filed.
+        secrets.migrateAccessibility()
 
         var names = defaults.stringArray(forKey: Self.namesKey) ?? []
         for seed in Self.suggested where !names.contains(seed) {
