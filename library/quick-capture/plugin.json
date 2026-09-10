@@ -1,0 +1,27 @@
+{
+  "name": "capture-shape",
+  "version": "1.0.0",
+  "capabilities": ["emitEvent", "log"],
+  "components": [
+    {
+      "componentType": "CaptureShape",
+      "kind": "transform",
+      "phase": "post",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "componentType": { "type": "string" },
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "metadata": { "type": "object" },
+          "maxSummary": {
+            "type": "integer",
+            "minimum": 20,
+            "description": "Longest summary that reaches the automation, in characters. Written max_summary in a spec, which heddle camelizes. A longer one is trimmed rather than refused — long is not wrong."
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  ]
+}

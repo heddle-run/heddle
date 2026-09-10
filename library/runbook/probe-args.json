@@ -1,0 +1,17 @@
+{
+  "read_runbook": { "service": "checkout-api" },
+  "service_health": { "service": "checkout-api", "environment": "production" },
+  "recent_deploys": { "service": "checkout-api", "limit": 3 },
+  "log_search": { "pattern": "payments-gw|readiness", "limit": 10 },
+  "restart_service": {
+    "service": "checkout-api",
+    "environment": "production",
+    "reason": "readiness failures after 2026.9.9-b41, upstream now healthy"
+  },
+  "scale_service": {
+    "service": "checkout-api",
+    "environment": "production",
+    "replicas": 8,
+    "reason": "shedding load while payments-gw recovers"
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "checkout-api": [
+    {
+      "at": "2026-09-09T21:52:00Z",
+      "version": "2026.9.9-b41",
+      "by": "ci",
+      "change": "raise the payments-gw client timeout from 2s to 5s",
+      "rollback_to": "2026.9.8-b39"
+    },
+    {
+      "at": "2026-09-08T14:10:00Z",
+      "version": "2026.9.8-b39",
+      "by": "ci",
+      "change": "add the idempotency key to refund requests",
+      "rollback_to": "2026.9.5-b31"
+    }
+  ],
+  "payments-gw": [
+    {
+      "at": "2026-09-09T21:40:00Z",
+      "version": "2026.9.9-a12",
+      "by": "ci",
+      "change": "connection pool 120 -> 200, acquirer keepalive off",
+      "rollback_to": "2026.9.2-a08"
+    }
+  ],
+  "inventory": []
+}

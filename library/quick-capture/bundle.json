@@ -1,0 +1,28 @@
+{
+  "name": "quick-capture",
+  "title": "Quick capture",
+  "summary": "Throw it any lump of text from a share sheet and it decides: a reminder, a note, or nothing. Runs on the phone itself.",
+  "blurb": "The agent you fire from a share sheet, a menu bar hotkey or a Shortcut, and the only one here with no tools and no mounts \u2014 which is a design decision rather than a simplification. A bundle that ships an executable cannot run inside the phone's own JavaScript engine, so it would reach for a server every time; this one runs on the device, with the model key in the Keychain and nothing else. The division of labour is the point: the agent decides, and the Shortcut acts on what it decided. Hand it a page you were reading, a message, a voice memo transcript, the text off a photo of a poster, and it answers with one object \u2014 a reminder with a title that will still make sense next Tuesday, a note worth keeping, or nothing at all, which is a real answer and often the right one. What makes it safe to automate is the plugin transform: an automation reads one field and acts, so an answer that is not exactly the object the Shortcut consumes is rejected on the way out and the flow ends somewhere that says so, rather than failing silently at 7am with a reminder that never appears.",
+  "tags": [
+    "shortcuts",
+    "ios",
+    "capture",
+    "personal",
+    "on-device"
+  ],
+  "model": "gpt-4o-mini",
+  "flow": "spec.yaml",
+  "plugins": [
+    "plugin.json"
+  ],
+  "requires": [
+    {
+      "env": "OPENAI_API_KEY"
+    }
+  ],
+  "input": {
+    "text": "Your Bristol residents parking permit expires on 30 September 2026. Renewals take up to five working days.",
+    "source": "share sheet",
+    "now": "2026-09-10"
+  }
+}

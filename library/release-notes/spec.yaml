@@ -1,0 +1,215 @@
+# release-notes — the agent your team's existing scripts already were.
+#
+#   start ──> write (Agent, three tools) ──> end
+#
+# The three tools in tools/ do no work. Each is a shim: read JSON from stdin,
+# spend it as command-line flags, run the script your release engineer has been
+# running by hand since 2023, print one JSON object. The scripts in scripts/ are
+# untouched, unimported and still work by hand.
+component_type: Flow
+agentspec_version: 26.2.0
+id: flow_release_notes
+name: release-notes
+description: >
+  Writes the release notes for a range of commits by running the team's own
+  scripts — git log, ticket extraction, contributors — and reading their output.
+metadata: {}
+inputs: []
+outputs: []
+
+start_node:
+  $component_ref: n_start
+nodes:
+  - $component_ref: n_start
+  - $component_ref: n_write
+  - $component_ref: n_end
+
+control_flow_connections:
+  - component_type: ControlFlowEdge
+    id: e_start_write
+    name: start_to_write
+    metadata: {}
+    from_node: { $component_ref: n_start }
+    from_branch: null
+    to_node: { $component_ref: n_write }
+  - component_type: ControlFlowEdge
+    id: e_write_end
+    name: write_to_end
+    metadata: {}
+    from_node: { $component_ref: n_write }
+    from_branch: null
+    to_node: { $component_ref: n_end }
+
+data_flow_connections:
+  - component_type: DataFlowEdge
+    id: e_since
+    name: since_to_write
+    metadata: {}
+    source_node: { $component_ref: n_start }
+    source_output: since
+    destination_node: { $component_ref: n_write }
+    destination_input: since
+  - component_type: DataFlowEdge
+    id: e_until
+    name: until_to_write
+    metadata: {}
+    source_node: { $component_ref: n_start }
+    source_output: until
+    destination_node: { $component_ref: n_write }
+    destination_input: until
+  - component_type: DataFlowEdge
+    id: e_repo
+    name: repo_to_write
+    metadata: {}
+    source_node: { $component_ref: n_start }
+    source_output: repo
+    destination_node: { $component_ref: n_write }
+    destination_input: repo
+  - component_type: DataFlowEdge
+    id: e_audience
+    name: audience_to_write
+    metadata: {}
+    source_node: { $component_ref: n_start }
+    source_output: audience
+    destination_node: { $component_ref: n_write }
+    destination_input: audience
+  - component_type: DataFlowEdge
+    id: e_result
+    name: result_to_end
+    metadata: {}
+    source_node: { $component_ref: n_write }
+    source_output: result
+    destination_node: { $component_ref: n_end }
+    destination_input: result
+
+$referenced_components:
+  n_start:
+    component_type: StartNode
+    id: n_start
+    name: start
+    metadata: {}
+    inputs: []
+    outputs:
+      - { title: since, type: string }
+      - { title: until, type: string }
+      - { title: repo, type: string }
+      - { title: audience, type: string }
+    branches: [next]
+
+  n_write:
+    component_type: AgentNode
+    id: n_write
+    name: write
+    metadata: {}
+    inputs:
+      - { title: since, type: string }
+      - { title: until, type: string }
+      - { title: repo, type: string }
+      - { title: audience, type: string }
+    outputs:
+      - { title: result, type: string }
+    branches: [next]
+    agent:
+      component_type: Agent
+      id: a_release
+      name: release-notes-agent
+      description: Writes release notes from the output of the team's own scripts
+      metadata: {}
+      inputs:
+        - { title: since, type: string }
+        - { title: until, type: string }
+        - { title: repo, type: string }
+        - { title: audience, type: string }
+      outputs:
+        - { title: result, type: string }
+      system_prompt: |
+        You write the release notes for a range of commits. Your tools are this
+        team's own scripts — the same ones a person runs by hand — so what you
+        see is what they see.
+
+        1. changes_since for the range. That is the raw material and the only
+           record of what actually shipped.
+        2. issue_ids for the tickets referenced, and contributors for who did
+           the work. A commit subject with no ticket is still a change; do not
+           drop it because it is untracked.
+        3. Group the commits by what a reader would call them, not by the order
+           they landed. A reader wants "faster imports" and "fixed the timezone
+           bug", not seventeen bullets in commit order.
+
+        Write for: {{audience}}. If that is customers, say what changed for
+        them and leave out refactors entirely. If it is the team, keep the
+        refactors and name the risky ones.
+
+        Rules that matter more than style:
+
+        - Every line you write must trace to a commit you were shown. A release
+          note nobody can check against the log is worse than a short one.
+        - A commit subject you cannot interpret goes in an "unclear" list at the
+          end, named by its short hash. Do not guess what it did.
+        - No preamble and no sign-off. Markdown, one `##` heading per group.
+
+        Range: {{since}}..{{until}} in {{repo}}
+      llm_config:
+        component_type: OpenAiConfig
+        id: llm_openai
+        name: gpt
+        metadata: {}
+        model_id: gpt-4o-mini
+        api_key: $OPENAI_API_KEY
+      tools:
+        - component_type: ServerTool
+          id: t_changes
+          name: changes_since
+          description: >
+            Commits in a range, one per line as `hash<TAB>author<TAB>subject`.
+            Wraps the team's changes_since.sh; a bad ref comes back as git's own
+            error, unaltered.
+          metadata: {}
+          inputs:
+            - { title: since, type: string }
+            - { title: until, type: string, default: HEAD }
+            - { title: repo, type: string, default: "." }
+          outputs:
+            - { title: commits, type: string }
+            - { title: count, type: integer }
+        - component_type: ServerTool
+          id: t_tickets
+          name: issue_ids
+          description: >
+            Ticket references in the range, with how many commits mention each.
+            Wraps changes_since.sh piped into issue_ids.py. A range with no
+            tickets is not an error.
+          metadata: {}
+          inputs:
+            - { title: since, type: string }
+            - { title: until, type: string, default: HEAD }
+            - { title: repo, type: string, default: "." }
+            - { title: prefix, type: string, default: ENG }
+          outputs:
+            - { title: tickets, type: string }
+            - { title: count, type: integer }
+        - component_type: ServerTool
+          id: t_people
+          name: contributors
+          description: >
+            Who committed in the range, most commits first. Wraps the team's
+            contributors.sh.
+          metadata: {}
+          inputs:
+            - { title: since, type: string }
+            - { title: until, type: string, default: HEAD }
+            - { title: repo, type: string, default: "." }
+          outputs:
+            - { title: people, type: string }
+            - { title: count, type: integer }
+
+  n_end:
+    component_type: EndNode
+    id: n_end
+    name: end
+    metadata: {}
+    inputs:
+      - { title: result, type: string }
+    outputs: []
+    branches: []
+    branch_name: null

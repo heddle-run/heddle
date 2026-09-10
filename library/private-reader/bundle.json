@@ -1,0 +1,39 @@
+{
+  "name": "private-reader",
+  "title": "Private reader",
+  "summary": "Answers questions about a folder of documents that never leave the machine, quoting the file and line every claim came from.",
+  "blurb": "For the documents you would never paste into a chat window: a tenancy agreement, a bank statement, a letter from the tax office, a diagnosis. It lists the folder, searches it for the words that would appear in the passage rather than the words of the question, reads around each hit, and answers with `file.ext:line` beside every claim. Two things make it more than a search box. The spec names no vendor \u2014 OpenAiConfig with no url is whatever OPENAI_BASE_URL points at, so the same file runs against a hosted model or against Ollama on localhost, and with a local model nothing about the question, the documents or the answer leaves the building. And a plugin transform enforces the citation rather than requesting it: an answer carrying no reference is refused on its way out, and the flow ends by saying the documents do not answer the question. That is the honest outcome, and it is not the one a model under pressure to be helpful picks on its own. Point the mount at your own folder and the sample documents are gone.",
+  "tags": [
+    "documents",
+    "private",
+    "local",
+    "citations",
+    "rag"
+  ],
+  "model": "gpt-4o-mini",
+  "flow": "spec.yaml",
+  "toolsDir": "tools",
+  "plugins": [
+    "plugin.json"
+  ],
+  "mounts": [
+    "documents:documents:ro"
+  ],
+  "requires": [
+    {
+      "env": "OPENAI_API_KEY",
+      "hint": "any non-empty value when OPENAI_BASE_URL points at a local model"
+    },
+    {
+      "binary": "python3"
+    },
+    {
+      "binary": "bash"
+    }
+  ],
+  "interactive": true,
+  "session": true,
+  "input": {
+    "question": "When can I give notice on the flat, and what does it cost me if I leave before then?"
+  }
+}

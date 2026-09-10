@@ -1,0 +1,48 @@
+{
+  "checkout-api": {
+    "production": {
+      "replicas": 6,
+      "ready": 4,
+      "cpu": "71%",
+      "memory": "58%",
+      "error_rate": "12.4%",
+      "p99_ms": 4180,
+      "readiness": "4/6 passing; two pods failing readiness since 22:11Z",
+      "upstreams": ["payments-gw", "inventory"]
+    },
+    "staging": {
+      "replicas": 2,
+      "ready": 2,
+      "cpu": "8%",
+      "memory": "31%",
+      "error_rate": "0.1%",
+      "p99_ms": 240,
+      "readiness": "2/2 passing",
+      "upstreams": ["payments-gw-stub", "inventory"]
+    }
+  },
+  "payments-gw": {
+    "production": {
+      "replicas": 4,
+      "ready": 4,
+      "cpu": "94%",
+      "memory": "88%",
+      "error_rate": "0.9%",
+      "p99_ms": 5020,
+      "readiness": "4/4 passing, but saturated: connection pool at 200/200",
+      "upstreams": ["acquirer-primary"]
+    }
+  },
+  "inventory": {
+    "production": {
+      "replicas": 3,
+      "ready": 3,
+      "cpu": "22%",
+      "memory": "40%",
+      "error_rate": "0.0%",
+      "p99_ms": 90,
+      "readiness": "3/3 passing",
+      "upstreams": []
+    }
+  }
+}

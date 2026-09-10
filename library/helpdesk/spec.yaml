@@ -1,0 +1,257 @@
+# helpdesk — the agent you send to the people who cannot build one.
+#
+#   start ──> answer (Agent + handbook tools) ──> route ──┬─> end_answered
+#                                                         └─> end_escalated
+#
+# Everything it knows travels with it. The handbook is a mounted directory
+# inside the bundle, so the recipient needs no wiki account, no VPN and no
+# checkout of anything — one file and a model key.
+component_type: Flow
+agentspec_version: 26.2.0
+id: flow_helpdesk
+name: helpdesk
+description: >
+  Answers an internal IT question from the handbook that ships inside the
+  bundle, and drafts a ticket when the handbook does not cover it.
+metadata: {}
+inputs: []
+outputs: []
+
+start_node:
+  $component_ref: n_start
+nodes:
+  - $component_ref: n_start
+  - $component_ref: n_answer
+  - $component_ref: n_route
+  - $component_ref: n_answered
+  - $component_ref: n_escalated
+
+control_flow_connections:
+  - component_type: ControlFlowEdge
+    id: e_start_answer
+    name: start_to_answer
+    metadata: {}
+    from_node: { $component_ref: n_start }
+    from_branch: null
+    to_node: { $component_ref: n_answer }
+  - component_type: ControlFlowEdge
+    id: e_answer_route
+    name: answer_to_route
+    metadata: {}
+    from_node: { $component_ref: n_answer }
+    from_branch: null
+    to_node: { $component_ref: n_route }
+  - component_type: ControlFlowEdge
+    id: e_route_answered
+    name: route_to_answered
+    metadata: {}
+    from_node: { $component_ref: n_route }
+    from_branch: answered_branch
+    to_node: { $component_ref: n_answered }
+  - component_type: ControlFlowEdge
+    id: e_route_escalated
+    name: route_to_escalated
+    metadata: {}
+    from_node: { $component_ref: n_route }
+    from_branch: escalated_branch
+    to_node: { $component_ref: n_escalated }
+
+data_flow_connections:
+  - component_type: DataFlowEdge
+    id: e_question
+    name: question_to_answer
+    metadata: {}
+    source_node: { $component_ref: n_start }
+    source_output: question
+    destination_node: { $component_ref: n_answer }
+    destination_input: question
+  - component_type: DataFlowEdge
+    id: e_asked_by
+    name: asked_by_to_answer
+    metadata: {}
+    source_node: { $component_ref: n_start }
+    source_output: asked_by
+    destination_node: { $component_ref: n_answer }
+    destination_input: asked_by
+  # The agent is told to answer in JSON, so `resolution` is a key of its answer
+  # and therefore a key of the node's state. That is what the branch reads.
+  - component_type: DataFlowEdge
+    id: e_resolution
+    name: resolution_to_route
+    metadata: {}
+    source_node: { $component_ref: n_answer }
+    source_output: resolution
+    destination_node: { $component_ref: n_route }
+    destination_input: branching_mapping_key
+  - component_type: DataFlowEdge
+    id: e_answer_answered
+    name: answer_to_answered
+    metadata: {}
+    source_node: { $component_ref: n_answer }
+    source_output: answer
+    destination_node: { $component_ref: n_answered }
+    destination_input: answer
+  - component_type: DataFlowEdge
+    id: e_answer_escalated
+    name: answer_to_escalated
+    metadata: {}
+    source_node: { $component_ref: n_answer }
+    source_output: answer
+    destination_node: { $component_ref: n_escalated }
+    destination_input: answer
+
+$referenced_components:
+  n_start:
+    component_type: StartNode
+    id: n_start
+    name: start
+    metadata: {}
+    inputs: []
+    outputs:
+      - { title: question, type: string }
+      - { title: asked_by, type: string }
+    branches: [next]
+
+  n_answer:
+    component_type: AgentNode
+    id: n_answer
+    name: answer
+    metadata: {}
+    inputs:
+      - { title: question, type: string }
+      - { title: asked_by, type: string }
+    outputs:
+      - { title: result, type: string }
+      - { title: answer, type: string }
+      - { title: resolution, type: string }
+    branches: [next]
+    agent:
+      component_type: Agent
+      id: a_helpdesk
+      name: helpdesk-agent
+      description: First-line IT support, answering from the handbook it ships with
+      metadata: {}
+      inputs:
+        - { title: question, type: string }
+        - { title: asked_by, type: string }
+      outputs:
+        - { title: result, type: string }
+      system_prompt: |
+        You are the first line of internal IT support. You answer only from the
+        handbook that ships with you. You do not know this company's systems
+        beyond what the handbook says, and guessing at them is worse than
+        admitting the gap.
+
+        Work the question like this:
+
+        1. Call handbook_search with the words a colleague would use. Search
+           more than once with different words before concluding nothing covers
+           it — "wifi" and "network" are different searches.
+        2. Call handbook_read on any document that looks close, to get the whole
+           procedure rather than the matching line.
+        3. If the handbook answers the question, write the answer in your own
+           words: the steps in order, and the one thing that most often goes
+           wrong. Name the document you took it from.
+        4. If it does not, do not improvise. Call ticket_draft with a summary
+           and everything you learned, so a human picks up a ticket rather than
+           a cold question.
+
+        Answer with a single JSON object and nothing else:
+
+        {"resolution": "answered" or "escalated",
+         "answer": "what the person should read, in plain sentences"}
+
+        Use "escalated" only when you drafted a ticket. The person is reading
+        your "answer" either way, so when you escalate, say what you checked
+        and what happens next.
+
+        Asked by: {{asked_by}}
+        Question: {{question}}
+      llm_config:
+        component_type: OpenAiConfig
+        id: llm_openai
+        name: gpt
+        metadata: {}
+        model_id: gpt-4o-mini
+        api_key: $OPENAI_API_KEY
+      tools:
+        - component_type: ServerTool
+          id: t_search
+          name: handbook_search
+          description: >
+            Search the IT handbook for a phrase. Returns each matching line with
+            the document and heading it sits under, so a second call can read
+            the whole procedure.
+          metadata: {}
+          inputs:
+            - { title: query, type: string }
+            - { title: limit, type: integer, default: 8 }
+          outputs:
+            - { title: matches, type: string }
+            - { title: count, type: integer }
+        - component_type: ServerTool
+          id: t_read
+          name: handbook_read
+          description: >
+            Read one handbook document in full, or a single section of it by
+            heading. Call this before answering: a search line is rarely the
+            whole procedure.
+          metadata: {}
+          inputs:
+            - { title: document, type: string }
+            - { title: section, type: string, default: "" }
+          outputs:
+            - { title: text, type: string }
+            - { title: found, type: boolean }
+        - component_type: ServerTool
+          id: t_ticket
+          name: ticket_draft
+          description: >
+            Draft a ticket for a human to pick up, when the handbook does not
+            cover the question. Writes it to the workspace and returns the
+            ticket id. Call this at most once.
+          metadata: {}
+          inputs:
+            - { title: summary, type: string }
+            - { title: detail, type: string }
+            - { title: requester, type: string, default: unknown }
+            - { title: urgency, type: string, default: normal }
+          outputs:
+            - { title: ticket_id, type: string }
+            - { title: path, type: string }
+
+  n_route:
+    component_type: BranchingNode
+    id: n_route
+    name: route
+    metadata: {}
+    inputs:
+      - { title: branching_mapping_key, type: string }
+    outputs: []
+    branches: [answered_branch, escalated_branch]
+    mapping:
+      escalated: escalated_branch
+      answered: answered_branch
+      DEFAULT_BRANCH: answered_branch
+
+  n_answered:
+    component_type: EndNode
+    id: n_answered
+    name: end_answered
+    metadata: {}
+    inputs:
+      - { title: answer, type: string }
+    outputs: []
+    branches: []
+    branch_name: answered_branch
+
+  n_escalated:
+    component_type: EndNode
+    id: n_escalated
+    name: end_escalated
+    metadata: {}
+    inputs:
+      - { title: answer, type: string }
+    outputs: []
+    branches: []
+    branch_name: escalated_branch

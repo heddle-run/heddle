@@ -1,0 +1,31 @@
+NORTHBANK  |  Current account 40-11-92 · 88213004
+Statement 07  |  1 March 2026 to 31 March 2026
+Opening balance: 2,118.44 GBP
+
+Date        Description                              Out        In      Balance
+01 Mar      STANDING ORDER MARLOWE PROPERTY        1340.00              778.44
+01 Mar      SALARY CADENCE LABS LTD                          3210.88   3989.32
+02 Mar      DD BRISTOL CITY COUNCIL TAX             182.00             3807.32
+03 Mar      CARD PURCHASE SAINSBURYS BS6             64.19             3743.13
+04 Mar      DD OVO ENERGY                           118.42             3624.71
+06 Mar      TRANSFER TO SAVINGS                     400.00             3224.71
+09 Mar      CARD PURCHASE FLUX COFFEE                 4.10             3220.61
+11 Mar      DD AVIVA CONTENTS INSURANCE              14.88             3205.73
+12 Mar      CARD PURCHASE TRAINLINE                  87.40             3118.33
+14 Mar      REFUND TRAINLINE                                   87.40   3205.73
+15 Mar      DD MOBILE — VODAFONE                     26.00             3179.73
+17 Mar      CARD PURCHASE SAINSBURYS BS6             71.33             3108.40
+19 Mar      FEE — NON-STERLING TRANSACTION            2.75             3105.65
+19 Mar      CARD PURCHASE ADOBE (USD 22.99)          18.31             3087.34
+21 Mar      CASH WITHDRAWAL BS6 ATM                  60.00             3027.34
+24 Mar      DD BRISTOL WATER                         31.05             2996.29
+26 Mar      CARD PURCHASE SAINSBURYS BS6             58.02             2938.27
+27 Mar      INTEREST PAID                                       1.19   2939.46
+29 Mar      DD GYM — EASTON FITNESS                  32.00             2907.46
+31 Mar      TRANSFER TO SAVINGS                     400.00             2507.46
+
+Closing balance: 2,507.46 GBP
+Total out: 2,910.45   Total in: 3,299.47
+
+Note: the non-sterling transaction fee on 19 March is 2.99% of the converted
+amount and applies to any purchase settled in a currency other than GBP.

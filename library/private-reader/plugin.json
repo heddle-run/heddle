@@ -1,0 +1,27 @@
+{
+  "name": "citation-check",
+  "version": "1.0.0",
+  "capabilities": ["emitEvent", "log"],
+  "components": [
+    {
+      "componentType": "CitationCheck",
+      "kind": "transform",
+      "phase": "post",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "componentType": { "type": "string" },
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "metadata": { "type": "object" },
+          "minCitations": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "How many file:line references an answer must carry to be allowed out. Written min_citations in a spec, which heddle camelizes. One is enough to make a claim checkable; raise it for documents where a single line is rarely the whole story."
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  ]
+}

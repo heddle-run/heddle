@@ -1,0 +1,21 @@
+{
+  "checkout-api": {
+    "owner": "payments platform",
+    "page": "#incident, then the payments on-call",
+    "steps": [
+      "Check whether the readiness failures started with a deploy. If a deploy is within 30 minutes of the first failure, roll it back before doing anything else.",
+      "Check payments-gw before restarting checkout-api. checkout-api times out when payments-gw saturates, and restarting checkout-api while payments-gw is the cause loses in-flight orders for nothing.",
+      "Restarting is safe only once the upstream is healthy. Scale rather than restart when the pods are up but slow.",
+      "Do not scale payments-gw above 6 replicas: the acquirer caps us at 240 connections in total and more replicas means more refused sockets, not fewer."
+    ]
+  },
+  "payments-gw": {
+    "owner": "payments platform",
+    "page": "the payments on-call, always — this one holds money",
+    "steps": [
+      "A saturated connection pool with the acquirer refusing sockets is the acquirer's cap, not ours. Scaling makes it worse.",
+      "Roll back the most recent config change to the pool before touching replicas.",
+      "If the acquirer is refusing at their cap, the only real lever is shedding load at checkout-api."
+    ]
+  }
+}

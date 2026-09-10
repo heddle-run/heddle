@@ -1,0 +1,5 @@
+[
+  { "tool": "handbook_search", "arguments": { "query": "vpn cafe slow", "limit": 6 } },
+  { "tool": "handbook_read", "arguments": { "document": "vpn.md", "section": "when it will not connect" } },
+  { "content": "{\"resolution\":\"answered\",\"answer\":\"Two things do this, both in vpn.md. An expired node key looks exactly like a working login with no traffic \\u2014 run tailscale up --force-reauth and sign in again; contractors hit this every 90 days. If reauth does not fix it, cafe wifi blocking UDP will push Tailscale onto a relay, which is slow rather than broken, and matches it working in the office.\"}" }
+]

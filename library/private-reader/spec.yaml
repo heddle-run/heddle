@@ -1,0 +1,248 @@
+# private-reader — an agent for the documents you would never upload.
+#
+#   start ──> read (Agent + CitationCheck post transform) ──> route ──┬─> end_answered
+#                                                                     └─> end_ungrounded
+#
+# Nothing here names a vendor. `OpenAiConfig` with no url set is whatever
+# OPENAI_BASE_URL points at, so the same file answers from gpt-4o-mini or from
+# a model on localhost, and the choice belongs to the machine rather than to the
+# document. Point it at Ollama and no part of the question, the documents or the
+# answer leaves the building.
+component_type: Flow
+agentspec_version: 26.2.0
+id: flow_private_reader
+name: private-reader
+description: >
+  Answers a question about a folder of documents, quoting the file and line each
+  claim comes from, and refuses to answer at all when the documents do not say.
+metadata: {}
+inputs: []
+outputs: []
+
+start_node:
+  $component_ref: n_start
+nodes:
+  - $component_ref: n_start
+  - $component_ref: n_read
+  - $component_ref: n_route
+  - $component_ref: n_answered
+  - $component_ref: n_ungrounded
+
+control_flow_connections:
+  - component_type: ControlFlowEdge
+    id: e_start_read
+    name: start_to_read
+    metadata: {}
+    from_node: { $component_ref: n_start }
+    from_branch: null
+    to_node: { $component_ref: n_read }
+  - component_type: ControlFlowEdge
+    id: e_read_route
+    name: read_to_route
+    metadata: {}
+    from_node: { $component_ref: n_read }
+    from_branch: null
+    to_node: { $component_ref: n_route }
+  - component_type: ControlFlowEdge
+    id: e_route_answered
+    name: route_to_answered
+    metadata: {}
+    from_node: { $component_ref: n_route }
+    from_branch: answered_branch
+    to_node: { $component_ref: n_answered }
+  - component_type: ControlFlowEdge
+    id: e_route_ungrounded
+    name: route_to_ungrounded
+    metadata: {}
+    from_node: { $component_ref: n_route }
+    from_branch: ungrounded_branch
+    to_node: { $component_ref: n_ungrounded }
+
+data_flow_connections:
+  - component_type: DataFlowEdge
+    id: e_question
+    name: question_to_read
+    metadata: {}
+    source_node: { $component_ref: n_start }
+    source_output: question
+    destination_node: { $component_ref: n_read }
+    destination_input: question
+  # The transform writes this, not the model: "ok" when the answer cited its
+  # sources, "rejected" when it did not.
+  - component_type: DataFlowEdge
+    id: e_status
+    name: status_to_route
+    metadata: {}
+    source_node: { $component_ref: n_read }
+    source_output: transform_status
+    destination_node: { $component_ref: n_route }
+    destination_input: branching_mapping_key
+  - component_type: DataFlowEdge
+    id: e_result_answered
+    name: result_to_answered
+    metadata: {}
+    source_node: { $component_ref: n_read }
+    source_output: result
+    destination_node: { $component_ref: n_answered }
+    destination_input: result
+  - component_type: DataFlowEdge
+    id: e_reason_ungrounded
+    name: reason_to_ungrounded
+    metadata: {}
+    source_node: { $component_ref: n_read }
+    source_output: transform_reason
+    destination_node: { $component_ref: n_ungrounded }
+    destination_input: transform_reason
+
+$referenced_components:
+  n_start:
+    component_type: StartNode
+    id: n_start
+    name: start
+    metadata: {}
+    inputs: []
+    outputs:
+      - { title: question, type: string }
+    branches: [next]
+
+  n_read:
+    component_type: AgentNode
+    id: n_read
+    name: read
+    metadata: {}
+    inputs:
+      - { title: question, type: string }
+    outputs:
+      - { title: result, type: string }
+      - { title: transform_status, type: string }
+      - { title: transform_reason, type: string }
+    branches: [next]
+    agent:
+      component_type: Agent
+      id: a_reader
+      name: private-reader-agent
+      description: Answers from a local folder of documents, with citations
+      metadata: {}
+      inputs:
+        - { title: question, type: string }
+      outputs:
+        - { title: result, type: string }
+      system_prompt: |
+        You answer questions about a folder of documents on this machine. They
+        are private — contracts, statements, letters, notes — and the person
+        asking has read some of them and cannot remember where a detail was.
+
+        Work like this:
+
+        1. Call doc_list first, unless you already know the folder. Names carry
+           information: a date, a counterparty, a kind of document.
+        2. Call doc_search for the words that would appear in the passage, not
+           the words of the question. A contract says "termination", a person
+           asks "how do I get out of it".
+        3. Call doc_excerpt around any hit worth reading. A grep line is a
+           pointer; the surrounding paragraph is the evidence.
+        4. Answer in plain sentences, and put the source of every claim inline
+           as `file.ext:line` — the exact form doc_search gives you.
+
+        Two things you must not do. Do not answer from what you know about
+        contracts, tax or medicine in general: the only authority here is these
+        files. And do not soften a gap into a guess — if the documents do not
+        say, the answer is that they do not say, and which ones you checked.
+
+        An answer with no `file.ext:line` in it is refused before anybody reads
+        it, so cite as you go rather than at the end.
+
+        Question: {{question}}
+      llm_config:
+        # No `url`, on purpose. The OpenAI client reads OPENAI_BASE_URL, so this
+        # one line runs against a hosted model or against Ollama on localhost
+        # without the document changing. See the README.
+        component_type: OpenAiConfig
+        id: llm_openai
+        name: model
+        metadata: {}
+        model_id: gpt-4o-mini
+        api_key: $OPENAI_API_KEY
+      tools:
+        - component_type: ServerTool
+          id: t_list
+          name: doc_list
+          description: >
+            List the documents in the folder, with their size and how many lines
+            each has. Start here — the file names usually say what is where.
+          metadata: {}
+          inputs:
+            - { title: pattern, type: string, default: "" }
+          outputs:
+            - { title: documents, type: string }
+            - { title: count, type: integer }
+        - component_type: ServerTool
+          id: t_search
+          name: doc_search
+          description: >
+            Search every document for a phrase, case-insensitively. Returns each
+            hit as `file.ext:line text`, which is exactly the citation form the
+            answer must use.
+          metadata: {}
+          inputs:
+            - { title: query, type: string }
+            - { title: limit, type: integer, default: 12 }
+          outputs:
+            - { title: hits, type: string }
+            - { title: count, type: integer }
+        - component_type: ServerTool
+          id: t_excerpt
+          name: doc_excerpt
+          description: >
+            Read a window of lines around a point in one document. Use it on a
+            search hit before quoting it: a matching line is rarely the whole
+            clause.
+          metadata: {}
+          inputs:
+            - { title: document, type: string }
+            - { title: line, type: integer }
+            - { title: context, type: integer, default: 6 }
+          outputs:
+            - { title: text, type: string }
+            - { title: found, type: boolean }
+      transforms:
+        - component_type: CitationCheck
+          id: p_cite
+          name: citation_check
+          metadata: {}
+          min_citations: 1
+
+  n_route:
+    component_type: BranchingNode
+    id: n_route
+    name: route
+    metadata: {}
+    inputs:
+      - { title: branching_mapping_key, type: string }
+    outputs: []
+    branches: [answered_branch, ungrounded_branch]
+    mapping:
+      rejected: ungrounded_branch
+      DEFAULT_BRANCH: answered_branch
+
+  n_answered:
+    component_type: EndNode
+    id: n_answered
+    name: end_answered
+    metadata: {}
+    inputs:
+      - { title: result, type: string }
+    outputs: []
+    branches: []
+    branch_name: answered_branch
+
+  n_ungrounded:
+    component_type: EndNode
+    id: n_ungrounded
+    name: end_ungrounded
+    metadata: {}
+    inputs:
+      - { title: transform_reason, type: string }
+    outputs: []
+    branches: []
+    branch_name: ungrounded_branch

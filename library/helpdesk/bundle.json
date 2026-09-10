@@ -1,0 +1,22 @@
+{
+  "name": "helpdesk",
+  "title": "Helpdesk",
+  "summary": "First-line IT support that answers from the handbook packed inside it, and drafts a ticket when the handbook falls short.",
+  "blurb": "The agent you can send to someone who could never build one. Everything it knows travels in the file: the handbook is a mounted directory inside the bundle, so there is no wiki to reach, no VPN to be on and no repository to clone — a colleague with the file and a model key runs it, and that is the whole setup. It searches the handbook the way a person would, reads the whole procedure rather than the line that matched, and answers in its own words naming the document it came from. What it does when the handbook is silent is the part that matters: it does not improvise a plausible-sounding process for a company it knows nothing about. It drafts a ticket into the workspace — what was asked, what it checked, who is asking — and the flow branches to a different ending that says so plainly. Swap the handbook for your own and it is your helpdesk; swap ticket_draft for a script that POSTs to Jira and nothing else about the agent changes.",
+  "tags": ["support", "it", "handbook", "internal"],
+  "model": "gpt-4o-mini",
+  "flow": "spec.yaml",
+  "toolsDir": "tools",
+  "mounts": ["handbook:handbook:ro"],
+  "requires": [
+    { "env": "OPENAI_API_KEY" },
+    { "binary": "python3" },
+    { "binary": "bash" }
+  ],
+  "interactive": true,
+  "session": true,
+  "input": {
+    "question": "My VPN says it is connected but nothing loads. I am working from a cafe today.",
+    "asked_by": "a colleague"
+  }
+}

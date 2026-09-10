@@ -1,0 +1,14 @@
+2026-09-09T22:11:02Z checkout-api INFO  deploy 2026.9.9-b41 rolled out to 6/6
+2026-09-09T22:11:44Z checkout-api WARN  upstream payments-gw slow: 3120ms
+2026-09-09T22:12:03Z payments-gw  WARN  connection pool 198/200
+2026-09-09T22:12:19Z checkout-api ERROR upstream payments-gw timeout after 5000ms
+2026-09-09T22:12:20Z checkout-api ERROR upstream payments-gw timeout after 5000ms
+2026-09-09T22:12:31Z payments-gw  ERROR acquirer-primary refused connection: no free socket
+2026-09-09T22:12:33Z checkout-api ERROR 502 POST /checkout/confirm
+2026-09-09T22:13:00Z checkout-api WARN  readiness probe failed on pod checkout-api-7c9f-xk2 (5000ms budget exceeded)
+2026-09-09T22:13:01Z checkout-api WARN  readiness probe failed on pod checkout-api-7c9f-p4m (5000ms budget exceeded)
+2026-09-09T22:13:40Z payments-gw  WARN  connection pool 200/200, queueing
+2026-09-09T22:14:09Z checkout-api ERROR upstream payments-gw timeout after 5000ms
+2026-09-09T22:14:11Z checkout-api ERROR 502 POST /checkout/confirm
+2026-09-09T22:15:02Z checkout-api ERROR 502 POST /checkout/confirm
+2026-09-09T22:16:18Z payments-gw  ERROR acquirer-primary refused connection: no free socket

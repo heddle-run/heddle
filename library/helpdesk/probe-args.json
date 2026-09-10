@@ -1,0 +1,10 @@
+{
+  "handbook_search": { "query": "vpn connect", "limit": 5 },
+  "handbook_read": { "document": "vpn.md", "section": "" },
+  "ticket_draft": {
+    "summary": "Cannot reach the finance system over the VPN",
+    "detail": "The handbook says finance sits behind a separate Cloudflare Access policy but does not say how to request it.",
+    "requester": "a colleague",
+    "urgency": "normal"
+  }
+}

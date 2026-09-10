@@ -1,0 +1,23 @@
+{
+  "name": "release-notes",
+  "title": "Release notes",
+  "summary": "Writes the release notes for a range of commits by running the scripts your team already had, unchanged.",
+  "blurb": "Most teams have twenty crusty shell and Python scripts nobody wants to port, and every agent framework asks them to port them. heddle does not: a tool is a program that reads JSON on stdin and prints JSON on stdout, so the distance between a script you already run by hand and a tool an agent can call is about fifteen lines. This entry is that claim, made concrete. scripts/ holds three plainly pre-agent programs — flags in, text out, non-zero on failure, written for a person — and they are not touched, not imported and not rewritten; they still work by hand. tools/ holds one shim per script: read the JSON, spend it as flags, run the thing, print one JSON object. When a script fails, its own exit code and its own stderr come back verbatim, because a friendlier error invented by the shim is the one thing the person debugging cannot use. The agent on top reads what the scripts print and writes notes grouped the way a reader would group them, with a rule it is held to: every line must trace to a commit it was shown, and a subject it cannot interpret goes in an \"unclear\" list by hash rather than being guessed at. Swap the three scripts for your own twenty and the shape does not change.",
+  "tags": ["release", "git", "scripts", "wrapping", "ci"],
+  "model": "gpt-4o-mini",
+  "flow": "spec.yaml",
+  "toolsDir": "tools",
+  "mounts": ["scripts:scripts:ro"],
+  "requires": [
+    { "env": "OPENAI_API_KEY" },
+    { "binary": "python3" },
+    { "binary": "bash" },
+    { "binary": "git" }
+  ],
+  "input": {
+    "since": "v1.4.0",
+    "until": "HEAD",
+    "repo": ".",
+    "audience": "the team"
+  }
+}

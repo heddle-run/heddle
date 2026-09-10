@@ -1,0 +1,309 @@
+# quick-capture — the agent you fire from a share sheet.
+#
+#   start ──> decide (Agent + CaptureShape) ──> route_shape ──┬─> end_unclear
+#                                                             └─> route_action ──┬─> end_ignored
+#                                                                                └─> end_captured
+#
+# No tools and no mounts, and that is a design decision rather than a
+# simplification: a bundle that ships an executable cannot run inside the
+# phone's own JavaScript engine, so it would go to a server every time. This one
+# runs on the device. The agent decides; the Shortcut acts on what it decided.
+component_type: Flow
+agentspec_version: 26.2.0
+id: flow_quick_capture
+name: quick-capture
+description: >
+  Turns any lump of captured text — a page, a message, a voice memo transcript —
+  into one decision an automation can act on: a reminder, a note, or nothing.
+metadata: {}
+inputs: []
+outputs: []
+
+start_node:
+  $component_ref: n_start
+nodes:
+  - $component_ref: n_start
+  - $component_ref: n_decide
+  - $component_ref: n_route_shape
+  - $component_ref: n_route_action
+  - $component_ref: n_captured
+  - $component_ref: n_ignored
+  - $component_ref: n_unclear
+
+control_flow_connections:
+  - component_type: ControlFlowEdge
+    id: e_start_decide
+    name: start_to_decide
+    metadata: {}
+    from_node: { $component_ref: n_start }
+    from_branch: null
+    to_node: { $component_ref: n_decide }
+  - component_type: ControlFlowEdge
+    id: e_decide_shape
+    name: decide_to_route_shape
+    metadata: {}
+    from_node: { $component_ref: n_decide }
+    from_branch: null
+    to_node: { $component_ref: n_route_shape }
+  - component_type: ControlFlowEdge
+    id: e_shape_unclear
+    name: shape_to_unclear
+    metadata: {}
+    from_node: { $component_ref: n_route_shape }
+    from_branch: unclear_branch
+    to_node: { $component_ref: n_unclear }
+  # Two branches in a row rather than one clever one. The first asks whether the
+  # answer is usable at all; only then is it worth asking what it says.
+  - component_type: ControlFlowEdge
+    id: e_shape_action
+    name: shape_to_route_action
+    metadata: {}
+    from_node: { $component_ref: n_route_shape }
+    from_branch: usable_branch
+    to_node: { $component_ref: n_route_action }
+  - component_type: ControlFlowEdge
+    id: e_action_ignored
+    name: action_to_ignored
+    metadata: {}
+    from_node: { $component_ref: n_route_action }
+    from_branch: ignored_branch
+    to_node: { $component_ref: n_ignored }
+  - component_type: ControlFlowEdge
+    id: e_action_captured
+    name: action_to_captured
+    metadata: {}
+    from_node: { $component_ref: n_route_action }
+    from_branch: captured_branch
+    to_node: { $component_ref: n_captured }
+
+data_flow_connections:
+  - component_type: DataFlowEdge
+    id: e_text
+    name: text_to_decide
+    metadata: {}
+    source_node: { $component_ref: n_start }
+    source_output: text
+    destination_node: { $component_ref: n_decide }
+    destination_input: text
+  - component_type: DataFlowEdge
+    id: e_source
+    name: source_to_decide
+    metadata: {}
+    source_node: { $component_ref: n_start }
+    source_output: source
+    destination_node: { $component_ref: n_decide }
+    destination_input: source
+  - component_type: DataFlowEdge
+    id: e_now
+    name: now_to_decide
+    metadata: {}
+    source_node: { $component_ref: n_start }
+    source_output: now
+    destination_node: { $component_ref: n_decide }
+    destination_input: now
+  - component_type: DataFlowEdge
+    id: e_status
+    name: status_to_route_shape
+    metadata: {}
+    source_node: { $component_ref: n_decide }
+    source_output: transform_status
+    destination_node: { $component_ref: n_route_shape }
+    destination_input: branching_mapping_key
+  - component_type: DataFlowEdge
+    id: e_action
+    name: action_to_route_action
+    metadata: {}
+    source_node: { $component_ref: n_decide }
+    source_output: action
+    destination_node: { $component_ref: n_route_action }
+    destination_input: branching_mapping_key
+  - component_type: DataFlowEdge
+    id: e_summary_captured
+    name: summary_to_captured
+    metadata: {}
+    source_node: { $component_ref: n_decide }
+    source_output: summary
+    destination_node: { $component_ref: n_captured }
+    destination_input: summary
+  - component_type: DataFlowEdge
+    id: e_result_captured
+    name: result_to_captured
+    metadata: {}
+    source_node: { $component_ref: n_decide }
+    source_output: result
+    destination_node: { $component_ref: n_captured }
+    destination_input: result
+  - component_type: DataFlowEdge
+    id: e_summary_ignored
+    name: summary_to_ignored
+    metadata: {}
+    source_node: { $component_ref: n_decide }
+    source_output: summary
+    destination_node: { $component_ref: n_ignored }
+    destination_input: summary
+  - component_type: DataFlowEdge
+    id: e_reason_unclear
+    name: reason_to_unclear
+    metadata: {}
+    source_node: { $component_ref: n_decide }
+    source_output: transform_reason
+    destination_node: { $component_ref: n_unclear }
+    destination_input: transform_reason
+
+$referenced_components:
+  n_start:
+    component_type: StartNode
+    id: n_start
+    name: start
+    metadata: {}
+    inputs: []
+    outputs:
+      - { title: text, type: string }
+      - { title: source, type: string }
+      - { title: now, type: string }
+    branches: [next]
+
+  n_decide:
+    component_type: AgentNode
+    id: n_decide
+    name: decide
+    metadata: {}
+    inputs:
+      - { title: text, type: string }
+      - { title: source, type: string }
+      - { title: now, type: string }
+    outputs:
+      - { title: result, type: string }
+      - { title: action, type: string }
+      - { title: summary, type: string }
+      - { title: transform_status, type: string }
+      - { title: transform_reason, type: string }
+    branches: [next]
+    agent:
+      component_type: Agent
+      id: a_capture
+      name: quick-capture-agent
+      description: Decides what a captured lump of text is and what to do with it
+      metadata: {}
+      inputs:
+        - { title: text, type: string }
+        - { title: source, type: string }
+        - { title: now, type: string }
+      outputs:
+        - { title: result, type: string }
+      system_prompt: |
+        Someone has just captured something on their phone and thrown it at you
+        — a page they were reading, a message, a voice memo transcript, the text
+        off a photo of a poster. You decide what it is and what should happen to
+        it. Nobody is watching: whatever you answer is acted on immediately.
+
+        Choose one action.
+
+        - **reminder** — there is something the person has to do, and a moment it
+          matters. A date in the text, an event they mean to attend, a bill, a
+          reply they owe. Give it a title that will still make sense in a list
+          next Tuesday with no context around it: "Renew the parking permit",
+          never "Reminder" or "Follow up on this".
+        - **note** — worth keeping, nothing to do. A recipe, a quote, a name, an
+          address, a link they will want later.
+        - **nothing** — noise. A navigation menu, a cookie banner, a stray URL
+          with no page behind it, three words of a conversation. Choosing this
+          is a real answer and often the right one; a capture tool that files
+          everything is a capture tool people stop trusting.
+
+        Dates: today is {{now}}. Resolve "tomorrow" and "next Friday" against it
+        and write the result as YYYY-MM-DD, with a time as HH:MM when the text
+        gives one. If there is no moment at all, it is a note and not a
+        reminder — a reminder with an invented date is worse than a note.
+
+        Answer with one JSON object and nothing else. No prose, no code fence:
+
+        {"action": "reminder" | "note" | "nothing",
+         "title": "short, for a reminder only",
+         "due": "YYYY-MM-DD or YYYY-MM-DD HH:MM, for a reminder only",
+         "body": "what to keep, for a note",
+         "summary": "one line under 120 characters, shown to the person"}
+
+        The summary is the only thing they will read. Make it say what you did
+        and why, not what they already know: "Reminder for Tue — parking permit
+        expires", not "I have created a reminder for you".
+
+        Captured from: {{source}}
+
+        ---
+        {{text}}
+        ---
+      llm_config:
+        component_type: OpenAiConfig
+        id: llm_openai
+        name: gpt
+        metadata: {}
+        model_id: gpt-4o-mini
+        api_key: $OPENAI_API_KEY
+      tools: []
+      transforms:
+        - component_type: CaptureShape
+          id: p_shape
+          name: capture_shape
+          metadata: {}
+          max_summary: 120
+
+  n_route_shape:
+    component_type: BranchingNode
+    id: n_route_shape
+    name: route_shape
+    metadata: {}
+    inputs:
+      - { title: branching_mapping_key, type: string }
+    outputs: []
+    branches: [usable_branch, unclear_branch]
+    mapping:
+      rejected: unclear_branch
+      DEFAULT_BRANCH: usable_branch
+
+  n_route_action:
+    component_type: BranchingNode
+    id: n_route_action
+    name: route_action
+    metadata: {}
+    inputs:
+      - { title: branching_mapping_key, type: string }
+    outputs: []
+    branches: [captured_branch, ignored_branch]
+    mapping:
+      nothing: ignored_branch
+      DEFAULT_BRANCH: captured_branch
+
+  n_captured:
+    component_type: EndNode
+    id: n_captured
+    name: end_captured
+    metadata: {}
+    inputs:
+      - { title: summary, type: string }
+      - { title: result, type: string }
+    outputs: []
+    branches: []
+    branch_name: captured_branch
+
+  n_ignored:
+    component_type: EndNode
+    id: n_ignored
+    name: end_ignored
+    metadata: {}
+    inputs:
+      - { title: summary, type: string }
+    outputs: []
+    branches: []
+    branch_name: ignored_branch
+
+  n_unclear:
+    component_type: EndNode
+    id: n_unclear
+    name: end_unclear
+    metadata: {}
+    inputs:
+      - { title: transform_reason, type: string }
+    outputs: []
+    branches: []
+    branch_name: unclear_branch

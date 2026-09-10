@@ -1,0 +1,26 @@
+[
+  {
+    "tool": "doc_list",
+    "arguments": {
+      "pattern": ""
+    }
+  },
+  {
+    "tool": "doc_search",
+    "arguments": {
+      "query": "notice",
+      "limit": 8
+    }
+  },
+  {
+    "tool": "doc_excerpt",
+    "arguments": {
+      "document": "tenancy-agreement.md",
+      "line": 38,
+      "context": 8
+    }
+  },
+  {
+    "content": "You can give notice after the sixth month, in writing, two months' worth, expiring on the last day of a rental period (tenancy-agreement.md:33). Before that the break clause is not available, and leaving early leaves you liable for rent to the end of the fixed term or until a replacement tenant starts paying, whichever comes first \u2014 the landlord has to make reasonable efforts to find one (tenancy-agreement.md:39)."
+  }
+]

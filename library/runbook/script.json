@@ -1,0 +1,8 @@
+[
+  { "tool": "read_runbook", "arguments": { "service": "checkout-api" } },
+  { "tool": "service_health", "arguments": { "service": "checkout-api", "environment": "production" } },
+  { "tool": "service_health", "arguments": { "service": "payments-gw", "environment": "production" } },
+  { "tool": "recent_deploys", "arguments": { "service": "payments-gw", "limit": 3 } },
+  { "tool": "log_search", "arguments": { "pattern": "acquirer|pool", "limit": 10 } },
+  { "content": "{\"outcome\":\"paged\",\"note\":\"checkout-api is timing out because payments-gw is saturated: pool at 200/200 and acquirer-primary refusing sockets since 22:12Z, straight after the pool change in 2026.9.9-a12. checkout-api's own pods are up. The runbook forbids both levers I have — restarting checkout-api while the upstream is the cause loses in-flight orders, and payments-gw cannot be scaled past the acquirer's 240-connection cap. Paging the payments on-call to roll back 2026.9.9-a12; took no action.\"}" }
+]

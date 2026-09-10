@@ -1,0 +1,47 @@
+{
+  "name": "runbook-policies",
+  "version": "1.0.0",
+  "capabilities": ["emitEvent", "log"],
+  "components": [
+    {
+      "componentType": "ChangeApproval",
+      "kind": "middleware",
+      "seams": { "toolCall": ["before"] },
+      "schema": {
+        "type": "object",
+        "properties": {
+          "tools": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Tool names that stop the run until a person answers. Everything else runs unsupervised."
+          },
+          "auto_approve": {
+            "type": "object",
+            "description": "Blast radius an operator has pre-authorised, so the gate asks about the things that matter.",
+            "properties": {
+              "environments": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Environments where a gated tool may run without asking, e.g. [\"staging\"]."
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "componentType": "AuditTrail",
+      "kind": "middleware",
+      "seams": { "node": ["after"], "toolCall": ["before", "after"] },
+      "schema": { "type": "object", "additionalProperties": false }
+    },
+    {
+      "componentType": "AuditLog",
+      "kind": "encoder",
+      "protocol": "audit",
+      "contentType": "application/x-ndjson; charset=utf-8"
+    }
+  ]
+}

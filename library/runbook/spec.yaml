@@ -1,0 +1,314 @@
+# runbook — the 2am agent, with the governance bolted on at the seams.
+#
+#   start ──> diagnose (Agent, six tools) ──> route ──┬─> end_resolved
+#                                                     └─> end_paged
+#
+# The flow chooses what the agent can reach. It does not choose what the agent
+# may do unsupervised, or what gets written down — those are the operator's,
+# supplied as middleware on the command line and named nowhere in this file.
+# See policies.mjs.
+component_type: Flow
+agentspec_version: 26.2.0
+id: flow_runbook
+name: runbook
+description: >
+  Diagnoses a failing service against its written runbook, and takes the first
+  remediation step only with a person's approval.
+metadata: {}
+inputs: []
+outputs: []
+
+start_node:
+  $component_ref: n_start
+nodes:
+  - $component_ref: n_start
+  - $component_ref: n_diagnose
+  - $component_ref: n_route
+  - $component_ref: n_resolved
+  - $component_ref: n_paged
+
+control_flow_connections:
+  - component_type: ControlFlowEdge
+    id: e_start_diagnose
+    name: start_to_diagnose
+    metadata: {}
+    from_node: { $component_ref: n_start }
+    from_branch: null
+    to_node: { $component_ref: n_diagnose }
+  - component_type: ControlFlowEdge
+    id: e_diagnose_route
+    name: diagnose_to_route
+    metadata: {}
+    from_node: { $component_ref: n_diagnose }
+    from_branch: null
+    to_node: { $component_ref: n_route }
+  - component_type: ControlFlowEdge
+    id: e_route_resolved
+    name: route_to_resolved
+    metadata: {}
+    from_node: { $component_ref: n_route }
+    from_branch: resolved_branch
+    to_node: { $component_ref: n_resolved }
+  - component_type: ControlFlowEdge
+    id: e_route_paged
+    name: route_to_paged
+    metadata: {}
+    from_node: { $component_ref: n_route }
+    from_branch: paged_branch
+    to_node: { $component_ref: n_paged }
+
+data_flow_connections:
+  - component_type: DataFlowEdge
+    id: e_alert
+    name: alert_to_diagnose
+    metadata: {}
+    source_node: { $component_ref: n_start }
+    source_output: alert
+    destination_node: { $component_ref: n_diagnose }
+    destination_input: alert
+  - component_type: DataFlowEdge
+    id: e_service
+    name: service_to_diagnose
+    metadata: {}
+    source_node: { $component_ref: n_start }
+    source_output: service
+    destination_node: { $component_ref: n_diagnose }
+    destination_input: service
+  - component_type: DataFlowEdge
+    id: e_environment
+    name: environment_to_diagnose
+    metadata: {}
+    source_node: { $component_ref: n_start }
+    source_output: environment
+    destination_node: { $component_ref: n_diagnose }
+    destination_input: environment
+  - component_type: DataFlowEdge
+    id: e_outcome
+    name: outcome_to_route
+    metadata: {}
+    source_node: { $component_ref: n_diagnose }
+    source_output: outcome
+    destination_node: { $component_ref: n_route }
+    destination_input: branching_mapping_key
+  - component_type: DataFlowEdge
+    id: e_note_resolved
+    name: note_to_resolved
+    metadata: {}
+    source_node: { $component_ref: n_diagnose }
+    source_output: note
+    destination_node: { $component_ref: n_resolved }
+    destination_input: note
+  - component_type: DataFlowEdge
+    id: e_note_paged
+    name: note_to_paged
+    metadata: {}
+    source_node: { $component_ref: n_diagnose }
+    source_output: note
+    destination_node: { $component_ref: n_paged }
+    destination_input: note
+
+$referenced_components:
+  n_start:
+    component_type: StartNode
+    id: n_start
+    name: start
+    metadata: {}
+    inputs: []
+    outputs:
+      - { title: alert, type: string }
+      - { title: service, type: string }
+      - { title: environment, type: string }
+    branches: [next]
+
+  n_diagnose:
+    component_type: AgentNode
+    id: n_diagnose
+    name: diagnose
+    metadata: {}
+    inputs:
+      - { title: alert, type: string }
+      - { title: service, type: string }
+      - { title: environment, type: string }
+    outputs:
+      - { title: result, type: string }
+      - { title: outcome, type: string }
+      - { title: note, type: string }
+    branches: [next]
+    agent:
+      component_type: Agent
+      id: a_runbook
+      name: runbook-agent
+      description: On-call agent that diagnoses against the written runbook before acting
+      metadata: {}
+      inputs:
+        - { title: alert, type: string }
+        - { title: service, type: string }
+        - { title: environment, type: string }
+      outputs:
+        - { title: result, type: string }
+      system_prompt: |
+        You are on call. An alert has fired and you are working it against the
+        written runbook, at an hour when nobody is thinking clearly — which is
+        what the runbook is for.
+
+        Order matters here:
+
+        1. read_runbook for the service. Its steps include what *not* to do, and
+           those are the expensive part to rediscover at 2am.
+        2. service_health on the service, then on each upstream the runbook or
+           the health check names. A service that times out is often healthy and
+           waiting on one that is not.
+        3. recent_deploys, and log_search for what the alert describes. A
+           failure that starts within half an hour of a deploy is that deploy
+           until proved otherwise.
+        4. Only then act. restart_service and scale_service change production
+           and each needs a `reason`, which is what the change log will say.
+           Take the first step the runbook gives, one step, and then stop and
+           look again — you are not authorised to work a whole plan unattended.
+
+        You may find that acting is the wrong move: the cause sits in another
+        team's service, or the runbook says the lever you have makes it worse.
+        Say so and page instead. Doing nothing, loudly, is a good outcome.
+
+        Answer with a single JSON object and nothing else:
+
+        {"outcome": "resolved" or "paged",
+         "note": "what is broken, the evidence, what you did or why you did not"}
+
+        Use "resolved" only when you took an action and the runbook's first step
+        is done. Everything else is "paged" — including a diagnosis you are
+        confident about but may not act on.
+
+        Alert: {{alert}}
+        Service: {{service}}
+        Environment: {{environment}}
+      llm_config:
+        component_type: OpenAiConfig
+        id: llm_openai
+        name: gpt
+        metadata: {}
+        model_id: gpt-4o-mini
+        api_key: $OPENAI_API_KEY
+      tools:
+        - component_type: ServerTool
+          id: t_runbook
+          name: read_runbook
+          description: >
+            The written procedure for a service: who owns it, who to page, and
+            the ordered steps — including the things the runbook says not to do.
+            Read this first.
+          metadata: {}
+          inputs:
+            - { title: service, type: string }
+          outputs:
+            - { title: found, type: boolean }
+            - { title: steps, type: string }
+            - { title: owner, type: string }
+            - { title: page, type: string }
+        - component_type: ServerTool
+          id: t_health
+          name: service_health
+          description: >
+            Replicas, readiness, error rate, latency and the upstreams a service
+            depends on. Call it on the upstreams too.
+          metadata: {}
+          inputs:
+            - { title: service, type: string }
+            - { title: environment, type: string, default: production }
+          outputs:
+            - { title: found, type: boolean }
+            - { title: readiness, type: string }
+            - { title: error_rate, type: string }
+        - component_type: ServerTool
+          id: t_deploys
+          name: recent_deploys
+          description: >
+            What shipped lately for a service, with the version each one would
+            roll back to.
+          metadata: {}
+          inputs:
+            - { title: service, type: string }
+            - { title: limit, type: integer, default: 5 }
+          outputs:
+            - { title: deploys, type: string }
+            - { title: count, type: integer }
+        - component_type: ServerTool
+          id: t_logs
+          name: log_search
+          description: Search recent log lines across services for a regular expression.
+          metadata: {}
+          inputs:
+            - { title: pattern, type: string }
+            - { title: limit, type: integer, default: 20 }
+          outputs:
+            - { title: matches, type: string }
+            - { title: count, type: integer }
+        - component_type: ServerTool
+          id: t_restart
+          name: restart_service
+          description: >
+            Roll-restart a service. This changes production. Give a reason —
+            it is what the change log will say, and a person may be reading it
+            before they approve the call.
+          metadata: {}
+          inputs:
+            - { title: service, type: string }
+            - { title: reason, type: string }
+            - { title: environment, type: string, default: production }
+          outputs:
+            - { title: ok, type: boolean }
+            - { title: detail, type: string }
+        - component_type: ServerTool
+          id: t_scale
+          name: scale_service
+          description: >
+            Change a service's replica count. This changes production. Give a
+            reason. Check the runbook first — for some services more replicas
+            make the failure worse.
+          metadata: {}
+          inputs:
+            - { title: service, type: string }
+            - { title: replicas, type: integer }
+            - { title: reason, type: string }
+            - { title: environment, type: string, default: production }
+          outputs:
+            - { title: ok, type: boolean }
+            - { title: detail, type: string }
+
+  n_route:
+    component_type: BranchingNode
+    id: n_route
+    name: route
+    metadata: {}
+    inputs:
+      - { title: branching_mapping_key, type: string }
+    outputs: []
+    branches: [resolved_branch, paged_branch]
+    mapping:
+      resolved: resolved_branch
+      paged: paged_branch
+      # Anything unrecognised wakes a person. A router that guesses "resolved"
+      # when it cannot read the answer is a router that closes incidents.
+      DEFAULT_BRANCH: paged_branch
+
+  n_resolved:
+    component_type: EndNode
+    id: n_resolved
+    name: end_resolved
+    metadata: {}
+    inputs:
+      - { title: note, type: string }
+    outputs: []
+    branches: []
+    branch_name: resolved_branch
+
+  n_paged:
+    component_type: EndNode
+    id: n_paged
+    name: end_paged
+    metadata: {}
+    inputs:
+      - { title: note, type: string }
+    outputs: []
+    branches: []
+    branch_name: paged_branch

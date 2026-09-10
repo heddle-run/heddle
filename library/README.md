@@ -8,6 +8,11 @@ Browse them at [heddle.run/library](https://heddle.run/library).
 
 | Entry | What it does | Needs |
 |---|---|---|
+| [helpdesk](helpdesk/README.md) | Answers an internal IT question from the handbook packed inside it, and drafts a ticket when the handbook falls short. | A model key, `python3`, `bash` |
+| [private-reader](private-reader/README.md) | Answers questions about a folder of documents that never leave the machine, citing the file and line. | A model key (or a local model), `python3`, `bash` |
+| [runbook](runbook/README.md) | Works an alert against the written runbook, and changes production only once a person has said yes. | A model key, `python3`, `bash` |
+| [release-notes](release-notes/README.md) | Writes release notes by running the shell and Python scripts your team already had, unchanged. | A model key, `python3`, `bash`, `git` |
+| [quick-capture](quick-capture/README.md) | Turns anything you throw at it from a share sheet into a reminder, a note, or nothing. Runs on the phone itself. | A model key |
 | [local-notetaker](local-notetaker/README.md) | Records this machine's audio, transcribes it locally, and writes up the meeting — no bot joins the call. | A model key, macOS 14.2+, `ffmpeg`, whisper.cpp |
 | [coding-agent](coding-agent/README.md) | Works on a codebase with OpenAI Codex CLI's orchestration: plan, shell, apply_patch, verify, repeat. | A model key, `python3`, `bash` |
 

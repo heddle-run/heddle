@@ -1,0 +1,30 @@
+{
+  "name": "runbook",
+  "title": "Runbook",
+  "summary": "Works an alert against the written runbook and takes the first remediation step only once a person has said yes — with every node and call recorded.",
+  "blurb": "The 2am agent, with the governance bolted on at the seams rather than written into it. It reads the runbook before it reads the metrics, because a runbook's steps include what not to do and that is the expensive part to rediscover at 2am; it checks the upstreams before it touches the service that is complaining; and it treats a failure within half an hour of a deploy as that deploy until proved otherwise. Then it stops. The two tools that change production are gated by a middleware the operator installs, so a call to restart or scale suspends the whole run into its session and waits — the process can exit, and the yes can arrive from another terminal, another machine, or an hour later from somebody's phone. A second middleware records every node and every call as events, and an encoder turns the run into one JSON object per line, so an incident leaves a file. Nothing in the flow names any of the three: the author chose what the agent can reach, and whoever runs it chooses what it may do unsupervised and what gets written down. Handing this bundle to a stricter team means handing them the same bundle with different flags.",
+  "tags": ["ops", "on-call", "approval", "audit", "middleware"],
+  "model": "gpt-4o-mini",
+  "flow": "spec.yaml",
+  "toolsDir": "tools",
+  "plugins": ["policies.json"],
+  "pluginConfig": {
+    "ChangeApproval": {
+      "tools": ["restart_service", "scale_service"],
+      "auto_approve": { "environments": ["staging"] }
+    },
+    "AuditTrail": {}
+  },
+  "mounts": ["fixtures:fixtures:ro"],
+  "requires": [
+    { "env": "OPENAI_API_KEY" },
+    { "binary": "python3" },
+    { "binary": "bash" }
+  ],
+  "session": true,
+  "input": {
+    "alert": "checkout-api 502 rate 12%, p99 4.2s, two pods failing readiness",
+    "service": "checkout-api",
+    "environment": "production"
+  }
+}
