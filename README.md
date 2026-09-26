@@ -560,6 +560,11 @@ runs anywhere heddle is installed.
 
 | Entry | What it does |
 |---|---|
+| [helpdesk](library/helpdesk/README.md) | Answers an internal IT question from the handbook packed inside it, and drafts a ticket when the handbook falls short. |
+| [private-reader](library/private-reader/README.md) | Answers questions about a folder of documents that never leave the machine, citing the file and line every claim came from. |
+| [runbook](library/runbook/README.md) | Works an alert against the written runbook, and changes production only once a person has said yes. |
+| [release-notes](library/release-notes/README.md) | Writes release notes by running the shell and Python scripts your team already had, unchanged. |
+| [quick-capture](library/quick-capture/README.md) | Turns anything you throw at it from a share sheet into a reminder, a note, or nothing. Runs on the phone itself. |
 | [local-notetaker](library/local-notetaker/README.md) | Records this machine's audio, transcribes it locally, and writes up the meeting — no bot joins the call. |
 | [coding-agent](library/coding-agent/README.md) | Works on a codebase with OpenAI Codex CLI's orchestration: plan, shell, apply_patch, verify, repeat. |
 
